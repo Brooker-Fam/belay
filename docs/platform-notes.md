@@ -1,0 +1,541 @@
+# Platform notes
+
+Every Android behavior Belay relies on, checked against current documentation and
+the Android 17 source code, with the Android version it applies to. When Belay starts
+relying on something new, it goes here first, with a source.
+
+- **Checked:** 2026-11-16, unless noted. Doc dates in [brackets] are the page's
+  "Last updated".
+- **AOSP:** tag `android-17.0.0_r1` (API 37.0) on android.googlesource.com. Paths are in
+  `platform/frameworks/base` unless another project is named.
+- **Verified on:**
+  - *Docs/AOSP*: read in documentation or source code, not yet seen on a device.
+  - *Emulator*: checked by CI on the API 37.0 emulator (`android/scripts/ci-emulator-test.sh`).
+  - *Pixel 8*: checked on the real phone with the Phase 0 checklist. All Pixel 8 results
+    are still **pending**; see [Phase 0 results](#phase-0-results).
+
+## Summary
+
+| # | What Belay relies on | Verdict | Verified on |
+|---|---|---|---|
+| P1 | Google blocks QR provisioning of unapproved device-owner apps | Confirmed | Docs; Pixel 8 pending (step 4) |
+| P2 | `adb shell dpm set-device-owner` still works for an unapproved app | Not stated by Google; works in practice | Emulator; Pixel 8 pending (step 1) |
+| P3 | `dpm set-device-owner` needs no accounts, no other users or profiles | Confirmed, plus a new Android 17 condition | AOSP; Emulator |
+| P4 | `dpm remove-active-admin` only for test-only admins; otherwise factory reset | Confirmed, with nuance | AOSP; Emulator (debug) |
+| P5 | What `dpm set-device-owner` broadcasts, in which order | Confirmed | AOSP; Emulator |
+| A1 | A Family Link child account can't sit next to a device owner | Very likely; unconfirmed by Google | Sources only |
+| A2 | A parent-owned regular Google account works with Play on a fully managed phone | Third-party sources only | Pixel 8 pending (step 3) |
+| A3 | The Android Management API isn't open to parental control | Confirmed | Docs |
+| K1 | Manifest receivers only get `PACKAGE_FULLY_REMOVED` and `PACKAGE_DATA_CLEARED` | Confirmed | Docs; AOSP; Emulator |
+| K2 | `getChangedPackages` resets every boot; key it to `BOOT_COUNT` | Confirmed | Docs; AOSP |
+| K3 | Seeing every package needs `QUERY_ALL_PACKAGES`, no device-owner exemption | Confirmed | Docs; AOSP; Emulator |
+| K4 | Install source: what each field says for Play, adb, sideloads, preinstalled | Mostly confirmed; Play's values to measure | AOSP; Pixel 8 pending |
+| B1 | Device owners may start a foreground service from the background, type `systemExempted` | Confirmed; the docs get two details wrong | Docs; AOSP; Emulator |
+| B2 | The managed notice can't be dismissed (Android 14+) | Confirmed, needs `setOngoing(true)` | Docs; AOSP; Emulator |
+| B3 | The notice can't be turned off once `POST_NOTIFICATIONS` is granted by policy | Partly: the channel only locks after the next boot | AOSP |
+| B4 | Active device admins are in the exempt standby bucket | Confirmed | AOSP; Emulator |
+| B5 | Settings can't force-stop or clear the storage of a device owner | Confirmed, enforced below Settings too | AOSP |
+| B6 | Doze still applies; `dumpsys deviceidle whitelist +pkg` exempts it | Confirmed | AOSP; Emulator |
+| B7 | Android keeps a device owner's `DeviceAdminService` bound | Confirmed | Docs; Emulator |
+| R1 | Usage access can't be self-granted, can be revoked; grant it over adb | Confirmed | Docs; AOSP; Emulator |
+| R2 | A device owner can pre-grant its runtime permissions, unrevocably | Confirmed | Docs; AOSP; Emulator |
+| R3 | targetSdk 37: a home-network server needs `ACCESS_LOCAL_NETWORK` | Confirmed | Docs |
+| R4 | targetSdk 37: Certificate Transparency on by default | Confirmed, with an exception | Docs |
+| D1 | Developer verification: dates, ADB exemption, limited-distribution account | Partly; important details below | Docs |
+| M1 | Declaring a monitoring tool: `android:isMonitoringTool="parental_control"` | **Contradicted**: it's a meta-data entry | SDK; Play docs |
+| M2 | 37.2 adds `…_INCLUDING_REGISTERED_APP_STORES` | Confirmed; exact name differs from the brief | SDK |
+
+"Emulator" entries become true when the CI emulator job passes; its log is the record.
+
+---
+
+## Provisioning
+
+### P1. Google blocks QR provisioning of unapproved device-owner apps
+
+**Confirmed** for the Android Enterprise enrollment methods.
+
+- support.google.com/work/android/answer/16694822 [no date]: "Only DPCs verified and
+  approved by Android Enterprise are permitted to install apps during enterprise device
+  enrollment provisioning." It excludes "Solutions developed exclusively for the purpose
+  of device monitoring or eavesdropping independent of enterprise device management".
+- developers.google.com/android/play-protect/warning-dev-guidance [2026-08-18]: "You can
+  only provision new devices with Android Enterprise methods using an approved Device
+  Policy Controller (DPC)."
+- Neither page names QR, NFC, zero-touch or `afw#`, and neither mentions adb.
+- Every report found is of 6-tap QR provisioning. The earliest community threads are from
+  7 Dec 2025. Google's own TestDPC 9.0.12 was blocked from 19 Sep 2026
+  (github.com/googlesamples/android-testdpc issue #283).
+- Headwind MDM's open-source page says the same of custom builds: "currently blocked by
+  Play Protect" at enrollment (h-mdm.com/open-source/).
+- Approval goes through the Play Protect appeal form, with no response promised. Google's
+  stated criteria include "The application is being used strictly for enterprise
+  purposes", so a parental-control app shouldn't expect approval.
+
+Belay's consequence: provision with adb. The QR path is tried once in Phase 0 (step 4),
+only to record what happens.
+
+### P2. `dpm set-device-owner` over adb works for an unapproved app
+
+**Not stated by Google either way; works in practice.**
+
+- No Google page mentions adb provisioning in the context of the block.
+- In AOSP, `DevicePolicyManagerService.setDeviceOwner` never consults Play Protect. This
+  is an inference from the code, not a promise.
+- kidctl reports a release build provisioned this way on a Pixel 8 with Android 17,
+  in daily use since October 2026 (its README).
+- A developer reports adb `dpm set-device-owner` working after QR was blocked
+  (Android Enterprise Community thread 1569, March 2026).
+- Play Protect may still scan an adb install ("Verify apps over USB" in Developer options).
+  Phase 0 step 1 records any prompt word for word.
+
+**If the Pixel blocks this too, the plan changes** (Phase 0 stop condition).
+
+### P3. Preconditions for `dpm set-device-owner`
+
+**Confirmed**, from the Android 17 code (`DevicePolicyManagerService.checkDeviceOwnerProvisioningPreConditionLocked`):
+
+- No device owner yet, and no profile owner on the user.
+- Over adb, once setup is complete: no users beyond the system user, except users marked
+  for testing (`nonTestNonPrecreatedUsersExist`, error `STATUS_NONSYSTEM_USER_EXISTS`).
+  A guest, a work profile and Private Space all count.
+- No accounts that aren't explicitly compatible with a device owner, of any type, on any
+  user (error `STATUS_ACCOUNTS_NOT_EMPTY`).
+- **New in Android 17**, behind the flag `secureAdbRoleBypassing`: a non-test-only app
+  can't become device owner while a non-default Device Policy Management Role Holder is
+  installed (`STATUS_NON_DEFAULT_DEVICE_POLICY_MANAGEMENT_ROLE_HOLDER_EXISTS`). On a stock
+  Pixel, the role holder is Google's default one, so this shouldn't fire. Worth knowing if
+  `dpm` ever refuses a release build for no visible reason.
+- source.android.com/docs/devices/admin/testing-setup [2026-09-22] only says "Ensure the
+  device does not contain any user accounts".
+
+`provision.sh` checks the accounts (`dumpsys account`) and users (`pm list users`)
+before trying, and names the problem.
+
+### P4. Removing the device owner
+
+**Confirmed, with nuance.**
+
+- `dpm remove-active-admin` calls `forceRemoveActiveAdmin`, which throws
+  "Attempt to remove non-test admin" unless the admin is test-only
+  (`forceRemoveActiveAdminUnchecked`).
+- `DevicePolicyManager.clearDeviceOwnerApp` is deprecated since API 26 and "expected to be
+  used for testing purposes only" [2026-09-16], but it still works on API 37 for any device
+  owner, test-only or not: `DevicePolicyManagerService.clearDeviceOwner` only checks that the
+  caller is the device owner. Belay only includes it in debug builds (`src/debug`).
+- Both paths run `clearDeviceOwnerLocked`, which ends with
+  `mDevicePolicyEngine.removePoliciesForAdmin(...)`. That drops every policy the admin set,
+  including Belay's uninstall block on itself. So debug builds can block their own
+  uninstall and still be removed by `unprovision.sh`.
+- So for a release build, the only way out is a factory reset. Phase 2 adds a
+  parent-controlled path (lifting `DISALLOW_FACTORY_RESET`); see ROADMAP.md.
+
+### P5. What `dpm set-device-owner` does, in order
+
+**Confirmed** in `DevicePolicyManagerServiceShellCommand.runSetDeviceOwner`:
+
+1. `setActiveAdmin`. This sends `DEVICE_ADMIN_ENABLED` to the admin receiver, which can
+   arrive before step 2 finishes. So Belay's `onEnabled` never assumes device ownership.
+2. `setDeviceOwner`. On success the service sends `DEVICE_OWNER_CHANGED` with
+   `FLAG_RECEIVER_INCLUDE_BACKGROUND`, so it reaches manifest receivers. It is a protected
+   broadcast (`core/res/AndroidManifest.xml`), so only the system can send it.
+3. `setUserProvisioningState(STATE_USER_SETUP_FINALIZED)`.
+
+Belay runs its setup from `DEVICE_OWNER_CHANGED`, and again on every later trigger.
+
+`dpm list-owners` changed in Android 17 (`DeviceAdmins.printAllOwners`): it prints
+**nothing** when there are no owners (older versions printed "no owners"), and one line
+per owner, like `User 0: admin=family.brooker.belay/.AdminReceiver,DeviceOwner`. The
+scripts look for `admin=`. Seen on the API 37.0 emulator in CI.
+
+### P6. The Android 12+ provisioning activities
+
+From the `DevicePolicyManager` reference and TestDPC: managed provisioning (QR, NFC,
+zero-touch) asks the DPC's `GET_PROVISIONING_MODE` activity which mode to use, then starts
+its `ADMIN_POLICY_COMPLIANCE` activity. Both must be protected by `BIND_DEVICE_ADMIN`.
+`dpm` doesn't use them. Belay's return fully managed, or cancel when only a work profile
+is offered. They exist so the QR test in Phase 0 step 4 is a fair one.
+
+---
+
+## Google accounts
+
+### A1. Family Link child account next to a device owner
+
+**Very likely incompatible; not confirmed by Google; not tested.**
+
+- Family Link supervision has made Google Play services the profile owner of the
+  supervised user. Developers have seen `com.google.android.gms/.kids.account.receiver.ProfileOwnerReceiver`
+  refuse a device owner (Dhizuku issue #34, 2023), and the Zygotroller README shows
+  `com.google.android.gms.supervision/…ProfileOwnerReceiver` as profile owner.
+- Android 17 refuses a profile owner on a user that has a device owner:
+  "Trying to set the profile owner…, but the user already has a device owner"
+  (`DevicePolicyManagerService`, the profile-owner preconditions).
+- On an Intune fully managed phone, Family Link hung at "Allowing supervision"
+  (Microsoft Q&A 1855379, August 2024).
+- Nuance: Android 17's `SupervisionService` mentions a transition to a `SYSTEM_SUPERVISION`
+  role. Family Link may stop needing a profile owner, so this could change.
+
+Belay's plan: a separate, parent-owned regular Google account (A2), not a child account.
+
+### A2. A parent-owned regular Google account with Play on a fully managed phone
+
+**Third-party sources only** (bayton.org's Android Enterprise FAQ; Cortado's support
+site): on a fully managed device that allows accounts, users can add a personal Google
+account and use the Play Store. kidctl uses a Google Workspace account this way. Phase 0
+step 3 tests it on the Pixel.
+
+### A3. The Android Management API is not for parental control
+
+**Confirmed.** developers.google.com/android/management/permissible-usage [2026-03-30]:
+the API is "restricted solely to commercial Enterprise Mobility Management (EMM)
+developers…". Not allowed: "Solutions developed exclusively for the purpose of device or
+user monitoring… independent of enterprise management." A parental-control developer was
+told "Google does not see parental controls as a valid business case for amapi"
+(Android Enterprise Community thread 1434, May 2026). So no managed Google Play either.
+
+---
+
+## Packages
+
+### K1. Package broadcasts
+
+**Confirmed.**
+
+- developer.android.com/develop/background-work/background-tasks/broadcasts/broadcast-exceptions [2026-02-26]:
+  the only exempt package broadcasts are `ACTION_PACKAGE_DATA_CLEARED` and
+  `ACTION_PACKAGE_FULLY_REMOVED`. "Other package-related broadcasts (such as
+  ACTION_PACKAGE_REPLACED) are *not* exempted."
+- No device-owner exemption: AOSP delivery code (`BroadcastSkipPolicy`) has no owner check.
+- Runtime receivers only get added/replaced/removed for packages they can see (package
+  visibility applies).
+- `MY_PACKAGE_REPLACED` (sent only to the replaced app) and `BOOT_COMPLETED` still reach
+  manifest receivers.
+
+Belay: a runtime receiver registered once per process (`PackageWatcher`), plus
+`PACKAGE_FULLY_REMOVED` in the manifest. What keeps the process alive: B1 and B7.
+
+### K2. `getChangedPackages` and `BOOT_COUNT`
+
+**Confirmed.**
+
+- PackageManager reference [2026-08-28]: "If no packages have been changed, returns null.
+  The sequence number starts at 0 and is reset every boot." It points to
+  `Settings.Global.BOOT_COUNT`.
+- `BOOT_COUNT` is `@Readable` in AOSP: any app targeting 37 can read it without permission.
+- AOSP: results are filtered by package visibility; packages that are already gone are
+  still listed; enabling or disabling an app or component also advances the sequence; the
+  tracker lives only in memory.
+
+Belay stores the cursor as (`BOOT_COUNT`, sequence). A changed boot count means a full
+scan (`Reconcile.plan` in `:core`, with tests). Removed packages and enable/disable
+changes simply produce no diff when nothing changed.
+
+### K3. `QUERY_ALL_PACKAGES`
+
+**Confirmed: no device-owner exemption.**
+
+- developer.android.com/training/package-visibility [2026-11-16]: "you can use the
+  QUERY_ALL_PACKAGES permission. If you publish your app on Google Play, your app's use of
+  this permission is subject to approval." The automatic-visibility page has no
+  device-owner or admin category.
+- AOSP's package filter (`AppsFilterBase`, `AppsFilterImpl`, `AppsFilterUtils`) has no
+  device-owner or DPC code. The permission is a "normal" one.
+- Play's policy (support.google.com/googleplay/android-developer/answer/10158779)
+  only applies to apps on Play.
+
+### K4. Install source
+
+**Fields confirmed; per-case values from AOSP; Play's to measure on the Pixel.**
+
+`getInstallSourceInfo` (API 30), `getPackageSource()` (API 33), `getUpdateOwnerPackageName()` (API 34).
+
+| Case | initiating | installing | package source |
+|---|---|---|---|
+| `adb install` | `com.android.shell` ("adb installs can override the installingPackageName, but not the initiatingPackageName") | null, unless `-i` | OTHER ("Set package source to other by default") |
+| Preinstalled, never updated | null | null | UNSPECIFIED |
+| An APK opened from Files or a browser | the system package installer | same | DOWNLOADED_FILE with a referrer, else LOCAL_FILE |
+| Play Store | `com.android.vending` (widely seen; undocumented) | same | to measure on the Pixel |
+
+- The originating package needs `INSTALL_PACKAGES`, so Belay always sees null.
+- The update owner is hidden on organization-managed devices, which includes ours.
+- The mapping is `InstallSources.classify` in `:core`, with tests. Belay's screen shows
+  the raw fields for itself, and the result for each change, so step 3 can check them.
+
+---
+
+## Staying alive
+
+### B1. Foreground service started from the background, type `systemExempted`
+
+**Confirmed. The docs get two details wrong.**
+
+- …/fgs/restrictions-bg-start [2026-11-16]: exempt are "Apps with certain system roles or
+  permission, such as device owners and profile owners". In AOSP
+  `services/core/java/com/android/server/am/ActiveServices.java`, the while-in-use check
+  returns `REASON_DEVICE_DPC` for the device owner, and the background-start check starts
+  from that result.
+- …/fgs/service-types [2026-11-16] lists a device owner among the apps that may use
+  `systemExempted`. What the code checks (`core/java/android/app/ForegroundServiceTypePolicy.java`,
+  `FGS_TYPE_POLICY_SYSTEM_EXEMPTED`, and `SystemExemptedFgsTypePermission` in
+  `ActiveServices`): `FOREGROUND_SERVICE_SYSTEM_EXEMPTED`, plus an exact-alarm permission,
+  the VPN app-op, or a reason such as device owner, profile owner or active device admin.
+- Wrong in the docs: the failure is a `SecurityException` from `startForeground()`, not a
+  `ForegroundServiceTypeNotAllowedException`. And if `startForeground()` never succeeds
+  after `startForegroundService()`, the app crashes after about 30 s. So Belay only
+  starts the service once it is device owner, and passes the type explicitly.
+- Android lint only knows the exact-alarm route, so the manifest suppresses
+  `ForegroundServicePermission` with a comment.
+- No time limit: Android 15's limits only cover `dataSync` and `mediaProcessing`. The
+  `BOOT_COMPLETED` restrictions on starting some types don't include `systemExempted`.
+- `specialUse` would work too (kidctl uses it); once device owner, AOSP gives
+  `systemExempted` no runtime advantage. `systemExempted` was the brief's choice.
+
+### B2. The managed notice can't be dismissed
+
+**Confirmed.**
+
+- Android 14 behavior changes [2026-10-28]: the dismissible-ongoing change "doesn't apply
+  to notifications in the following use cases: CallStyle notifications; Device policy
+  controller (DPC) and supporting packages for enterprise; Media notifications…"
+- AOSP `NotificationManagerService`: `FLAG_NO_DISMISS` is added when the notification has
+  `FLAG_ONGOING_EVENT` and the app is the active device or profile owner.
+- So the notice must be built with `setOngoing(true)` (it is). A plain device admin isn't
+  exempt.
+- CI checks the posted notification has `FLAG_NO_DISMISS` (0x2000).
+
+### B3. The notice can't be switched off
+
+**Partly true: it locks only after the next boot.**
+
+- `setPermissionGrantState(POST_NOTIFICATIONS, GRANTED)` marks the permission
+  policy-fixed (packages/modules/Permission `PermissionControllerServiceImpl`).
+- App-level switch: `PermissionHelper.setNotificationPermission` returns early for a
+  fixed permission, so the kid can't actually turn notifications off. (Settings may briefly
+  show the switch as off.)
+- Channel-level: `PreferencesHelper.updateFixedImportance()` only runs during boot. Until
+  the first boot after the grant, the channel can still be blocked in Settings; after it,
+  Settings disables the app and channel switches, and the long-press "Turn off" is gone.
+- Exceptions: a channel that is already blocked stays blocked; a channel marked
+  `setBlockable(true)` stays blockable; before that boot, a channel group can be blocked.
+  Belay's channel has no group and isn't blockable.
+- A device owner permission policy other than `PROMPT` disables every app's notification
+  switch (Settings `BlockPreferenceController`). Belay doesn't set one.
+
+That's why `provision.sh` ends with a restart.
+
+### B4. Standby bucket
+
+**Confirmed.** AOSP
+`apex/jobscheduler/service/java/com/android/server/usage/AppStandbyController.java`:
+`if (isActiveDeviceAdmin(packageName, userId)) { return STANDBY_BUCKET_EXEMPTED; }`
+(bucket 5). Packages in `setUserControlDisabledPackages` are exempted too. The appstandby
+docs [2026-10-28] only say owners "are exempt from entering the restricted bucket". Check:
+`adb shell am get-standby-bucket family.brooker.belay` prints 5. CI checks it.
+
+### B5. Force stop and clear storage
+
+**Confirmed, and enforced below the Settings UI.**
+
+- Settings (`packages/apps/Settings`): `AppButtonsPreferenceController.updateForceStopButton`
+  ("User can't force stop device admin"); `AppStorageSettings` disables Clear storage when
+  the app has active admins, unless it declares `android:manageSpaceActivity` (Belay
+  doesn't, and mustn't). Clear cache isn't blocked.
+- ActivityManagerService ignores force-stop requests for protected packages; this also
+  covers `cmd activity stop-app`. PackageManagerService refuses to clear their data.
+  "Protected" includes the device owner.
+- Quick Settings "Active apps" (SystemUI `FgsManagerController`) hides the Stop button for
+  reasons including `DEVICE_DPC`. So Belay is listed there with no Stop button. kidctl
+  measured a Stop button for *other* apps under `DISALLOW_APPS_CONTROL`, which AOSP doesn't
+  predict; irrelevant to Belay itself, but worth re-measuring before Phase 2 relies on it.
+
+### B6. Doze and the battery exemption
+
+**Confirmed.**
+
+- `DevicePolicyManager.java` source: "DPC apps themselves are not automatically exempted
+  from Doze mode either." There is no device-owner API to add itself to the allowlist (the
+  APIs need `DEVICE_POWER` or a role).
+- `adb shell dumpsys deviceidle whitelist +<pkg>` writes `/data/system/deviceidle.xml`,
+  read back at boot; the entry survives reboots and updates and is removed on uninstall.
+- `ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` (needs `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`)
+  shows "Let app always run in background?"; Allow adds the same allowlist entry. It's the
+  fallback: Belay's Setup checks show an Allow button if the exemption is missing.
+- Settings' battery page shows a device owner as "Unrestricted" and greyed out even when it
+  isn't allowlisted (SettingsLib `PowerAllowlistBackend.isDefaultActiveApp`). Check with
+  `PowerManager.isIgnoringBatteryOptimizations()` (what Belay shows) or `dumpsys deviceidle`.
+- A process with a running foreground service keeps network access during Doze
+  (`NetworkPolicyManagerService`, `FOREGROUND_THRESHOLD_STATE`); alarms and jobs are still
+  deferred. Phase 2's long-poll relies on this.
+
+### B7. `DeviceAdminService`
+
+**Confirmed.** DeviceAdminService reference [2026-09-16]: the system "tries to keep a bound
+connection … so that the device/profile owner is always considered to be in the
+foreground. This is useful to receive implicit broadcasts that can no longer be received
+by manifest receivers." It is bound with `BIND_FOREGROUND_SERVICE` and re-bound if the
+process dies. TestDPC registers its package receiver there. Belay has one
+(`BelayAdminService`) in addition to the foreground service. CI checks it is bound.
+
+---
+
+## Permissions and targetSdk 37
+
+### R1. Usage access
+
+**Confirmed.**
+
+- `PACKAGE_USAGE_STATS` is "signature|privileged|development|appop|retailDemo";
+  `setPermissionGrantState` only takes runtime ("dangerous") permissions, so a device owner
+  can't grant it to itself. The UsageStatsManager reference [2026-08-28]: the user "still
+  needs to grant permission through the Settings application."
+- The user can revoke it in Settings > Special app access > Usage access. A device owner
+  can't pin an app-op; the best is to notice (`AppOpsManager.startWatchingMode`) and tell
+  the parent (Phase 3).
+- `adb shell appops set <pkg> GET_USAGE_STATS allow` works; `provision.sh` does it and
+  checks it.
+- New in Android 17: "restricted settings" can grey out the Usage access switch for apps
+  installed from a file. `appops set` bypasses that.
+
+### R2. Pre-granting runtime permissions
+
+**Confirmed.** DevicePolicyManager reference [2026-09-16]: a permission granted by policy
+can't be managed by the user in the UI, and the lock covers "other permissions in the
+affected group". Any runtime permission the app declares can be granted, sensor ones
+included: AOSP sets `mAdminCanGrantSensorsPermissions = true` for a device owner set over
+adb. Belay grants itself every runtime permission it declares (today `POST_NOTIFICATIONS`
+and `ACCESS_LOCAL_NETWORK`); the whole Nearby devices group is then locked in Settings.
+Device-owner apps are also never hibernated.
+
+### R3. `ACCESS_LOCAL_NETWORK`
+
+**Confirmed.** developer.android.com/privacy-and-security/local-network-permission [2026-11-03]:
+
+- A runtime permission added in API 37, in the `NEARBY_DEVICES` group, enforced for apps
+  targeting 37. It's "implemented deep in the networking stack", so it applies to OkHttp too.
+  Blocked TCP times out; blocked UDP fails with EPERM; `.local` resolution is gated.
+- Local means RFC 1918 ranges, 100.64/10, link-local, directly connected routes and
+  multicast; it "excludes cellular (WWAN) or VPN connections"
+  (…/local-network-definition [2026-03-06]). A public hostname that resolves to a home IP
+  on Wi-Fi still counts as local.
+- "IT administrators can pre-grant this permission using setPermissionGrantState()"
+  (developer.android.com/work/versions/android-17 [2026-10-28]). Belay does.
+
+### R4. Certificate Transparency
+
+**Confirmed, with an exception.** Android 17 behavior changes [2026-11-11]: "If an app
+targets Android 17 (API level 37) or higher, certificate transparency (CT) is enabled by
+default." But "Certificate transparency verification isn't performed on connections that
+use custom trust anchors" (…/security-config [2026-08-28]). Belay's plan stays a publicly
+trusted certificate: claude.ai needs a public HTTPS URL for the server anyway, and it
+keeps the agent's network config simple.
+
+### Other Android 17 changes that touch Belay
+
+For apps targeting 37: Encrypted Client Hello; audio from the background needs a
+foreground service with while-in-use capability; background activity starts through an
+`IntentSender` are tightened (AOSP still exempts the device owner). For all apps on 17: a
+memory limiter kills outlier processes. Nothing new for foreground services, package
+broadcasts, package visibility or notifications.
+
+---
+
+## Developer verification
+
+### D1. What applies, and when
+
+**Partly as the brief says; some details matter.**
+
+- Since 30 Sep 2026, enforced only for installs from seven participating app stores in
+  Brazil, Indonesia, Singapore and Thailand. FAQ [2026-09-30]: "if users sideload your app
+  directly, these new verification requirements won't apply to your app yet". In 2027 it
+  widens to "all apps on certified Android devices" worldwide (guides [2026-08-18]).
+- ADB is exempt: "you are free to install apps without verification with ADB". In AOSP 17
+  that's a policy flag (`verification_service_adb`), not a platform guarantee.
+- Registration: verify your identity, then register the package name and "the SHA-256
+  certificate fingerprint" of the release key. A package that already has installs also
+  needs a signed APK containing `assets/adi-registration.properties`.
+- **Limited-distribution account** (support.google.com/android-developer-console/answer/17131204):
+  free, no ID, but a Google account with 2-Step Verification, a payments profile and a
+  contact email. Devices are registered one at a time (a code from the phone). "Any
+  devices not authorized won't be able to install or receive updates". The device cap is
+  20 or 50: Google's pages disagree.
+- **"You can only register new package names that have never been seen before on
+  Android."** Installing a release build on a Play-certified phone may let Google see the
+  package (Play Protect scans installs). To keep the free path open, register
+  `family.brooker.belay` before the release build goes on the Pixel. That's a decision for
+  the parent; see docs/phase0-checklist.md, "Before you start".
+- Updates a device owner installs itself (the later self-update) go through the verifier
+  too: AOSP 17 has no device-owner bypass. Google says apps on fully managed devices are
+  exempt; an Android Enterprise Community update says device-owner phones are exempt only
+  "until September 2027". Whether an adb-provisioned, unapproved DPC counts isn't stated.
+- kidctl measured: on a Pixel 8 with the package and key registered, its over-the-air
+  updates installed with no Play Protect dialog.
+- Other families can't share Belay's package name: each needs its own, with its own key
+  (ROADMAP.md, "Later").
+
+---
+
+## Declarations
+
+### M1. Declaring a monitoring tool
+
+**Contradicted as written in the brief.** There is no `android:isMonitoringTool`
+attribute: it's absent from the platform's `attrs_manifest.xml`, `public-final.xml` and
+`android.R.attr` in both 37.0 and 37.2, so `aapt2` would reject it. Google Play's
+declaration (support.google.com/googleplay/android-developer/answer/12955211) is a
+meta-data entry:
+`<meta-data android:name="isMonitoringTool" android:value="child_monitoring"/>`. The
+allowed values are `child_monitoring`, `enterprise_management` and `other`
+(`parental_control` isn't one). Play's example puts it under `<manifest>`, but Android only
+reads `<meta-data>` inside `<application>` or a component, so Belay puts it in
+`<application>`. Play's stalkerware policy also asks for "a persistent notification at all
+times when the app is running" (answer/9888380). Belay has one.
+
+### M2. The 37.2 unknown-sources restriction
+
+**Confirmed; the name differs from the brief.** 37.2 adds
+`UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES_INCLUDING_REGISTERED_APP_STORES`
+(`"no_install_unknown_sources_including_registered_app_stores"`). There is no
+`…_GLOBALLY_INCLUDING_…`. From 37.2, `DISALLOW_INSTALL_UNKNOWN_SOURCES` and its
+`_GLOBALLY` variant "do not apply to installations initiated or performed by registered app
+stores" (apps holding `INSTALL_PACKAGES_AS_REGISTERED_APP_STORE`). The new key isn't in
+37.0; setting it there throws "Invalid restriction key". Phase 2 gates it on
+`Build.VERSION.SDK_INT_FULL >= 3700002`.
+
+---
+
+## Emulator images
+
+- Android 17 x86_64 images with 4 KB pages exist only for 37.0
+  (`system-images;android-37.0;google_apis;x86_64` and `google_apis_playstore`); 37.1 and
+  37.2 only come as `_ps16k` (16 KB pages). A Pixel 8 uses 4 KB pages, so CI uses 37.0.
+- CI uses the Google APIs image (no Play Store, so no Play Protect prompts). The Play
+  Store image is closer to the Pixel for Play Protect behavior.
+- This sandbox has no `/dev/kvm`; the emulator runs only in CI (GitHub's Linux runners
+  have KVM).
+
+---
+
+## Phase 0 results
+
+Fill this in from docs/phase0-checklist.md on the Pixel 8. Write what you saw, word for
+word where Android shows a message. No screenshots, no account names, no serial numbers.
+
+| Step | Check | Result | Android build (Settings > About phone) |
+|---|---|---|---|
+| 1 | Play Protect prompt during `provision.sh` (exact words, or none) | pending | |
+| 1 | `dpm set-device-owner` with the release build: Success? | pending | |
+| 2 | Setup checks all ✓; standby bucket "exempted" | pending | |
+| 2 | Notice visible; can't swipe it away; can't turn it off after the restart | pending | |
+| 2 | Quick Settings > Active apps: Belay without a Stop button | pending | |
+| 2 | Settings > Apps > Belay: Force stop, Uninstall, Clear storage greyed out | pending | |
+| 2 | What Android itself says about management (Quick Settings footer, Settings) | pending | |
+| 2 | After a day: Play Protect warnings about Belay (exact words, or none) | pending | |
+| 2 | After a day: still device owner; service running; Background checks pattern overnight | pending | |
+| 3 | Adding the parent-owned Google account: any message | pending | |
+| 3 | Play install seen: "Installed · <app>", "noticed right away", "from Play Store" | pending | |
+| 3 | Raw install source of the Play app (`dumpsys package`) | pending | |
+| 3 | Uninstall seen: "Removed · <app>", "noticed right away" | pending | |
+| 3 | After restart: Belay back by itself; both changes still listed; "phone started" | pending | |
+| 4 | QR provisioning with the same release APK: blocked? (exact words) | pending | |
