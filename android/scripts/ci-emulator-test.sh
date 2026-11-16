@@ -34,6 +34,15 @@ wait_log() {
 }
 # Belay's stored state (debug builds only: run-as). Retries briefly, and shows run-as's
 # own error if it never succeeds.
+# What Belay was doing, for a failed check.
+diagnose() {
+  echo "--- Belay's log (last 80 lines):"
+  "$ADB_BIN" -s "$SERIAL" logcat -d -v brief -s Belay:V AndroidRuntime:E | tail -n 80 || true
+  echo "--- Belay's processes:"
+  ash "ps -A | grep -F $PKG" || true
+  echo "--- last heartbeats:"
+  state | grep -o '"heartbeats":.*' | cut -c 1-1500 || true
+}
 state() {
   local out _
   for _ in 1 2 3 4 5 6; do
@@ -104,10 +113,10 @@ if grep -q '^Success' <<<"$out"; then die "Belay could be uninstalled"; fi
 step "Install, update and remove are detected"
 adb logcat -c
 adb install -t "$TEST_APK"
-wait_log "change: INSTALLED $TEST_PKG by BROADCAST" || die "install not detected"
+wait_log "change: INSTALLED $TEST_PKG by BROADCAST" || { diagnose; die "install not detected"; }
 adb logcat -c
 adb install -r -t "$TEST_APK"
-wait_log "change: UPDATED $TEST_PKG by BROADCAST" || die "update not detected"
+wait_log "change: UPDATED $TEST_PKG by BROADCAST" || { diagnose; die "update not detected"; }
 
 step "Instrumented tests"
 out="$(ash am instrument -w "$TEST_PKG/androidx.test.runner.AndroidJUnitRunner")"
@@ -116,7 +125,7 @@ grep -q '^OK (' <<<"$out" || die "instrumented tests failed"
 
 adb logcat -c
 adb uninstall "$TEST_PKG"
-wait_log "change: REMOVED $TEST_PKG by BROADCAST" || die "removal not detected"
+wait_log "change: REMOVED $TEST_PKG by BROADCAST" || { diagnose; die "removal not detected"; }
 
 step "Restart: Belay comes back by itself, and its log survives"
 adb reboot

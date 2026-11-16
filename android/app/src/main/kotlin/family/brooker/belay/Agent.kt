@@ -56,6 +56,8 @@ object Agent {
     ) {
         val app = context.applicationContext
         executor.execute {
+            val started = System.nanoTime()
+            Log.i(TAG, "step: ${trigger.label}" + if (packages.isEmpty()) "" else " $packages")
             try {
                 if (trigger != Trigger.PACKAGE_BROADCAST && DeviceOwnerSetup.isDeviceOwner(app)) {
                     DeviceOwnerSetup.ensure(app)
@@ -67,6 +69,7 @@ object Agent {
             } catch (t: Throwable) {
                 Log.e(TAG, "agent step failed (${trigger.label})", t)
             } finally {
+                Log.i(TAG, "step done: ${trigger.label} in ${(System.nanoTime() - started) / 1_000_000} ms")
                 done?.invoke()
             }
         }

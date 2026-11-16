@@ -45,7 +45,11 @@ relying on something new, it goes here first, with a source.
 | M1 | Declaring a monitoring tool: `android:isMonitoringTool="parental_control"` | **Contradicted**: it's a meta-data entry | SDK; Play docs |
 | M2 | 37.2 adds `…_INCLUDING_REGISTERED_APP_STORES` | Confirmed; exact name differs from the brief | SDK |
 
-"Emulator" entries become true when the CI emulator job passes; its log is the record.
+"Emulator" entries were seen in CI run 8 (2026-11-16) on the API 37.0 Automated Test Device
+image (`aosp_atd`), where `ci-emulator-test.sh` passed end to end; the job log is the record.
+On the Google APIs image (`google_apis`, informational in CI) everything matched up to
+change detection, where an install wasn't logged within 60 s; that is still being
+investigated, and Phase 0 step 3 checks the same thing on the Pixel.
 
 ---
 
@@ -111,6 +115,12 @@ only to record what happens.
 
 `provision.sh` checks the accounts (`dumpsys account`) and users (`pm list users`)
 before trying, and names the problem.
+
+Seen on the API 37.0 Google APIs emulator (CI run 3): `dpm set-device-owner` refused with
+"Not allowed to set the device owner because there are already some accounts on the
+device" seconds after `provision.sh` had counted none. The image has an account for a short
+while after boot; 45 seconds later there was none. If this happens on a phone,
+`provision.sh` now prints the account types and says what to do.
 
 ### P4. Removing the device owner
 

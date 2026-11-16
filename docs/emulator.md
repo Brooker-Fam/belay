@@ -61,4 +61,11 @@ made from a shell (device owner, the notice's no-dismiss flag, the exempt standb
 the bound `DeviceAdminService`, blocked uninstall), install/update/remove detection, the
 instrumented tests, a restart, and unprovisioning. It refuses to run on anything but an
 emulator. GitHub Actions runs it on every push that touches `android/`
-(`.github/workflows/android.yml`).
+(`.github/workflows/android.yml`), on two images:
+
+- `system-images;android-37.0;aosp_atd;x86_64`, the Automated Test Device image (no Google
+  services). It must pass.
+- `google_apis`, closer to a phone. Informational for now (see platform-notes.md).
+
+The test waits 45 seconds after boot first: the Google APIs image briefly has an account
+right after boot, which makes `dpm set-device-owner` refuse.
