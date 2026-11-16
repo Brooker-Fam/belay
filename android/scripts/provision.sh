@@ -79,7 +79,7 @@ fi
 say "APK: $APK"
 info "test-only (debug) build: $TEST_ONLY"
 [ -n "$signer" ] && info "signed by: ${signer#*|}" && info "certificate SHA-256: ${signer%%|*}"
-if [ "$TEST_ONLY" = no ] && printf '%s' "$signer" | grep -q 'CN=Android Debug'; then
+if [ "$TEST_ONLY" = no ] && [[ "$signer" == *"CN=Android Debug"* ]]; then
   die "This release APK is signed with a debug key." \
     "A device owner can only ever be updated with the key it was installed with." \
     "Sign release builds with the family's release key: see docs/signing.md."
@@ -94,12 +94,11 @@ if [ "${PHONE_SDK:-0}" -lt 31 ] 2>/dev/null; then
 fi
 
 UPDATE=0
-current_owners="$(owners)"
 if is_belay_owner; then
   UPDATE=1
   say "Belay is already the device owner: installing the APK as an update."
-elif ! printf '%s' "$current_owners" | grep -qi "no owners"; then
-  die "This phone already has a device owner or profile owner:" "$current_owners" \
+elif has_owner; then
+  die "This phone already has a device owner or profile owner:" "$(owners_text)" \
     "Factory reset it first (Settings > System > Reset options > Erase all data)."
 else
   accounts="$(ash dumpsys account | grep -c 'Account {' || true)"
@@ -115,7 +114,7 @@ else
   if [ "$users" != 1 ]; then
     die "The phone has $users users or profiles (a guest, a work profile, Private Space...)." \
       "Android only lets an app become device owner when there's a single user:" \
-      "$(ash pm list users | grep 'UserInfo{' | sed 's/^[[:space:]]*/  /')" \
+      "$(ash pm list users | grep 'UserInfo{' | sed 's/^[[:space:]]*/  /' || true)" \
       "Remove the others in Settings > System > Users, or factory reset."
   fi
   info "No accounts, one user, no device owner: ready."
@@ -141,7 +140,7 @@ if [ "$DRY_RUN" = 1 ]; then
 else
   out="$(adb "${install_args[@]}" "$APK" 2>&1)" || true
   printf '%s\n' "$out" | sed 's/^/  /'
-  if ! printf '%s' "$out" | grep -q '^Success'; then
+  if ! grep -q '^Success' <<<"$out"; then
     case "$out" in
       *INSTALL_FAILED_UPDATE_INCOMPATIBLE*)
         die "A Belay signed with a different key is already installed." \
@@ -162,7 +161,7 @@ if [ "$UPDATE" = 0 ]; then
   else
     out="$(ash dpm set-device-owner "$ADMIN" 2>&1)" || true
     printf '%s\n' "$out" | sed 's/^/  /'
-    printf '%s' "$out" | grep -q '^Success' || die "dpm set-device-owner failed (above)." \
+    grep -q '^Success' <<<"$out" || die "dpm set-device-owner failed (above)." \
       "Common causes: an account or a second user appeared; the phone isn't freshly reset."
   fi
 fi
@@ -171,7 +170,7 @@ fi
 say "Granting usage access (for Phase 3 screen time)..."
 run adb shell appops set "$PKG" GET_USAGE_STATS allow
 if [ "$DRY_RUN" = 0 ]; then
-  if ash appops get "$PKG" GET_USAGE_STATS | grep -q 'allow'; then
+  if ash appops get "$PKG" GET_USAGE_STATS | contains 'allow'; then
     info "usage access: granted"
   else
     warn "usage access didn't stick: $(ash appops get "$PKG" GET_USAGE_STATS)"
@@ -182,7 +181,7 @@ say "Exempting Belay from battery optimization (Doze still applies to everything
 run_quiet adb shell dumpsys deviceidle whitelist "+$PKG"
 BATTERY_OK=0
 if [ "$DRY_RUN" = 0 ]; then
-  if ash dumpsys deviceidle whitelist | grep -q ",$PKG,"; then
+  if ash dumpsys deviceidle whitelist | contains ",$PKG,"; then
     BATTERY_OK=1
     info "battery exemption: granted"
   else
@@ -199,7 +198,7 @@ if [ "$DRY_RUN" = 1 ]; then
   exit 0
 fi
 service_running() {
-  ash dumpsys activity services "$PKG/.service.BelayService" | grep -q 'isForeground=true'
+  ash dumpsys activity services "$PKG/.service.BelayService" | contains 'isForeground=true'
 }
 wait_for_service() {
   local _
@@ -231,7 +230,7 @@ fi
 
 say ""
 say "Result:"
-owners | sed 's/^/  /'
+owners_text | sed 's/^/  owners: /'
 if [ "$running" = 1 ]; then
   info "Belay's foreground service is running."
 else

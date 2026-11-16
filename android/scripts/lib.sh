@@ -13,6 +13,20 @@ ASSUME_YES=0
 SERIAL="${ANDROID_SERIAL:-}"
 
 say() { printf '%s\n' "$*"; }
+
+# `cmd | contains TEXT` and `cmd | matches REGEX`: like grep -q, but they read all of
+# their input first. With pipefail, `cmd | grep -q` can fail although it matched:
+# grep -q exits at the first match and cmd dies of SIGPIPE.
+contains() {
+  local text
+  text="$(cat)"
+  [[ "$text" == *"$1"* ]]
+}
+matches() {
+  local text
+  text="$(cat)"
+  grep -Eq -- "$1" <<<"$text"
+}
 info() { printf '  %s\n' "$*"; }
 warn() { printf 'WARNING: %s\n' "$*" >&2; }
 die() {
@@ -31,7 +45,7 @@ build_tool() {
         printf '%s\n' "$dir/$name"
         return
       fi
-    done < <(find "$sdk/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -rV)
+    done < <(find "$sdk/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -r)
   fi
   command -v "$name" 2>/dev/null || true
 }
@@ -90,12 +104,12 @@ pick_device() {
   ready="$(printf '%s\n' "$list" | awk '$2 == "device" { print $1 }')"
   unauthorized="$(printf '%s\n' "$list" | awk '$2 == "unauthorized" { print $1 }')"
   if [ -n "$SERIAL" ]; then
-    printf '%s\n' "$ready" | grep -qxF "$SERIAL" ||
+    grep -qxF -- "$SERIAL" <<<"$ready" ||
       die "Phone $SERIAL isn't connected and authorized." "adb devices says:" "$list"
     return
   fi
   local count
-  count="$(printf '%s\n' "$ready" | grep -c . || true)"
+  count="$(grep -c . <<<"$ready" || true)"
   if [ "$count" = 0 ]; then
     if [ -n "$unauthorized" ]; then
       die "The phone hasn't allowed this computer yet." \
@@ -121,17 +135,29 @@ phone_summary() {
   PHONE_SDK="$sdk"
 }
 
-# Prints the device-owner/profile-owner lines of `dpm list-owners` ("no owners" when none).
+# The lines of `dpm list-owners`: "User 0: admin=<component>,DeviceOwner" per owner.
+# Android 17 prints nothing when there are none (older versions said "no owners").
 owners() { ash dpm list-owners 2>/dev/null || true; }
+has_owner() { owners | contains "admin="; }
+is_belay_owner() { owners | contains "admin=$PKG/"; }
+# For messages: the owners, or "none".
+owners_text() {
+  local text
+  text="$(owners)"
+  if [[ "$text" == *"admin="* ]]; then printf '%s\n' "$text"; else printf 'none\n'; fi
+}
 
-is_belay_owner() { owners | grep -q "$PKG/"; }
+# SHA-256 of a file (Linux sha256sum, macOS shasum).
+sha256_of() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi
+}
 
 # Test-only (debug) builds can be released without a factory reset.
 apk_is_test_only() {
   local aapt2
   aapt2="$(build_tool aapt2)"
   [ -n "$aapt2" ] || return 2
-  "$aapt2" dump xmltree --file AndroidManifest.xml "$1" 2>/dev/null | grep -q 'android:testOnly([^)]*)=true'
+  "$aapt2" dump xmltree --file AndroidManifest.xml "$1" 2>/dev/null | matches 'android:testOnly\([^)]*\)=true'
 }
 
 apk_package() {

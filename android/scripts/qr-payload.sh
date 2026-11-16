@@ -29,8 +29,11 @@ hex="${signer%%|*}"
 checksum="$(python3 -c 'import base64,sys; print(base64.urlsafe_b64encode(bytes.fromhex(sys.argv[1])).decode().rstrip("="))' "$hex")"
 
 say "Checking that $URL serves this APK..."
-local_sha="$(sha256sum "$APK" | cut -d' ' -f1)"
-remote_sha="$(curl -fsSL "$URL" | sha256sum | cut -d' ' -f1)" || die "Couldn't download $URL"
+local_sha="$(sha256_of "$APK")"
+tmp="$(mktemp)"
+trap 'rm -f "$tmp"' EXIT
+curl -fsSL -o "$tmp" "$URL" || die "Couldn't download $URL"
+remote_sha="$(sha256_of "$tmp")"
 [ "$local_sha" = "$remote_sha" ] || die "The URL serves a different file than $APK." \
   "local  $local_sha" "remote $remote_sha"
 info "same file: $local_sha"

@@ -34,8 +34,8 @@ find_adb
 pick_device
 phone_summary
 
-ash pm path "$PKG" | grep -q '^package:' || die "Belay isn't installed on this phone."
-if ! ash dumpsys package "$PKG" | grep -E '^[[:space:]]+(flags|pkgFlags)=' | grep -q 'TEST_ONLY'; then
+ash pm path "$PKG" | contains 'package:' || die "Belay isn't installed on this phone."
+if ! ash dumpsys package "$PKG" | matches '^[[:space:]]+(flags|pkgFlags)=.*TEST_ONLY'; then
   die "The installed Belay is a release build, not a test-only debug build." \
     "Only a factory reset removes a release device owner: see docs/pixel.md."
 fi
@@ -57,6 +57,6 @@ fi
 
 if [ "$DRY_RUN" = 0 ]; then
   say "Result:"
-  owners | sed 's/^/  /'
-  if ash pm path "$PKG" | grep -q '^package:'; then info "Belay is still installed."; else info "Belay is uninstalled."; fi
+  owners_text | sed 's/^/  owners: /'
+  if ash pm path "$PKG" | contains 'package:'; then info "Belay is still installed."; else info "Belay is uninstalled."; fi
 fi

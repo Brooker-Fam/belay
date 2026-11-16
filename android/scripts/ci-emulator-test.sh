@@ -28,11 +28,12 @@ phone_summary
 
 step() { printf '\n=== %s\n' "$*"; }
 # Waits until Belay logs a line containing $1 (the log is cleared before each action).
+# grep reads from a process substitution, so its own status is the result.
 wait_log() {
-  timeout "${2:-60}" "$ADB_BIN" -s "$SERIAL" logcat -v brief -s Belay:I | grep -m1 -F "$1"
+  grep -m1 -F -- "$1" < <(timeout "${2:-60}" "$ADB_BIN" -s "$SERIAL" logcat -v brief -s Belay:I)
 }
 state() { ash run-as "$PKG" cat no_backup/agent-state.json; }
-service_running() { ash dumpsys activity services "$PKG/.service.BelayService" | grep -q 'isForeground=true'; }
+service_running() { ash dumpsys activity services "$PKG/.service.BelayService" | contains 'isForeground=true'; }
 wait_boot() {
   adb wait-for-device
   for _ in $(seq 1 150); do
@@ -46,26 +47,30 @@ step "Provision the debug build with provision.sh"
 "$SCRIPTS_DIR/provision.sh" --yes --serial "$SERIAL" "$APK"
 
 step "Device owner, service and managed notice"
-owners | grep -q "$PKG/" || die "Belay isn't the device owner" "$(owners)"
+is_belay_owner || die "Belay isn't the device owner" "$(owners_text)"
+owners_text
 service_running || die "BelayService isn't running in the foreground"
-ash dumpsys activity services "$PKG/.service.BelayAdminService" | grep -q 'ServiceRecord' ||
+ash dumpsys activity services "$PKG/.service.BelayAdminService" | contains 'ServiceRecord' ||
   die "Android didn't bind BelayAdminService (the DeviceAdminService)"
 echo "DeviceAdminService bound by the system"
-record="$(ash dumpsys notification --noredact | grep "pkg=$PKG " | head -1)"
+record="$(ash dumpsys notification --noredact | grep -F "pkg=$PKG " || true)"
+record="${record%%$'\n'*}"
 [ -n "$record" ] || die "no notification from $PKG"
 printf '%s\n' "$record"
-flags="$(printf '%s\n' "$record" | grep -o 'flags=0x[0-9a-fA-F]*' | head -1 | cut -d= -f2)"
+flags="$(grep -o 'flags=0x[0-9a-fA-F]*' <<<"$record" || true)"
+flags="${flags%%$'\n'*}"
+flags="${flags#flags=}"
 # FLAG_NO_DISMISS (0x2000, hidden): Android 14+ keeps a device owner's ongoing notice undismissable.
 [ -n "$flags" ] && [ $((flags & 0x2000)) != 0 ] || die "the managed notice can be dismissed (flags=$flags)"
 echo "managed notice flags=$flags: not dismissible"
 bucket="$(ash am get-standby-bucket "$PKG")"
 [ "$bucket" = 5 ] || die "standby bucket is $bucket, expected 5 (exempted)"
 echo "standby bucket: $bucket (exempted)"
-ash dumpsys deviceidle whitelist | grep -q ",$PKG," || die "not on the battery-optimization allowlist"
-ash appops get "$PKG" GET_USAGE_STATS | grep -q allow || die "usage access not granted"
+ash dumpsys deviceidle whitelist | contains ",$PKG," || die "not on the battery-optimization allowlist"
+ash appops get "$PKG" GET_USAGE_STATS | contains allow || die "usage access not granted"
 out="$(adb uninstall "$PKG" 2>&1 || true)"
 printf '%s\n' "$out"
-printf '%s' "$out" | grep -q '^Success' && die "Belay could be uninstalled"
+if grep -q '^Success' <<<"$out"; then die "Belay could be uninstalled"; fi
 
 step "Install, update and remove are detected"
 adb logcat -c
@@ -78,7 +83,7 @@ wait_log "change: UPDATED $TEST_PKG by BROADCAST" || die "update not detected"
 step "Instrumented tests"
 out="$(ash am instrument -w "$TEST_PKG/androidx.test.runner.AndroidJUnitRunner")"
 printf '%s\n' "$out"
-printf '%s\n' "$out" | grep -q '^OK (' || die "instrumented tests failed"
+grep -q '^OK (' <<<"$out" || die "instrumented tests failed"
 
 adb logcat -c
 adb uninstall "$TEST_PKG"
@@ -89,13 +94,12 @@ adb reboot
 wait_boot
 for _ in $(seq 1 120); do service_running && break; sleep 1; done
 service_running || die "BelayService didn't come back after the restart"
-state | grep -q "\"$TEST_PKG\"" || die "the change log didn't survive the restart"
-state | grep -q '"phone started"' || die "no boot heartbeat after the restart"
-ash dumpsys notification --noredact | grep -A3 "AppSettings: $PKG " | head -6 || true
+state | contains "\"$TEST_PKG\"" || die "the change log didn't survive the restart"
+state | contains '"phone started"' || die "no boot heartbeat after the restart"
 
 step "Unprovision (debug builds only)"
 "$SCRIPTS_DIR/unprovision.sh" --yes --serial "$SERIAL"
-owners | grep -qi 'no owners' || die "still has an owner" "$(owners)"
-if ash pm path "$PKG" | grep -q '^package:'; then die "Belay is still installed"; fi
+if has_owner; then die "still has an owner" "$(owners_text)"; fi
+if ash pm path "$PKG" | contains 'package:'; then die "Belay is still installed"; fi
 
 step "All Phase 0 emulator checks passed"
