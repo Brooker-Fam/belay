@@ -368,6 +368,11 @@ docs [2026-10-28] only say owners "are exempt from entering the restricted bucke
   APIs need `DEVICE_POWER` or a role).
 - `adb shell dumpsys deviceidle whitelist +<pkg>` writes `/data/system/deviceidle.xml`,
   read back at boot; the entry survives reboots and updates and is removed on uninstall.
+  **But the file is written 5 seconds after the change** (`DeviceIdleController.writeConfigFileLocked`
+  posts `MSG_WRITE_CONFIG` with a 5000 ms delay). Seen on the API 37.0 emulator:
+  `provision.sh` restarted the phone about 2 seconds after the grant, and the exemption
+  was gone after the boot. `provision.sh` now waits 8 seconds before its restart, checks
+  again afterwards, and grants again if needed.
 - `ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` (needs `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`)
   shows "Let app always run in background?"; Allow adds the same allowlist entry. It's the
   fallback: Belay's Setup checks show an Allow button if the exemption is missing.

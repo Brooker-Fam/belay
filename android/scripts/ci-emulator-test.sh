@@ -32,7 +32,18 @@ step() { printf '\n=== %s\n' "$*"; }
 wait_log() {
   grep -m1 -F -- "$1" < <(timeout "${2:-60}" "$ADB_BIN" -s "$SERIAL" logcat -v brief -s Belay:I)
 }
-state() { ash run-as "$PKG" cat no_backup/agent-state.json; }
+# Belay's stored state (debug builds only: run-as). Retries briefly, and shows run-as's
+# own error if it never succeeds.
+state() {
+  local out _
+  for _ in 1 2 3 4 5 6; do
+    out="$(adb shell run-as "$PKG" cat no_backup/agent-state.json 2>&1 | tr -d '\r' || true)"
+    case "$out" in "{"*) printf '%s\n' "$out"; return 0 ;; esac
+    sleep 2
+  done
+  printf 'run-as failed: %s\n' "$out" >&2
+  return 1
+}
 service_running() { ash dumpsys activity services "$PKG/.service.BelayService" | contains 'isForeground=true'; }
 wait_boot() {
   adb wait-for-device

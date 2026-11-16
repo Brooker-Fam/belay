@@ -224,6 +224,9 @@ wait_for_service 20 && running=1
 #    back by itself after a boot.
 if [ "$UPDATE" = 0 ] && [ "$REBOOT" = 1 ] && [ "$running" = 1 ]; then
   say "Restarting the phone once (Android locks the managed notice's settings at boot)..."
+  # Android saves the battery allowlist 5 seconds after a change
+  # (DeviceIdleController.writeConfigFileLocked): restarting sooner loses the exemption.
+  sleep 8
   adb reboot
   adb wait-for-device
   for _ in $(seq 1 150); do
@@ -233,7 +236,14 @@ if [ "$UPDATE" = 0 ] && [ "$REBOOT" = 1 ] && [ "$running" = 1 ]; then
   say "If the phone asks for its PIN, unlock it now."
   running=0
   wait_for_service 180 && running=1
+  if [ "$BATTERY_OK" = 1 ] && ! ash dumpsys deviceidle whitelist | contains ",$PKG,"; then
+    warn "The battery exemption didn't survive the restart; granting it again."
+    adb shell dumpsys deviceidle whitelist "+$PKG" >/dev/null
+    sleep 8
+  fi
 fi
+BATTERY_OK=0
+ash dumpsys deviceidle whitelist | contains ",$PKG," && BATTERY_OK=1
 
 say ""
 say "Result:"
