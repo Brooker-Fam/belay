@@ -104,8 +104,7 @@ else
   accounts="$(ash dumpsys account | grep -c 'Account {' || true)"
   if [ "$accounts" != 0 ]; then
     # Only the account types: names are email addresses.
-    types="$(ash dumpsys account | sed -n 's/.*Account {name=[^,]*, type=\([^}]*\)}.*/\1/p' | sort -u | tr '\n' ' ')"
-    die "The phone has $accounts account(s) on it (types: $types)." \
+    die "The phone has $accounts account(s) on it:" "$(account_types)" \
       "Android only lets an app become device owner on a phone with no accounts." \
       "Factory reset, and skip every account in the setup wizard. Add the parent-owned" \
       "Google account after provisioning (docs/pixel.md)."
@@ -161,8 +160,16 @@ if [ "$UPDATE" = 0 ]; then
   else
     out="$(ash dpm set-device-owner "$ADMIN" 2>&1)" || true
     printf '%s\n' "$out" | sed 's/^/  /'
-    grep -q '^Success' <<<"$out" || die "dpm set-device-owner failed (above)." \
-      "Common causes: an account or a second user appeared; the phone isn't freshly reset."
+    if ! grep -q '^Success' <<<"$out"; then
+      if grep -q 'accounts' <<<"$out"; then
+        die "dpm set-device-owner found an account (above), added after the check. Its type:" \
+          "$(account_types)" \
+          "An app on the phone signed in by itself. Remove that account in Settings >" \
+          "Passwords & accounts (or uninstall the app for now), then run this again."
+      fi
+      die "dpm set-device-owner failed (above)." \
+        "Common causes: an account or a second user appeared; the phone isn't freshly reset."
+    fi
   fi
 fi
 

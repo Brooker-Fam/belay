@@ -32,7 +32,7 @@ warn() { printf 'WARNING: %s\n' "$*" >&2; }
 die() {
   printf '\nSTOPPED: %s\n' "$1" >&2
   shift
-  for line in "$@"; do printf '  %s\n' "$line" >&2; done
+  for line in "$@"; do printf '%s\n' "$line" | sed 's/^/  /' >&2; done
   exit 1
 }
 
@@ -145,6 +145,14 @@ owners_text() {
   local text
   text="$(owners)"
   if [[ "$text" == *"admin="* ]]; then printf '%s\n' "$text"; else printf 'none\n'; fi
+}
+
+# The types of the accounts on the phone, with counts. Never the names: they are email
+# addresses.
+account_types() {
+  local text
+  text="$(ash dumpsys account 2>/dev/null || true)"
+  sed -n 's/.*Account {name=[^,]*, type=\([^}]*\)}.*/\1/p' <<<"$text" | sort | uniq -c | sed 's/^ *//'
 }
 
 # SHA-256 of a file (Linux sha256sum, macOS shasum).

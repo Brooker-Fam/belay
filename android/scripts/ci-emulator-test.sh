@@ -43,6 +43,13 @@ wait_boot() {
   die "the emulator didn't finish booting"
 }
 
+step "Let the freshly booted system settle, then list its accounts (types only)"
+# Something on a Google APIs image can add an account seconds after boot, which then
+# blocks set-device-owner. Wait, and show what is there.
+sleep "${SETTLE_SECONDS:-45}"
+types="$(account_types)"
+echo "accounts: ${types:-none}"
+
 step "Provision the debug build with provision.sh"
 "$SCRIPTS_DIR/provision.sh" --yes --serial "$SERIAL" "$APK"
 
