@@ -135,7 +135,14 @@ wait_boot
 for _ in $(seq 1 120); do service_running && break; sleep 1; done
 service_running || die "BelayService didn't come back after the restart"
 state | contains "\"$TEST_PKG\"" || die "the change log didn't survive the restart"
-state | contains '"phone started"' || die "no boot heartbeat after the restart"
+# BOOT_COMPLETED reaches apps late on images with Google services; the DeviceAdminService
+# has usually started Belay well before. Wait for the boot heartbeat.
+booted=0
+for _ in $(seq 1 60); do
+  if state | contains '"phone started"'; then booted=1; break; fi
+  sleep 2
+done
+[ "$booted" = 1 ] || { diagnose; die "no boot heartbeat within two minutes of the restart"; }
 
 step "Unprovision (debug builds only)"
 "$SCRIPTS_DIR/unprovision.sh" --yes --serial "$SERIAL"
