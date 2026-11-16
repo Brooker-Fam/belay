@@ -22,7 +22,7 @@ relying on something new, it goes here first, with a source.
 | P2 | `adb shell dpm set-device-owner` still works for an unapproved app | Not stated by Google; works in practice | Emulator; Pixel 8 pending (step 1) |
 | P3 | `dpm set-device-owner` needs no accounts, no other users or profiles | Confirmed, plus a new Android 17 condition | AOSP (the refusals); Emulator (the clean case) |
 | P4 | `dpm remove-active-admin` only for test-only admins; otherwise factory reset | Confirmed, with nuance | AOSP; Emulator (debug) |
-| P5 | What `dpm set-device-owner` broadcasts, in which order | Confirmed | AOSP; Emulator |
+| P5 | What `dpm set-device-owner` broadcasts, and what starts Belay | Confirmed; the broadcasts miss a never-run app | AOSP; Emulator |
 | A1 | A Family Link child account can't sit next to a device owner | Very likely; unconfirmed by Google | Sources only |
 | A2 | A parent-owned regular Google account works with Play on a fully managed phone | Third-party sources only | Pixel 8 pending (step 3) |
 | A3 | The Android Management API isn't open to parental control | Confirmed | Docs |
@@ -141,7 +141,15 @@ before trying, and names the problem.
    broadcast (`core/res/AndroidManifest.xml`), so only the system can send it.
 3. `setUserProvisioningState(STATE_USER_SETUP_FINALIZED)`.
 
-Belay runs its setup from `DEVICE_OWNER_CHANGED`, and again on every later trigger.
+What actually starts Belay: an app fresh from `adb install` is in the *stopped state*,
+and Android doesn't deliver broadcasts to stopped apps unless the sender adds
+`FLAG_INCLUDE_STOPPED_PACKAGES`, which DevicePolicyManagerService doesn't for these. On the
+API 37.0 emulator, Belay's log showed no `DEVICE_OWNER_CHANGED` heartbeat. Right after that
+broadcast, `setDeviceOwner` calls
+`DeviceAdminServiceController.startServiceForAdmin(…, "set-device-owner")`, which binds
+Belay's `DeviceAdminService` (B7) and so starts Belay without anyone opening it. The system
+binds it again at every boot and user unlock. `provision.sh` also opens Belay. The
+broadcast receivers stay, for a Belay that is already running when ownership changes.
 
 `dpm list-owners` changed in Android 17 (`DeviceAdmins.printAllOwners`): it prints
 **nothing** when there are no owners (older versions printed "no owners"), and one line

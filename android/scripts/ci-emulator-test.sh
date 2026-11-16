@@ -56,9 +56,12 @@ step "Provision the debug build with provision.sh"
 step "Device owner, service and managed notice"
 is_belay_owner || die "Belay isn't the device owner" "$(owners_text)"
 owners_text
-# The manifest receiver got DEVICE_OWNER_CHANGED (not only the app being opened).
-state | contains '"device owner changed"' || die "no heartbeat from DEVICE_OWNER_CHANGED"
-echo "DEVICE_OWNER_CHANGED reached the manifest receiver"
+# What woke Belay, from its heartbeat log. After `dpm set-device-owner`, Android binds
+# the DeviceAdminService, which starts Belay even though nothing opened it yet.
+triggers="$(state | grep -o '"trigger":"[^"]*"' | sort | uniq -c || true)"
+[ -n "$triggers" ] || die "couldn't read Belay's state with run-as"
+printf 'heartbeats by trigger:\n%s\n' "$triggers"
+state | contains '"admin service bound"' || die "Android never bound BelayAdminService"
 service_running || die "BelayService isn't running in the foreground"
 ash dumpsys activity services "$PKG/.service.BelayAdminService" | contains 'ServiceRecord' ||
   die "Android didn't bind BelayAdminService (the DeviceAdminService)"
