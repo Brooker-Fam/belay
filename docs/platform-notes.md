@@ -45,10 +45,12 @@ relying on something new, it goes here first, with a source.
 | M1 | Declaring a monitoring tool: `android:isMonitoringTool="parental_control"` | **Contradicted**: it's a meta-data entry | SDK; Play docs |
 | M2 | 37.2 adds `…_INCLUDING_REGISTERED_APP_STORES` | Confirmed; exact name differs from the brief | SDK |
 
-"Emulator" entries were seen in CI run 8 (2026-11-16) on the API 37.0 Automated Test Device
-image (`aosp_atd`), where `ci-emulator-test.sh` passed end to end; the job log is the record.
-The Google APIs image (`google_apis`, informational in CI) matched it, with one
-difference in K2: which detection layer reported an install first.
+"Emulator" entries were seen in CI: `ci-emulator-test.sh` passed end to end on the API 37.0
+Automated Test Device image (`aosp_atd`, required) from run 8, and on the API 37.0 Google
+APIs image (`google_apis`, informational for now) in run 11 (2026-11-16). The job logs are
+the record. The Google APIs image differed in three small ways: an account for a few
+seconds after boot (P3), which detection layer reported an install first (K2), and
+`BOOT_COMPLETED` arriving later, after the `DeviceAdminService` had already started Belay (P5).
 
 ---
 
