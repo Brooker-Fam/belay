@@ -1,0 +1,33 @@
+# Build output
+.gradle/
+.kotlin/
+build/
+local.properties
+*.apk
+*.aab
+*.idsig
+captures/
+
+# Editors and OS
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+# Never commit secrets or keys (docs/signing.md, CLAUDE.md "Public-repo hygiene")
+*.jks
+*.keystore
+*.p12
+*.pem
+*.key
+signing.properties
+.env
+.env.*
+
+# Output of android/scripts/qr-payload.sh
+belay-provisioning.json
+belay-provisioning.png
+
+# Real device data never goes in the repository
+*.hprof
+bugreport*.zip

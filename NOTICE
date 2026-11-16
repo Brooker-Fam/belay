@@ -1,0 +1,18 @@
+Belay
+Copyright 2026 Brooker Fam
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+No third-party source code is copied into this repository. These projects were
+read as references; docs/prior-art.md says what each one taught us:
+
+- kidctl (MIT) - https://github.com/kidctl/kidctl
+- TestDPC (Apache-2.0) - https://github.com/googlesamples/android-testdpc
+- Headwind MDM Android agent (Apache-2.0) - https://github.com/h-mdm/hmdm-android
+
+If code is ever adapted from one of them, its copyright and license notice is
+kept in the adapted file and listed here.
+
+The Android agent depends on the libraries in android/gradle/libs.versions.toml
+(AndroidX, Jetpack Compose, WorkManager, kotlinx.serialization,
+kotlinx.coroutines), which are Apache-2.0 and are not redistributed as source.
