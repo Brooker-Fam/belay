@@ -47,9 +47,8 @@ relying on something new, it goes here first, with a source.
 
 "Emulator" entries were seen in CI run 8 (2026-11-16) on the API 37.0 Automated Test Device
 image (`aosp_atd`), where `ci-emulator-test.sh` passed end to end; the job log is the record.
-On the Google APIs image (`google_apis`, informational in CI) everything matched up to
-change detection, where an install wasn't logged within 60 s; that is still being
-investigated, and Phase 0 step 3 checks the same thing on the Pixel.
+The Google APIs image (`google_apis`, informational in CI) matched it, with one
+difference in K2: which detection layer reported an install first.
 
 ---
 
@@ -249,6 +248,13 @@ Belay: a runtime receiver registered once per process (`PackageWatcher`), plus
 Belay stores the cursor as (`BOOT_COUNT`, sequence). A changed boot count means a full
 scan (`Reconcile.plan` in `:core`, with tests). Removed packages and enable/disable
 changes simply produce no diff when nothing changed.
+
+Seen on the API 37.0 emulators: on the ATD image, installs, updates and removals were each
+logged "by BROADCAST" within a second. On the slower Google APIs image, an install that
+landed while Belay was still busy with its post-boot full scan (264 packages, 5.6 s) was
+logged "by CHANGED_PACKAGES": the next queued step's `getChangedPackages` saw it before the
+broadcast's step ran, which then found nothing new. The layers overlap as designed: no
+miss, no duplicate.
 
 ### K3. `QUERY_ALL_PACKAGES`
 
