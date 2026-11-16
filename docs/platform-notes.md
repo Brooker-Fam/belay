@@ -20,7 +20,7 @@ relying on something new, it goes here first, with a source.
 |---|---|---|---|
 | P1 | Google blocks QR provisioning of unapproved device-owner apps | Confirmed | Docs; Pixel 8 pending (step 4) |
 | P2 | `adb shell dpm set-device-owner` still works for an unapproved app | Not stated by Google; works in practice | Emulator; Pixel 8 pending (step 1) |
-| P3 | `dpm set-device-owner` needs no accounts, no other users or profiles | Confirmed, plus a new Android 17 condition | AOSP; Emulator |
+| P3 | `dpm set-device-owner` needs no accounts, no other users or profiles | Confirmed, plus a new Android 17 condition | AOSP (the refusals); Emulator (the clean case) |
 | P4 | `dpm remove-active-admin` only for test-only admins; otherwise factory reset | Confirmed, with nuance | AOSP; Emulator (debug) |
 | P5 | What `dpm set-device-owner` broadcasts, in which order | Confirmed | AOSP; Emulator |
 | A1 | A Family Link child account can't sit next to a device owner | Very likely; unconfirmed by Google | Sources only |

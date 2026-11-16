@@ -49,6 +49,9 @@ step "Provision the debug build with provision.sh"
 step "Device owner, service and managed notice"
 is_belay_owner || die "Belay isn't the device owner" "$(owners_text)"
 owners_text
+# The manifest receiver got DEVICE_OWNER_CHANGED (not only the app being opened).
+state | contains '"device owner changed"' || die "no heartbeat from DEVICE_OWNER_CHANGED"
+echo "DEVICE_OWNER_CHANGED reached the manifest receiver"
 service_running || die "BelayService isn't running in the foreground"
 ash dumpsys activity services "$PKG/.service.BelayAdminService" | contains 'ServiceRecord' ||
   die "Android didn't bind BelayAdminService (the DeviceAdminService)"
