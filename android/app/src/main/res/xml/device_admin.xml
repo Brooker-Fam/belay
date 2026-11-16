@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A device owner doesn't need legacy uses-policies for the APIs Belay calls.
+     Declare a policy here only when a phase needs it. -->
+<device-admin>
+    <uses-policies />
+</device-admin>

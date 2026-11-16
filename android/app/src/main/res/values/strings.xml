@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Belay</string>
+
+    <!-- The always-visible managed notice. -->
+    <string name="notice_title">This phone is managed by your parent</string>
+    <string name="notice_text">Tap to see what your parent can see.</string>
+    <string name="channel_managed_name">Managed phone notice</string>
+    <string name="channel_managed_description">Shows while Belay manages this phone.</string>
+
+    <!-- Device admin. -->
+    <string name="admin_description">Lets your parent manage this phone with Belay.</string>
+    <string name="admin_disable_warning">Belay is how your parent manages this phone. Only your parent can turn it off.</string>
+
+    <!-- Main screen. Plain, respectful words for a 12-year-old. -->
+    <string name="main_title">This phone is managed by your parent.</string>
+    <string name="main_intro">Belay is the app your parent uses to look after this phone. This screen shows exactly what Belay collects. It doesn\'t collect anything else.</string>
+    <string name="status_set_up">Belay is set up on this phone.</string>
+    <string name="status_not_set_up">Belay isn\'t set up on this phone yet.</string>
+    <string name="status_not_set_up_detail">Your parent sets it up from a computer.</string>
+    <plurals name="apps_launchable">
+        <item quantity="one">%d app you can open</item>
+        <item quantity="other">%d apps you can open</item>
+    </plurals>
+    <plurals name="packages_total">
+        <item quantity="one">%d package in all, counting the system\'s own</item>
+        <item quantity="other">%d packages in all, counting the system\'s own</item>
+    </plurals>
+    <string name="section_can_see">What your parent can see</string>
+    <string name="data_stays_here">For now, all of this stays on this phone. Nothing is sent anywhere yet.</string>
+    <string name="section_changes">Recent app changes</string>
+    <string name="no_changes">No app changes yet.</string>
+    <string name="kind_installed">Installed</string>
+    <string name="kind_updated">Updated</string>
+    <string name="kind_removed">Removed</string>
+    <string name="kind_reinstalled">Installed again</string>
+    <string name="detected_broadcast">noticed right away</string>
+    <string name="detected_changed_packages">noticed on a later check</string>
+    <string name="detected_snapshot">found by a full check</string>
+
+    <!-- Setup checks: for whoever sets the phone up. -->
+    <string name="section_checks">Setup checks</string>
+    <string name="check_device_owner">Belay is the device owner</string>
+    <string name="check_uninstall_blocked">Belay can\'t be uninstalled</string>
+    <string name="check_notifications">Managed notice can show</string>
+    <string name="check_battery">Battery: not restricted</string>
+    <string name="check_usage_access">Usage access</string>
+    <string name="check_service">Background service running</string>
+    <string name="check_permission">Permission %1$s</string>
+    <string name="fix_battery">Allow</string>
+    <string name="section_background">Background checks</string>
+    <string name="section_phone">Phone</string>
+    <string name="section_self">Belay itself</string>
+
+    <!-- Debug builds only. -->
+    <string name="release_button">Release this phone (debug build)</string>
+    <string name="release_confirm_title">Release this phone?</string>
+    <string name="release_confirm_text">Belay stops being the device owner. Debug builds only: you can then uninstall it without a factory reset.</string>
+    <string name="release_confirm_yes">Release</string>
+    <string name="cancel">Cancel</string>
+</resources>

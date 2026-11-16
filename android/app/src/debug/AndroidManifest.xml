@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug builds are test-only: they install with `adb install -t`, and
+     `dpm remove-active-admin` (android/scripts/unprovision.sh) or the "Release this phone"
+     button can release device owner without a factory reset. Release builds are not
+     test-only: once a release build is device owner, only a factory reset removes it. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:testOnly="true" />
+</manifest>

@@ -1,0 +1,278 @@
+package family.brooker.belay.ui
+
+import android.text.format.DateUtils
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import family.brooker.belay.AgentView
+import family.brooker.belay.R
+import family.brooker.belay.core.AppChange
+import family.brooker.belay.core.ChangeKind
+import family.brooker.belay.core.DataCategory
+import family.brooker.belay.core.Detection
+import family.brooker.belay.core.Heartbeat
+import family.brooker.belay.core.PackageRecord
+import family.brooker.belay.health.Health
+import family.brooker.belay.health.HealthReader
+import family.brooker.belay.inventory.Collectors
+
+@Composable
+fun MainScreen(view: AgentView?, onAllowBattery: () -> Unit, onRelease: (() -> Unit)?) {
+    Scaffold { padding ->
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            item { Header() }
+            if (view == null) {
+                item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
+                return@LazyColumn
+            }
+            item { StatusCard(view) }
+            item { CanSeeCard(Collectors.categories) }
+            item { ChangesCard(view.state.changes.asReversed().take(30), view.state.inventory) }
+            item { ChecksCard(view.health, onAllowBattery) }
+            item { PhoneCard(view.health) }
+            item { SelfCard(view.health, view.state.inventory[LocalContext.current.packageName]) }
+            item { HeartbeatsCard(view.state.heartbeats.asReversed().take(24)) }
+            if (onRelease != null && view.health.deviceOwner) item { ReleaseButton(onRelease) }
+        }
+    }
+}
+
+@Composable
+private fun Header() {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(stringResource(R.string.main_title), style = MaterialTheme.typography.headlineSmall)
+        Text(stringResource(R.string.main_intro), style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
+@Composable
+private fun Section(title: String, content: @Composable () -> Unit) {
+    Card(colors = CardDefaults.cardColors(), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            content()
+        }
+    }
+}
+
+@Composable
+private fun StatusCard(view: AgentView) {
+    val apps = view.state.inventory.values
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (view.health.deviceOwner) {
+                Text(stringResource(R.string.status_set_up), style = MaterialTheme.typography.titleMedium)
+            } else {
+                Text(stringResource(R.string.status_not_set_up), style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.status_not_set_up_detail), style = MaterialTheme.typography.bodyMedium)
+            }
+            val launchable = apps.count { it.launchable }
+            Text(
+                pluralStringResource(R.plurals.apps_launchable, launchable, launchable),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                pluralStringResource(R.plurals.packages_total, apps.size, apps.size),
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+    }
+}
+
+@Composable
+private fun CanSeeCard(categories: List<DataCategory>) {
+    Section(stringResource(R.string.section_can_see)) {
+        categories.forEach { category ->
+            Text(category.title, style = MaterialTheme.typography.titleSmall)
+            category.details.forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium) }
+        }
+        Text(stringResource(R.string.data_stays_here), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+    }
+}
+
+@Composable
+private fun ChangesCard(changes: List<AppChange>, inventory: Map<String, PackageRecord>) {
+    Section(stringResource(R.string.section_changes)) {
+        if (changes.isEmpty()) Text(stringResource(R.string.no_changes), style = MaterialTheme.typography.bodyMedium)
+        changes.forEach { change ->
+            Column {
+                Text("${kindLabel(change.kind)} · ${change.label}", style = MaterialTheme.typography.bodyLarge)
+                val version = when {
+                    change.from != null && change.to != null && change.from != change.to -> "${change.from} → ${change.to}"
+                    else -> (change.to ?: change.from)?.toString().orEmpty()
+                }
+                // Where it came from, while it's still installed (removed apps have no source).
+                val source = inventory[change.packageName]?.takeIf { change.kind != ChangeKind.REMOVED }?.source
+                Text(
+                    listOf(formatTime(change.happenedAt ?: change.detectedAt), detectionLabel(change.detection), version)
+                        .filter { it.isNotBlank() }.joinToString(" · "),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                if (source != null) Text("from ${source.description}", style = MaterialTheme.typography.bodySmall)
+                Text(change.packageName, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChecksCard(health: Health, onAllowBattery: () -> Unit) {
+    Section(stringResource(R.string.section_checks)) {
+        Check(stringResource(R.string.check_device_owner), health.deviceOwner)
+        Check(stringResource(R.string.check_uninstall_blocked), health.uninstallBlocked == true)
+        Check(stringResource(R.string.check_notifications), health.notificationsShown)
+        health.permissions.forEach { p ->
+            Check(
+                stringResource(R.string.check_permission, p.name) + if (p.fixedByPolicy) " (locked by policy)" else "",
+                p.granted,
+            )
+        }
+        Check(stringResource(R.string.check_battery), health.batteryExempt) {
+            if (!health.batteryExempt) TextButton(onClick = onAllowBattery) { Text(stringResource(R.string.fix_battery)) }
+        }
+        Check(stringResource(R.string.check_usage_access), health.usageAccess)
+        Check(
+            stringResource(R.string.check_service) + (health.serviceRunningSince?.let { " since ${formatTime(it)}" } ?: ""),
+            health.serviceRunningSince != null,
+        )
+        Fact("Standby bucket", HealthReader.bucketName(health.standbyBucket))
+        Fact("Background restricted", if (health.backgroundRestricted) "yes" else "no")
+    }
+}
+
+@Composable
+private fun PhoneCard(health: Health) {
+    Section(stringResource(R.string.section_phone)) {
+        val phone = health.phone
+        Fact("Model", "${phone.manufacturer} ${phone.model}")
+        Fact("Android", "${phone.androidRelease} (API ${phone.sdk})")
+        Fact("Security update", phone.securityPatch)
+        Fact("Boot count", health.bootCount?.toString() ?: "unavailable")
+        Fact("Last restart", formatTime(health.lastBootAt))
+    }
+}
+
+@Composable
+private fun SelfCard(health: Health, self: PackageRecord?) {
+    Section(stringResource(R.string.section_self)) {
+        Fact("Version", health.agentVersion + if (health.testOnly) ", debug (test-only)" else ", release")
+        if (self != null) {
+            Fact("Came from", self.source.description)
+            Fact("installing", self.installer.installing ?: "none")
+            Fact("initiating", self.installer.initiating ?: "none")
+            Fact("update owner", self.installer.updateOwner ?: "none")
+            Fact("package source", self.installer.packageSource?.toString() ?: "n/a")
+        }
+    }
+}
+
+@Composable
+private fun HeartbeatsCard(heartbeats: List<Heartbeat>) {
+    Section(stringResource(R.string.section_background)) {
+        heartbeats.forEach { beat ->
+            Text(
+                "${formatTime(beat.at)} · ${beat.trigger}" + (beat.note?.let { ": $it" } ?: ""),
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReleaseButton(onRelease: () -> Unit) {
+    var confirming by remember { mutableStateOf(false) }
+    OutlinedButton(onClick = { confirming = true }, modifier = Modifier.fillMaxWidth()) {
+        Text(stringResource(R.string.release_button))
+    }
+    if (confirming) {
+        AlertDialog(
+            onDismissRequest = { confirming = false },
+            title = { Text(stringResource(R.string.release_confirm_title)) },
+            text = { Text(stringResource(R.string.release_confirm_text)) },
+            confirmButton = {
+                TextButton(onClick = { confirming = false; onRelease() }) { Text(stringResource(R.string.release_confirm_yes)) }
+            },
+            dismissButton = { TextButton(onClick = { confirming = false }) { Text(stringResource(R.string.cancel)) } },
+        )
+    }
+}
+
+@Composable
+private fun Check(label: String, ok: Boolean, action: @Composable () -> Unit = {}) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        Text(
+            if (ok) "✓" else "✗",
+            color = if (ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.width(24.dp),
+        )
+        Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+        action()
+    }
+}
+
+@Composable
+private fun Fact(label: String, value: String) {
+    Row(Modifier.fillMaxWidth()) {
+        Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+        Text(value, style = MaterialTheme.typography.bodyMedium, fontFamily = FontFamily.Monospace)
+    }
+}
+
+@Composable
+private fun kindLabel(kind: ChangeKind): String = stringResource(
+    when (kind) {
+        ChangeKind.INSTALLED -> R.string.kind_installed
+        ChangeKind.UPDATED -> R.string.kind_updated
+        ChangeKind.REMOVED -> R.string.kind_removed
+        ChangeKind.REINSTALLED -> R.string.kind_reinstalled
+    },
+)
+
+@Composable
+private fun detectionLabel(detection: Detection): String = stringResource(
+    when (detection) {
+        Detection.BROADCAST -> R.string.detected_broadcast
+        Detection.CHANGED_PACKAGES -> R.string.detected_changed_packages
+        Detection.SNAPSHOT -> R.string.detected_snapshot
+    },
+)
+
+@Composable
+private fun formatTime(millis: Long): String = DateUtils.formatDateTime(
+    LocalContext.current,
+    millis,
+    DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_SHOW_TIME or DateUtils.FORMAT_ABBREV_MONTH,
+)
