@@ -34,7 +34,18 @@ jobs:
       - name: Build, unit tests, lint
         working-directory: android
         # The release build is unsigned here: the release key never leaves the family's computer.
-        run: ./gradlew --stacktrace :core:test :app:assembleDebug :app:assembleDebugAndroidTest :app:assembleRelease :app:lintDebug :app:lintRelease
+        # One retry, only when the first attempt failed to download a dependency (a flaky
+        # repository); any other failure fails the job at once.
+        run: |
+          tasks=(:core:test :app:assembleDebug :app:assembleDebugAndroidTest :app:assembleRelease :app:lintDebug :app:lintRelease)
+          if ! ./gradlew --stacktrace "${tasks[@]}" 2>&1 | tee "$RUNNER_TEMP/build.log"; then
+            if grep -qiE "could not resolve|could not get|could not download|connection reset|read timed out" "$RUNNER_TEMP/build.log"; then
+              echo "::warning::A dependency download failed; retrying the build once."
+              ./gradlew --stacktrace "${tasks[@]}"
+            else
+              exit 1
+            fi
+          fi
       - name: Collect APKs
         run: |
           mkdir -p apks
