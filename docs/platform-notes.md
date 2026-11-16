@@ -141,10 +141,11 @@ before trying, and names the problem.
    broadcast (`core/res/AndroidManifest.xml`), so only the system can send it.
 3. `setUserProvisioningState(STATE_USER_SETUP_FINALIZED)`.
 
-What actually starts Belay: an app fresh from `adb install` is in the *stopped state*,
-and Android doesn't deliver broadcasts to stopped apps unless the sender adds
-`FLAG_INCLUDE_STOPPED_PACKAGES`, which DevicePolicyManagerService doesn't for these. On the
-API 37.0 emulator, Belay's log showed no `DEVICE_OWNER_CHANGED` heartbeat. Right after that
+What actually starts Belay: on the API 37.0 emulator, Belay's heartbeat log after
+`provision.sh` showed `DEVICE_ADMIN_ENABLED` (sent to the admin component directly) but no
+`DEVICE_OWNER_CHANGED`. The likely reason: an app fresh from `adb install` is in the
+*stopped state*, and implicit broadcasts skip stopped apps unless the sender adds
+`FLAG_INCLUDE_STOPPED_PACKAGES`, which DevicePolicyManagerService doesn't. Right after that
 broadcast, `setDeviceOwner` calls
 `DeviceAdminServiceController.startServiceForAdmin(…, "set-device-owner")`, which binds
 Belay's `DeviceAdminService` (B7) and so starts Belay without anyone opening it. The system
@@ -310,7 +311,8 @@ changes simply produce no diff when nothing changed.
   `FLAG_ONGOING_EVENT` and the app is the active device or profile owner.
 - So the notice must be built with `setOngoing(true)` (it is). A plain device admin isn't
   exempt.
-- CI checks the posted notification has `FLAG_NO_DISMISS` (0x2000).
+- Seen on the API 37.0 emulator: the posted notice has
+  `flags=ONGOING_EVENT|NO_CLEAR|FOREGROUND_SERVICE|NO_DISMISS`. CI checks it on every run.
 
 ### B3. The notice can't be switched off
 

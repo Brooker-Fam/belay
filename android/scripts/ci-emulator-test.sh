@@ -70,11 +70,16 @@ record="$(ash dumpsys notification --noredact | grep -F "pkg=$PKG " || true)"
 record="${record%%$'\n'*}"
 [ -n "$record" ] || die "no notification from $PKG"
 printf '%s\n' "$record"
-flags="$(grep -o 'flags=0x[0-9a-fA-F]*' <<<"$record" || true)"
+# FLAG_NO_DISMISS (hidden, 0x2000): Android 14+ keeps a device owner's ongoing notice
+# undismissable. Android 17's dumpsys prints the flags by name; older versions in hex.
+flags="$(grep -o 'flags=[A-Za-z0-9_|]*' <<<"$record" || true)"
 flags="${flags%%$'\n'*}"
 flags="${flags#flags=}"
-# FLAG_NO_DISMISS (0x2000, hidden): Android 14+ keeps a device owner's ongoing notice undismissable.
-[ -n "$flags" ] && [ $((flags & 0x2000)) != 0 ] || die "the managed notice can be dismissed (flags=$flags)"
+case "$flags" in
+  *NO_DISMISS*) ;;
+  0x*) [ $((flags & 0x2000)) != 0 ] || die "the managed notice can be dismissed (flags=$flags)" ;;
+  *) die "the managed notice can be dismissed (flags=$flags)" ;;
+esac
 echo "managed notice flags=$flags: not dismissible"
 bucket="$(ash am get-standby-bucket "$PKG")"
 [ "$bucket" = 5 ] || die "standby bucket is $bucket, expected 5 (exempted)"
