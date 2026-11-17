@@ -199,7 +199,7 @@ describe("a side as it can be saved", () => {
     expect(sideProblem(before, contact({ name: "x".repeat(61) }))).toBe("Keep a contact's name to 60 characters: the kid sees it.");
     expect(sideProblem(before, contact({ name: "coach lee" }))).toBe("There's already a contact called coach lee.");
     expect(sideProblem(before, contact({ numbers: [] }))).toBe("Give New a number.");
-    expect(sideProblem(before, contact({ numbers: ["+15555550001", "+15555550002", "+15555550003", "+15555550004", "+15555550005", "+15555550006"] }))).toBe(
+    expect(sideProblem(before, contact({ numbers: ["+15555550131", "+15555550132", "+15555550133", "+15555550134", "+15555550135", "+15555550136"] }))).toBe(
       "A contact can have at most 5 numbers.",
     );
     expect(sideProblem(before, contact({ numbers: [COACH] }))).toBe("+15555550142 is already Coach Lee's number.");
@@ -208,7 +208,7 @@ describe("a side as it can be saved", () => {
     expect(sideProblem(before, { ...before, blockedNumbers: [COACH] })).toBe("+15555550142 is Coach Lee's number, a contact: take it off the contact first, then block it.");
     expect(sideProblem(before, { ...before, blockedNumbers: [STRANGER] }, { emergencyCard: [STRANGER] })).toBe("+15555550199 is on the kid's emergency card: take it off the card first, then block it.");
     expect(sideProblem(before, { ...before, privateNumbers: ["988"] })).toBe("Calls and texts with 988 are always private: Belay never records them, so there's no need to add it.");
-    expect(sideProblem(before, { ...before, privateNumbers: Array.from({ length: 51 }, (_, i) => `+1555555${String(1000 + i)}`) })).toBe("A phone can have at most 50 private numbers.");
+    expect(sideProblem(before, { ...before, privateNumbers: Array.from({ length: 51 }, (_, i) => `+155555501${String(i).padStart(2, "0")}`) })).toBe("A phone can have at most 50 private numbers.");
     expect(sideProblem(before, { ...before, blockedNumbers: [STRANGER] })).toBeNull();
   });
 });

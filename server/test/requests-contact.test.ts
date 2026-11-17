@@ -89,9 +89,9 @@ describe("Please add this contact", () => {
 
   it("at most 60 can wait per phone; past that, new ones are answered 429", async () => {
     const { t, phone } = await family();
-    const many = Array.from({ length: 60 }, (_, i) => ask(t, `request-${String(i).padStart(4, "0")}`, { contact_number: `+1555555${String(1000 + i)}` }));
+    const many = Array.from({ length: 60 }, (_, i) => ask(t, `request-${String(i).padStart(4, "0")}`, { contact_number: `+155555501${String(i).padStart(2, "0")}` }));
     expect((await send(t, phone.token, ...many)).status).toBe(200);
-    expect((await send(t, phone.token, ask(t, "request-0100", { contact_number: "+15555559999" }))).status).toBe(429);
+    expect((await send(t, phone.token, ask(t, "request-0100", { contact_number: "+15555550199" }))).status).toBe(429);
   });
 
   it("approving adds the contact with the parent's choices; it's in the policy and the activity log", async () => {
