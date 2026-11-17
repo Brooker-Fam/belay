@@ -496,7 +496,7 @@ The end of the rules, for when the kid outgrows Belay: each step is a parent's, 
 - **Stop collecting** (a phone's page, "What the server keeps about this phone"): per kind of data,
   a confirmation lists exactly what goes and what stays, then the server deletes it at once and
   turns off the phone's switch where it has one (measuring; location, lost mode and keeping
-  location on). The app list and the kid's requests keep coming while Belay is on the phone;
+  location on; recording calls). The app list and the kid's requests keep coming while Belay is on the phone;
   [privacy.md](privacy.md) has exactly what each stop deletes.
 - **Hand this phone over** (a phone's page, after typing its name): lifts the locks on factory
   reset, debugging and accounts and clears reset protection, and the phone shows the kid what to

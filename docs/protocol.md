@@ -372,7 +372,8 @@ proposal), and the phone shows each step before it happens.
 - **Stop collecting** is the server's: a parent stops one data category of a phone, and after a
   confirmation that lists exactly what goes, the server deletes what it keeps of it. Where the
   phone has a switch, it turns off with ordinary fields (screen time's `measure`; `location` off,
-  with lost mode and `keep_on`). The app list and the kid's requests have none: the phone keeps
+  with lost mode and `keep_on`; recording calls, `calls.log`). The app list and the kid's requests
+  have none: the phone keeps
   sending its apps while Belay is on it, and the kid can always ask ("I need help" always reaches a
   parent). A request the phone still lists (60 days) keeps a bare record, without anyone's words,
   so the policy's `requests` still carries its answer.

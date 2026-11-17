@@ -332,8 +332,8 @@ sends the rules and contacts they're built from, and nothing else about calls.
 - **On Off belay:** "Belay isn't blocking any apps or websites on this phone any more.", only when
   that's so: nothing held back, paused, filtered or limited, and nothing kept from installing.
   Settings still locked are listed under "This phone's rules".
-- **When a parent stops collecting** screen time or location, "What your parent can see" loses it
-  at once (it follows the policy). The app list and the kid's requests stay listed: the phone keeps
+- **When a parent stops collecting** screen time, location or calls, "What your parent can see"
+  loses it at once (it follows the policy). The app list and the kid's requests stay listed: the phone keeps
   sending them while Belay is on it.
 - **The hand-over,** first on Home: "This phone is becoming yours. Your parent is handing this phone
   over to you.", who started it and when, then: back up photos and anything else to your own
@@ -390,12 +390,16 @@ again). It's in the activity log, with what went. Only a parent does it, never a
 - **Where the phone is:** location turns off, with lost mode and keeping location on (Belay gives
   up the permission), and every fix goes, the ones shared with help requests too, with arrivals and
   departures, the family's places, and the record of each check.
+- **Calls (Phase 5):** recording calls turns off, and every call record goes (who called whom,
+  when, for how long, and what happened). Calls stay on with their rules if they were, and the
+  contacts and the private and blocked numbers stay: they're the phone's rules.
 - **Apps:** every app change, every review and its notes, the apps that aren't on the phone any
   more (but one a parent blocked or allowed, which its decision names), and the record of the app
   lists the phone sent. The phone keeps sending its app list and changes while Belay is on it (its
   rules work from them), so the apps on it now, and new changes, are still kept.
-- **Requests:** what the kid wrote in every request, the parents' notes on their answers, where the
-  phone was in a help request, and requests from more than 60 days ago. A request of the last 60
+- **Requests:** what the kid wrote in every request (the name they gave a contact they asked for
+  too), the parents' notes on their answers, where the phone was in a help request, and requests
+  from more than 60 days ago. A request of the last 60
   days keeps a bare record (that it was asked, for which app or what, and the answer), because
   the kid's phone keeps its own list that long and would otherwise show it as waiting again.
   Requests still waiting for a parent, and help requests no parent has seen, stay as they are. The

@@ -7,6 +7,7 @@
 import { describe, expect, it } from "vitest";
 import { listAudit } from "../src/audit.js";
 import { Policy } from "../src/device/schemas.js";
+import { saveContact, setCalls } from "../src/family/calls/changes.js";
 import { COLLECTED, COLLECTED_TABLES, PHONE_KEEPS_REQUESTS_MS, RECORDS, keptAbout, keptFor, stopCollecting, type Collected } from "../src/family/collection.js";
 import { savePlace, setLocation, setLost } from "../src/family/location/changes.js";
 import { answerRequest, buildPolicy, decideApp, RuleRefused, type PolicyContext } from "../src/family/policy.js";
@@ -70,7 +71,9 @@ async function family() {
 describe("what the server keeps about a phone", () => {
   it("lists exactly what each category's stop deletes, and what stays", async () => {
     const { t, phone } = await family();
-    const [apps, screen, location, , requests] = keptAbout(t.deps.db, phone.deviceId, t.now());
+    const [apps, screen, location, calls, requests] = keptAbout(t.deps.db, phone.deviceId, t.now());
+    // Calls were never turned on for this phone: nothing to stop.
+    expect(calls).toMatchObject({ category: "calls", goes: [], stays: [], anything: false });
     expect(apps).toMatchObject({
       category: "apps",
       goes: [
@@ -234,5 +237,59 @@ describe("what the server keeps about a phone", () => {
     expect(missing, `tables with no category: ${missing.join(", ")}`).toEqual([]);
     // And every table listed there exists, with a phone's rows.
     expect([...known].filter((name) => !tables.includes(name))).toEqual([]);
+  });
+});
+
+describe("calls (Phase 5)", () => {
+  const MOM = "+15555550100";
+  const COACH = "+15555550142";
+
+  async function calling() {
+    const t = testServer();
+    const sam = await signIn(t);
+    const phone = await enrollPhone(t, "Alex's phone");
+    const parent = { kind: "parent", parentId: sam.parent.id } as const;
+    const ctx = (): PolicyContext => ({ db: t.deps.db, now: t.now(), changed: (id) => { t.deps.waiters.changed(id); } });
+    const policy = () => Policy.parse(buildPolicy(t.deps.db, phone.deviceId, t.now()));
+    setCalls(ctx(), phone.deviceId, { enabled: true, mode: "contacts", log: true }, parent);
+    saveContact(ctx(), phone.deviceId, { name: "Mom", numbers: [MOM], calls: true, texts: true, parent: true }, parent);
+    const record = t.deps.db.prepare(
+      "INSERT INTO call_records (device_id, id, at, direction, contact_id, contact_name, number, duration_s, outcome, reason, received_at) VALUES (?, ?, ?, 'in', NULL, NULL, ?, 60, 'missed', 'unknown', ?)",
+    );
+    record.run(phone.deviceId, "call-0001", T0, "+15555550199", T0);
+    record.run(phone.deviceId, "call-0002", T0 + 1, "+15555550198", T0);
+    await deviceCall(t, phone.token, "requests", {
+      requests: [{ id: "request-0001", kind: "contact", contact_name: "Coach Sam", contact_number: COACH, reason: "For practice", asked_at: t.now() }],
+    });
+    answerRequest(ctx(), phone.deviceId, "request-0001", "declined", parent, "Let's ask the coach first");
+    return { t, phone, parent, ctx, policy };
+  }
+
+  it("the records go and recording turns off; calls, their rules and the contacts stay", async () => {
+    const { t, phone, parent, ctx, policy } = await calling();
+    const kept = keptFor(t.deps.db, phone.deviceId, "calls", t.now());
+    expect(kept).toMatchObject({
+      goes: ["2 call records: who called whom, when, for how long, and what happened"],
+      stopping: "Recording calls turns off: the phone stops sending who calls and who is called.",
+      stays: ["Calls stay on, with their rules: Belay as the phone app still decides who rings.", "The contacts, and the private and blocked numbers: they're this phone's rules."],
+      anything: true,
+    });
+    const done = stopCollecting(ctx(), phone.deviceId, "calls", parent, kept.fingerprint);
+    expect(done.result.deleted).toEqual({ call_records: 2 });
+    expect(policy().calls).toMatchObject({ mode: "contacts", log: false });
+    expect(policy().contacts.map((c) => c.name)).toEqual(["Mom"]);
+    expect(rows(t, "call_records", phone.deviceId)).toBe(0);
+    expect(keptFor(t.deps.db, phone.deviceId, "calls", t.now()).anything).toBe(false);
+  });
+
+  it("a contact request's bare record keeps the number it asked for, not the name the kid gave it", async () => {
+    const { t, phone, parent, ctx, policy } = await calling();
+    expect(keptFor(t.deps.db, phone.deviceId, "requests", t.now()).goes).toEqual(["what the kid wrote in 1 request", "your notes on 1 answer (they go from the kid's phone too)"]);
+    stopCollecting(ctx(), phone.deviceId, "requests", parent, keptFor(t.deps.db, phone.deviceId, "requests", t.now()).fingerprint);
+    expect(t.deps.db.prepare("SELECT kind, status, reason, note, contact_name, contact_number FROM requests WHERE device_id = ?").all(phone.deviceId)).toEqual([
+      { kind: "contact", status: "declined", reason: null, note: null, contact_name: COACH, contact_number: COACH },
+    ]);
+    expect(policy().requests).toMatchObject([{ id: "request-0001", status: "declined", note: null }]);
+    expect(keptFor(t.deps.db, phone.deviceId, "requests", t.now()).anything).toBe(false);
   });
 });
