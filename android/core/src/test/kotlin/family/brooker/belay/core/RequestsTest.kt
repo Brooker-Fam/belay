@@ -5,6 +5,9 @@ import family.brooker.belay.core.Fixtures.T0
 import family.brooker.belay.core.Fixtures.app
 import family.brooker.belay.core.Fixtures.ids
 import family.brooker.belay.core.Fixtures.inventory
+import family.brooker.belay.core.screentime.WireAgreementAnswer
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -90,6 +93,72 @@ class RequestsTest {
         assertNull(answered[0].answer)
         assertEquals(game, Requests.open(answered, game.packageName)?.request)
         assertNull(Requests.open(answered, chat.packageName))
+    }
+
+    // Phase 3: more time and the family agreement.
+
+    private val today = T0 - 2 * HOUR
+
+    @Test
+    fun `more time is a request of its own, and asking again today while it's open only sends the new reason`() {
+        val first = Requests.moreTime(emptyList(), "l-games", 30, "com.example.game", "Block Builder", null, T0, today) { "first" }
+        assertEquals(WireRequestKind.MORE_TIME, first.kind)
+        assertEquals("l-games", first.limitId)
+        assertEquals(30, first.minutes)
+        assertEquals("com.example.game", first.packageName)
+
+        val again = Requests.moreTime(Requests.answered(listOf(first), null), "l-games", 60, null, null, " To finish the level ", T0 + 1000, today, ids())
+        assertEquals(first.id, again.id)
+        assertEquals(30, again.minutes, "the server only takes a new reason for a pending request")
+        assertEquals("To finish the level", again.reason)
+        assertEquals(1, again.revision)
+
+        val otherLimit = Requests.moreTime(Requests.answered(listOf(first), null), "l-video", 15, null, null, null, T0, today, ids())
+        assertEquals("id-1", otherLimit.id)
+    }
+
+    @Test
+    fun `more minutes are kept to 5 to 240, and an answered or old request takes no new ask`() {
+        assertEquals(5, Requests.moreTime(emptyList(), "l-games", 1, null, null, null, T0, today, ids()).minutes)
+        assertEquals(240, Requests.moreTime(emptyList(), "l-games", 500, null, null, null, T0, today, ids()).minutes)
+        val yesterday = Requests.moreTime(emptyList(), "l-games", 15, null, null, null, today - HOUR, today - 24 * HOUR) { "yesterday" }
+        assertEquals("id-1", Requests.moreTime(Requests.answered(listOf(yesterday), null), "l-games", 15, null, null, null, T0, today, ids()).id)
+        val answered = Requests.answered(listOf(yesterday.copy(askedAt = T0)), policyWith(answer(WireRequestStatus.APPROVED, yesterday.id).copy(minutes = 15)))
+        assertEquals("id-1", Requests.moreTime(answered, "l-games", 15, null, null, null, T0 + 1, today, ids()).id)
+        assertEquals(15, answered.single().answer?.minutes)
+    }
+
+    @Test
+    fun `the same answer to the agreement again sends the new reason, and another answer is a new request`() {
+        val agree = Requests.agreement(emptyList(), 2, WireAgreementAnswer.AGREE, null, T0) { "agree" }
+        assertEquals(WireRequestKind.AGREEMENT, agree.kind)
+        val again = Requests.agreement(Requests.answered(listOf(agree), null), 2, WireAgreementAnswer.AGREE, "I read it all", T0 + 1, ids())
+        assertEquals(agree.id, again.id)
+        assertEquals("I read it all", again.reason)
+        val talk = Requests.agreement(Requests.answered(listOf(again), null), 2, WireAgreementAnswer.TALK, null, T0 + 2, ids())
+        assertEquals("id-1", talk.id)
+        assertEquals(WireAgreementAnswer.TALK, talk.answer)
+    }
+
+    @Test
+    fun `asking for apps ignores more time and agreement requests`() {
+        val moreTime = Requests.moreTime(emptyList(), "l-games", 15, chat.packageName, "Chatter Box", null, T0, today, ids())
+        assertEquals(listOf(chat.packageName), Requests.toMake(listOf(chat.packageName), listOf(moreTime), installedBeforeT0))
+        val answered = Requests.answered(listOf(moreTime), null)
+        assertNull(Requests.open(answered, chat.packageName))
+        assertFalse(answered.single().forApp)
+    }
+
+    @Test
+    fun `each kind goes on the wire with only its own fields`() {
+        fun keys(request: KidRequest) = Wire.json.encodeToJsonElement(WireRequest.serializer(), Requests.toWire(request)).jsonObject.keys
+        assertEquals(setOf("id", "kind", "package", "label", "asked_at"), keys(chat))
+        val moreTime = Requests.moreTime(emptyList(), "l-games", 15, null, null, "Please", T0, today, ids())
+        assertEquals(setOf("id", "kind", "limit_id", "minutes", "reason", "asked_at"), keys(moreTime))
+        assertEquals(setOf("id", "kind", "package", "limit_id", "minutes", "asked_at"), keys(moreTime.copy(packageName = "com.example.game", reason = null)))
+        val agree = Requests.agreement(emptyList(), 3, WireAgreementAnswer.AGREE, null, T0, ids())
+        assertEquals(setOf("id", "kind", "version", "answer", "asked_at"), keys(agree))
+        assertEquals("more_time", Wire.json.encodeToJsonElement(WireRequest.serializer(), Requests.toWire(moreTime)).jsonObject["kind"]?.jsonPrimitive?.content)
     }
 
     // Which policy the phone keeps.

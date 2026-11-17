@@ -121,7 +121,10 @@ Phase 5 (calls, then texts); Phases 8, 9 and 11 when they're needed.
 **Built since Phase 2** (on `main`, checked end to end in CI on the Android 17 emulator): Phase 6's
 self-update, recovery key, backups and health checks, Phase 10's removal of another user or
 profile, and the fixes from a security review of the Phase 2 server. **In progress:** Phase 3,
-whose screen-time engine is in `:core` and whose contract is in [docs/protocol.md](docs/protocol.md).
+whose contract is in [docs/protocol.md](docs/protocol.md): its phone side is built (the engine in
+`:core`, and the app: counting, enforcing, notices, lock now, uploads and the kid's screens;
+[phase3-checklist.md](docs/phase3-checklist.md) is for the Pixel), and its server side is next.
+Network logging comes after.
 
 ### Phase 3: screen time, schedules and stages ([design](docs/design/phase3-screen-time.md))
 

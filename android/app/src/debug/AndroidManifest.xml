@@ -19,5 +19,16 @@
                 <action android:name="family.brooker.belay.DEBUG_RECOVER" />
             </intent-filter>
         </receiver>
+
+        <!-- Phase 3: ci-emulator-test.sh has Belay send today's usage at once
+             (DebugUsageReceiver.kt). Debug builds only; only the adb shell can send it. -->
+        <receiver
+            android:name=".DebugUsageReceiver"
+            android:exported="true"
+            android:permission="android.permission.WRITE_SECURE_SETTINGS">
+            <intent-filter>
+                <action android:name="family.brooker.belay.DEBUG_UPLOAD_USAGE" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

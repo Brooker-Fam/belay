@@ -15,6 +15,9 @@ object DebugTools {
     /** Never set: release builds only enforce the policy from the family's server. */
     val policyOverride: WirePolicy? = null
 
+    /** Release builds send usage only on their own schedule (every 15 minutes while used). */
+    fun takeUsageUpload(): Boolean = false
+
     @Suppress("UNUSED_PARAMETER")
     fun releasePhone(context: Context): String = "Not available in release builds."
 

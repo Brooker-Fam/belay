@@ -87,6 +87,12 @@ From Phase 2 the answer carries the whole current [Policy](#policy) (Phase 1 ser
 `{"version": 0}`, which enforces nothing). The phone also reports what it enforces in
 `status.enforcement`.
 
+Size: a busy phone's check-in, with screen time (100 never-blocked packages, 12 limits, a
+few problems, commands and self-serve takes), is about 7.5 KB; with every list at its cap
+and long names, about 29 KB. The phone keeps it under 30 KB (core's `Checkins.fit`) by
+trimming, least important first, the tail of `never_blocked`, long words in the commands'
+results, half the problems, older self-serve takes, then the rest of `never_blocked`.
+
 ## `POST /api/v1/inventory`
 
 Every 24 hours, after each boot, and right after enrollment.
@@ -181,10 +187,17 @@ when a day is complete.
 ```
 
 Idempotent by `(day, zone)`: a day sent again replaces the stored one when its `as_of`
-is newer. `as_of` is the time the day was counted up to, so a later report always
-replaces an earlier one even when no new event came. Apps the phone never blocks (the
-dialer, the SMS app…) are left out of `apps`, so a call or text to 988 never shows; their
-time still counts in `screen_minutes`.
+is the same or newer. `as_of` is the time the day was counted up to, so a later report
+always replaces an earlier one even when no new event came; a complete day's `as_of` is the
+day's end, and the phone sends yesterday and today again after its clock moved (Android moves
+its usage history with the clock), which must replace what was stored. Apps the phone never
+blocks (the dialer, the SMS app…) are left out of `apps`, so a call or text to 988 never
+shows; their time still counts in `screen_minutes`.
+
+The phone sends only what it counted since the policy's `measure` turned on (the part of
+that first day before is a gap), and drops days it hasn't sent yet when `measure` goes off.
+Usage days wait in their own lane of the outbox, so a server without this endpoint (`404`,
+retried later) holds back nothing else.
 
 ## `GET /api/v1/agent/<sha256>.apk`
 
@@ -247,6 +260,14 @@ server decides whether a change tightens or loosens.
 - **`measure: false`:** the phone still counts, to enforce limits, but sends no minutes:
   no `POST /usage`, and no `used_minutes`, `used` or `left` in the report.
 - **`lock_now`** (a command): locks the screen once, unless it arrives after `expires_at`.
+  The phone runs it after applying the rest of the policy, so a pause sent with it suspends
+  the apps first. A phone updated to a Belay that can lock reads that permission at its next
+  restart (platform notes S5): until then the result is `failed`, "Android lets Belay lock the
+  screen only after the phone restarts once with this version of Belay."
+- **The report:** `enforcement.screen_time` changes every minute the phone is used, but the
+  phone checks in early only when something other than the minutes changed (a limit used up,
+  a schedule starting, usage access, a self-serve take); the 2-hourly check-in carries the
+  minutes. Its `self_serve[].limit_id` is always a limit's own id, never `"*"`.
 
 ## Enforcement rules (both sides)
 

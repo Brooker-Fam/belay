@@ -22,8 +22,8 @@ back the designs in this folder, and re-check some Phase 2 facts.
 | S2 | Suspending an app stops it **(Phase 2)** | Partly: its tasks close and it loses audio focus; its process keeps running | AOSP; Docs |
 | S3 | Belay's inventory still sees apps it hides **(Phase 2)** | **Contradicted**: a hidden app looks uninstalled | AOSP |
 | S4 | Belay's suspensions coexist with other suspenders | Partly: Digital Wellbeing's are separate; Android's own parental controls share Belay's | AOSP |
-| S5 | `lockNow` locks the phone | Partly: with no screen lock it only turns the screen off | AOSP; Docs |
-| S6 | Exact alarms for schedule boundaries | Confirmed: Doze-allowlisted apps are exempt from the exact-alarm permission | AOSP |
+| S5 | `lockNow` locks the phone | Moved to platform-notes.md (Phase 3) | |
+| S6 | Exact alarms for schedule boundaries | Moved to platform-notes.md (Phase 3) | |
 | W1 | Network logging for a device owner | Confirmed, with limits | AOSP; Docs |
 | W2 | `setGlobalPrivateDnsModeSpecifiedHost`: errors and threading **(Phase 2)** | Confirmed, plus two surprises | AOSP; Docs |
 | W3 | Chrome's policies through `setApplicationRestrictions` **(Phase 2)** | Confirmed from Chromium's source | Chromium source |
@@ -146,32 +146,11 @@ Belay's consequence: re-read every suspension Belay holds (`isPackageSuspended`)
 reconcile and on `ACTION_PACKAGES_UNSUSPENDED`, re-apply it, and report that something else lifted
 it (V1, Phase 10).
 
-### S5. `lockNow`
+### S5 and S6
 
-**Partly.** Verified on: AOSP; Docs.
-
-- DPM reference [2026-09-16]: "If there's no lock type set, this method forces the device to go to
-  sleep but doesn't lock the device." The caller needs `USES_POLICY_FORCE_LOCK` or `LOCK_DEVICE`.
-- `DevicePolicyManagerService.lockNow`: with the flag `lock_now_coexistence`, the check accepts
-  `MANAGE_DEVICE_POLICY_LOCK`, which a device owner holds (`devicepolicy/PermissionChecker`,
-  `DEVICE_OWNER_PERMISSIONS`); without the flag, the admin must have declared `<force-lock/>`.
-  Belay's `device_admin.xml` declares no policies.
-- The kid knows their own PIN, so `lockNow` is a nudge, not a lock.
-
-Belay's consequence: declare `<force-lock/>`; "lock now" means pause plus `lockNow`.
-
-### S6. Exact alarms
-
-**Confirmed.** Verified on: AOSP.
-
-- `apex/jobscheduler/service/.../alarm/AlarmManagerService.isExemptFromExactAlarmPermissionNoLock`:
-  System UI, core uids and apps on the Doze power allowlist are exempt from the exact-alarm
-  permission. Belay is on that allowlist (B6).
-- `USE_EXACT_ALARM` is a `normal` permission (`core/res/AndroidManifest.xml`). Play's restriction
-  of it to alarm and calendar apps doesn't apply to Belay, which isn't on Play.
-
-Belay's consequence: schedule boundaries with `setExactAndAllowWhileIdle`, and declare
-`USE_EXACT_ALARM` in case the allowlist entry is lost.
+Moved to [docs/platform-notes.md](../platform-notes.md#s5-locknow-and-force-lock-and-what-an-update-changes),
+re-checked in AOSP 17 with the release flag's value and what an update changes (S5), and with
+`USE_EXACT_ALARM`'s effect on the standby bucket (S6).
 
 ## Web and network
 

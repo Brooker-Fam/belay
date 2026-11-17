@@ -1,11 +1,17 @@
 package family.brooker.belay.core
 
+import family.brooker.belay.core.screentime.UsageReport
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
 
-/** What the outbox holds: app events, inventory snapshots, and the kid's requests (Phase 2). */
-enum class OutboxType { EVENT, SNAPSHOT, REQUEST }
+/**
+ * What the outbox holds: app events, inventory snapshots, the kid's requests (Phase 2), and
+ * usage days (Phase 3). Usage goes in a lane of its own ([OutboxPolicy.lane]): each day replaces
+ * the server's, so it needs no order, and a server without `POST /usage` yet must not hold back
+ * anything else.
+ */
+enum class OutboxType { EVENT, SNAPSHOT, REQUEST, USAGE }
 
 /**
  * One item waiting to be sent. [id]s grow in the order the agent made the items, and
@@ -50,6 +56,24 @@ object OutboxPolicy {
 
     /** `{"requests":[` and `]}` around the comma-separated requests. */
     const val REQUESTS_WRAPPER_BYTES = 15
+
+    /** Phase 3: well under the server's 256 KB limit for `POST /api/v1/usage`. */
+    const val MAX_USAGE_BODY_BYTES = UsageReport.MAX_BODY_BYTES
+
+    /** `{"days":[` and `]}` around the comma-separated days. */
+    const val USAGE_WRAPPER_BYTES = 11
+
+    /** The server takes at most 31 days in one request. */
+    const val MAX_USAGE_DAYS_PER_REQUEST = 31
+
+    /** Unsent usage days kept: one per day, the newest; older ones give way. */
+    const val MAX_PENDING_USAGE = 31
+
+    /**
+     * The two lanes the outbox is sent in: everything in order, then usage on its own (Phase 3).
+     * A failure in one holds back only the rest of that lane.
+     */
+    fun lane(type: OutboxType): Int = if (type == OutboxType.USAGE) 1 else 0
 
     const val BACKOFF_FIRST_MS = 30_000L
     const val BACKOFF_MAX_MS = 60L * 60 * 1000
@@ -123,17 +147,30 @@ object OutboxPolicy {
 
     /**
      * How many items from [from] go in one request. A snapshot goes alone. Events go
-     * together up to the server's count limit and [maxBytes], and so do requests (with their
-     * own limits); a batch never mixes kinds or passes a snapshot: always at least one item.
+     * together up to the server's count limit and [maxBytes], and so do requests and usage
+     * days (with their own limits); a batch never mixes kinds or passes a snapshot: always at
+     * least one item.
      */
     fun batchSize(queue: List<OutboxItem>, from: Int = 0, maxBytes: Int? = null): Int {
         require(from in queue.indices) { "nothing to send" }
         val type = queue[from].type
         if (type == OutboxType.SNAPSHOT) return 1
-        val maxCount = if (type == OutboxType.EVENT) WireLimits.MAX_EVENTS_PER_REQUEST else WireLimits.MAX_REQUESTS_PER_REQUEST
-        val byteLimit = maxBytes ?: if (type == OutboxType.EVENT) MAX_EVENTS_BODY_BYTES else MAX_REQUESTS_BODY_BYTES
+        val maxCount = when (type) {
+            OutboxType.EVENT -> WireLimits.MAX_EVENTS_PER_REQUEST
+            OutboxType.USAGE -> MAX_USAGE_DAYS_PER_REQUEST
+            else -> WireLimits.MAX_REQUESTS_PER_REQUEST
+        }
+        val byteLimit = maxBytes ?: when (type) {
+            OutboxType.EVENT -> MAX_EVENTS_BODY_BYTES
+            OutboxType.USAGE -> MAX_USAGE_BODY_BYTES
+            else -> MAX_REQUESTS_BODY_BYTES
+        }
         var count = 0
-        var bytes = (if (type == OutboxType.EVENT) EVENTS_WRAPPER_BYTES else REQUESTS_WRAPPER_BYTES).toLong()
+        var bytes = when (type) {
+            OutboxType.EVENT -> EVENTS_WRAPPER_BYTES
+            OutboxType.USAGE -> USAGE_WRAPPER_BYTES
+            else -> REQUESTS_WRAPPER_BYTES
+        }.toLong()
         while (from + count < queue.size && count < maxCount) {
             val item = queue[from + count]
             if (item.type != type) break

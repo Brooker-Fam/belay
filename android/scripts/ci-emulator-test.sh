@@ -35,6 +35,13 @@
 # repair access on the phone (typed through a debug-only receiver); and remove-other-users,
 # with no other user, is reported done. Then the test-only build goes back on (adb install
 # -d), so unprovision.sh can release it.
+#
+# Phase 3, with BELAY_E2E_CLI, the fixture APKs and a server whose status has screen_time: a
+# 0-minute limit on the fixture app suspends it and removing it lets it run; a schedule from a
+# minute ago to half an hour from now (the emulator's clock and zone) suspends it, but not Belay
+# or the dialer; with measuring on, a little over a minute in the fixture app reaches the
+# server's usage for today (a debug-only receiver has Belay send at once); and lock-now is
+# reported done with the screen off or locked.
 set -euo pipefail
 # shellcheck source-path=SCRIPTDIR source=lib.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -144,6 +151,25 @@ diagnose() {
   state | grep -o '"enforcement":{[^}]*}' || true
   echo "--- the update, the recovery key and commands:"
   state | grep -oE '"(agent_update|recovery)":\{[^}]*\}|"commands":\[[^]]*\]' || true
+  echo "--- why apps are held, and screen time:"
+  state | grep -o '"reasons":.*' | cut -c 1-2000 || true
+}
+# Phase 3: "suspended=true" or "suspended=false" for package $1, user 0 (dumpsys package).
+package_suspended() {
+  local text
+  text="$(ash dumpsys package "$1" 2>/dev/null || true)"
+  sed -n 's/^ *User 0: .*\(suspended=[a-z]*\).*/\1/p' <<<"$text" | head -n 1
+}
+# The screen on, and the swipe lock screen out of the way (the emulators have no PIN).
+wake_up() {
+  ash input keyevent KEYCODE_WAKEUP || true
+  ash wm dismiss-keyguard || true
+  sleep 1
+}
+# The screen is off (PowerManagerService's dump says Asleep or Dozing) or the lock screen shows
+# (KeyguardController's mKeyguardShowing): AOSP 17's dumpsys power and dumpsys window.
+screen_off_or_locked() {
+  ash dumpsys power | matches 'mWakefulness=(Asleep|Dozing)' || ash dumpsys window | contains 'mKeyguardShowing=true'
 }
 # A summary of Belay's stored state: heartbeats, changes and outbox counts, which debug
 # builds write after every agent step (DebugTools.afterStep). Read with run-as (debug builds
@@ -396,6 +422,94 @@ if [ -n "$UPDATE_APK" ]; then
   echo "Belay runs version $before again and leaves version $UPDATE_CODE alone"
 elif [ -n "$E2E_CLI" ]; then
   echo "BELAY_E2E_UPDATE_APK not given: the Phase 6 and 10 end-to-end checks are skipped"
+fi
+
+if [ -n "$E2E_CLI" ] && [ -n "$FIXTURE_V1" ] && ! server_status | jq -e '.phones[0] | has("screen_time")' >/dev/null 2>&1; then
+  echo "the server's status has no screen_time (its Phase 3 isn't there yet): the Phase 3 end-to-end checks are skipped"
+elif [ -n "$E2E_CLI" ] && [ -n "$FIXTURE_V1" ]; then
+  phone="$(server_status | jq -r '.phones[0].name')"
+
+  step "Phase 3: Belay may lock the screen, and the fixture app is installed"
+  # device_admin.xml's force-lock, for lock-now (platform notes S5): dumpsys lists each admin's policies.
+  ash dumpsys device_policy | contains 'force-lock' ||
+    die "Android doesn't list force-lock among Belay's admin policies" "$(ash dumpsys device_policy | grep -A 12 -F "$PKG" | head -n 20)"
+  # The screen stays on while this runs: screen time only counts an unlocked, lit screen.
+  ash svc power stayon true || true
+  ash settings put system screen_off_timeout 1800000 || true
+  wake_up
+  adb install -r -t "$FIXTURE_V1"
+  wait_fixture "hidden=false suspended=false" 15 || { diagnose; die "the fixture app isn't installed and open to use"; }
+
+  step "Phase 3: a limit of 0 minutes suspends the fixture app within 15 s, and removing it lets it run"
+  limit_id="$(server_cli_out limit "$phone" "$FIXTURE_PKG" --minutes 0 --name "CI limit")"
+  [[ "$limit_id" =~ ^[A-Za-z0-9_-]+$ ]] || die "limit should print only the new limit's id" "$limit_id"
+  wait_fixture "hidden=false suspended=true" 15 || { diagnose; die "a limit of 0 minutes didn't suspend the fixture app within 15 s"; }
+  echo "limit $limit_id: $(fixture_state)"
+  server_cli limit "$phone" "$FIXTURE_PKG" --remove
+  wait_fixture "hidden=false suspended=false" 15 || { diagnose; die "the fixture app was still suspended 15 s after its limit was removed"; }
+  echo "limit removed: $(fixture_state)"
+
+  step "Phase 3: a schedule from a minute ago to half an hour from now suspends the fixture app, not Belay or the dialer"
+  # The emulator's own clock and zone (the policy's zone is "phone"); the runner's GNU date does the sums.
+  zone="$(ash getprop persist.sys.timezone)"
+  zone="${zone:-UTC}"
+  now="$(ash date +%s)"
+  from="$(TZ="$zone" date -d "@$((now - 60))" +%H:%M)"
+  until="$(TZ="$zone" date -d "@$((now + 1800))" +%H:%M)"
+  echo "the emulator's clock: $(ash date) ($zone); the schedule: $from to $until, every day"
+  schedule_id="$(server_cli_out schedule "$phone" --name "CI schedule" --start "$from" --end "$until" --days mon,tue,wed,thu,fri,sat,sun)"
+  [[ "$schedule_id" =~ ^[A-Za-z0-9_-]+$ ]] || die "schedule should print only the new schedule's id" "$schedule_id"
+  wait_fixture "hidden=false suspended=true" 15 || { diagnose; die "the schedule didn't suspend the fixture app within 15 s"; }
+  echo "schedule $schedule_id: $(fixture_state)"
+  [ "$(package_suspended "$PKG")" = "suspended=false" ] || { diagnose; die "the schedule suspended Belay itself"; }
+  dialer="$(ash telecom get-default-dialer 2>/dev/null | tr -d '[:space:]' || true)"
+  if [[ "$dialer" =~ ^[A-Za-z0-9_.]+$ ]] && ash pm path "$dialer" | contains 'package:'; then
+    [ "$(package_suspended "$dialer")" = "suspended=false" ] || { diagnose; die "the schedule suspended the dialer, $dialer"; }
+    echo "Belay and the dialer ($dialer) aren't suspended"
+  else
+    echo "Belay isn't suspended; this image has no default dialer to check"
+  fi
+  server_cli schedule "$phone" --remove "$schedule_id"
+  wait_fixture "hidden=false suspended=false" 15 || { diagnose; die "the fixture app was still suspended 15 s after the schedule was removed"; }
+  echo "schedule removed: $(fixture_state)"
+
+  step "Phase 3: with measuring on, a minute in the fixture app reaches the server's usage for today"
+  server_cli screen-time "$phone" --measure on
+  wait_applied
+  wake_up
+  ash am start -W -n "$FIXTURE_PKG/.FixtureActivity" >/dev/null
+  echo "the fixture app is open; 75 s"
+  sleep 75
+  ash input keyevent KEYCODE_HOME
+  # Belay sends today's usage every 15 minutes while the phone is used; a debug build sends it now.
+  ash am broadcast -a "$PKG.DEBUG_UPLOAD_USAGE" -n "$PKG/.DebugUsageReceiver" | sed -n 's/^Broadcast completed: //p'
+  today="$(ash date +%F)"
+  wait_server "[.usage[]? | select(.day == \"$today\") | .apps[]? | select(.package == \"$FIXTURE_PKG\" and .minutes >= 1)] | length > 0" \
+    "today's usage ($today) with the fixture app's minute" 45
+  server_status | jq -c "[.phones[0].usage[]? | select(.day == \"$today\")][0] | {day, zone, as_of, screen_minutes, apps}"
+  server_cli screen-time "$phone" --measure off
+  wait_applied
+
+  step "Phase 3: lock-now is reported done, and the screen is off or locked"
+  wake_up
+  command_id="$(server_cli_out lock-now "$phone")"
+  [[ "$command_id" =~ ^[A-Za-z0-9_-]+$ ]] || die "lock-now should print only the command's id" "$command_id"
+  wait_server "[.enforcement.commands[]? | select(.id == \"$command_id\" and .result == \"done\")] | length > 0" "a done result for lock-now"
+  locked=0
+  for _ in $(seq 1 15); do
+    if screen_off_or_locked; then
+      locked=1
+      break
+    fi
+    sleep 1
+  done
+  [ "$locked" = 1 ] || { diagnose; die "lock-now was reported done, but the screen is on and unlocked" "$(ash dumpsys power | grep -m 1 'mWakefulness=')"; }
+  echo "after lock-now: $(ash dumpsys power | grep -m 1 -o 'mWakefulness=[A-Za-z]*'), $(ash dumpsys window | grep -m 1 -o 'mKeyguardShowing=[a-z]*')"
+  wake_up
+  adb uninstall "$FIXTURE_PKG" >/dev/null
+  server_status | jq -c '.phones[0] | {screen_time: .enforcement.screen_time, commands: .enforcement.commands}'
+elif [ -n "$E2E_SERVER" ]; then
+  echo "BELAY_E2E_CLI or the fixture APKs not given: the Phase 3 end-to-end checks are skipped"
 fi
 
 adb logcat -c

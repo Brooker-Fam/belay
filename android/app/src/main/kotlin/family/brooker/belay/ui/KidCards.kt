@@ -67,7 +67,7 @@ internal fun WaitingCard(kid: KidView, unsent: Set<String>, onAsk: Ask) {
         Text(stringResource(R.string.waiting_intro), style = MaterialTheme.typography.bodyMedium)
         waiting.forEachIndexed { i, name ->
             if (i > 0) HorizontalDivider()
-            val request = kid.requests.firstOrNull { it.request.packageName == name }
+            val request = kid.requests.firstOrNull { it.forApp && it.request.packageName == name }
             AppName(kid.labels[name] ?: name, name)
             when {
                 request == null -> {}
@@ -86,7 +86,8 @@ internal fun WaitingCard(kid: KidView, unsent: Set<String>, onAsk: Ask) {
 
 @Composable
 internal fun AnswersCard(kid: KidView) {
-    val answered = kid.requests.filter { !it.open }.take(MAX_ANSWERS)
+    // Phase 3's answers (more time, the agreement) show on their own cards.
+    val answered = kid.requests.filter { it.forApp && !it.open }.take(MAX_ANSWERS)
     if (answered.isEmpty()) return
     KidSection(stringResource(R.string.section_answers)) {
         answered.forEachIndexed { i, request ->
@@ -106,7 +107,7 @@ internal fun BlockedCard(kid: KidView, unsent: Set<String>, onAsk: Ask) {
         blocked.forEachIndexed { i, name ->
             if (i > 0) HorizontalDivider()
             AppName(kid.labels[name] ?: name, name)
-            val open = kid.requests.firstOrNull { it.request.packageName == name && it.open }
+            val open = kid.requests.firstOrNull { it.forApp && it.request.packageName == name && it.open }
             var asking by rememberSaveable(name) { mutableStateOf(open != null) }
             if (asking) {
                 if (open?.request?.reason != null) Text(stringResource(R.string.not_answered), style = MaterialTheme.typography.bodySmall)

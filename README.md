@@ -22,7 +22,7 @@ no monthly fee and no company that can change or disappear. A parent mostly mana
 asking Claude (or any MCP client) things like "what did they install this week, and is it
 OK?", with a web page as the fallback.
 
-## What exists today (Phases 1 and 2, and parts of 6 and 10)
+## What exists today (Phases 1 and 2, and parts of 3, 6 and 10)
 
 - **`android/`: the device-owner agent.** Provisioned over adb, it becomes device owner and
   blocks its own uninstall. It always shows "This phone is managed by your parent", and its
@@ -43,7 +43,17 @@ OK?", with a web page as the fallback.
   server is ever gone. **Phase 10 (the phone's side):** it reports other users or profiles
   (Android's own Parental Controls make one) and restrictions it didn't set, and removes the
   others when a parent asks, telling the kid first. It reports the apps it never blocks, and
-  a policy too big to read is a reported problem, not a silent one.
+  a policy too big to read is a reported problem, not a silent one. **Phase 3 (the phone's
+  side):** when the family turns screen time on, the phone counts how long each app is on
+  the screen from Android's usage events, and enforces daily limits (per app, per group, or
+  a daily total) and school, bedtime and custom schedules by itself, offline too, on time
+  with exact alarms; "lock now" and a bedtime that locks the screen. The kid sees time left,
+  warnings, "Time's up" with "Ask for more time", self-serve minutes when allowed, their
+  stage and what the next one changes, and the family agreement to agree with or talk about.
+  If usage access is turned off, apps with a limit pause (or stay open, as the family
+  chooses) and the kid is told how to turn it back on. Only while a parent has measuring on,
+  each day's usage goes to the server; "What your parent can see" says so the moment it's on.
+  The server's Phase 3 (rules pages, MCP tools, usage storage) is next.
 - **`server/`: the family's server.** Node and SQLite in one Docker image. The device API,
   the parent pages (phones and their health, apps with "new" badges and reviews, the
   timeline, adding a phone, settings, the activity log), and OAuth 2.1 plus MCP for Claude.
@@ -147,7 +157,7 @@ they install this week?"
 | `android/app` | The agent: device owner, receivers, services, sync, enrollment, the screens. |
 | `android/scripts` | Provisioning, release key, QR test, the emulator test. |
 | `server/` | The family's server: device API, parent pages, OAuth and MCP. Vitest tests. |
-| `docs/` | [server](docs/server.md), [MCP](docs/mcp.md), [privacy](docs/privacy.md), [threat model](docs/threat-model.md), [device API](docs/protocol.md), [platform notes](docs/platform-notes.md), [emulator](docs/emulator.md), [Pixel 8](docs/pixel.md), [Phase 0](docs/phase0-checklist.md) and [Phase 1](docs/phase1-checklist.md) checklists, [signing](docs/signing.md), [prior art](docs/prior-art.md) |
+| `docs/` | [server](docs/server.md), [MCP](docs/mcp.md), [privacy](docs/privacy.md), [threat model](docs/threat-model.md), [device API](docs/protocol.md), [platform notes](docs/platform-notes.md), [emulator](docs/emulator.md), [Pixel 8](docs/pixel.md), [Phase 0](docs/phase0-checklist.md), [Phase 1](docs/phase1-checklist.md), [Phase 2](docs/phase2-checklist.md), [Phase 3](docs/phase3-checklist.md) and [Phase 6](docs/phase6-checklist.md) checklists, [signing](docs/signing.md), [prior art](docs/prior-art.md) |
 | `ROADMAP.md` | Phases 2 to 5 and later. |
 | `CLAUDE.md` | Conventions and commands, for people and for Claude. |
 

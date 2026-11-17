@@ -142,10 +142,24 @@ data class PolicyFetchRow(
 )
 
 /**
+ * Phase 3. One row while the policy has screen_time, written only by the agent thread: Belay's
+ * own count of what was on the screen (core's UsageLedger, as JSON: yesterday and today) and the
+ * rest screen time keeps between steps (core's ScreenTimeState: the kid's self-serve takes,
+ * notices shown, screen locks done, uploads). Deleted when the policy no longer has screen time.
+ */
+@Entity(tableName = "screen_time")
+data class ScreenTimeRow(
+    @PrimaryKey val id: Int = 0,
+    val ledger: String,
+    val state: String,
+    @ColumnInfo(name = "updated_at") val updatedAt: Long,
+)
+
+/**
  * What waits to be sent, in the order it was made: [id] is AUTOINCREMENT, so it only ever
  * grows. Events are written in the same transaction as the baseline that found them.
  * Sent and dropped rows stay a while (OutboxPolicy.KEEP_FINISHED_MS) for the screen and for
- * tests; a sent snapshot is deleted at once.
+ * tests; a sent snapshot or usage day is deleted at once.
  */
 @Entity(
     tableName = "outbox",
@@ -153,17 +167,18 @@ data class PolicyFetchRow(
 )
 data class OutboxRow(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    /** [TYPE_EVENT], [TYPE_SNAPSHOT] or [TYPE_REQUEST]. */
+    /** [TYPE_EVENT], [TYPE_SNAPSHOT], [TYPE_REQUEST] or [TYPE_USAGE]. */
     val type: String,
     /**
      * The event's id or the snapshot's snapshot_id: the server de-duplicates on it. A request
      * is sent again with each new reason, so its item id also counts the sends (core's
-     * Requests.itemId); the server de-duplicates on the request's own id.
+     * Requests.itemId); the server de-duplicates on the request's own id. A usage day is
+     * "usage:<day>:<zone>:<queued at>" (AgentStore.usageItemId): a newer one replaces it.
      */
     @ColumnInfo(name = "item_id") val itemId: String,
-    /** The event's or the request's package (null for snapshots). */
+    /** The event's or the request's package (null for snapshots and usage days). */
     @ColumnInfo(name = "package_name") val packageName: String?,
-    /** The WireEvent, InventoryRequest or WireRequest, as the JSON that is sent. */
+    /** The WireEvent, InventoryRequest, WireRequest or WireUsageDay, as the JSON that is sent. */
     val payload: String,
     @ColumnInfo(name = "created_at") val createdAt: Long,
     val attempts: Int = 0,
@@ -178,6 +193,9 @@ data class OutboxRow(
         const val TYPE_EVENT = "event"
         const val TYPE_SNAPSHOT = "snapshot"
         const val TYPE_REQUEST = "request"
+
+        /** Phase 3: one usage day for `POST /api/v1/usage`. */
+        const val TYPE_USAGE = "usage"
         const val STATE_PENDING = "pending"
         const val STATE_SENT = "sent"
         const val STATE_DROPPED = "dropped"
@@ -257,12 +275,13 @@ interface OutboxDao {
     @Query("SELECT substr(payload, :start, :length) FROM outbox WHERE id = :id")
     fun payloadPart(id: Long, start: Int, length: Int): String?
 
-    /** Events and requests; a sent snapshot is deleted instead ([deleteSnapshots]). */
-    @Query("UPDATE outbox SET state = 'sent', finished_at = :at, last_error = NULL WHERE id IN (:ids) AND type != 'snapshot'")
+    /** Events and requests; a sent snapshot or usage day is deleted instead ([deleteSentLarge]). */
+    @Query("UPDATE outbox SET state = 'sent', finished_at = :at, last_error = NULL WHERE id IN (:ids) AND type NOT IN ('snapshot', 'usage')")
     fun markItemsSent(ids: List<Long>, at: Long)
 
-    @Query("DELETE FROM outbox WHERE id IN (:ids) AND type = 'snapshot'")
-    fun deleteSnapshots(ids: List<Long>)
+    /** Snapshots and usage days: large, and replaced by newer ones anyway. */
+    @Query("DELETE FROM outbox WHERE id IN (:ids) AND type IN ('snapshot', 'usage')")
+    fun deleteSentLarge(ids: List<Long>)
 
     /** A dropped snapshot keeps its row and reason, not its payload. */
     @Query(
@@ -325,6 +344,24 @@ interface OutboxDao {
     /** An unsent earlier send of the same request: the newer one replaces it. */
     @Query("DELETE FROM outbox WHERE type = 'request' AND state = 'pending' AND item_id LIKE :itemIdPrefix || '%'")
     fun deletePendingRequestSends(itemIdPrefix: String)
+
+    /** Phase 3: an unsent earlier report of the same day (item ids starting [itemIdPrefix]): the newer one replaces it. */
+    @Query("DELETE FROM outbox WHERE type = 'usage' AND state = 'pending' AND substr(item_id, 1, length(:itemIdPrefix)) = :itemIdPrefix")
+    fun deletePendingUsage(itemIdPrefix: String)
+
+    /** Phase 3: keeps the newest [keep] unsent usage days. */
+    @Query(
+        "DELETE FROM outbox WHERE id IN " +
+            "(SELECT id FROM outbox WHERE type = 'usage' AND state = 'pending' ORDER BY id DESC LIMIT -1 OFFSET :keep)",
+    )
+    fun capPendingUsage(keep: Int)
+
+    /** Phase 3: every unsent usage day, when the policy stops measuring. */
+    @Query("DELETE FROM outbox WHERE type = 'usage' AND state = 'pending'")
+    fun deleteAllPendingUsage(): Int
+
+    @Query("SELECT COUNT(*) FROM outbox WHERE state = 'pending' AND type = 'usage'")
+    fun pendingUsageCount(): Int
 
     @Query("SELECT state, COUNT(*) AS count FROM outbox GROUP BY state")
     fun countsByState(): List<StateCount>
@@ -393,23 +430,42 @@ interface EnforcementDao {
     /** The number of rows deleted: 1 when a too-large answer was on record. */
     @Query("DELETE FROM policy_fetch")
     fun clearPolicyFetch(): Int
+
+    @Query("SELECT * FROM screen_time WHERE id = 0")
+    fun screenTime(): ScreenTimeRow?
+
+    @Upsert
+    fun setScreenTime(row: ScreenTimeRow)
+
+    /** The number of rows updated: 0 when there's no screen time row yet. */
+    @Query("UPDATE screen_time SET state = :state, updated_at = :at WHERE id = 0")
+    fun setScreenTimeState(state: String, at: Long): Int
+
+    @Query("DELETE FROM screen_time")
+    fun clearScreenTime(): Int
+
+    @Query("SELECT COUNT(*) FROM screen_time")
+    fun screenTimeRows(): Int
 }
 
 /**
  * Version 2 (Phase 2) adds the policy, enforcement, requests and private_dns tables; the
  * outbox gains a third type ("request") without a schema change. Version 3 (Phases 6 and 10)
- * adds agent_update, recovery, commands and policy_fetch, one row each. Room migrates 1 to 2
- * and 2 to 3 by itself from the exported schemas in app/schemas/ (new tables only).
+ * adds agent_update, recovery, commands and policy_fetch, one row each. Version 4 (Phase 3) adds
+ * screen_time, one row; the outbox gains "usage" and the requests their new kinds without a
+ * schema change. Room migrates each version to the next by itself from the exported schemas in
+ * app/schemas/ (new tables only).
  */
 @Database(
     entities = [
         PackageRow::class, ScanStateRow::class, ChangeRow::class, HeartbeatRow::class, OutboxRow::class,
         PolicyRow::class, EnforcementRow::class, RequestRow::class, PrivateDnsRow::class,
         AgentUpdateRow::class, RecoveryRow::class, CommandsRow::class, PolicyFetchRow::class,
+        ScreenTimeRow::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
-    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3)],
+    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4)],
 )
 abstract class BelayDatabase : RoomDatabase() {
     abstract fun inventory(): InventoryDao

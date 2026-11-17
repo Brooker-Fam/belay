@@ -16,6 +16,7 @@ class OutboxTest {
     private fun event(id: Long, bytes: Int = 400) = OutboxItem(id, OutboxType.EVENT, bytes)
     private fun snapshot(id: Long) = OutboxItem(id, OutboxType.SNAPSHOT, 200_000)
     private fun request(id: Long, bytes: Int = 300) = OutboxItem(id, OutboxType.REQUEST, bytes)
+    private fun usage(id: Long, bytes: Int = 2_000) = OutboxItem(id, OutboxType.USAGE, bytes)
 
     /** A fake server: records each request's ids and answers with [answer]. */
     private class Server(val answer: (List<OutboxItem>) -> Verdict = { Verdict.Sent }) {
@@ -148,6 +149,34 @@ class OutboxTest {
         val big = (1L..3L).map { request(it, bytes = 40_000) }
         assertEquals(2, OutboxPolicy.batchSize(big))
         assertTrue(15 + 2 * 40_000 + 1 <= OutboxPolicy.MAX_REQUESTS_BODY_BYTES)
+    }
+
+    @Test
+    fun `usage days go together up to 31, under 256 KB, in a lane of their own`() {
+        val days = (1L..40L).map { usage(it) }
+        assertEquals(OutboxPolicy.MAX_USAGE_DAYS_PER_REQUEST, OutboxPolicy.batchSize(days))
+        assertEquals(31, OutboxPolicy.MAX_USAGE_DAYS_PER_REQUEST)
+        // 11 bytes of wrapper, then the days and the commas between them.
+        val big = (1L..3L).map { usage(it, bytes = 90_000) }
+        assertEquals(2, OutboxPolicy.batchSize(big))
+        assertTrue(OutboxPolicy.USAGE_WRAPPER_BYTES + 2 * 90_000 + 1 <= OutboxPolicy.MAX_USAGE_BODY_BYTES)
+        assertTrue(OutboxPolicy.MAX_USAGE_BODY_BYTES < 256 * 1024)
+        assertEquals(1, OutboxPolicy.lane(OutboxType.USAGE))
+        assertEquals(setOf(0), listOf(OutboxType.EVENT, OutboxType.SNAPSHOT, OutboxType.REQUEST).map(OutboxPolicy::lane).toSet())
+    }
+
+    @Test
+    fun `a server without POST usage holds back only the usage lane`() {
+        // A Phase 2 server answers 404 for /usage: retried later, like any unexpected answer.
+        val verdict = OutboxPolicy.verdict(404, "not_found", items = 2)
+        assertIs<Verdict.Retry>(verdict)
+        val lanes = listOf(event(1), usage(2), request(3), usage(4)).groupBy { OutboxPolicy.lane(it.type) }
+        val main = Server()
+        val usageLane = Server { verdict }
+        assertNull(OutboxDrain.run(lanes.getValue(0), send = main::send).stop)
+        assertEquals(listOf(listOf(1L), listOf(3L)), main.requests)
+        assertIs<OutboxDrain.Stop.Retry>(OutboxDrain.run(lanes.getValue(1), send = usageLane::send).stop)
+        assertEquals(listOf(listOf(2L, 4L)), usageLane.requests)
     }
 
     @Test

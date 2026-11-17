@@ -275,9 +275,11 @@ data class WireUsageApp(
 )
 
 /**
- * One local day of usage. Idempotent by ([day], [zone]): the server keeps the one with the newest
- * [asOf]. Decision: [asOf] is the time up to which the day was counted, not the newest event, so
- * a later report always replaces an earlier one even when no new event came (an app left open).
+ * One local day of usage. Idempotent by ([day], [zone]): a day sent again replaces the server's
+ * when its [asOf] is the same or newer. Decision: [asOf] is the time up to which the day was
+ * counted, not the newest event, so a later report always replaces an earlier one even when no
+ * new event came (an app left open); a complete day sent again after a clock change has the same
+ * [asOf] (the day's end), and must replace it too (UsageUploads).
  */
 @Serializable
 data class WireUsageDay(
@@ -334,4 +336,13 @@ object ScreenTimeWireLimits {
     const val MAX_COMMAND_REPORTS = 20
     const val MAX_AGREEMENT_SECTIONS = 20
     const val MAX_AGREEMENT_SECTION = 2000
+
+    /** The most minutes enforcement.screen_time reports in one number: 25 hours, the longest day. */
+    const val MAX_STATUS_MINUTES = 1500
+
+    /** Self-serve takes in enforcement.screen_time. */
+    const val MAX_STATUS_TAKES = 20
+
+    /** Gaps in one UsageDay. */
+    const val MAX_USAGE_GAPS = 200
 }
