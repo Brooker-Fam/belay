@@ -78,7 +78,7 @@ export const OtherUsersCard: FC<{ view: View; device: DeviceView; commands: Comm
       </>
     ) : null;
   return others > 0 ? (
-    <Notice kind="error">
+    <Notice kind="error" standing>
       <p id="users">
         <strong>{others === 1 ? "Another user or profile is on this phone." : `${others} other users or profiles are on this phone.`}</strong> This usually
         means Android's own Parental Controls were set up in Settings.

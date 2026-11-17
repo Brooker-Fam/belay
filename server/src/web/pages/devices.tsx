@@ -332,7 +332,7 @@ export const DevicePage: FC<{
       {message && <Notice>{message}</Notice>}
       {error && <Notice kind="error">{error}</Notice>}
       {tampering.length > 0 && (
-        <Notice kind="error">
+        <Notice kind="error" standing>
           <p>
             <strong>Someone may be getting around Belay on this phone.</strong> Android's own Parental Controls, in Settings, can add a hidden
             profile and lift Belay's suspensions, and Belay can't stop the phone's Settings opening. Have a look at the phone's Settings together.
