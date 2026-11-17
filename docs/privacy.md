@@ -33,10 +33,24 @@ location, what's on the screen, or how long apps are used. Later phases add some
 only as listed in [ROADMAP.md](../ROADMAP.md), each shown to the kid on the phone first,
 and some (location, network logs) off by default for AI.
 
+## When it's sent
+
+- An app change: as soon as Belay notices it (it waits in an outbox while the phone is
+  offline, and goes out in order when it's back).
+- A check-in with the phone's status: every 2 hours.
+- The whole app list: once a day, after every restart, and right after the phone connects
+  to the server.
+- Changes Belay noticed before the phone was connected to a server are sent when it
+  connects, and the phone's screen says so.
+
+The camera is used only to scan the enrollment QR code, only if the person scanning
+allows it, and only while that screen is open. Camera frames are never stored or sent.
+
 ## Where it lives
 
-- **On the phone:** Belay's own private storage: its last app list, the changes waiting to
-  be sent, and its device token, encrypted with a key in Android Keystore.
+- **On the phone:** Belay's own private storage: its app list, its recent changes (the
+  last 300), the changes waiting to be sent (sent ones are kept 7 days), and its device
+  token, encrypted with an AES key in Android Keystore.
 - **On the family's server:** one SQLite database in `/data`, on a machine the family
   controls ([server.md](server.md)). Nothing goes to Belay's authors or anyone else. There
   are no analytics, telemetry, ads or crash-reporting SDKs, in the agent or the server.

@@ -44,6 +44,11 @@ relying on something new, it goes here first, with a source.
 | D1 | Developer verification: dates, ADB exemption, limited-distribution account | Partly; important details below | Docs |
 | M1 | Declaring a monitoring tool: `android:isMonitoringTool="parental_control"` | **Contradicted**: it's a meta-data entry | SDK; Play docs |
 | M2 | 37.2 adds `…_INCLUDING_REGISTERED_APP_STORES` | Confirmed; exact name differs from the brief | SDK |
+| K5 | Which apps have special access, read without special permissions | Confirmed | AOSP |
+| R5 | CAMERA only while the enrollment screen is open: the grant states, and revoking kills the app | Confirmed | AOSP |
+| N1 | HTTPS only, the system's CAs; plain http only in debug builds, to the emulator's host | Confirmed; CT through OkHttp unproven | Docs; Emulator (Phase 1 CI) |
+| N2 | Compose's EmojiCompat would ask Play services for a font; Belay turns it off | Confirmed | androidx source |
+| E1 | Enrolling over adb: a receiver only the shell can reach, and its answer | Confirmed | AOSP; Emulator (Phase 1 CI) |
 
 "Emulator" entries were seen in CI: `ci-emulator-test.sh` passed end to end on the API 37.0
 Automated Test Device image (`aosp_atd`, required) from run 8, and on the API 37.0 Google
@@ -436,9 +441,10 @@ process dies. TestDPC registers its package receiver there. Belay has one
 can't be managed by the user in the UI, and the lock covers "other permissions in the
 affected group". Any runtime permission the app declares can be granted, sensor ones
 included: AOSP sets `mAdminCanGrantSensorsPermissions = true` for a device owner set over
-adb. Belay grants itself every runtime permission it declares (today `POST_NOTIFICATIONS`
-and `ACCESS_LOCAL_NETWORK`); the whole Nearby devices group is then locked in Settings.
-Device-owner apps are also never hibernated.
+adb. Belay grants itself the runtime permissions it needs (`POST_NOTIFICATIONS` and
+`ACCESS_LOCAL_NETWORK`); the whole Nearby devices group is then locked in Settings.
+Device-owner apps are also never hibernated. CAMERA is the exception: Belay declares it
+for the enrollment QR code but never grants it to itself (R5).
 
 ### R3. `ACCESS_LOCAL_NETWORK`
 
@@ -462,6 +468,22 @@ default." But "Certificate transparency verification isn't performed on connecti
 use custom trust anchors" (…/security-config [2026-08-28]). Belay's plan stays a publicly
 trusted certificate: claude.ai needs a public HTTPS URL for the server anyway, and it
 keeps the agent's network config simple.
+
+### R5. CAMERA, only for the enrollment QR code
+
+**Confirmed** in AOSP 17 (not yet seen on a device). Belay uses the camera only to scan the
+server's QR code, and only if the person scanning allows it; typing the code works without it.
+
+- Grant states (`PermissionControllerServiceImpl`, packages/modules/Permission): DENIED
+  sets the permission policy-fixed and revoked, without USER_FIXED, so going back to
+  DEFAULT lets the system dialog appear again; DEFAULT only clears POLICY_FIXED.
+- Revoking a granted runtime permission kills the app's uid (`PermissionService.kt`;
+  notification permissions are the exception). So Belay can't deny the camera the moment
+  enrollment succeeds without killing itself mid-flow.
+- What Belay does (`enroll/CameraGate.kt`): DEFAULT just before scanning; DENIED again at
+  the first agent step after the enrollment screen closes. If the camera had been allowed,
+  Belay restarts once at that moment. CAMERA is left out of the self-grant (R2) and is
+  listed in the health report.
 
 ### Other Android 17 changes that touch Belay
 
@@ -547,6 +569,61 @@ stores" (apps holding `INSTALL_PACKAGES_AS_REGISTERED_APP_STORE`). The new key i
   Store image is closer to the Pixel for Play Protect behavior.
 - This sandbox has no `/dev/kvm`; the emulator runs only in CI (GitHub's Linux runners
   have KVM).
+
+## Talking to the server (Phase 1)
+
+### K5. Which apps have special access
+
+**Confirmed** in AOSP 17 (`core/java/android/provider/Settings.java`,
+`DevicePolicyManagerService`):
+
+- `Settings.Secure.ENABLED_NOTIFICATION_LISTENERS` (`@hide`) and
+  `ENABLED_ACCESSIBILITY_SERVICES` are marked `@Readable`: any app can read them, as
+  colon-separated component names. Belay reads each once per scan to report
+  "reads notifications" and "accessibility" per app.
+- `DevicePolicyManager.getActiveAdmins()` needs no permission for the caller's own user:
+  Belay reports "device admin" from it.
+
+### N1. HTTPS only, with the system's CAs
+
+**Confirmed** (developer.android.com/privacy-and-security/security-config [2026-08-28]; the
+Android 17 behavior changes [2026-11-11]).
+
+- The agent's network security config (`res/xml/network_security_config.xml`) allows no
+  cleartext and trusts only the system's CAs: no user CAs, no pinning. OkHttp follows the
+  config's cleartext rule on Android. Release builds also use OkHttp's `MODERN_TLS` only
+  and follow no redirects.
+- Debug builds replace the file (`src/debug/res/xml`) to allow plain http to `10.0.2.2`,
+  the emulator's alias for the host computer's loopback, and `127.0.0.1`. CI's end-to-end
+  test uses it to reach a server on the runner.
+- Certificate Transparency: on by default for apps targeting 37 (R4). OkHttp uses the
+  platform's TrustManager, so it should apply; **unproven** until a phone talks to a
+  server with a non-CT certificate.
+
+### N2. EmojiCompat and Google Play services
+
+**Confirmed** in the androidx source (`emoji2/.../DefaultEmojiCompatConfig.java`,
+androidx-main): "The default config will use downloadable fonts to fetch the emoji compat
+font file", from a system `ContentProvider` with the `androidx.content.action.LOAD_EMOJI_FONT`
+intent filter. On a Pixel that's Google Play services' font provider. Compose starts it
+through `androidx.emoji2.text.EmojiCompatInitializer` (androidx.startup). Belay removes
+that initializer in its manifest (`tools:node="remove"`), so it never asks Play services
+for anything; the phone's own emoji font still renders.
+
+### E1. Enrolling over adb
+
+**Confirmed** in AOSP 17; seen in CI from Phase 1.
+
+- `provision.sh --server --code` sends `am broadcast -a family.brooker.belay.ENROLL` to
+  `EnrollReceiver`, which is exported but protected by `WRITE_SECURE_SETTINGS`
+  (`signature|privileged|development|role|installer`). The shell package holds it;
+  ordinary apps can't get it, except by `pm grant` over adb. So only someone with adb can
+  enroll this way, and this path may replace an existing connection. (The idea is
+  kidctl's; the code is Belay's.)
+- `am broadcast` sends an ordered broadcast and waits, printing
+  `Broadcast completed: result=…, data="…"` (`ActivityManagerShellCommand`). Belay answers
+  `enrolled: "<name>" on <host>` or `failed: <problem>`, never the token.
+- A background broadcast gets 60 s (`BROADCAST_BG_TIMEOUT`); enrolling allows itself 40.
 
 ---
 

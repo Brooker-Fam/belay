@@ -26,10 +26,17 @@ When you factory reset, keep the eSIM: don't tick the option to erase eSIMs.
 2. Setup wizard: Wi-Fi, **skip the Google account**, screen lock as you like.
 3. USB debugging on (Settings > About phone > tap Build number 7 times; Settings > System >
    Developer options > USB debugging).
-4. `android/scripts/build-release.sh`, then `android/scripts/provision.sh`
-   ([phase0-checklist.md](phase0-checklist.md) step 1 walks through it).
-5. **Add the parent-owned Google account** for the Play Store: Settings > Passwords &
+4. On the parent page, Add a phone: name it and make an enrollment code (it works once,
+   for 30 minutes).
+5. `android/scripts/build-release.sh`, then
+   `android/scripts/provision.sh --server https://belay.example.org --code <code>`
+   ([phase0-checklist.md](phase0-checklist.md) step 1 walks through provisioning). The
+   phone must be online at the end, when it connects to the server. Without `--server`,
+   connect it later from Belay's own screen: scan the QR code on the Add a phone page, or
+   type the server and the code.
+6. **Add the parent-owned Google account** for the Play Store: Settings > Passwords &
    accounts > Add account > Google.
+7. Check the parent page: the phone shows as OK, with its apps listed as new to review.
 
 ### Which Google account
 
