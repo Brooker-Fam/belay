@@ -18,8 +18,8 @@ screenshots in the repository, and no account names, phone numbers or serial num
 ## 2. Belay updates itself
 
 1. Raise `versionCode` in `android/app/build.gradle.kts`, then `scripts/build-release.sh`.
-   Upload it to the server and approve it for the phone (`agent-add`, `agent-offer`, or the
-   parent page).
+   Add it to the server with `agent-add` (the parent page doesn't upload APKs), then offer it
+   to the phone on its page (Updating Belay) or with `agent-offer` ([server.md](server.md#updating-belay)).
 2. Watch the phone's update state: downloading, checking, installing, then the phone checks
    in from the new version and the state is done. Note how long it took, on Wi-Fi.
 3. On the phone: Android's own notice (AOSP says "Updated by your admin."), and Belay's
