@@ -1,8 +1,24 @@
 # Phase 3: screen time, schedules and stages
 
-**Status: design.** Nothing here is built. Android facts cite the drafts in
-[platform-notes-drafts.md](platform-notes-drafts.md) by id (U1, S2…); check each on the emulator
-before relying on it, and on the Pixel before calling it done.
+**Status: built**, network logging included, on the server and the phone, and run end to end in
+CI on the Android 17 emulator (README, "What exists"; [protocol.md](../protocol.md)); where the
+build differs from this design, the protocol and the code are right. **Still open:**
+[phase3-checklist.md](../phase3-checklist.md) on the Pixel. Android facts cite the drafts in
+[platform-notes-drafts.md](platform-notes-drafts.md) by id (U1, S2…); the ones Belay relies on
+moved to [platform-notes.md](../platform-notes.md), network logging's as W1 and W6 to W9. Network
+logging was built with these decisions:
+
+- Registrable domains without the Public Suffix List (the open question below): a name keeps its
+  last two labels, or three under a country's second level (`bbc.co.uk`), so a name under a
+  shared suffix says less, not more (core's network/Domains.kt).
+- Never kept, besides the never-blocked apps: lookups Android can't tie to one app (a shared user
+  id, "name:uid"), 988's websites (on the phone and the server), IP addresses, reverse lookups
+  and the home network's own names.
+- A day is the phone's own zone's, and `POST /network` replaces a stored day whatever its
+  `as_of` (the outbox keeps one unsent report per day, in order). `paused` comes from the other
+  users and profiles the phone counts, and from Android refusing a batch.
+- The switch is on the phone's page under Web; the Network tab shows while it's on (the kept days
+  stay readable on it after, until they age out or a parent stops collecting).
 
 ## Goals
 

@@ -97,11 +97,17 @@ provider's terms. Settings → "What AI apps may read" turns each category off:
   someone who isn't one), the contacts' numbers, the blocked numbers, and the number in the
   kid's request to add a contact. Never what was said, and never calls with 911, 988, an
   emergency number or a private number: Belay doesn't record those.
+- **Network** (Phase 3), **off until a parent turns it on**: for each day the server keeps, each
+  app and the websites and online services it looked up, by name (`example.com`), with how many
+  times. Only while a parent has network logging on for the phone; never pages, messages,
+  searches or anything typed, never the always-on apps' lookups (the phone app, texting), and
+  never 988's websites: Belay doesn't keep those.
 
-Each category but Location and Calls is on by default. One that a new version of Belay adds
-starts off for a family that had turned any category off, and Settings marks it "new" until a
-parent saves. Location and Calls start off for every family: they're about where the kid is,
-and about other people (friends' numbers). The kid's phone shows which categories the AI app
+Each category but Location, Calls and Network is on by default. One that a new version of Belay
+adds starts off for a family that had turned any category off, and Settings marks it "new" until
+a parent saves. Location, Calls and Network start off for every family: they're about where the
+kid is, about other people (friends' numbers), and about which websites and services the kid's
+apps use. The kid's phone shows which categories the AI app
 may read (the policy's `ai_reads`), under "What your parent can see".
 
 Always included: the phones' names, their status and problems ("silent for 14 hours",
@@ -123,7 +129,9 @@ Also always included: the server's own health (`get_server_health`): backups, di
 size, its clock. It names no phone or app.
 
 Never included, because Belay doesn't collect it: messages, what's said on calls, Android's
-own contacts and call log, photos, browsing, or what's on the screen. Passwords, tokens,
+own contacts and call log, photos, the pages of websites (network logging keeps only names, per
+app per day), or what's on the screen. Whether network logging is on is said only by
+`get_network_activity`, with the Network category. Passwords, tokens,
 enrollment codes, reset protection account ids and recovery keys (or their checks) are never
 returned, and neither is the kid's own phone number (it's only for "Call" on the parent page)
 or which numbers are private.
@@ -152,6 +160,7 @@ most 20, and each message in it counts.
 | `get_place_events(device, from?, to?)` | Phase 4: arrivals at and departures from the family's places, newest first; the last 7 days by default, at most 92. Needs the Location category. |
 | `get_policy(device)` | What a phone enforces now, in words, with the rules' version and whether the phone has applied it; blocked and waiting apps; a line on its screen time; proposals waiting for a parent; whether the phone has a recovery key, and when one was last used. |
 | `get_rules(device)` | Phase 3: the phone's screen-time rules (measuring, limits with their ids, schedules, exempt apps, self-serve, what happens when Belay can't count), extra time given today, the last "lock now", and proposals waiting. With the Screen time category, where each limit stands today; with Requests, more-time requests waiting; with Stage and agreement, the stage, what the next one changes, and the agreement with the kid's answer. |
+| `get_network_activity(device, from?, to?)` | Phase 3: day by day, in the phone's own days: each app (most looked up first, at most 30) with the websites and online services it looked up, by name, and how many times (at most 25 names an app; the rest counted), and how many pairs the phone left out. App names, package names and domains are under `untrusted`: an app's developer chooses them. Says whether logging is on, or paused by Android. Only while a parent has network logging on; the last 7 days by default, at most 31. Needs the Network category. No tool turns network logging on or off, or proposes it. |
 | `get_screen_time(device, from?, to?)` | Phase 3: day by day, in the phone's days: screen minutes, unlocks, minutes by hour, the most used apps with minutes and opens, and the times Belay couldn't count, with why. A day the phone sent nothing for says so: that's unknown, not zero. The last 7 days by default, at most 92. Needs the Screen time category. |
 | `block_app(device, package, note?)` | Blocks an app at once (tightening). It refuses the apps the phone never blocks, so 911 and 988 always work: Belay itself, the dialer and the services that place calls, the texting app, the keyboard, the home screen, emergency and safety apps, System UI, Settings, and anything else the phone reports it never blocks. An app that isn't on the phone yet can be blocked ahead of time, but AI apps may have at most 50 of those per phone; a parent clears them on the phone's page. |
 | `pause_phone(device, minutes?)` | Pauses the phone at once, for some minutes or until a parent resumes it. The kid's phone says so in Belay's own words ("Your parent paused this phone until 6:30 PM."): the AI app writes no note (a parent can, on the parent page). It can't shorten a pause already running, and against one at least as long it changes nothing; a longer one keeps a parent's note. |
@@ -286,3 +295,6 @@ Each use of `review_app` and `review_request` is in the activity log, like a too
 - "Is anything urgent? Did Sam ask for help?"
 - With the Location category on: "Where's Sam's phone?", "Check where Sam's phone is now."
   (Sam gets a notice that names the app), "When did Sam get to school this week?"
+- With network logging and the Network category on: "Which websites and services did the apps on
+  Sam's phone look up this week? Is any of it worth a conversation?" (A name looked up isn't a
+  page visited: apps look names up by themselves, for ads and updates.)

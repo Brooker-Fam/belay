@@ -3,7 +3,8 @@
 CI proves the phone's side on the Android 17 emulator: opening the fixture app shows up in
 Belay's count, a 0-minute limit suspends it and removing it lets it run, a schedule on now
 suspends it but not Belay or the dialer, usage reaches the server, `lock-now` turns the screen
-off and is reported done, and turning usage access off and on is noticed by itself. This
+off and is reported done, turning usage access off and on is noticed by itself, and network
+logging turns Android's logging on and off and gets an app's lookup to the server. This
 checklist is for the real Pixel 8 with the **release** build: what only a real phone, a real
 kid's apps and a night of Doze can show. Do [phase2-checklist.md](phase2-checklist.md) first.
 
@@ -87,6 +88,29 @@ kid's real apps or times.
 2. Check the battery use Android reports for Belay over the day (Settings > Battery): write it
    down. Belay reads screen time every minute only while the screen is on.
 
+## 7. Network logging
+
+1. On the parent page, under Web on the phone's page, turn network logging on. On the phone,
+   "What your parent can see" now lists "Which websites and services apps look up, per day", with
+   the note about Android's words. Write down Android's own notification word for word (title and
+   text: in AOSP, "Device is managed" and "Your organization manages this device and may monitor
+   network traffic. Tap for details.", at most twice, at most once a day), and what Quick
+   Settings' device-management dialog says about network logging (platform notes W1).
+2. Open a browser and two other apps for a few minutes each. Within about 90 minutes (Android
+   finishes a batch then, or at 1200 lookups; with adb in maintenance mode, `adb shell dpm
+   force-network-logs` finishes it now), the phone's Network tab lists each app with names like
+   `example.com`, never a page. Write down how long the first batch took, and roughly how many
+   names a browser looked up in a few minutes.
+3. Call and text from the phone app and the texting app, and open 988lifeline.org in the
+   browser: none of the phone app's or the texting app's lookups, and no 988 name, shows on the
+   Network tab.
+4. Leave it on for a day: write down how many pairs the busiest day had, whether any were left out
+   (the tab says "And … more"), and Belay's battery use (Settings > Battery) against step 6.2.
+5. Turn network logging off: within seconds Android's notification goes, the phone's list drops
+   the entry, and with adb (maintenance mode) `adb shell dpm force-network-logs` says
+   "logging is not available". The Network tab goes; the phone's page says how many days the
+   server still keeps.
+
 ## Results
 
 | Step | Check | Result | Android build |
@@ -108,3 +132,8 @@ kid's real apps or times.
 | 5.1 | Next stage sentences | pending | |
 | 6.1 | The limit opens at the day's start after a night of Doze | pending | |
 | 6.2 | Belay's battery use for a day | pending | |
+| 7.1 | Android's network logging notice and Quick Settings' words | pending | |
+| 7.2 | An app's names on the Network tab; time to the first batch | pending | |
+| 7.3 | No phone app, texting or 988 names | pending | |
+| 7.4 | A day's pairs, left out, battery | pending | |
+| 7.5 | Off: Android's notice goes, dpm refuses | pending | |

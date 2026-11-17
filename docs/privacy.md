@@ -80,9 +80,36 @@ depends on the policy's `measure`, which only a parent sets (never an AI app):
   with Settings' "Screen time" category on, and the stage, the family agreement and the kid's
   answers to it only with "Stage and agreement"; the more-time requests are under "Requests".
 
-Not collected: what's on the screen, what's typed, websites, notifications, or anything inside
-an app. Network logging (which domains apps look up) is a later part of Phase 3, off by
-default, and not built yet.
+Not collected: what's on the screen, what's typed, the pages of websites, notifications, or
+anything inside an app.
+
+**Which websites and services apps look up (Phase 3), only while a parent has network logging
+on.** Off by default, for every phone. Only a parent turns it on, on the phone's page under Web
+(or the server's CLI, acting as one), never an AI app, and no AI app can propose it. While it's
+on, Android logs the phone's DNS lookups for Belay (its device-owner network logging), and Belay
+keeps, on the phone, only this:
+
+- For each app, each day: the names of the websites and online services it looked up, reduced to
+  their registrable part (`chat-7.cdn.example.com` is noted as `example.com`), and how many times.
+  Belay sends each day's list to the family's server, at most 5000 app-and-name pairs a day (the
+  most looked up; the rest are only counted).
+- Never: the pages, addresses after the name, messages, searches, or anything typed; the IP
+  addresses Android logs with a lookup, and the connections it logs (an address and a port),
+  which Belay never reads; the time of each lookup (only the day); what the apps Belay never
+  blocks look up (the phone app, texting, the keyboard, the home screen, Belay, Android's own
+  packages), and lookups Android can't tie to one app (a shared user id: Android's own
+  processes, Play services); and 988's websites (the 988 Lifeline's sites, its chat included,
+  Canada's 9-8-8 and the Veterans Crisis Line), which Belay never keeps, like a call to 988, and
+  the server drops if one arrives anyway. IP addresses, reverse lookups and the home network's own
+  names aren't kept either.
+- It's a record, not a guard: an app with its own way of looking names up (its own DNS over
+  HTTPS, a DNS library, a fixed address) isn't noted, and Android doesn't log UDP. While another
+  user or profile is on the phone, Android pauses logging and hands Belay nothing; the parent
+  page says so.
+
+On the server: a day sent while network logging is off isn't kept, and the lookups of the apps the
+phone never blocks aren't kept even if a phone sends them. AI apps read it only with Settings'
+"Network" category on, which starts off for every family.
 
 **Where this phone is (Phase 4), only while a parent has location on.** Off by default: with
 location off, Belay doesn't even hold the location permission (it's denied by policy, so Settings
@@ -142,7 +169,7 @@ Android's own log has them.
 **Not collected in Phase 1:** messages, calls, contacts, photos, files, browsing, searches,
 location (Phase 4 adds it, off by default), what's on the screen, or how long apps are used. Later phases add some of these
 only as listed in [ROADMAP.md](../ROADMAP.md), each shown to the kid on the phone first,
-and some (location, network logs) off by default for AI.
+and some (location, calls, network activity) off by default for AI.
 
 ## When it's sent
 
@@ -164,6 +191,9 @@ and some (location, network logs) off by default for AI.
   request at once. When a parent turns recording or calls off, the phone drops the records it
   hasn't sent yet. Records the server gets while it doesn't record calls are dropped, and only
   counted.
+- Phase 3, network logging: each day's list as soon as Android hands Belay a batch of lookups
+  (every 90 minutes at most, sooner on a busy phone). When a parent turns it off, the phone drops
+  the days it hasn't sent yet. Days the server gets while it's off are dropped, and only counted.
 
 The camera is used only to scan the enrollment QR code, only if the person scanning
 allows it, and only while that screen is open. Camera frames are never stored or sent.
@@ -186,7 +216,9 @@ allows it, and only while that screen is open. Camera frames are never stored or
   emergency number, 988 or a private number. They're the kid's recent calls, kept whether or not
   calls are recorded, and deleted, with any records not sent yet, when calls is turned off. When
   the kid last called 911 or 988 (or tapped a button to text them) is kept only for the 2 hours
-  every caller rings, and never sent.
+  every caller rings, and never sent. Network logging (Phase 3) keeps the counts of today and the
+  two days before (which app looked up which name, how many times), and where Android's batches
+  stand; all of it goes, with the days not sent yet, when a parent turns it off.
 - **On the family's server:** one SQLite database in `/data`, on a machine the family
   controls ([server.md](server.md)). Nothing goes to Belay's authors or anyone else. There
   are no analytics, telemetry, ads or crash-reporting SDKs, in the agent or the server.
@@ -240,7 +272,10 @@ sends outside the family's server, and the parent page says so where you choose 
   and other people's numbers (contacts', blocked ones, and the one in a contact request) are
   about the kid's relationships, and about people who never agreed to Belay. Until then an AI
   app sees the call rules and the contacts' names, never who called or a number. Which numbers
-  are private is never shown to an AI app, only how many.
+  are private is never shown to an AI app, only how many. **Network activity** (Phase 3) is off
+  for every family too, until a parent turns the "Network" category on: which websites and
+  services apps look up says much about a kid. With it on, an AI app reads each day's apps and the
+  names they looked up (as untrusted text), never more than the server keeps.
 
 ## What the kid sees (Phase 2)
 
@@ -284,6 +319,13 @@ sends outside the family's server, and the parent page says so where you choose 
 - **Your stage** and what the next one changes (in Belay's words from the two sets of rules, or
   the family's), and how to get there; **your family agreement**, in full, with "I agree" and
   "I want to talk about it".
+- **What your parent can see** gains "Which websites and services apps look up, per day" the
+  moment a parent turns network logging on ("The names of the websites and online services each
+  app looks up, like example.com, and how many times a day. Not the pages, messages, searches or
+  anything you type." and that the always-on apps and 988's websites are never noted), and loses
+  it when it's off. Android shows its own notice too, at most twice ("Your organization manages
+  this device and may monitor network traffic"), and Belay's list explains that "your
+  organization" means the parent, through Belay.
 
 ## What the kid sees (Phase 4)
 
@@ -406,6 +448,11 @@ Turning recording or calls off stops new records; the ones kept stay until they 
 Contacts, private and blocked numbers stay until a parent removes them, or deletes the phone.
 The AI scope "calls" is off by default for every family.
 
+Network activity (Phase 3) is kept 30 days by default (the family chooses 1 to 90 in Settings),
+then deleted by the hourly clean-up. Turning network logging off stops new days; the ones kept
+stay until they age out (the phone page says how many). The AI scope "network" is off by default
+for every family.
+
 **Stopping collecting (Phase 11).** A parent can stop one kind of data for a phone, on its page,
 at any time, and the server deletes what it keeps of it at once, after a confirmation that lists
 exactly what goes (counted then: if more arrives before the parent confirms, the list is shown
@@ -420,6 +467,8 @@ again). It's in the activity log, with what went. Only a parent does it, never a
 - **Calls (Phase 5):** recording calls turns off, and every call record goes (who called whom,
   when, for how long, and what happened). Calls stay on with their rules if they were, and the
   contacts and the private and blocked numbers stay: they're the phone's rules.
+- **Websites and services apps look up (Phase 3):** network logging turns off (the phone turns
+  Android's off and deletes what it counted), and every day of network activity goes.
 - **Apps:** every app change, every review and its notes, the apps that aren't on the phone any
   more (but one a parent blocked or allowed, which its decision names), and the record of the app
   lists the phone sent. The phone keeps sending its app list and changes while Belay is on it (its

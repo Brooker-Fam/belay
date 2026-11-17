@@ -31,6 +31,7 @@ schemas in `server/src/device/schemas.ts`. Change all three together.
 | `POST /api/v1/usage` | 256 KB, at most 31 days (Phase 3) |
 | `POST /api/v1/locations` | 64 KB, at most 200 fixes and 200 place events (Phase 4) |
 | `POST /api/v1/calls` | 128 KB, at most 500 records (Phase 5) |
+| `POST /api/v1/network` | 512 KB, at most 31 days of at most 5000 entries (Phase 3, network logging) |
 
 Errors: `{"error": "<code>", "error_description": "<words>"}` with
 
@@ -321,6 +322,57 @@ number or the phone; it treats 988's full number (`+18002738255`) as 988 too. `n
 only when `contact_id` is null. At most 1000 records are kept a day per phone; past that they're
 dropped and counted. `accepted` counts every record in the call, kept, already kept or dropped.
 The endpoint is rate limited per phone apart from the phone's other calls (30 a minute).
+
+## `POST /api/v1/network`
+
+Phase 3, network logging. How many times each app looked up each domain, one local day per
+entry, only while the policy's `network_log` is on (a parent's choice alone, off by default).
+
+```json
+{ "days": [ { "day": "2026-11-17", "zone": "America/Los_Angeles", "as_of": 1794867161711,
+              "entries": [ { "package": "com.example.chat", "domain": "example.com", "lookups": 42 } ],
+              "dropped": 0 } ] }
+```
+→ `200 {"server_time", "accepted"}`.
+
+Idempotent by `day`: a day sent again replaces the stored one, entries and all, so the phone
+always sends the whole day as it has it. `domain` is a lowercase hostname in Punycode, at most
+253 characters, checked like one (labels of letters, digits and hyphens, at least two, a last
+label with a letter: never an IP address); the app's developer chose it, so it's untrusted.
+`lookups` is 1 to 1,000,000; `dropped` (0 to 1,000,000) counts the entries the phone cut to stay
+under 5000 a day (and 400 KB), the least looked up.
+
+What the phone does (Android 17's network logging, `DevicePolicyManager.setNetworkLoggingEnabled`,
+device owner only; docs/platform-notes.md W1, W6 to W9):
+
+- Android's logging is on exactly while the policy's `network_log` is. Android finishes a batch
+  at 1200 events or after 90 minutes and tells Belay (`onNetworkLogsAvailable`); Belay takes it at
+  once, and any batch it missed (Android keeps the last 5).
+- It reads only the DNS lookups (never the connect events: an address and a port), and reduces
+  each to its app and the registrable part of the name (`chat-7.cdn.example.com` →
+  `example.com`; three labels under a country's second level, like `bbc.co.uk`), per local day in
+  the phone's zone. The raw events never reach storage, the outbox or the log.
+- Never kept: lookups by the apps it never blocks (its `never_blocked`: Belay, the dialer, the
+  texting app, the keyboard, the home screen, Android's own packages), by uids Android names
+  `name:uid` (a shared user id: Android's own processes, Play services, the shell), and of 988's
+  websites (`988lifeline.org`, `988lineadevida.org`, `suicidepreventionlifeline.org`, `988.ca`,
+  `veteranscrisisline.net`, and any name under them); IP addresses, reverse lookups (`in-addr.arpa`,
+  `ip6.arpa`, and the `null` Android logs for one that found nothing) and names that never leave
+  the phone or the home network (`local`, `localhost`, `internal`, `invalid`, `arpa`).
+- It keeps today and the two days before (at most 10,000 entries a day), sends each day that a
+  batch changed (it waits in an outbox lane of its own, a newer report of a day replacing an
+  unsent one), and deletes all of it when `network_log` goes off.
+
+What the server keeps: a day only while the phone's `network_log` is on; otherwise it's answered
+`200`, counted in `accepted`, dropped, and counted for the parent page. It never keeps the
+entries of an app it never blocks (the phone's `never_blocked`, and the well-known dialers,
+texting apps and emergency apps), and never an entry naming one of 988's websites: it takes
+those out before it checks the body (so one written some other way costs the rest of its day
+nothing), counts them for no one, and logs only that it happened, without the name or the phone.
+Also accepted and dropped: a day that isn't a real date, one the phone can't have counted yet
+(after tomorrow in its `zone`), and one older than the family keeps (30 days by default).
+`accepted` counts every day in the call. The endpoint is rate limited per phone apart from the
+phone's other calls (30 a minute).
 
 ## Calls rules (Phase 5, both sides)
 
@@ -656,7 +708,7 @@ server decides whether a change tightens or loosens.
 | `screen_time` | ScreenTime? | Phase 3; null measures nothing and limits nothing |
 | `stage` | `{name, number, since, next?: {name, unlocks: string[], how?, screen_time?}}`? | Phase 3, for the kid's screen; `unlocks` and `how` are the family's words |
 | `agreement` | `{version, sections: [{title, text}], kid_agreed_at?, parents_agreed_at?}`? | Phase 3; at most 20 sections of 2000 characters |
-| `network_log` | `{enabled}` | Phase 3, later: off unless a parent turns it on (the phone doesn't log yet) |
+| `network_log` | `{enabled}` | Phase 3: whether the phone logs which domains its apps look up (`POST /network`); off unless a parent turns it on, never an AI app |
 | `location` | Location? | Phase 4; null or `mode: off`: no location at all |
 | `ai_reads` | string[] | Phase 7: the data categories the AI app may read |
 | `help_seen` | `[{request_id, at, by?}]` | Phase 7: the last 30 days |
@@ -729,7 +781,7 @@ The answers in `requests` gain `minutes?` (Phase 3: an approved `more_time`).
 | `commands` | `[{id, result: "done"\|"failed"\|"expired", at, problem?}]` | the last 20 commands' results, newest first |
 | `never_blocked` | string[] | the packages this phone never blocks, at most 100 |
 | `screen_time` | `{day, measured, used_minutes?, limits: [{id, used?, left?, state: "open"\|"used_up"\|"extra"}], schedule?: {id, until}, self_serve: [{limit_id, package?, minutes, at}]}`? | Phase 3: the phone's view now; minutes left out when `measure` is off (`used` rounds down, `left` up) |
-| `network_log` | `{enabled, paused}`? | Phase 3, later |
+| `network_log` | `{enabled, paused}`? | Phase 3: null while the policy's `network_log` is off and Android's logging is too; `enabled`: Android logs for Belay; `paused`: Android paused it, while another user or profile is on the phone |
 | `location` | `{permission, location_on, last_fix_at?, problem?}`? | Phase 4: null while location is off |
 | `calls` | `{dialer, problem?}`? | Phase 5: whether Belay is the default dialer |
 
@@ -765,6 +817,16 @@ duration_s, outcome: "answered"|"missed"|"rejected"|"voicemail"|"not_placed", re
 | `by_hour` | int[24] | screen minutes per local hour; the day clocks go back, both 1 a.m. hours add up |
 | `apps` | `[{package, minutes, opens}]` | at most 500, most used first; under a minute and never-blocked apps left out |
 | `gaps` | `[{from, to, reason: "no_usage_access"\|"phone_off"\|"unknown"}]` | times Belay couldn't count |
+
+**NetworkDay** (phone → server, Phase 3)
+
+| Field | Type | |
+|---|---|---|
+| `day` | `"YYYY-MM-DD"` | in `zone` |
+| `zone` | string | IANA: the phone's own |
+| `as_of` | int | the newest lookup counted |
+| `entries` | `[{package, domain, lookups}]` | at most 5000, most looked up first; `domain` a lowercase Punycode hostname (untrusted) |
+| `dropped` | int | entries cut to stay under 5000 (and 400 KB) |
 
 **Device** (facts and the agent's own health; nothing about the kid's content)
 

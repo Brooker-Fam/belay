@@ -24,7 +24,7 @@ back the designs in this folder, and re-check some Phase 2 facts.
 | S4 | Belay's suspensions coexist with other suspenders | Partly: Digital Wellbeing's are separate; Android's own parental controls share Belay's | AOSP |
 | S5 | `lockNow` locks the phone | Moved to platform-notes.md (Phase 3) | |
 | S6 | Exact alarms for schedule boundaries | Moved to platform-notes.md (Phase 3) | |
-| W1 | Network logging for a device owner | Confirmed, with limits | AOSP; Docs |
+| W1 | Network logging for a device owner | Moved to platform-notes.md (Phase 3), with W6 to W9 | |
 | W2 | `setGlobalPrivateDnsModeSpecifiedHost`: errors and threading **(Phase 2)** | Confirmed, plus two surprises | AOSP; Docs |
 | W3 | Chrome's policies through `setApplicationRestrictions` **(Phase 2)** | Confirmed from Chromium's source | Chromium source |
 | W4 | In-app browsers (WebView) can be filtered | Confirmed from Chromium's source | Chromium source |
@@ -155,6 +155,10 @@ re-checked in AOSP 17 with the release flag's value and what an update changes (
 ## Web and network
 
 ### W1. Network logging
+
+**Moved** to [platform-notes.md](../platform-notes.md#w1-network-logging-for-a-device-owner) and
+checked again with the source while building network logging (2026-11-17), with W6 to W9; this
+draft stays as it was written.
 
 **Confirmed, with limits.** Verified on: AOSP; Docs.
 

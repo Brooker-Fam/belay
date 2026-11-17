@@ -131,16 +131,18 @@ to end too. Phase 5's calls (Belay as the
 phone app when a parent turns calls on: approved contacts, who rings, call records; 911,
 emergency numbers and 988 always allowed in code) and Phase 11 (off belay: the last stage,
 stopping collection with deletion, the hand-over) are built and run end to end too, after a
-second security review whose fixes are in. **Next:** Phase 5's texts wait for a Pixel test of
-Google Messages' archival hook; network logging (Phase 3); Play's `allowed_accounts`; and the
+second security review whose fixes are in. Phase 3's last part, opt-in network logging, is built
+and runs end to end too. **Next:** Phase 5's texts wait for a Pixel test of
+Google Messages' archival hook; Play's `allowed_accounts`; and the
 smaller hardening items the second review listed (rates for AI checks and locks, caps on the
 Phase 1 tables, activity-log retention).
 
 ### Phase 3: screen time, schedules and stages ([design](docs/design/phase3-screen-time.md)) (built)
 
-Built and run end to end in CI, except opt-in network logging. **Still open:**
+Built and run end to end in CI, opt-in network logging included. **Still open:**
 [docs/phase3-checklist.md](docs/phase3-checklist.md) on the Pixel (after updating, the phone
-needs one restart before lock now works: platform notes, S5).
+needs one restart before lock now works: platform notes, S5; network logging's step 7 is
+Pixel-only: Android's own notice, and a real browser's lookups).
 
 
 - Per-app time counted on the phone from usage events (the system's usage-limit observers are

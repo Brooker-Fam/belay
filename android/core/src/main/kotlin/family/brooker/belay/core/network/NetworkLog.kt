@@ -48,9 +48,10 @@ object NetworkLog {
 
     /**
      * The batches to take, oldest first, when Android says batch [token] is ready: every one since
-     * the last Belay took, in case a notice was missed (or held back while logging was paused), as
-     * far back as Android keeps them. After a new boot, or when Android counted from 1 again (its
-     * logging restarted), the count starts over. None for a batch already taken.
+     * the last Belay took, in case a notice was missed, as far back as Android keeps them. (What
+     * Android logged while paused it discards when the other user goes, platform notes W8.) After a
+     * new boot, or when Android counted from 1 again (its logging restarted), the count starts over.
+     * None for a batch already taken.
      */
     fun tokens(state: NetworkLogState, token: Long, bootCount: Int?): List<Long> {
         if (token <= 0) return emptyList()

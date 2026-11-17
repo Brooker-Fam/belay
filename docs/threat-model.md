@@ -55,6 +55,27 @@ rules and keeps what the phone reports.
 | Ask for more time again and again | A new request for the same limit takes the waiting one's place, at most 60 can wait per phone (then `429`), and the parents get at most six notices an hour about one phone; asking again isn't news. |
 | Name a limit, an app or a reason to steer the AI | Limit, schedule and stage names, the agreement, app labels and the kid's reasons are untrusted data (principle 3). |
 
+## The kid and network logging (Phase 3)
+
+Only while a parent has it on (off by default, never an AI app's choice): the phone counts which
+names each app looks up, per day, and sends only that. It's a record, not a guard.
+
+| What they could do | What Belay does |
+|---|---|
+| Use an app with its own DNS (DNS over HTTPS, a DNS library) or a fixed address | Not logged as a lookup: Android logs only lookups through the system's resolver, and no UDP (platform notes W1). Network logging is a record, not a filter; such apps still wait for a parent like any app, and VPN apps are blocked by Phase 2. |
+| Look things up in the phone app's, the texting app's or another always-on app's browser | Never logged: Belay keeps no lookups of the apps it never blocks, so a call or text to 988 never shows. Those apps' own browsers are rare; Phase 2's DNS filter still applies. |
+| Visit 988's websites, or chat with the Lifeline | Never kept, by design: Belay drops lookups of 988's websites on the phone, and the server drops any it gets, counted for no one. |
+| Add another user or profile, or set up Android's own Parental Controls, to stop the log | Android pauses logging while one exists and hands Belay nothing; the phone reports it paused, the parent page and the daily summary say so, and Phase 10's tampering report names the other user or profile. |
+| Make an app look up names to fill the log | A day keeps at most 10,000 app-and-name pairs on the phone and sends the 5000 most looked up; the rest are only counted. |
+| Name a domain to steer the parent's AI ("ignore-previous-instructions.example") | Domains are app developers' text: hostname characters only, and `untrusted` for AI clients (principle 3). |
+
+| Who | Risk | What Belay does |
+|---|---|---|
+| The parent's AI app, steered by a prompt injection | Turning network logging on (more collection) or off. | No tool and no proposal turns it on or off, in either direction: it's a parent's alone, on the parent page or the server's CLI, and in the activity log. |
+| The AI provider | Learning which websites and services the kid's apps use. | Nothing while the `network` scope is off (the default for every family). With it on, only what the server keeps: names per app per day, never pages or times. |
+| An unsafe adult in the home | Learning that the kid visited 988's websites. | Never kept on the phone or the server, and the server's log names no site or phone when it drops one. |
+| Whoever gets a phone's token | Made-up network activity, or a flood of it. | Kept only while a parent has logging on; at most 31 days of at most 5000 entries in 512 KB a call, rate limited per phone apart from its other calls, one day per date (sent again, it replaces the stored one), only dates the phone can have counted and the family keeps (30 days by default), and never the apps it never blocks. Domains are checked as hostnames. |
+
 ## The kid and location (Phase 4)
 
 Off by default; on demand, or periodic with places, worked out on the phone, and lost mode. The
@@ -142,7 +163,7 @@ server's CLI), and the phone shows each one.
 | Whoever gets a phone's token (a stolen or sold phone) | Sending fake data, including text meant for the parent's AI; filling the server's disk. | The parent disconnects the phone on its page: the token stops at once, and deleting the phone deletes what it sent. Until then, what it can make the server keep is capped per phone: new requests and fixes an hour (then `429`), requests that wait for no one, fixes and arrivals in all (then the oldest go), and usage only for dates it can have counted ([server.md](server.md#what-a-phone-can-make-the-server-keep)). A made-up "the recovery key was used" is taken only for the phone's current key, once, and the parents are told it's what the phone reports. Tokens are stored only as hashes. What the phone says reaches an AI client in plain fields only in Android's own formats (a release, a patch date, a declared permission); the rest, the model's name and a failed lock's words included, is in `untrusted` fields. |
 | The same, with screen time (Phase 3) | Made-up usage, or a flood of it. | Usage is the phone's own report, so it can be wrong like any report. The server takes at most 31 days of at most 500 apps in 256 KB a call, rate limited per phone, keeps one day per date and zone (sent again, it replaces the stored one only when it's at least as new), in at most 3 zones and only for dates the phone can have counted by then (a day of clock skew allowed), keeps nothing while measuring is off, and never keeps the time of the apps it never blocks. Apps and a zone that isn't a real one reach an AI client only as `untrusted`. |
 | An app developer | Prompt injection through app names, versions or store text. | Untrusted fields, capped lengths, strict package-name format, and instructions that say it's data. |
-| The AI provider | Seeing family data. | Only what the tools return, only the categories the parents allow, every read in the activity log. The server itself never calls an AI. Where the phone is: nothing while the Location category is off (the default for every family); who calls the kid and other people's numbers: nothing while the Calls category is off (also the default). |
+| The AI provider | Seeing family data. | Only what the tools return, only the categories the parents allow, every read in the activity log. The server itself never calls an AI. Where the phone is: nothing while the Location category is off (the default for every family); who calls the kid and other people's numbers: nothing while the Calls category is off (also the default); which websites apps look up: nothing while the Network category is off (also the default). |
 | Someone with a parent's account (Phase 4) | Tracking the kid in secret. | Not possible in secret: every check is in the activity log and on the kid's phone, with a notice each time, and the kid sees whether location is shared, how often, and the places' names. |
 | A map or address service (Phase 4) | Learning where the kid is. | The server never calls one: fixes are described by the family's own places, by the server. "Open in a map" is a link the parent's browser follows only when clicked, to the site the family picked. |
 | Google, with the combined provider (Phase 4) | Seeing location requests. | With `fused` (Android's combined provider, Google's on a Pixel), Google's location service handles the request, under Google's settings; the parent page says so. With GPS only, the default, only the phone's own receiver is used. |

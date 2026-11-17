@@ -74,10 +74,10 @@ home network; see docs/platform-notes.md.)
 | `BELAY_BACKUP_PASSPHRASE` | none | Encrypts the daily backups with this passphrase, at least 15 characters ([Encrypted backups](#encrypted-backups)). Without it they're plain SQLite files. Prefer the `_FILE` form. |
 | `BELAY_BACKUP_PASSPHRASE_FILE` | none | A file that holds the passphrase instead, like a Docker secret (`/run/secrets/belay_backup`); a final new line is ignored. Set one of the two, not both. |
 
-The family's timezone, the silent threshold, what AI apps may read, how long screen time and
-where the phone was are kept, which map site "Open in a map" goes to, the numbers on the
-kid's emergency card, notifications and the daily summary are set on the Settings page, not
-here.
+The family's timezone, the silent threshold, what AI apps may read, how long screen time,
+where the phone was, call records and network activity are kept, which map site "Open in a
+map" goes to, the numbers on the kid's emergency card, notifications and the daily summary are
+set on the Settings page, not here.
 
 ## Notifications
 
@@ -201,6 +201,7 @@ docker compose exec belay node dist/cli.js schedule "Sam's phone" --name Bedtime
 docker compose exec belay node dist/cli.js schedule "Sam's phone" --remove <id>
 docker compose exec belay node dist/cli.js lock-now "Sam's phone"                    # locks the screen once, if the phone gets it within 10 minutes (--minutes)
 docker compose exec belay node dist/cli.js screen-time "Sam's phone" --measure on    # or off: whether the phone sends how long apps are used
+docker compose exec belay node dist/cli.js network "Sam's phone" --on                # or --off: whether the phone notes which websites and services its apps look up
 docker compose exec belay node dist/cli.js answer "Sam's phone" <request id> approve --minutes 15   # or decline, or talk; --note "…"
 ```
 
@@ -275,6 +276,9 @@ and `contact` entries in `requests` with `contact_name`, `contact_number` and `c
 contact an approval added, or the one that had the number; `null` until approved). Phase 11
 adds `handover` (`{at, by, version}` or `null`: when, as the policy has it in milliseconds since
 the epoch, the parent's name or `null` from the CLI, and the rules version that carried it).
+Network logging adds `network_log` (the policy's: `{enabled}`) and `network` (the days the phone
+sent, newest first, at most 31: `[{day, zone, as_of, entries: [{package, domain, lookups}],
+dropped}]`, `as_of` as the phone sent it).
 Hardening (factory reset, debugging, reset protection) can only be turned on on the parent page;
 `handover` lifts it, as the phone page's "Hand this phone over" does.
 
@@ -388,6 +392,33 @@ deletes older days, and the extra time given for them. When a phone that measure
 limit reports it can't count, its page and the daily summary say so ("Usage access for Belay
 is turned off, so Belay can't count screen time", and what that does to the apps with a
 limit).
+
+### Network logging (Phase 3)
+
+Off for every phone until a parent turns it on, on the phone's page under Web (or with `network
+"<phone>" --on`): until then the policy's `network_log` is `{enabled: false}`, and the phone
+notes nothing. Turned on, Android logs the phone's DNS lookups for Belay, and the phone sends,
+each time Android hands it a batch (every 90 minutes at most), how many times each app looked up
+each website or online service that day, by name (`example.com`: the registrable part of the
+name, never the page). Never the lookups of the apps the phone never blocks (the phone app,
+texting, Belay…), and never 988's websites: the phone drops them, and so does the server. Android
+shows the kid its own notice that the phone "may monitor network traffic", and Belay's list of
+what the parent can see explains it.
+
+- **The switch** says what's noted and what never is, how long it's kept, whether AI apps may read
+  it, and whether Android paused it: Android stops logging while another user or profile is on the
+  phone (Android's own Parental Controls make one), and the phone's page and the daily summary say
+  "Network logging is paused".
+- **Network** (a phone's tab, while logging is on): each day, newest first, each app most looked
+  up first, with the names it looked up and how many times, and how many pairs the phone left out
+  (it sends at most 5000 a day, the most looked up).
+
+Only a parent turns it on or off: AI apps can't, and can't propose it, in either direction. With
+Settings' "Network" category on (it starts off for every family), an AI app reads it with
+`get_network_activity` ([mcp.md](mcp.md)), names as untrusted text. **Kept** (Settings, "Keep
+network activity"): 30 days by default (1 to 90), then deleted by the hourly clean-up; turning it
+off keeps what's there until then, and Off belay's Stop collecting deletes it now. Days sent while
+it's off aren't kept, and are counted.
 
 ## Location and the kid's side (Phases 4 and 7)
 
@@ -503,7 +534,7 @@ The end of the rules, for when the kid outgrows Belay: each step is a parent's, 
 - **Stop collecting** (a phone's page, "What the server keeps about this phone"): per kind of data,
   a confirmation lists exactly what goes and what stays, then the server deletes it at once and
   turns off the phone's switch where it has one (measuring; location, lost mode and keeping
-  location on; recording calls). The app list and the kid's requests keep coming while Belay is on the phone;
+  location on; recording calls; network logging). The app list and the kid's requests keep coming while Belay is on the phone;
   [privacy.md](privacy.md) has exactly what each stop deletes.
 - **Hand this phone over** (a phone's page, after typing its name): lifts the locks on factory
   reset, debugging and accounts and clears reset protection, and the phone shows the kid what to
@@ -530,6 +561,10 @@ phone can send anything a phone may. Whatever it sends, the server keeps at most
 - **Screen time:** one day per date and zone, for dates the phone can have counted (up to
   tomorrow in its zone), in at most 3 zones, and for no longer than the family keeps it.
 - **Calls** (Phase 5): records only while Belay records calls, at most 1000 a day.
+- **Network activity** (Phase 3): only while a parent has network logging on, one day per date
+  (sent again, it replaces the stored one), for dates the phone can have counted and no longer
+  than the family keeps it, at most 5000 entries a day; `POST /network` is limited to 30 calls a
+  minute per phone, apart from its other calls.
 
 Past an hour's limit the phone is answered `429` with `Retry-After`, and sends the rest later;
 every device call is limited to 120 a minute per phone too. Disconnecting a phone stops its
@@ -765,10 +800,12 @@ Put it behind a reverse proxy with HTTPS, as a service of its own user (a system
 Startup, the one-time setup link, "a phone enrolled", notifications that didn't go out, each
 daily backup (its file name and size, or why it failed), urgent notices about the server,
 why the database couldn't be opened, and errors; that a phone sent location items or call
-records its rules didn't ask for, and how many; and that a phone sent a call record Belay
-never keeps (an emergency number, 988 or a private number), without the number, the phone or
-the time of the call, since the phone shouldn't. Never tokens, passwords, passphrases,
-browsers' push addresses, app names, phone numbers or request bodies. The
+records its rules didn't ask for, and how many; that a phone sent a call record Belay never
+keeps (an emergency number, 988 or a private number), without the number, the phone or the
+time of the call, since the phone shouldn't; and, likewise, days of network activity sent while
+network logging was off (how many), and network activity naming 988's websites (only that it
+happened). Never tokens, passwords, passphrases, browsers' push addresses, app names, domains,
+phone numbers or request bodies. The
 activity log on the parent page is where parents see who did what.
 
 ## Development

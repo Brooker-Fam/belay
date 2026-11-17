@@ -53,6 +53,11 @@ OK?", with a web page as the fallback.
   If usage access is turned off, apps with a limit pause (or stay open, as the family
   chooses) and the kid is told how to turn it back on. Only while a parent has measuring on,
   each day's usage goes to the server; "What your parent can see" says so the moment it's on.
+  Only while a parent has network logging on, Android logs the phone's DNS lookups for Belay,
+  which takes each batch at once and keeps only how many times each app looked up each website
+  or service that day, by name (`example.com`, never a page), never what the phone app or
+  texting look up and never 988's websites, and sends that; it reports when Android pauses
+  logging (another user or profile on the phone), and deletes everything when it goes off.
   **Phase 4 (the phone's side):** location is off by default, and Belay holds the location
   permission only while a parent has it on (granted and denied by policy, never by the kid). On
   demand, a parent's check (or their AI app's, named to the kid) takes one fix from the phone's
@@ -94,7 +99,11 @@ OK?", with a web page as the fallback.
   screen time by the hour and by day, drawn on the server with a table beside each chart.
   Usage is kept 13 months by default. Over MCP, an AI client reads screen time, locks the
   phone and tightens the rules; the server decides whether a change only tightens, and
-  anything else, or a move to another stage, is a proposal.
+  anything else, or a move to another stage, is a proposal. Network logging is off until a
+  parent turns it on, under Web on the phone's page (never an AI app, not even a proposal);
+  while it's on, the phone's Network tab lists each day's apps and the names they looked up,
+  kept 30 days by default, and an AI client reads it only if a parent turns that on too (it
+  starts off for every family).
 - **Phases 4 and 7 on the server: location, and the kid's side.** Location is off until a
   parent turns it on, on the phone's Location and help page: on demand (a parent's "Check
   now", which waits for the phone's fix) or every 15 to 120 minutes within set hours, with
