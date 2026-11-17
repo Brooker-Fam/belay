@@ -81,6 +81,26 @@ describes them by the family's places itself, with no outside service.
 | Take back a help request | It leaves the kid's list, but stays at the top of the parent page until a parent sees it: taking it back never hides an emergency. |
 | Use "Share where this phone is" to turn location on | It's one fix, the kid's own choice, in the help request only; Belay turns location access (and location, if it turned it on) back off afterwards. |
 
+## Off belay (Phase 11)
+
+The end of the rules: Off belay, every family's last stage, stopping collecting, and handing the
+phone over. Every step loosens or deletes, so each is a parent's, on the parent page (or the
+server's CLI), and the phone shows each one.
+
+| What they could do | What Belay does |
+|---|---|
+| Ask the AI to hand the phone over, or to move it to Off belay | AI clients can't move a phone to Off belay, stop collecting or hand a phone over, not even as a proposal: there's no tool for any of it, and a proposal to move to Off belay is refused. Each is a parent's action; handing over needs the phone's name typed, as hardening does. |
+| Reset early from recovery mode | Still caught by reset protection with the parent's Google account (Phase 2 hardening, release builds) until the hand-over clears it: the phone then sets up only with that account. A reset from Settings needs factory reset unlocked, which only the hand-over (or the parent) does. |
+| Show the hand-over screen without a hand-over | It shows only while the policy has `handover`, which only a parent sets, and goes when a parent takes it back. |
+| Keep the phone locked while it tells the kid to reset it | Not possible by mistake: while a hand-over lasts, the server refuses to lock factory reset, debugging or accounts, or set reset protection, again, and the phone holds none of them whatever the policy says. A parent takes the hand-over back first. |
+| Get the parent's AI to pause the phone during the hand-over | It may (pausing tightens), but Settings always opens, so backing up stops and the reset still works; a parent resumes it. |
+| A release build that couldn't clear reset protection | It tries again at every step until it can, and reports the problem; the parent page shows it, and whether the phone applied the hand-over at all. A reset from Settings also wipes reset protection's data on a fully managed phone (platform notes O1). |
+
+| Who | Risk | What Belay does |
+|---|---|---|
+| A parent stopping collecting, or deleting, to hide something from the other parent | Data gone without a trace. | Each stop is in the activity log with its category and what went, and needs a parent's session. |
+| A parent deleting requests | Hiding a help request, or leaving the kid's answers dangling. | Help requests no parent has seen, and requests still waiting, stay. A request the kid's phone still lists keeps a bare record with its answer, so the phone never shows it as waiting again. |
+
 ## Other people
 
 | Who | Risk | What Belay does |

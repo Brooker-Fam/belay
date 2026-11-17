@@ -1,8 +1,28 @@
 # Phase 11: off belay
 
-**Status: design.** A new phase. In climbing, "off belay" is the call when the climber is safe and
-doesn't need the rope any more. This phase is the end of principle 7, "built to loosen": the kid
-outgrows Belay, and the phone becomes simply theirs.
+**Status: built** on the server and the phone, with the debug build's side run in CI on the
+Android 17 emulator (`HandoverInstrumentedTest`, and `ci-emulator-test.sh` before its restart).
+**Still open:** [phase11-checklist.md](../phase11-checklist.md) on the Pixel with a release build:
+a full hand-over, ending in a reset from Settings and a setup with another account. What was
+built differs from this design in a few places, each because the code can't claim more than it
+does:
+
+- The policy gains `off_belay` (`{how, position}`), so the phone can list Off belay last from the
+  first day; `stage` only names the next stage.
+- Moving to Off belay stops a phone's screen-time limits and schedules, as any stage does; Phase
+  2's blocking (new apps, blocked apps, the web filter) stops when a parent turns protection off,
+  and the kid's sentence is "Belay isn't blocking any apps or websites on this phone any more.",
+  shown only when that's true.
+- Belay never set Play's `allowed_accounts` (only `DISALLOW_MODIFY_ACCOUNTS`), so freeing Play's
+  accounts is lifting `modify_accounts`.
+- Stopping collecting has a switch only for screen time (measuring) and location; the phone sends
+  its app list and the kid's requests while Belay is on it, so for those the server deletes what
+  it keeps, and a request the phone still lists keeps a bare record with its answer.
+- A parent can take a hand-over back; while one lasts, nothing it lifted can be locked again.
+
+In climbing, "off belay" is the call when the climber is safe and doesn't need the rope any more.
+This phase is the end of principle 7, "built to loosen": the kid outgrows Belay, and the phone
+becomes simply theirs.
 
 ## Goals
 

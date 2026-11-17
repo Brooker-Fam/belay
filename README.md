@@ -22,7 +22,7 @@ no monthly fee and no company that can change or disappear. A parent mostly mana
 asking Claude (or any MCP client) things like "what did they install this week, and is it
 OK?", with a web page as the fallback.
 
-## What exists today (Phases 1 and 2, and parts of 3, 4, 6, 7, 8 and 10)
+## What exists today (Phases 1 and 2, and parts of 3, 4, 6, 7, 8, 10 and 11)
 
 - **`android/`: the device-owner agent.** Provisioned over adb, it becomes device owner and
   blocks its own uninstall. It always shows "This phone is managed by your parent", and its
@@ -111,6 +111,18 @@ OK?", with a web page as the fallback.
   lifts the factory reset and debugging locks offline if the server is ever lost. When
   another user or profile appears (Android's own Parental Controls make one), the phone's
   page says so and a parent can remove it. AI clients can only read these.
+- **Phase 11: off belay, both sides.** Every family's stage list ends with Off belay, which
+  blocks nothing; the kid's "My stage" shows it last from the first day, with the family's words
+  for when it comes, and says so once Belay really blocks no app or website. A parent can stop
+  collecting each kind of data on a phone's page, which deletes what the server keeps of it after
+  a confirmation that lists exactly what goes, and can hand the phone over (after typing its
+  name): the server lifts the locks on factory reset, debugging and accounts and clears reset
+  protection, and the phone, which then holds none of them, shows the kid what to back up, to
+  remove the parent's account, and to reset it from Settings. A release build clears its reset
+  protection policy itself; nothing in it switches Belay off: the reset does. Then the parent
+  disconnects the phone and deletes everything about it. AI apps can do none of this, not even
+  as a proposal. The Pixel checklist, ending in a reset and a setup with the kid's own account, is
+  [docs/phase11-checklist.md](docs/phase11-checklist.md).
 - **`setup-kit/`: setting up a phone without the Android SDK (Phase 8).** A container you
   build and run on your own computer: it makes the family's release key (once, in a folder of
   yours), builds and signs Belay, and serves a page on `localhost` that sets up the phone from
@@ -214,7 +226,7 @@ they install this week?"
 | `android/scripts` | Provisioning (its plan, `provision-plan.json`, and the plan's fixture tests), release key, QR test, the emulator tests. |
 | `setup-kit/` | Setting up a phone without the Android SDK: the plan's second interpreter, the page, the container ([docs/setup-kit.md](docs/setup-kit.md)). Vitest tests. |
 | `server/` | The family's server: device API, parent pages, OAuth and MCP. Vitest tests. |
-| `docs/` | [server](docs/server.md), [MCP](docs/mcp.md), [privacy](docs/privacy.md), [threat model](docs/threat-model.md), [device API](docs/protocol.md), [platform notes](docs/platform-notes.md), [emulator](docs/emulator.md), [Pixel 8](docs/pixel.md), [Phase 0](docs/phase0-checklist.md), [Phase 1](docs/phase1-checklist.md), [Phase 2](docs/phase2-checklist.md), [Phase 3](docs/phase3-checklist.md), [Phase 4](docs/phase4-checklist.md), [Phase 6](docs/phase6-checklist.md) and [Phase 7](docs/phase7-checklist.md) checklists, [signing](docs/signing.md), [prior art](docs/prior-art.md) |
+| `docs/` | [server](docs/server.md), [MCP](docs/mcp.md), [privacy](docs/privacy.md), [threat model](docs/threat-model.md), [device API](docs/protocol.md), [platform notes](docs/platform-notes.md), [emulator](docs/emulator.md), [Pixel 8](docs/pixel.md), [Phase 0](docs/phase0-checklist.md), [Phase 1](docs/phase1-checklist.md), [Phase 2](docs/phase2-checklist.md), [Phase 3](docs/phase3-checklist.md), [Phase 4](docs/phase4-checklist.md), [Phase 6](docs/phase6-checklist.md), [Phase 7](docs/phase7-checklist.md) and [Phase 11](docs/phase11-checklist.md) checklists, [signing](docs/signing.md), [prior art](docs/prior-art.md) |
 | `ROADMAP.md` | Phases 2 to 5 and later. |
 | `CLAUDE.md` | Conventions and commands, for people and for Claude. |
 

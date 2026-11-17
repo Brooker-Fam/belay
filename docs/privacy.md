@@ -284,6 +284,23 @@ sends outside the family's server, and the parent page says so where you choose 
 - **What Belay told your parent:** every check of the last 30 days, each lost mode, and each fix
   the kid shared, from the phone's own record, so none is left out.
 
+## What the kid sees (Phase 11)
+
+- **My stage** lists the last stage, Off belay, at the end from the first day, with the family's
+  words for when it comes ("Last stage: Off belay. When you turn 16"), and what it means: after
+  it, the parent can hand the phone over, and it's simply the kid's. On a phone with no stage it
+  shows once the family has written those words.
+- **On Off belay:** "Belay isn't blocking any apps or websites on this phone any more.", only when
+  that's so: nothing held back, paused, filtered or limited, and nothing kept from installing.
+  Settings still locked are listed under "This phone's rules".
+- **When a parent stops collecting** screen time or location, "What your parent can see" loses it
+  at once (it follows the policy). The app list and the kid's requests stay listed: the phone keeps
+  sending them while Belay is on it.
+- **The hand-over,** first on Home: "This phone is becoming yours. Your parent is handing this phone
+  over to you.", who started it and when, then: back up photos and anything else to your own
+  account; remove your parent's Google account; then Settings > System > Reset options > Erase all
+  data. "After the reset, this phone is yours. Belay won't be on it."
+
 ## What the kid sees
 
 - A notification that never goes away: "This phone is managed by your parent".
@@ -295,8 +312,10 @@ sends outside the family's server, and the parent page says so where you choose 
 ## How long it's kept
 
 Until a parent deletes it. Deleting a disconnected phone on its page deletes everything
-recorded about it: its apps, changes and reviews, and from Phase 3 its screen time, rules,
-requests and agreement. The server's daily backups still hold it until they age out, 14 days
+recorded about it: its apps, changes and reviews, from Phase 3 its screen time, rules,
+requests and agreement, from Phase 4 where it was and its places, and from Phase 11 its
+hand-over. One kind at a time, a parent can also stop collecting it and delete it sooner
+(below). The server's daily backups still hold it until they age out, 14 days
 later, as do any copies the family made. Expired sessions, codes and tokens are deleted
 automatically. The activity log is kept so parents can see what happened.
 
@@ -312,6 +331,32 @@ shares with "I need help" is kept with that request, which, like every request, 
 phone is deleted. Turning location off stops new fixes; the ones kept stay until they age out.
 The AI scope "location" is off by default: while it's off, AI apps see that a phone has location
 on, never a fix or a place event.
+
+**Stopping collecting (Phase 11).** A parent can stop one kind of data for a phone, on its page,
+at any time, and the server deletes what it keeps of it at once, after a confirmation that lists
+exactly what goes (counted then: if more arrives before the parent confirms, the list is shown
+again). It's in the activity log, with what went. Only a parent does it, never an AI app.
+
+- **Screen time:** measuring turns off, and every usage day goes (minutes per app, opens, the hours
+  the phone was used, unlocks). While the phone still has time limits, its check-ins still say
+  whether each one is used up; Off belay has none.
+- **Where the phone is:** location turns off, with lost mode and keeping location on (Belay gives
+  up the permission), and every fix goes, the ones shared with help requests too, with arrivals and
+  departures, the family's places, and the record of each check.
+- **Apps:** every app change, every review and its notes, the apps that aren't on the phone any
+  more (but one a parent blocked or allowed, which its decision names), and the record of the app
+  lists the phone sent. The phone keeps sending its app list and changes while Belay is on it (its
+  rules work from them), so the apps on it now, and new changes, are still kept.
+- **Requests:** what the kid wrote in every request, the parents' notes on their answers, where the
+  phone was in a help request, and requests from more than 60 days ago. A request of the last 60
+  days keeps a bare record (that it was asked, for which app or what, and the answer), because
+  the kid's phone keeps its own list that long and would otherwise show it as waiting again.
+  Requests still waiting for a parent, and help requests no parent has seen, stay as they are. The
+  kid can always ask: new requests, "I need help" first, still arrive.
+
+The daily backups still hold what went until they age out (the newest 14 are kept). Handing a
+phone over deletes nothing by itself: once the phone is reset, a parent disconnects it and deletes
+everything about it, as for any phone.
 
 ## Respecting the kid
 

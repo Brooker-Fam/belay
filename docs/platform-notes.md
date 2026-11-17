@@ -97,6 +97,7 @@ relying on something new, it goes here first, with a source.
 | L10 | `setDeviceOwnerLockScreenInfo` for lost mode | Confirmed | AOSP; Docs |
 | G1 | Calling and texting 911, 988 and a parent while every other app is suspended | Confirmed: ACTION_DIAL and ACTION_SENDTO to the default apps, which Belay never suspends | AOSP; Docs; Emulator pending (Phase 7 CI) |
 | G2 | Android's own emergency information has an intent on Android 17 | Confirmed: `android.telephony.action.EMERGENCY_ASSISTANCE`, the emergency role's activity | AOSP |
+| O1 | Handing over: clearing reset protection, and what a reset from Settings does on a fully managed phone | Confirmed in AOSP; Pixel pending (Phase 11 checklist) | AOSP |
 
 "Emulator" entries were seen in CI: `ci-emulator-test.sh` passed end to end on the API 37.0
 Automated Test Device image (`aosp_atd`, required) from run 8, and on the API 37.0 Google
@@ -1516,6 +1517,46 @@ Android's choice; the kid taps Call in the dialer. Text 911 says it only works i
 Belay's consequence: "Medical information and emergency contacts" starts that action in the system
 app that takes it (`ui/Emergency.kt`), and isn't shown when none does. Belay never copies medical
 details. The emergency apps are never suspended.
+
+## Off belay (Phase 11)
+
+Read in AOSP `android-17.0.0_r1` on 2026-11-17 (`platform/frameworks/base`, and
+`platform/packages/apps/Settings`). CI runs the debug build's side on the emulator
+(`HandoverInstrumentedTest`, `ci-emulator-test.sh`); the Pixel's is in
+[phase11-checklist.md](phase11-checklist.md), with a release build.
+
+### O1. Handing over: clearing reset protection, and a reset from Settings
+
+**Confirmed in AOSP; Pixel pending.** Verified on: AOSP.
+
+- `DevicePolicyManagerService.setFactoryResetProtectionPolicy` with a null policy: the default
+  device owner (or the profile owner of an organization-owned phone) only; it sets the admin's
+  `mFactoryResetProtectionPolicy` to null, saves, and sends
+  `ACTION_RESET_PROTECTION_POLICY_CHANGED` to the reset-protection agent (the persistent data
+  block's allowed uid: Play services on a Pixel). Without a persistent data block it throws
+  `UnsupportedOperationException` (emulators), as C8 says. Clearing a policy that isn't there is
+  harmless: the same call, the same broadcast.
+- Settings' `MainClearConfirm` (System > Reset options > Erase all data (factory reset), its strings
+  `reset_dashboard_title` and `main_clear_title`) wipes the persistent data block, where reset
+  protection's data lives, before the reset, unless reset protection is active, the phone is still
+  being set up, the phone has no reset protection support, or it's an organization-owned phone with
+  a managed profile and a reset protection policy. A fully managed phone (a device owner) is none of
+  those, so a reset from Settings leaves no reset protection behind, whatever the policy was. It
+  needs `DISALLOW_FACTORY_RESET` lifted first.
+- The accounts page's title in Settings depends on flags (`account_dashboard_title`, "Passwords &
+  accounts", `account_dashboard_title_with_passkeys`, or "Accounts and backup" with
+  `enable_accounts_and_backup_screen`); "Remove account" (`remove_account_label`) is the same in
+  each.
+
+Belay's consequence: while the policy has `handover`, the phone holds no `DISALLOW_FACTORY_RESET`,
+`DISALLOW_DEBUGGING_FEATURES` or `DISALLOW_MODIFY_ACCOUNTS`, and a release build clears the reset
+protection policy once per hand-over, record or not, then sends `FRP_CONFIG_CHANGED` as Phase 2
+does. Clearing it matters for a reset that isn't from Settings (recovery mode): without the policy,
+the phone is back to consumer reset protection, which asks for an account that was on the phone
+([drafts](design/platform-notes-drafts.md) F1, from Google's guide; Play services decides it, not
+AOSP), and after the hand-over that's the kid's, if they added it. The kid's screen names no
+accounts path. The Pixel checklist records the paths and what the setup wizard asks after the
+reset.
 
 ---
 

@@ -13,8 +13,9 @@ to another stage) is only a proposal: it waits on the parent page's Proposals pa
 parent approves it. Nothing loosens without a parent. The AI can't answer the kid's
 requests, turn measuring screen time on or off, change whether or how the phone shares where
 it is (or its places, or lost mode), or touch factory reset, debugging, reset protection or
-maintenance mode, not even as a proposal. Where the phone is stays hidden from it until a
-parent turns on the Location category in Settings.
+maintenance mode, not even as a proposal; nor (Phase 11) move a phone to Off belay, the last
+stage, stop collecting a kind of data, or hand a phone over. Where the phone is stays hidden
+from it until a parent turns on the Location category in Settings.
 
 ## Connect Claude (web, desktop and mobile)
 
@@ -185,7 +186,8 @@ too, since whoever holds a phone's token can send any text.
   Anything else, or a mix, becomes a proposal with every change listed, each marked tightens
   or loosens on the Proposals page; when a parent approves, each part is checked against the
   rules as they are then, and one whose subject changed since makes it out of date. Moving a
-  phone to another stage is always a proposal. `lock_phone` pauses and locks at once.
+  phone to another stage is always a proposal, and to Off belay (Phase 11), the last stage, is
+  refused: only a parent moves a phone there. `lock_phone` pauses and locks at once.
 - Measuring screen time (whether the phone sends how long apps are used) has no tool and no
   proposal: only a parent turns it on or off.
 - Location (Phase 4) is the same: whether the phone shares where it is and how often, its
