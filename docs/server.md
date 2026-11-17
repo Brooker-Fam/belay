@@ -126,8 +126,24 @@ docker compose exec belay node dist/cli.js setup-link             # a new one-ti
 docker compose exec belay node dist/cli.js create-code "Sam's phone"   # an enrollment code, without the web page
 docker compose exec -it belay node dist/cli.js reset-password sam # asks for a new password; signs that parent out everywhere
 docker compose exec belay node dist/cli.js backup /data/belay-backup.db
-docker compose exec belay node dist/cli.js status                 # each phone: status, apps, latest changes (--json for scripts)
+docker compose exec belay node dist/cli.js status                 # each phone: status, apps, rules, requests, latest changes (--json for scripts)
 ```
+
+And for a phone's rules, as the parent page sets them:
+
+```bash
+docker compose exec belay node dist/cli.js protect "Sam's phone"                       # turn protection on
+docker compose exec belay node dist/cli.js policy "Sam's phone" --new-apps ask         # or allow
+docker compose exec belay node dist/cli.js decide "Sam's phone" com.example.app allow  # or block, or undecided
+docker compose exec belay node dist/cli.js pause "Sam's phone" --minutes 30            # without --minutes: until resumed
+docker compose exec belay node dist/cli.js resume "Sam's phone"
+```
+
+They're logged as the server's ("The server" on the Activity page), and a running server
+passes them to the phone within a second or two. `status --json` gives each phone's
+`policy_version` (the server's), `enforcement` (what the phone last said it applied, or
+`null`) and `requests` (`[{package, status, reason}]`). Hardening (factory reset, debugging,
+reset protection) can only be turned on on the parent page.
 
 Outside Docker, use `npm run cli -- <command>` from `server/`.
 
