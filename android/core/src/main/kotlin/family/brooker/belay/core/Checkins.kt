@@ -1,13 +1,14 @@
 package family.brooker.belay.core
 
 /**
- * The check-in's size. The server takes at most 32 KB (docs/protocol.md), and refuses anything
- * larger, so a check-in that grew too big would be refused every time and the phone would look
- * silent. Every list in it is capped already; with every cap reached and long names it comes to
- * about 28 KB (CheckinSizeTest), and a busy phone sends far less. This is the last guard.
+ * The check-in's size. The server takes at most 64 KB (docs/protocol.md; servers before Phase 3
+ * took 32 KB), and refuses anything larger, so a check-in that grew too big would be refused every
+ * time and the phone would look silent. Every list in it is capped already; with every cap reached
+ * and long names it comes to about 28 KB (CheckinSizeTest), and a busy phone sends far less. This
+ * is the last guard, and its target fits the older servers too.
  */
 object Checkins {
-    /** The server's limit for `POST /api/v1/checkin`. */
+    /** The smallest limit a server has had for `POST /api/v1/checkin` (64 KB since Phase 3). */
     const val MAX_BYTES = 32 * 1024
 
     /** Belay keeps its check-ins under this. */

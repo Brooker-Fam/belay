@@ -490,7 +490,7 @@ data class WireRequest(
     /** The kid's own words, at most 500 characters: untrusted. */
     val reason: String? = null,
     @SerialName("asked_at") val askedAt: Long,
-    /** more_time: the limit's id, or "*" for every limit. */
+    /** more_time: the limit's id (a real one, never "*"). */
     @SerialName("limit_id") val limitId: String? = null,
     /** more_time: 5 to 240. */
     val minutes: Int? = null,
