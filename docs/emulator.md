@@ -100,7 +100,17 @@ Android never lets an app install a test-only APK through a session, platform no
 the server offers it and the phone updates itself; the server's recovery key, typed on the
 phone through a debug-only receiver, opens repair access; and `remove-other-users` is
 reported done. Then the test-only build goes back on (`adb install -d`, allowed for a
-debuggable app), so `unprovision.sh` can still release it.
+debuggable app), so `unprovision.sh` can still release it. Last, Phase 3, when the
+server's status has `screen_time`: a 0-minute limit on the fixture app suspends it and
+removing it lets it run, a schedule on now (from the emulator's own clock and zone) suspends
+it but not Belay or the dialer, a minute in the fixture app with measuring on reaches the
+server's usage for today (a debug-only receiver has Belay send at once instead of within 15
+minutes), and `lock-now` is reported done with the screen off or locked.
+
+The fixture app has one blank launcher screen (`.FixtureActivity`) from Phase 3, so tests can
+open it, count it and see a limit or a schedule pause it. Screen time only counts while the
+screen is on and unlocked: the tests wake the emulator and dismiss its swipe lock screen
+(`input keyevent KEYCODE_WAKEUP`, `wm dismiss-keyguard`).
 
 It refuses to run on anything but an emulator. GitHub Actions runs it on every push that
 touches `android/` or `server/` (`.github/workflows/android.yml`), on two images:

@@ -31,6 +31,26 @@ Factory reset and debugging locks are a separate step a parent takes when ready.
 | Ask the parent's AI to approve something | Phase 2: an AI client can only block an app, pause the phone or make a pause longer. Allowing or unblocking an app, resuming, lifting a lock, turning off the filter or answering the kid are only proposals, which a parent approves on the parent page; hardening and maintenance aren't even proposable. | Closed by Phase 2. |
 | Pause the phone to get out of something, or wait out a pause | During a pause, calls and texts (and 911 and 988), the clock, the keyboard, Settings and Belay keep working; nothing else opens. | By design. |
 
+## The kid and screen time (Phase 3)
+
+The phone counts and enforces screen time by itself, offline too; the server only sends the
+rules and keeps what the phone reports.
+
+| What they could do | What Belay does |
+|---|---|
+| Turn off usage access in Settings | Noticed within a second (an app-op watcher) and reported: the check-in says Belay can't count, and the gap is in the usage days. With `if_unmeasured: pause_limited` (the default) every app with a limit pauses until it's back on; with `keep_open` they stay open, but a limit already used up stays used up. Schedules keep working. The kid's screen says why, with "Turn usage access back on". |
+| Change the clock or the time zone | Locked by Phase 2 (`config_date_time` covers the zone). If the clock moves anyway (a network correction), the count moves with Android's own history, so no minute counts twice, and the last two days are sent again. |
+| Keep watching in picture-in-picture or split screen | Counted: an app counts from resumed until stopped, and two apps side by side under one limit count once. |
+| Keep audio playing after time's up | Suspension takes audio focus (Android), so a well-behaved player stops; one that ignores it could keep playing. A hard block hides the app, which stops it. |
+| Use another app's built-in browser | Counts as time in that app; Phase 2's DNS filter applies. |
+| Restart the phone at bedtime, or go into airplane mode | Suspensions persist across restarts and the rules run offline; the time the phone was off is a gap, not "unused"; uploads wait. |
+| Remove an app and install it again to reset its time | The count is per package and day, so a reinstalled app keeps the minutes it used today. |
+| Unlock right after "lock now" or a schedule's lock | The kid knows their own PIN, so locking is a nudge; the apps stay paused for as long as the schedule or pause lasts. |
+| Tap "take more minutes" many times | Each take counts against the family's `times` a day, and a double tap takes once. |
+| Set up Android's own Parental Controls with their own PIN | Their limits only add to Belay's, but their app rules can lift a Belay suspension: Belay puts it back at its next step and reports another user or profile (Phase 10). |
+| Ask the parent's AI for more time | Only a parent answers a more-time request, on the parent page (the server's Phase 3). |
+| Name a limit, an app or a reason to steer the AI | Limit, schedule and stage names, the agreement, app labels and the kid's reasons are untrusted data (principle 3). |
+
 ## Other people
 
 | Who | Risk | What Belay does |
