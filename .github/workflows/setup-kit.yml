@@ -1,0 +1,133 @@
+name: Setup kit
+
+# The setup kit, and the provisioning plan it shares with provision.sh: both interpreters run the
+# same fixtures, so a change to either (or to the plan) runs this.
+on:
+  push:
+    paths:
+      - "setup-kit/**"
+      - "android/scripts/provision-plan.json"
+      - "android/scripts/provision.sh"
+      - "android/scripts/lib.sh"
+      - "android/scripts/test-plan.sh"
+      - "android/scripts/plan-tests/**"
+      - "android/scripts/ci-kit-emulator-test.sh"
+      - ".github/workflows/setup-kit.yml"
+  pull_request:
+    paths:
+      - "setup-kit/**"
+      - "android/scripts/provision-plan.json"
+      - "android/scripts/provision.sh"
+      - "android/scripts/lib.sh"
+      - "android/scripts/test-plan.sh"
+      - "android/scripts/plan-tests/**"
+      - "android/scripts/ci-kit-emulator-test.sh"
+      - ".github/workflows/setup-kit.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: setup-kit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Typecheck, lint, tests, page bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: setup-kit
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.22.1
+          cache: npm
+          cache-dependency-path: setup-kit/package-lock.json
+      # No install scripts: esbuild's binary comes in its own platform package.
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm run lint
+      # Includes the plan's shared fixtures (android/scripts/plan-tests), through the fake phone and
+      # through Tango's adb-server client.
+      - run: npm test
+      - run: npm run build
+
+  plan-bash:
+    name: The plan in bash (shellcheck, fixtures)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Shell scripts
+        run: |
+          command -v shellcheck >/dev/null || sudo apt-get install -y shellcheck
+          shellcheck -x -s bash android/scripts/*.sh setup-kit/entrypoint.sh
+      - name: The plan's fixtures, with lib.sh's interpreter
+        run: android/scripts/test-plan.sh
+
+  # Informational for now: provisions the emulator with the kit's command-line runner (the plan,
+  # run by the kit's interpreter over Tango and the adb server) instead of provision.sh, and checks
+  # the same end state. The Android workflow's emulator job, with provision.sh, is the required one.
+  emulator:
+    name: Provision the Android 17 emulator with the kit's runner (aosp_atd)
+    needs: [test, plan-bash]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+      - name: The debug build
+        working-directory: android
+        run: ./gradlew --stacktrace :app:assembleDebug
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.22.1
+          cache: npm
+          cache-dependency-path: |
+            server/package-lock.json
+            setup-kit/package-lock.json
+      - name: The setup kit
+        working-directory: setup-kit
+        run: npm ci --ignore-scripts --no-audit --no-fund && npm run build
+      # A real Belay server on this machine, which the emulator reaches as 10.0.2.2.
+      - name: Start a Belay server for the phone to enroll with
+        env:
+          BELAY_PUBLIC_URL: http://10.0.2.2:8080
+          BELAY_DATA_DIR: ${{ runner.temp }}/belay-data
+        run: |
+          set -euo pipefail
+          (cd server && npm ci --ignore-scripts --no-audit --no-fund && npm run build)
+          nohup node server/dist/index.js > "$RUNNER_TEMP/belay-server.log" 2>&1 &
+          for _ in $(seq 30); do curl -fsS http://127.0.0.1:8080/healthz >/dev/null && break; sleep 1; done
+          curl -fsS http://127.0.0.1:8080/healthz
+          code="$(node server/dist/cli.js create-code "CI phone" 2>/dev/null)"
+          echo "BELAY_E2E_CODE=$code" >> "$GITHUB_ENV"
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        env:
+          BELAY_E2E_SERVER: http://10.0.2.2:8080
+        with:
+          api-level: "37.0"
+          target: aosp_atd
+          arch: x86_64
+          cores: 4
+          ram-size: 4096M
+          disable-animations: true
+          emulator-options: -no-window -no-snapshot -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: android/scripts/ci-kit-emulator-test.sh android/app/build/outputs/apk/debug/app-debug.apk
+      - name: The server's log
+        if: always()
+        run: cat "$RUNNER_TEMP/belay-server.log" || true
