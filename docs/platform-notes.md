@@ -60,6 +60,11 @@ relying on something new, it goes here first, with a source.
 | C9 | Network in Doze for a foreground-service process; exact alarms | Confirmed | AOSP |
 | C10 | Reading the phone, SMS, emergency, browser and keyboard apps without permissions | Confirmed | AOSP |
 | C11 | Android's own Parental Controls profile: detectable, not identifiable | Confirmed | AOSP |
+| U1 | Foreground time comes from `queryEvents`, fresh, kept about 10 days | Confirmed | AOSP; Docs |
+| U2 | Android's daily buckets aren't local days | Contradicted | AOSP |
+| U3 | The usage-limit observers aren't open to Belay | Contradicted | AOSP |
+| U4 | The kid can turn usage access off, and back on | Confirmed | AOSP |
+| U5 | How usage events behave at boots, clock changes and query edges | Confirmed in source | AOSP |
 | I2 | A device owner's PackageInstaller session installs with nobody confirming; no downgrades | Confirmed | AOSP; Docs; Emulator pending (Phase 6 CI) |
 | I3 | Developer verification has no device-owner bypass | Confirmed in AOSP; Google's wording doesn't settle Belay's case | AOSP; Docs (drafts) |
 | I5 | Only the shell can install a test-only APK | Confirmed: `INSTALL_FAILED_TEST_ONLY` for every app | AOSP |
@@ -596,6 +601,100 @@ stores" (apps holding `INSTALL_PACKAGES_AS_REGISTERED_APP_STORE`). The new key i
 37.0. Phase 2 gates it on `Build.VERSION.SDK_INT_FULL >= 3700002`. (Corrected in C4: for a
 device owner, an unknown key is silently ignored; "Invalid restriction key" is only thrown to
 permission-based callers.)
+
+---
+
+## Screen time (Phase 3)
+
+### U1. Reading foreground time: `queryEvents`
+
+**Confirmed.** Android 17 (API 37.0). Verified on: AOSP; Docs.
+
+- UsageStatsManager reference [2026-08-28]: `queryEvents(long, long)` (API 21): "Events are only
+  kept by the system for a few days"; `queryEvents(UsageEventsQuery)` (API 35) filters by event
+  type and package. Both need usage access, and return nothing while the user is locked.
+- In AOSP 17 the older `queryEvents(long, long)` is `@Deprecated` behind the flag
+  `deprecate_old_query_events_api`: "Future Android versions may no longer support this API due to
+  performance and memory concerns" (`core/java/android/app/usage/UsageStatsManager.java`). The
+  reference page doesn't show the deprecation yet.
+- Fresh: `services/usage/.../UserUsageStatsService.queryStats` reads older intervals from disk and
+  appends the in-memory current interval, so an event is visible as soon as the system has
+  recorded it. The 20-minute flush to disk (`UsageStatsService.FLUSH_INTERVAL`) doesn't delay it.
+- Kept: `UsageStatsDatabase.prune` deletes daily files older than 10 days (weekly: 4 weeks,
+  monthly: 6 months, yearly: 2 years).
+- Without usage access, `UsageStatsService.hasQueryPermission` fails and the service returns
+  null; the client turns that into an empty result. No exception (U4).
+
+Belay's consequence: poll `queryEvents(UsageEventsQuery)` with a stored cursor, compute time in
+`:core`, keep its own copy of recent intervals, and never read an empty result as "no use"
+without checking usage access. To check on the emulator: a fixture app's `ACTIVITY_RESUMED`
+appears within a second of `am start`.
+
+### U2. Daily buckets aren't local days
+
+**Contradicted.** Verified on: AOSP.
+
+- `UserUsageStatsService.updateRolloverDeadline` schedules the next daily rollover 24 hours after
+  the current daily bucket began (`UnixCalendar.addDays(1)`), not at local midnight.
+- The reference [2026-08-28] warns that for `queryUsageStats` "the begin and end times of the time
+  range may be expanded to the nearest whole interval period".
+
+Belay's consequence: never use `INTERVAL_DAILY` buckets for "today". Compute days from events, in
+the zone the policy names.
+
+### U3. Usage observers aren't available to Belay
+
+**Contradicted** for an app like Belay. Verified on: AOSP.
+
+- `registerAppUsageObserver` and `registerUsageSessionObserver` are `@SystemApi` and `@hide`. The
+  service would accept an active device owner (`UsageStatsService.hasObserverPermission`, with
+  "TODO(b/169395065) Figure out if this flow makes sense in Device Owner mode"), but the client
+  methods aren't in the SDK. Reaching them means reflection on non-SDK interfaces, which Belay
+  doesn't do (developer.android.com/guide/app-compatibility/restrictions-non-sdk-interfaces
+  [2026-10-28]).
+- `registerAppUsageLimitObserver` needs `SUSPEND_APPS` (`signature|role|verifier`) and
+  `OBSERVE_APP_USAGE` (`signature|privileged|role`), or the caller must be the active supervision
+  app (`SupervisionManagerInternal.isActiveSupervisionApp`), a system-only role (V3).
+
+Belay's consequence: Belay polls `queryEvents` and enforces its own limits.
+
+### U4. The kid can turn usage access off, and back on
+
+**Confirmed.** Verified on: AOSP.
+
+- Settings (`packages/apps/Settings`, `applications/UsageAccessDetails.java`) enables the switch
+  for any app that declares `PACKAGE_USAGE_STATS`. It only warns for a profile owner and has no
+  device-owner check. The switch sets the app-op to IGNORED or ALLOWED, so the kid can also turn it
+  back on there (Android 17's restricted-settings check can grey out turning it *on* for some
+  installs: `checkEcmRestrictionAndSetDisabled`).
+- R1 still holds: a device owner can't set the app-op itself; `appops set` over adb works.
+- Queries then return nothing (U1).
+
+Belay's consequence: watch it (`AppOpsManager.startWatchingMode`), report it, apply the family's
+rule for "can't count", and show the kid how to turn it back on.
+
+### U5. How usage events behave, for counting
+
+**Confirmed in AOSP 17 source; not yet seen on a device.** Checked in `android-17.0.0_r1` while
+writing `core/screentime` (UsageStatsService, UserUsageStatsService, UsageStatsDatabase):
+
+- `queryEvents` returns events from `begin` (included) to `end` (not included).
+- `UsageEvents.Event.getInstanceId()` is a system API, so an app can tell activities apart only by
+  package and class name.
+- A destroyed activity is recorded as stopped, and a pause that arrives after the stop still
+  counts as the end of its use.
+- Every boot records a shutdown event stamped with the last time the stats were saved (stale
+  after a crash), then a startup event.
+- Events queued while the phone is still locked after a boot are stamped at or after the startup.
+- A change of the wall clock of more than 2 seconds shifts all of Android's stored usage history
+  by the change (on by default), so Belay keeps its own ledger and re-sends recent days when it
+  sees the clock move.
+
+Belay's consequence: `core/screentime/ScreenTime.kt` counts from these rules, keyed by package and
+class, keeps its own ledger instead of trusting the history, and treats a boot's shutdown time as
+a guess. To check on the emulator: open and close a fixture activity, reboot, and change the clock
+by an hour; the ledger's minutes match a stopwatch.
+
 
 ---
 

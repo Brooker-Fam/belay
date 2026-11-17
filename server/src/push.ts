@@ -260,7 +260,7 @@ export function browserName(userAgent: string | undefined, endpoint: string): st
 export interface Notice {
   title: string;
   body: string;
-  url: "/requests" | "/proposals" | "/settings";
+  url: "/" | "/requests" | "/proposals" | "/settings";
 }
 
 export interface SendResult {

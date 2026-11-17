@@ -40,6 +40,10 @@ server/data/
 *.db
 *.db-wal
 *.db-shm
+# Backups, encrypted ones too, and a backup passphrase kept for a Docker secret (docs/server.md)
+*.db.enc
+*.partial-*
+backup-passphrase*
 
 # Made from server/Caddyfile.example: it names the family's server
 server/Caddyfile
