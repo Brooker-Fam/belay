@@ -443,6 +443,10 @@ data class WirePolicy(
     val calls: WireCalls? = null,
     /** Phase 5: the approved contacts, at most 500; `parent` ones are on the emergency card too. */
     val contacts: List<WireContact> = emptyList(),
+    /** Phase 5: E.164 numbers Belay never records or reads (calls or texts), beyond 988 and emergency numbers. */
+    @SerialName("private_numbers") val privateNumbers: List<String> = emptyList(),
+    /** Phase 5: E.164 numbers a parent blocked; Belay adds them to Android's block list as the dialer. */
+    @SerialName("blocked_numbers") val blockedNumbers: List<String> = emptyList(),
 )
 
 /** Phase 7: a parent saw the kid's help request. */

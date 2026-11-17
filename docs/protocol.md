@@ -562,6 +562,8 @@ server decides whether a change tightens or loosens.
 | `parent_numbers` | `[{name, number}]` | Phase 7: at most 4; `number` in E.164, `name` at most 40 characters |
 | `calls` | `{mode: "open"\|"contacts", unknown, withheld: "reject"\|"voicemail"\|"ring", outgoing: "contacts"\|"any", quiet, log}`? | Phase 5; null: Belay isn't the dialer |
 | `contacts` | `[{id, name, numbers: [E.164], calls, texts, parent}]` | Phase 5: at most 500; `name` at most 60 characters, at most 5 numbers |
+| `private_numbers` | string[] | Phase 5: E.164 numbers Belay never records or reads, beyond 988 and emergency numbers; at most 50 |
+| `blocked_numbers` | string[] | Phase 5: E.164 numbers a parent blocked; Belay, as the dialer, puts them on Android's block list (which blocks their texts too); at most 500 |
 
 The `commands` kinds gain `locate_now` (Phase 4).
 

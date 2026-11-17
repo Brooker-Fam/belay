@@ -656,5 +656,9 @@ export const Policy = z.strictObject({
     )
     .max(LIMITS.maxContacts)
     .optional(),
+  /** Phase 5: numbers Belay never records or reads, beyond 988 and emergency numbers. */
+  private_numbers: z.array(e164).max(50).optional(),
+  /** Phase 5: numbers a parent blocked (Android's block list, set by Belay as the dialer). */
+  blocked_numbers: z.array(e164).max(500).optional(),
 });
 export type Policy = z.infer<typeof Policy>;
