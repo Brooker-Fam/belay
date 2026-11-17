@@ -136,10 +136,25 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
                 recoveryUntil = RecoveryRules.openUntil(store.recovery(), now),
             ),
         )
-        // Phase 3: screen time counted and decided on top, so one diff applies both.
+        // Phase 3: screen time counted and decided on top, so one diff applies both. If that
+        // fails, Phase 2's rules still apply, and the problem is reported.
         val screenTimeStep = policy.screenTime?.let { ScreenTimeStep(app, store) }
-        val read = policy.screenTime?.let { screenTimeStep?.read(it, inventory, roles, applied, phase2) }
-        val plan = ScreenTimeEnforcement.merge(phase2, read?.decision)
+        var screenTimeProblem: String? = null
+        val read = policy.screenTime?.let { screenTime ->
+            try {
+                screenTimeStep?.read(screenTime, inventory, roles, applied, phase2)
+            } catch (e: RuntimeException) {
+                Log.e(Agent.TAG, "screen time couldn't be worked out", e)
+                screenTimeProblem = "Belay couldn't work out screen time: ${e.javaClass.simpleName}."
+                null
+            }
+        }
+        val plan = when {
+            read != null -> ScreenTimeEnforcement.merge(phase2, read.decision)
+            // It failed: what screen time held stays held until a step works it out again.
+            policy.screenTime != null -> ScreenTimeEnforcement.keep(phase2, applied)
+            else -> phase2
+        }
         val changes = Enforcement.changes(plan, applied)
         val outcome = if (owner) enforcer.apply(changes) else notDeviceOwner(changes)
         var next = Enforcement.after(applied, plan, changes, outcome, now)
@@ -150,9 +165,18 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
         }
 
         // Phase 3: lock the screen for lock_now commands and for a schedule that locks as it
-        // starts, now that the rest is applied; then the notices, and the usage to send.
+        // starts, now that the rest is applied; then the notices, and the usage to send. Nothing
+        // here may stop what was applied from being recorded below.
         val lockResults = runner.lockNow(commandPlan, owner)
-        val done = read?.let { screenTimeStep?.after(it) }
+        val done = read?.let {
+            try {
+                screenTimeStep?.after(it)
+            } catch (e: RuntimeException) {
+                Log.e(Agent.TAG, "screen time's notices and uploads failed", e)
+                screenTimeProblem = "Belay couldn't finish screen time's step: ${e.javaClass.simpleName}."
+                null
+            }
+        }
         var screenTimeState: ScreenTimeState? = done?.state
         if (done != null && done.locks.isNotEmpty()) {
             Log.i(Agent.TAG, "screen time: locking the screen as ${done.locks.joinToString { it.scheduleId }} starts")
@@ -166,6 +190,7 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
             SimRules.problem(sim, now),
             tooLarge?.let { PolicyTooLarge.problem(it.tooLargeBytes) },
             screenTimeState?.lockProblem,
+            screenTimeProblem,
         )
         next = next.copy(sim = sim, problems = (next.problems + extra).distinct().take(Enforcement.MAX_PROBLEMS))
 
@@ -175,7 +200,12 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
             inventory[name]?.let { KidRequest(UUID.randomUUID().toString(), name, it.label, null, now) }
         }
         val ran = results + lockResults
-        val screenTimeWrite = if (done != null && screenTimeState != null) AgentStore.ScreenTimeWrite.Save(done.ledger, screenTimeState) else stopScreenTime()
+        val screenTimeWrite = when {
+            done != null && screenTimeState != null -> AgentStore.ScreenTimeWrite.Save(done.ledger, screenTimeState)
+            // Screen time failed this step: its record stays as it was.
+            policy.screenTime != null -> null
+            else -> stopScreenTime()
+        }
         store.commitEnforcement(
             applied = next,
             requests = made,
@@ -190,7 +220,13 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
         // Android's screen for a held-back app can't name it: Belay's notice does.
         if (owner && made.isNotEmpty()) WaitingNotice.show(app, made.map { it.label })
         if (plan.waiting.isEmpty()) WaitingNotice.cancel(app)
-        if (done != null) ScreenTimeNotice.apply(app, done.notices, words(inventory), read.now)
+        if (done != null) {
+            try {
+                ScreenTimeNotice.apply(app, done.notices, words(inventory), read.now)
+            } catch (e: RuntimeException) {
+                Log.w(Agent.TAG, "screen time's notices not shown", e)
+            }
+        }
 
         val all = made + requests
         val screenTime = read?.let { ScreenTimeView(it.policy, it.decision, it.update.usage, it.decision.days.startOf(it.decision.day)) }

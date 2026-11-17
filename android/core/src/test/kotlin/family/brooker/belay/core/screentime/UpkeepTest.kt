@@ -141,6 +141,18 @@ class UpkeepTest {
         assertEquals(mapOf(BLOCKS to listOf("category_limit")), after.reasons)
     }
 
+    @Test
+    fun `when screen time can't be worked out, what it held stays held`() {
+        val policy = WirePolicy(version = 5, screenTime = screenTime)
+        val (both, _) = merged(policy, t("16:00"), minutes = 60)
+        val held = Enforcement.after(Applied(), both.plan, Enforcement.changes(both.plan, Applied()), ApplyOutcome(), t("16:00"))
+        val kept = ScreenTimeEnforcement.keep(phase2(policy, t("16:05"), held), held)
+        assertEquals(setOf(BLOCKS, RACER), kept.suspend)
+        assertTrue(Enforcement.changes(kept, held).none, "nothing let go")
+        assertEquals(held.screenTime, kept.screenTime, "the last report stands")
+        assertEquals(emptySet(), ScreenTimeEnforcement.keep(phase2(policy, t("16:05")), Applied()).suspend)
+    }
+
     // The report's bounds.
 
     @Test

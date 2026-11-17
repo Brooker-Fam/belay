@@ -2,6 +2,7 @@ package family.brooker.belay.core.screentime
 
 import family.brooker.belay.core.Applied
 import family.brooker.belay.core.EnforcementPlan
+import family.brooker.belay.core.HoldReason
 import family.brooker.belay.core.NeverBlocked
 import family.brooker.belay.core.PackageRecord
 import family.brooker.belay.core.PhoneRoles
@@ -46,6 +47,21 @@ object ScreenTimeEnforcement {
         selfServe = takes,
         pause = plan.pause,
     )
+
+    /**
+     * Screen time couldn't be worked out this step (the agent caught a failure): [plan] still
+     * holds what Belay held for screen time ([Applied.reasons] with one of its codes), with the
+     * last report, rather than let a bedtime or a used-up limit go until the next step.
+     */
+    fun keep(plan: EnforcementPlan, applied: Applied): EnforcementPlan {
+        val codes = ReasonCode.entries.map { it.code }.toSet() - HoldReason.PAUSED
+        val held = applied.suspended.filter { name -> applied.reasons[name].orEmpty().any { it in codes } }
+        if (held.isEmpty()) return plan.copy(screenTime = applied.screenTime)
+        val reasons = sortedMapOf<String, List<String>>()
+        reasons.putAll(plan.reasons)
+        held.forEach { name -> reasons[name] = (reasons[name].orEmpty() + applied.reasons[name].orEmpty()).distinct() }
+        return plan.copy(suspend = plan.suspend + held, reasons = reasons, screenTime = applied.screenTime)
+    }
 
     /**
      * [plan] with [decision] in it: its suspensions added, each with its reasons (ReasonCode.code,
