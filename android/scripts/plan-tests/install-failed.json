@@ -1,0 +1,14 @@
+{
+  "name": "adb install fails for another reason.",
+  "base": "fresh-debug",
+  "plan": "provision",
+  "args": [
+    "--yes",
+    "{apk}"
+  ],
+  "exit": 1,
+  "install": {
+    "out": "Performing Streamed Install\nadb: failed to install belay.apk: Failure [INSTALL_FAILED_INSUFFICIENT_STORAGE: Failed to override installation location]",
+    "exit": 1
+  }
+}

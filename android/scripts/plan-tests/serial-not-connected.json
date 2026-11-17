@@ -1,0 +1,12 @@
+{
+  "name": "--serial names a device that isn't there.",
+  "base": "fresh-debug",
+  "plan": "provision",
+  "args": [
+    "--yes",
+    "--serial",
+    "38151FDJH00DXZ",
+    "{apk}"
+  ],
+  "exit": 1
+}

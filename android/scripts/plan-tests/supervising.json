@@ -1,0 +1,16 @@
+{
+  "name": "Android's own Parental Controls are set up: stop.",
+  "base": "fresh-debug",
+  "plan": "provision",
+  "args": [
+    "--yes",
+    "{apk}"
+  ],
+  "exit": 1,
+  "phone": [
+    {
+      "run": "cmd user list -v",
+      "out": "2 users:\n\n0: id=0, name=Owner, type=full.SYSTEM, flags=ADMIN|FULL|INITIALIZED|MAIN|PRIMARY|SYSTEM (running)\n1: id=10, name=Parental controls, type=profile.SUPERVISING, flags=PROFILE"
+    }
+  ]
+}

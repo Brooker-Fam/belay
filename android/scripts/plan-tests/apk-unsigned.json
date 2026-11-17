@@ -1,0 +1,15 @@
+{
+  "name": "The APK isn't signed (or doesn't verify).",
+  "base": "fresh-debug",
+  "plan": "provision",
+  "args": [
+    "--yes",
+    "{apk}"
+  ],
+  "exit": 1,
+  "apk": {
+    "package": "family.brooker.belay",
+    "testOnly": false,
+    "signed": false
+  }
+}

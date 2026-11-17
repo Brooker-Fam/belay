@@ -1,0 +1,9 @@
+{
+  "name": "An option provision.sh doesn't have.",
+  "base": "fresh-debug",
+  "plan": "provision",
+  "args": [
+    "--frobnicate"
+  ],
+  "exit": 1
+}

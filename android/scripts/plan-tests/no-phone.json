@@ -1,0 +1,11 @@
+{
+  "name": "No phone connected.",
+  "base": "fresh-debug",
+  "plan": "provision",
+  "args": [
+    "--yes",
+    "{apk}"
+  ],
+  "exit": 1,
+  "devices": []
+}

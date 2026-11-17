@@ -1,0 +1,23 @@
+devices
+shell getprop ro.product.manufacturer
+shell getprop ro.product.model
+shell getprop ro.build.version.release
+shell getprop ro.build.version.sdk
+shell getprop ro.build.version.security_patch
+shell dpm list-owners
+shell dumpsys account
+shell cmd user list -v
+shell pm list users
+install -r {apk}
+shell dpm set-device-owner family.brooker.belay/.AdminReceiver
+shell appops set family.brooker.belay GET_USAGE_STATS allow
+shell appops get family.brooker.belay GET_USAGE_STATS
+shell dumpsys deviceidle whitelist +family.brooker.belay
+shell dumpsys deviceidle whitelist
+shell am start -n family.brooker.belay/.ui.MainActivity
+shell dumpsys activity services family.brooker.belay/.service.BelayService
+sleep 1
+shell dumpsys activity services family.brooker.belay/.service.BelayService
+shell dumpsys deviceidle whitelist
+shell dpm list-owners
+shell am get-standby-bucket family.brooker.belay

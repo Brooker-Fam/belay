@@ -1,0 +1,23 @@
+{
+  "name": "The battery exemption is lost in the restart: granted again, with the wait.",
+  "base": "fresh-debug",
+  "plan": "provision",
+  "args": [
+    "--yes",
+    "{apk}"
+  ],
+  "phone": [
+    {
+      "run": "dumpsys deviceidle whitelist",
+      "out": "system,com.android.shell,2000\nuser,family.brooker.belay,10183"
+    },
+    {
+      "run": "dumpsys deviceidle whitelist",
+      "after": "reboot",
+      "seq": [
+        "system,com.android.shell,2000",
+        "system,com.android.shell,2000\nuser,family.brooker.belay,10183"
+      ]
+    }
+  ]
+}

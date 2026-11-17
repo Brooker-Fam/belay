@@ -1,0 +1,26 @@
+trailing newlines go: [value]
+err
+passed [out] dropped [out] merged [only an error]
+3 items:
+- item {a} type=com.b
+- item {b} type=com.a
+- item {c} type=com.b
+  1 com.a
+  2 com.b
+zero=0 nothing=[]
+a read goes on when the command fails: [partial]
+contains needs exit status 0: []
+equals only looks at the output: [1]
+matches looks at each line of a command's output
+a value must match as a whole
+a regular expression's braces stay
+waited: [1]
+gave up: []
+loud output
+loud error
+loud error
+  Failed: it didn't work
+the first failure that fits: Failed: it didn't work
+  Done
+Go on? [y/N] you said yes
+partial

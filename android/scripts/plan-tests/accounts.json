@@ -1,0 +1,16 @@
+{
+  "name": "Accounts on the phone: stop, and name only their types, with counts (never the names).",
+  "base": "fresh-debug",
+  "plan": "provision",
+  "args": [
+    "--yes",
+    "{apk}"
+  ],
+  "exit": 1,
+  "phone": [
+    {
+      "run": "dumpsys account",
+      "out": "Accounts: 3\n    Account {name=parent@example.com, type=com.google}\n    Account {name=other@example.com, type=com.google}\n    Account {name=sam, type=com.example.chat}\n\nAccountManagerService history:"
+    }
+  ]
+}

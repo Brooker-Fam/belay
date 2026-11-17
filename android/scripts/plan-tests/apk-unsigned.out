@@ -1,0 +1,4 @@
+Belay: provisioning
+
+STOPPED: {apk} isn't signed.
+  A release build needs the release key: see docs/signing.md.

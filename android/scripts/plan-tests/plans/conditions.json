@@ -1,0 +1,39 @@
+{
+  "format": 1,
+  "note": "Conditions, templates, levels, groups and exit, for the interpreters' fixture tests.",
+  "package": "family.brooker.belay",
+  "admin": "family.brooker.belay/.AdminReceiver",
+  "steps": [
+    {"kind": "say", "when": ["{a}"], "text": "{a} is set"},
+    {"kind": "say", "when": ["!{missing}"], "text": "{missing} is empty"},
+    {"kind": "say", "when": ["{a}{missing}"], "text": "either is set"},
+    {"kind": "say", "when": ["{a}=one"], "text": "= compares"},
+    {"kind": "say", "when": ["{a}!=two"], "text": "!= compares"},
+    {"kind": "say", "when": ["{a}~ne"], "text": "~ contains"},
+    {"kind": "say", "when": ["!{a}~zz"], "text": "! turns it around"},
+    {"kind": "say", "when": ["{n}<31"], "text": "< is a whole number: 08 is 8"},
+    {"kind": "say", "when": ["{missing}<1"], "text": "< counts empty as 0"},
+    {"kind": "say", "when": ["{word}<31"], "text": "never: a word isn't a number"},
+    {"kind": "say", "when": ["{a}={b}"], "text": "never: the right side is a template too"},
+    {"kind": "say", "when": ["{a}", "{missing}"], "text": "never: every when must hold"},
+    {"kind": "say", "unless": ["{a}", "{b}"], "text": "never: unless both are set"},
+    {"kind": "say", "unless": ["{a}", "{missing}"], "text": "unless needs all of them"},
+    {"kind": "say", "text": "braces stay: {8,12} {Not} {a b} {} \\{a\\} {a"},
+    {"kind": "say", "text": "one pass: {curly}"},
+    {"kind": "set", "var": "c", "value": "{a}-{b}"},
+    {"kind": "say", "level": "info", "text": "set: {c}"},
+    {"kind": "say", "level": "info", "text": "info indents the first line only:\nlike this"},
+    {"kind": "say", "level": "warn", "text": "a warning"},
+    {"kind": "say", "level": "err", "text": "standard error, as it is"},
+    {"kind": "say", "prefix": "  > ", "text": "{lines}"},
+    {"kind": "say", "level": "err", "prefix": "! ", "text": "{lines}"},
+    {"kind": "say", "text": ""},
+    {"kind": "group", "when": ["{a}"], "steps": [
+      {"kind": "set", "var": "a", "value": ""},
+      {"kind": "say", "when": ["!{a}"], "text": "a group's when is read once, when it starts"}
+    ]},
+    {"kind": "group", "steps": []},
+    {"kind": "exit", "when": ["{b}"], "code": 3},
+    {"kind": "say", "text": "never: exit ends the run"}
+  ]
+}

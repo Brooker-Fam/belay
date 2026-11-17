@@ -1,0 +1,13 @@
+{
+  "name": "--dry-run: every check, the commands it would run, and nothing changed.",
+  "base": "fresh-debug",
+  "plan": "provision",
+  "args": [
+    "--dry-run",
+    "--server",
+    "https://belay.example.org",
+    "--code",
+    "7KQ2M9XA",
+    "{apk}"
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "name": "A command that changes the phone fails: provision.sh ends at once with its exit status (set -e).",
+  "base": "fresh-debug",
+  "plan": "provision",
+  "args": [
+    "--yes",
+    "{apk}"
+  ],
+  "exit": 255,
+  "phone": [
+    {
+      "run": "appops set family.brooker.belay GET_USAGE_STATS allow",
+      "err": "Error: java.lang.SecurityException: uid 2000 does not have android.permission.MANAGE_APP_OPS_MODES.",
+      "exit": 255
+    }
+  ]
+}

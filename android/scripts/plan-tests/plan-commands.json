@@ -1,0 +1,21 @@
+{
+  "name": "Reads, checks, waits, run, change and confirm: what each does with a command's output, standard error and exit status.",
+  "plan": "plans/commands.json",
+  "vars": {"multi": "abc\nxyz", "word": "abc"},
+  "stdin": "yes\n",
+  "exit": 7,
+  "phone": [
+    {"run": "cmd one", "out": "value\n\n"},
+    {"run": "cmd noisy", "out": "out", "err": "err"},
+    {"run": "cmd errors", "err": "only an error"},
+    {"run": "cmd list", "out": "item {a} type=com.b\n  item {b} type=com.a\nnot this one\n\titem {c} type=com.b\r"},
+    {"run": "cmd empty", "out": ""},
+    {"run": "cmd fails", "out": "partial", "exit": 7},
+    {"run": "cmd lines", "out": "one\ntwo\nthree"},
+    {"run": "cmd later", "seq": ["not yet", "not yet", "ready now"]},
+    {"run": "cmd never", "out": "0"},
+    {"run": "cmd loud", "out": "loud output", "err": "loud error"},
+    {"run": "cmd change", "out": "Failed: it didn't work", "exit": 1},
+    {"run": "cmd works", "out": "Done"}
+  ]
+}

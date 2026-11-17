@@ -1,0 +1,10 @@
+Belay: provisioning
+APK: {apk}
+  test-only (debug) build: no
+  signed by: CN=Belay release key
+  certificate SHA-256: 64ed03ab327f851e45c14054f192a8d594cbb898ec2ef57bb4ff66fef32f1ec1
+  Phone: Google sdk_gphone64_x86_64, Android 17 (API 37), security update 2026-10-05, serial emulator-5554
+  No accounts, one user, no device owner: ready.
+This is a release build. Once it is the device owner, ONLY A FACTORY RESET removes it.
+Make Belay the device owner of this phone? [y/N] 
+STOPPED: Nothing changed: you said no.
