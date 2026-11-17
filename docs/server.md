@@ -82,11 +82,11 @@ page (Requests in the menu shows how many are waiting) and through MCP.
 
 **Turning them on:** Settings → Notifications → Turn on notifications on this browser, on
 each browser where a parent wants them. The page registers a small service worker
-(`/sw.js`) that shows each notice and opens the page it's about when tapped. Settings lists each parent's own browsers, and
-Remove stops one; Send a test notice checks them. On an iPhone or iPad, iOS only delivers
-notifications to web apps on the Home Screen: open the parent page in Safari, choose Share →
-Add to Home Screen, open Belay from the Home Screen, and turn them on there (iOS 16.4 or
-later).
+(`/sw.js`) that shows each notice and opens the page it's about when tapped. Settings lists
+each parent's own browsers, and Remove stops one; Send a test notice checks them. On an
+iPhone or iPad, iOS only delivers notifications to web apps on the Home Screen: open the
+parent page in Safari, choose Share → Add to Home Screen, open Belay from the Home Screen,
+and turn them on there (iOS 16.4 or later).
 
 **When:** when a phone sends a new request (one notice for the requests in one call), and
 when an AI app proposes a change. Not again when a request is sent a second time, or the
