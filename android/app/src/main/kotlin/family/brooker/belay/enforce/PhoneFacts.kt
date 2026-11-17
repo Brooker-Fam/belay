@@ -14,6 +14,7 @@ import android.provider.Telephony
 import android.telecom.TelecomManager
 import android.util.Log
 import family.brooker.belay.Agent
+import family.brooker.belay.core.PackagePresence
 import family.brooker.belay.core.PhoneRoles
 import family.brooker.belay.inventory.packageInfoCompat
 import family.brooker.belay.inventory.queryActivitiesCompat
@@ -109,6 +110,6 @@ object PhoneFacts {
 
     private fun installed(info: ResolveInfo): Boolean {
         val app = info.activityInfo?.applicationInfo ?: return false
-        return app.flags and ApplicationInfo.FLAG_INSTALLED != 0
+        return PackagePresence.installed(app.flags)
     }
 }

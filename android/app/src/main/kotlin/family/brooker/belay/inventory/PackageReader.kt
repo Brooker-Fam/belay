@@ -10,6 +10,7 @@ import android.os.Build
 import android.provider.Settings
 import family.brooker.belay.core.DataCategories
 import family.brooker.belay.core.InstallerInfo
+import family.brooker.belay.core.PackagePresence
 import family.brooker.belay.core.PackageRecord
 import family.brooker.belay.core.SensitivePermissions
 
@@ -17,11 +18,10 @@ import family.brooker.belay.core.SensitivePermissions
  * The apps collector (data category [DataCategories.APPS]): reads PackageManager into
  * [PackageRecord]s. Metadata only. Seeing every package relies on QUERY_ALL_PACKAGES.
  *
- * Apps Belay hides (blocked apps, Phase 2) are still installed. PackageManager treats a
- * hidden package as uninstalled unless asked with MATCH_UNINSTALLED_PACKAGES, which also
- * returns packages uninstalled with their data kept; FLAG_INSTALLED tells the two apart
- * (AOSP 17 `PackageUserStateUtils.isAvailable`, `PackageInfoUtils`). So a blocked app stays
- * in the inventory instead of reading as removed, and keeps its launcher icon in the record.
+ * Apps Belay hides (blocked apps, Phase 2) are still installed: every read asks with
+ * MATCH_UNINSTALLED_PACKAGES and keeps what core's [PackagePresence] says is installed, for
+ * the launcher query too. So a blocked app stays in the inventory instead of reading as
+ * removed, and keeps its launcher icon in the record.
  */
 class PackageReader(context: Context) {
     private val app = context.applicationContext
@@ -57,7 +57,7 @@ class PackageReader(context: Context) {
     private fun launcherIntent() = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
 
     /** Installed for this user, hidden or not (not just data left behind by an uninstall). */
-    private fun installed(info: ApplicationInfo?): Boolean = info != null && info.flags and ApplicationInfo.FLAG_INSTALLED != 0
+    private fun installed(info: ApplicationInfo?): Boolean = info != null && PackagePresence.installed(info.flags)
 
     private fun toRecord(info: PackageInfo, launchable: Boolean, access: SpecialAccess): PackageRecord? {
         val app = info.applicationInfo ?: return null
