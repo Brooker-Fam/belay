@@ -28,7 +28,7 @@
     {"kind": "say", "when": ["{dry_run}"], "text": "Belay: provisioning (dry run: nothing on the phone changes)"},
 
     {
-      "id": "apk", "kind": "group", "page": "Check the Belay app",
+      "id": "apk", "kind": "group", "page": "Check the app",
       "steps": [
         {"kind": "apk"},
         {"kind": "stop", "when": ["!{apk_found}"], "message": ["No APK at {apk}", "Build it first: android/scripts/build-release.sh (or ./gradlew :app:assembleDebug with --debug)."]},
@@ -45,7 +45,7 @@
     },
 
     {
-      "id": "phone", "kind": "group", "page": "Connect the phone",
+      "id": "phone", "kind": "group", "page": "Find the phone",
       "steps": [
         {"kind": "device"},
         {"kind": "read", "run": ["getprop", "ro.product.manufacturer"], "into": "manufacturer"},
@@ -59,7 +59,7 @@
     },
 
     {
-      "id": "ready", "kind": "group", "page": "Check the phone is ready",
+      "id": "ready", "kind": "group", "page": "Check the phone is freshly reset",
       "steps": [
         {"kind": "read", "run": ["dpm", "list-owners"], "stderr": "drop", "into": "owners",
           "note": "One line per owner, like \"User 0: admin=<component>,DeviceOwner\". Android 17 prints nothing when there are none (platform notes P5)."},
@@ -92,7 +92,7 @@
     },
 
     {
-      "id": "confirm", "kind": "group", "when": ["!{update}"], "page": "Make sure",
+      "id": "confirm", "kind": "group", "when": ["!{update}"], "page": "Ask you before Belay takes over",
       "note": "A release build that becomes device owner can only be removed by a factory reset.",
       "steps": [
         {"kind": "say", "when": ["{test_only}=yes"], "text": "This is a debug (test-only) build: unprovision.sh can release it later without a reset."},
@@ -118,7 +118,7 @@
     },
 
     {
-      "id": "owner", "kind": "group", "when": ["!{update}"], "page": "Make Belay the phone's device owner",
+      "id": "owner", "kind": "group", "when": ["!{update}"], "page": "Make Belay the phone's manager",
       "steps": [
         {"kind": "say", "text": "Making Belay the device owner..."},
         {"kind": "change", "run": ["dpm", "set-device-owner", "{admin}"], "success": "^Success",
@@ -133,7 +133,7 @@
     },
 
     {
-      "id": "usage", "kind": "group", "page": "Usage access, for screen time",
+      "id": "usage", "kind": "group", "page": "Let Belay count screen time (usage access)",
       "note": "What only adb can grant, so later phases never need a factory reset.",
       "steps": [
         {"kind": "say", "text": "Granting usage access (for Phase 3 screen time)..."},
@@ -148,7 +148,7 @@
     },
 
     {
-      "id": "battery", "kind": "group", "page": "The battery exemption",
+      "id": "battery", "kind": "group", "page": "Keep battery saving from stopping Belay",
       "steps": [
         {"kind": "say", "text": "Exempting Belay from battery optimization (Doze still applies to everything else)..."},
         {"kind": "run", "quiet": true, "run": ["dumpsys", "deviceidle", "whitelist", "+{package}"]},
@@ -171,7 +171,7 @@
     },
 
     {
-      "id": "restart", "kind": "group", "when": ["!{dry_run}", "!{update}", "{reboot}", "{running}"], "page": "Restart the phone",
+      "id": "restart", "kind": "group", "when": ["!{dry_run}", "!{update}", "{reboot}", "{running}"], "page": "Restart the phone once",
       "note": "Restart once. Android locks the notification settings of an app whose POST_NOTIFICATIONS was granted by policy only while it boots; until then the managed notice's channel could still be switched off. The restart also shows that Belay comes back by itself after a boot.",
       "steps": [
         {"kind": "say", "text": "Restarting the phone once (Android locks the managed notice's settings at boot)..."},
@@ -222,7 +222,7 @@
     {"kind": "exit", "when": ["{dry_run}"], "code": 0},
 
     {
-      "id": "result", "kind": "group", "page": "The final check",
+      "id": "result", "kind": "group", "page": "Check how it went",
       "steps": [
         {"kind": "say", "text": ""},
         {"kind": "say", "text": "Result:"},

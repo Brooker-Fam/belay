@@ -278,3 +278,28 @@ function step(value: unknown, where: string): void {
 export function pageSteps(plan: Plan): { id: string; page: string }[] {
   return plan.steps.flatMap((s) => (s.id !== undefined && s.page !== undefined ? [{ id: s.id, page: s.page }] : []));
 }
+
+export interface InputCheck {
+  pattern: RegExp;
+  /** The plan's words for a value that doesn't fit, after its first line (which names the option). */
+  hint: string[];
+}
+
+/**
+ * The plan's own checks of a value it is given ({server}, {code}): its "check" steps with a
+ * "value" and "matches", so the page checks them as they're typed with the same patterns.
+ */
+export function inputChecks(plan: Plan): Map<string, InputCheck> {
+  const checks = new Map<string, InputCheck>();
+  const visit = (list: Step[]): void => {
+    for (const s of list) {
+      if (s.kind === "group") visit(s.steps);
+      if (s.kind !== "check" || s.value === undefined || s.matches === undefined) continue;
+      const name = /^\{([a-z_][a-z0-9_]*)\}$/.exec(s.value)?.[1];
+      const stop = s.fail?.find((f) => f.kind === "stop");
+      if (name !== undefined) checks.set(name, { pattern: new RegExp(s.matches, "s"), hint: stop?.kind === "stop" ? stop.message.slice(1) : [] });
+    }
+  };
+  visit(plan.steps);
+  return checks;
+}
