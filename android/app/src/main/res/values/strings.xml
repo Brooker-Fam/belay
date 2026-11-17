@@ -123,7 +123,6 @@
     <string name="why_waiting_to_send">Belay will send it as soon as it can reach your parent\'s Belay server.</string>
     <string name="not_answered">Your parent hasn\'t answered yet.</string>
 
-    <string name="section_answers">Your parent\'s answers</string>
     <string name="answer_yes">Your parent said yes.</string>
     <string name="answer_no">Your parent said no.</string>
     <string name="answer_talk">Your parent wants to talk with you about it.</string>

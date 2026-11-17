@@ -59,6 +59,8 @@ internal fun PausedBanner(pause: WirePause) {
     }
 }
 
+// Phase 7: every answer, of every kind, is on My requests (KidScreens.kt's RequestsCard).
+
 @Composable
 internal fun WaitingCard(kid: KidView, unsent: Set<String>, onAsk: Ask) {
     val waiting = kid.plan?.waiting.orEmpty()
@@ -80,20 +82,6 @@ internal fun WaitingCard(kid: KidView, unsent: Set<String>, onAsk: Ask) {
                 else -> Answer(request)
             }
             AskBox(name, request?.takeIf { it.open }, unsent, onAsk)
-        }
-    }
-}
-
-@Composable
-internal fun AnswersCard(kid: KidView) {
-    // Phase 3's answers (more time, the agreement) show on their own cards.
-    val answered = kid.requests.filter { it.forApp && !it.open }.take(MAX_ANSWERS)
-    if (answered.isEmpty()) return
-    KidSection(stringResource(R.string.section_answers)) {
-        answered.forEachIndexed { i, request ->
-            if (i > 0) HorizontalDivider()
-            AppName(kid.labels[request.request.packageName] ?: request.request.label, request.request.packageName)
-            Answer(request)
         }
     }
 }
@@ -162,6 +150,7 @@ private fun RuleText(rule: Rule, kid: KidView) {
             stringResource(R.string.rule_recovery, kid.plan?.recoveryUntil?.let { formatTime(it) }.orEmpty()) to
                 stringResource(R.string.rule_recovery_why)
         Rule.NO_BROWSERS -> stringResource(R.string.rule_no_browsers) to stringResource(R.string.rule_no_browsers_why)
+        Rule.LOCATION_LOCKED_ON -> stringResource(R.string.rule_location) to stringResource(R.string.rule_location_why)
         else -> return
     }
     Column {
@@ -255,4 +244,3 @@ private fun KidSection(title: String, content: @Composable () -> Unit) {
     }
 }
 
-private const val MAX_ANSWERS = 10
