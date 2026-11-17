@@ -98,7 +98,7 @@ export function saveUsage(
       stored++;
     }
     return { accepted: days.length, stored };
-  })();
+  }).immediate();
 }
 
 interface DayRow {
@@ -182,7 +182,7 @@ export function pruneUsage(db: DB, now: number, months: number): number {
   return db.transaction(() => {
     db.prepare("DELETE FROM extra_time WHERE day < ?").run(cutoff);
     return db.prepare("DELETE FROM usage_days WHERE day < ? OR day > ?").run(cutoff, latestUsageDay(now, "")).changes;
-  })();
+  }).immediate();
 }
 
 export const GAP_WORDS: Record<GapReason, string> = {

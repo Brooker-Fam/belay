@@ -209,7 +209,7 @@ export function markReviewed(
       marked.push(toApp(row, null));
     }
     return { marked, unknown };
-  })();
+  }).immediate();
 }
 
 export interface Change {

@@ -150,7 +150,7 @@ export function saveLocations(db: DB, deviceId: string, body: LocationsRequest, 
       MAX_KEPT_PLACE_EVENTS,
     );
     return out;
-  })();
+  }).immediate();
 }
 
 /** Records that the parents were told about an arrival or departure. */

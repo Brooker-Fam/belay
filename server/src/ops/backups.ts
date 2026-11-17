@@ -85,7 +85,7 @@ export function recordBackup(db: DB, r: Omit<BackupRecord, "id">): BackupRecord 
       .run(r.kind, r.startedAt, r.finishedAt, r.file, r.bytes, r.dbBytes, r.encrypted ? 1 : 0, r.ok ? 1 : 0, r.error);
     db.prepare("DELETE FROM backups WHERE id NOT IN (SELECT id FROM backups ORDER BY id DESC LIMIT ?)").run(RECORDS_KEPT);
     return { id: Number(lastInsertRowid), ...r };
-  })();
+  }).immediate();
 }
 
 /** The newest backup, or the newest daily one, or the newest that worked. */

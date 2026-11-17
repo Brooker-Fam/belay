@@ -203,7 +203,7 @@ export function saveSubscription(db: DB, now: number, parentId: string, input: S
     const row = db.prepare<[string], SubscriptionRow>("SELECT * FROM push_subscriptions WHERE id = ?").get(id);
     if (!row) throw new Error("subscription vanished");
     return toSubscription(row);
-  })();
+  }).immediate();
 }
 
 export function listSubscriptions(db: DB, parentId?: string): PushSubscription[] {

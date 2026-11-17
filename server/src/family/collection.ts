@@ -331,5 +331,5 @@ export function stopCollecting(ctx: PolicyContext, deviceId: string, category: C
       log("collection.stopped", { category, deleted });
       return { deleted };
     });
-  })();
+  }).immediate();
 }

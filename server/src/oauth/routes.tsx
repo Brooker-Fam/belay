@@ -411,7 +411,7 @@ export function oauthRoutes(deps: Deps, assets: Assets): Hono<{ Bindings: Bindin
       db.prepare("UPDATE oauth_codes SET used_at = ?, grant_id = ? WHERE code_hash = ?").run(now, grantId, sha256(code));
       audit(db, now, { kind: "parent", parentId: row.parent_id }, "ai.connected", { detail: { client: row.client_name } });
       return c.json(issueTokens(db, now, { id: grantId, refreshAllowed, scope: SCOPE }));
-    })();
+    }).immediate();
   });
 
   return app;

@@ -295,7 +295,7 @@ export function registerClient(db: DB, now: number, metadata: unknown, extraRedi
       ).run(count - MAX_CLIENTS + 1);
     }
     db.prepare("INSERT INTO oauth_clients (client_id, client_name, redirect_uris, created_at) VALUES (?, ?, ?, ?)").run(clientId, name, JSON.stringify(redirects), now);
-  })();
+  }).immediate();
   return {
     ok: true,
     body: {

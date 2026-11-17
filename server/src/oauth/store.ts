@@ -82,7 +82,7 @@ export function revokeGrant(db: DB, id: string, now: number): boolean {
     const changed = db.prepare("UPDATE oauth_grants SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL").run(now, id).changes === 1;
     db.prepare("DELETE FROM access_tokens WHERE grant_id = ?").run(id);
     return changed;
-  })();
+  }).immediate();
 }
 
 export function revokeAllGrants(db: DB, parentId: string, now: number): number {
@@ -138,7 +138,7 @@ export function createPersonalToken(db: DB, now: number, parentId: string, name:
   return db.transaction(() => {
     const grantId = createGrant(db, now, { kind: "pat", parentId, clientId: null, clientName: name, clientHost: null, redirectUri: null, resource, refreshAllowed: false });
     return { token: storeToken(db, grantId, "pat", now, null), grantId };
-  })();
+  }).immediate();
 }
 
 /** The grant behind a valid access token or personal access token, or null. */
@@ -179,5 +179,5 @@ export function exchangeRefreshToken(db: DB, token: string, now: number, clientI
     if (clientId !== null && clientId !== grant.clientId) return { ok: false, reused: false };
     db.prepare("UPDATE access_tokens SET used_at = ? WHERE token_hash = ?").run(now, sha256(token));
     return { ok: true, grant, tokens: issueTokens(db, now, grant) };
-  })();
+  }).immediate();
 }

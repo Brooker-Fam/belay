@@ -89,5 +89,5 @@ export function enroll(db: DB, code: string, device: Device, now: number): Enrol
       .run(now, deviceId, codeHash);
     if (used.changes !== 1) throw new Error("enrollment code raced");
     return { deviceId, deviceName, token, reconnected: row.device_id !== null };
-  })();
+  }).immediate();
 }

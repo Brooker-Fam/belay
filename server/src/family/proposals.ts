@@ -400,7 +400,7 @@ export function createProposal(
       });
     }
     return { proposal, duplicate: !!same };
-  })();
+  }).immediate();
 }
 
 export function getProposal(db: DB, id: string): Proposal | null {
@@ -490,7 +490,7 @@ export function approveProposal(ctx: PolicyContext, id: string, parentId: string
     db.prepare("UPDATE proposals SET status = 'approved', decided_by = ?, decided_at = ? WHERE id = ?").run(parentId, now, id);
     audit(db, now, parent, "proposal.approved", { deviceId: proposal.deviceId, detail: { change: changeWords(change, proposal.label).title, client: proposal.clientName } });
     return { ok: true, proposal: { ...proposal, status: "approved", decidedAt: now } };
-  })();
+  }).immediate();
 }
 
 /** A parent rejects a proposal: nothing changes on the phone. */
@@ -505,5 +505,5 @@ export function rejectProposal(db: DB, now: number, id: string, parentId: string
       detail: { change: changeWords(proposal.change, proposal.label).title, client: proposal.clientName },
     });
     return { ok: true, proposal: { ...proposal, status: "rejected", decidedAt: now } };
-  })();
+  }).immediate();
 }

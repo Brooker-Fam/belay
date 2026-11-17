@@ -50,7 +50,7 @@ export function migrate(db: DB, migrations: Migration[] = loadMigrations()): num
       db.transaction(() => {
         db.exec(migration.sql);
         db.pragma(`user_version = ${migration.version}`);
-      })();
+      }).immediate();
     } catch (error) {
       throw new MigrationError(migration.version, migration.name, error);
     }
@@ -70,6 +70,10 @@ export function openDatabase(dataDir: string): DB {
   db.pragma("journal_mode = WAL");
   db.pragma("synchronous = NORMAL");
   db.pragma("foreign_keys = ON");
+  // The CLI is a second process on the same file. Every write transaction is BEGIN IMMEDIATE
+  // (see test/transactions.test.ts): it takes the write lock first and waits up to this
+  // long for it, where a deferred one that read first fails at once (SQLITE_BUSY_SNAPSHOT) when the
+  // server commits in between.
   db.pragma("busy_timeout = 5000");
   migrate(db);
   return db;

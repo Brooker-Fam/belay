@@ -53,7 +53,7 @@ export function handOver(ctx: PolicyContext, deviceId: string, who: Person): Cha
     const handover = handoverOf(db, deviceId);
     if (!handover) throw new Error("the hand-over wasn't recorded");
     return { ...done, result: { already: false, handover, lifted: done.result.restrictions, frpAccounts: done.result.frpAccounts } };
-  })();
+  }).immediate();
 }
 
 /**

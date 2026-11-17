@@ -265,7 +265,7 @@ export function applyEvents(db: DB, deviceId: string, events: Event[], now: numb
       accepted++;
     }
     return { accepted, duplicates };
-  })();
+  }).immediate();
 }
 
 export interface InventoryResult {
@@ -338,5 +338,5 @@ export function applyInventory(db: DB, deviceId: string, req: InventoryRequest, 
     ).run(deviceId, req.snapshot_id, req.taken_at, req.boot_count ?? null, seen.size, now, backfilled);
     db.prepare("UPDATE devices SET last_inventory_at = ? WHERE id = ?").run(now, deviceId);
     return { duplicate: false, backfilled };
-  })();
+  }).immediate();
 }

@@ -306,7 +306,7 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
       db.prepare("INSERT INTO parents (id, name, username, password_hash, created_at) VALUES (?, ?, ?, ?, ?)").run(id, values.name, values.username, passwordHash, now);
       clearSetupToken(db);
       return id;
-    })();
+    }).immediate();
     if (!parentId) return message(c, "This setup link doesn't work", "Belay may already be set up.", 400, { href: "/login", label: "Sign in" });
     updateSettings(db, { timezone: values.timezone });
     audit(db, now, { kind: "parent", parentId }, "parent.setup");
@@ -369,7 +369,7 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
       const id = newId();
       db.prepare("INSERT INTO parents (id, name, username, password_hash, created_at) VALUES (?, ?, ?, ?, ?)").run(id, values.name, values.username, passwordHash, now);
       return id;
-    })();
+    }).immediate();
     if (!parentId) return message(c, "This invite doesn't work", "It was used already or expired. Ask for a new one.", 400);
     audit(db, now, { kind: "parent", parentId }, "parent.joined");
     cookie.set(c, createSession(db, now, parentId).cookie);
@@ -683,7 +683,7 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
     const made = db.transaction(() => {
       setHardening(policyContext(), device.id, { factoryReset, debugging, frpAccounts: accounts.ids }, asParent(c));
       return locking && !usableKey(recoveryState(db, device.id)) ? makePhoneRecoveryKey(policyContext(), device.id, asParent(c)).result : null;
-    })();
+    }).immediate();
     if (made) return render(c, <RecoveryKeyPage view={view(c)} device={device} grouped={made.grouped} replaced={made.replaced} because="hardening" />);
     return backTo(c, device, "rules", "hardening");
   });

@@ -410,7 +410,7 @@ export function saveRequests(db: DB, deviceId: string, requests: Request[], now:
     }
     keepSettled(db, deviceId);
     return { accepted: requests.length - refused - limited, created, withdrawn, helpUpdated, agreement, refused, limited, made };
-  })();
+  }).immediate();
 }
 
 /** One new request's row. "I agree" is answered as it arrives: nothing waits for a parent. */

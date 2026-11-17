@@ -106,7 +106,7 @@ export function removeParent(db: DB, parentId: string): boolean {
   return db.transaction(() => {
     if (parentCount(db) <= 1) return false;
     return db.prepare("DELETE FROM parents WHERE id = ?").run(parentId).changes === 1;
-  })();
+  }).immediate();
 }
 
 // ── First-run setup ─────────────────────────────────────────────────────

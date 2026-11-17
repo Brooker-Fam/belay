@@ -32,6 +32,6 @@ export function cleanUp(db: DB, now: number): void {
     pruneLocations(db, now, settings.locationDays);
     pruneRequests(db, now);
     pruneCallRecords(db, now, settings.callDays);
-  })();
+  }).immediate();
   db.pragma("optimize");
 }

@@ -81,7 +81,7 @@ export function saveCallRecords(db: DB, deviceId: string, calls: CallRecord[], n
     }
     if (out.dropped > 0 && s) db.prepare("UPDATE call_settings SET dropped = dropped + ?, dropped_at = ? WHERE device_id = ?").run(out.dropped, now, deviceId);
     return out;
-  })();
+  }).immediate();
 }
 
 // ── Reading ──────────────────────────────────────────────────────────

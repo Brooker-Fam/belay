@@ -699,7 +699,7 @@ export function changePolicies<T>(ctx: PolicyContext, deviceIds: string[], actor
     }
     for (const [action, detail] of entries) audit(db, now, actor, action, { detail: { ...detail, phones_changed: changed.length } });
     return { result, changed };
-  })();
+  }).immediate();
   for (const id of outcome.changed) ctx.changed?.(id);
   return outcome;
 }
@@ -729,7 +729,7 @@ function mutate<T>(ctx: PolicyContext, deviceId: string, actor: Actor, change: (
     }
     for (const [action, detail] of entries) audit(db, now, actor, action, { deviceId, detail: { ...detail, ...(changed ? { version } : {}) } });
     return { result, version, changed };
-  })();
+  }).immediate();
   if (outcome.changed) ctx.changed?.(deviceId);
   return outcome;
 }
