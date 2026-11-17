@@ -59,7 +59,9 @@ class HandoverInstrumentedTest {
 
         shell("input keyevent KEYCODE_WAKEUP")
         shell("wm dismiss-keyguard")
-        val activity = instrumentation.startActivitySync(Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        // A new task each time: MainActivity is singleTop, and startActivitySync waits for a new instance.
+        val intent = Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        val activity = instrumentation.startActivitySync(intent)
         try {
             awaitText(context.getString(R.string.handover_title))
             awaitText(context.getString(R.string.handover_intro))
