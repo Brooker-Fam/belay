@@ -61,6 +61,18 @@ relying on something new, it goes here first, with a source.
 | C9 | Network in Doze for a foreground-service process; exact alarms | Confirmed | AOSP |
 | C10 | Reading the phone, SMS, emergency, browser and keyboard apps without permissions | Confirmed | AOSP |
 | C11 | Android's own Parental Controls profile: detectable, not identifiable | Confirmed | AOSP |
+| H1 | Settings' network reset and "Reset app preferences" get around no lock Belay holds | Confirmed; the second turns usage access off | AOSP |
+| H2 | A proxy (Wi-Fi, APN, global) gets around Private DNS; Chrome's `ProxySettings` direct ignores it; Belay can read it | Confirmed | AOSP; Chromium; Emulator pending (Phase 2 CI); Pixel pending |
+| H3 | Approved apps as accessibility services, keyboards, listeners or device admins can't undo Belay; profiles can't be made | Confirmed | AOSP; Docs |
+| H4 | Chrome's configuration survives clearing its storage and "Uninstall updates" | Confirmed in AOSP; the factory Chrome's version to check | AOSP; Chromium; Pixel pending |
+| H5 | What browses without being a browser, and what the DNS filter covers | Partly: the captive-portal login bypasses Private DNS by design | AOSP; Docs; Pixel pending |
+| H6 | Wireless debugging is adb without a computer; apps can read whether it's on, not USB debugging | Confirmed | AOSP |
+| H7 | Google Play Instant | Gone since December 2025 | Docs |
+| H8 | The date and time lock covers the time zone but keeps the current one; Belay keeps it automatic | Confirmed | AOSP; Emulator pending (Phase 2 CI) |
+| H9 | Guest mode, the lock screen's dialer, pinning and picture-in-picture, the assistant while suspended | Confirmed, except the assistant, which may still answer | AOSP; Pixel pending |
+| H10 | Offline, nothing in the policy expires | Confirmed | Belay's code |
+| H11 | Bluetooth, Quick Share, USB transfer and drives: no APK installs | Confirmed | AOSP; SDK |
+| H12 | Belay's own settings a device owner doesn't lock | Confirmed: only usage access can be turned off | AOSP |
 | U1 | Foreground time comes from `queryEvents`, fresh, kept about 10 days | Confirmed | AOSP; Docs |
 | U2 | Android's daily buckets aren't local days | Contradicted | AOSP |
 | U3 | The usage-limit observers aren't open to Belay | Contradicted | AOSP |
@@ -1210,8 +1222,9 @@ looks names up at that host.
 supported on Android: `IncognitoModeAvailability` int, `ForceGoogleSafeSearch` bool,
 `ForceYouTubeRestrict` int, `SafeSitesFilterBehavior` int (Chrome 116+), `DownloadRestrictions`
 int (3 blocks all; Chrome 131+), `URLBlocklist` and `URLAllowlist` as `String[]`,
-`DnsOverHttpsMode` string. An empty bundle clears Belay's settings. Whether Chrome applies them
-without managed Google Play is checked on the Pixel.
+`DnsOverHttpsMode` string, and `ProxySettings`, a dictionary given as a JSON string (H2). An
+empty bundle clears Belay's settings. Whether Chrome applies them without managed Google Play
+is checked on the Pixel.
 
 ### C8. Factory reset protection
 
@@ -1245,6 +1258,263 @@ system APIs. `getSecondaryUsers` counts it with any other user, and `onUserAdded
 re-applies its suspensions (which the profile's app rules can lift), and doesn't remove it:
 public APIs can't tell it apart from another user ([design](design/phase10-android-parental-controls.md)).
 From Phase 10 a parent can ask Belay to remove it (V2).
+
+## Getting around Belay (the Phase 2 audit)
+
+What a kid with Settings, quick settings, the approved apps, Chrome, Play, a friend's phone or
+laptop and a café's Wi-Fi can do against Phase 2's rules on Android 17. All read on
+2026-11-17 in AOSP `android-17.0.0_r1` (`platform/frameworks/base` unless another project is
+named), Chromium's `main` branch, and the pages named. None of it is seen on the Pixel yet
+([phase2-checklist.md](phase2-checklist.md) §7); what CI shows is said. The threat model has
+what each means for the kid ([threat-model.md](threat-model.md#getting-around-belay-the-phase-2-audit)).
+
+### H1. Settings' reset options
+
+**Neither reset gets around a lock Belay holds.** Verified on: AOSP.
+
+- Settings' Reset options (`packages/apps/Settings` `res/xml/reset_dashboard_fragment.xml`):
+  "Reset mobile network settings" is a `RestrictedPreference` for `no_network_reset`, and
+  "Reset Bluetooth & Wi-Fi" checks `DISALLOW_NETWORK_RESET` too
+  (`network/BluetoothWiFiResetPreferenceController.kt`); "Reset app preferences" is one for
+  `no_control_apps` (`DISALLOW_APPS_CONTROL`), and so is the same item in the app list's menu
+  (`applications/manageapplications/ManageApplications.java`). "Erase eSIMs" only needs
+  `DISALLOW_CONFIG_MOBILE_NETWORKS` off (`network/EraseEuiccDataController.java`).
+- A network reset (`network/ResetNetworkOperationBuilder.java`) calls ConnectivityManager's,
+  VpnManager's, Wi-Fi's, Wi-Fi Direct's and NetworkPolicyManager's `factoryReset`, clears
+  Bluetooth, the APNs and IMS, and can erase eSIMs. `ConnectivityService.factoryReset`
+  (`packages/modules/Connectivity` `service/src/com/android/server/ConnectivityService.java`)
+  turns airplane mode off and sets Private DNS back to Automatic **unless
+  `DISALLOW_CONFIG_PRIVATE_DNS` is set**, which Belay's Private DNS lock is.
+  `VpnManagerService.factoryReset` does nothing under `DISALLOW_CONFIG_VPN`. Nothing in it
+  touches suspended or hidden apps, user restrictions or managed configurations (Chrome's,
+  Play's). It does forget the saved Wi-Fi networks, so the phone can go quiet until the kid
+  joins one again.
+- "Reset app preferences" (`ResetAppsHelper.resetApps`): resets each app's notification
+  settings, re-enables apps the user turned off (`COMPONENT_ENABLED_STATE_DISABLED_USER`;
+  Belay never disables, it hides), clears default-app choices
+  (`PreferredActivityHelper.resetApplicationPreferences`, which also resets runtime
+  permissions, but `AppIdPermissionPolicy.resetRuntimePermissions`, in
+  `services/permission`, skips any granted or denied by policy), resets battery optimization
+  for apps that aren't system, default or active device admins (`BatteryOptimizeUtils`,
+  SettingsLib's `PowerAllowlistBackend.isDefaultActiveApp`: Belay is skipped), clears data
+  restrictions, and calls `AppOpsManager.resetAllModes`, which puts every app-op that allows a
+  reset back to its default (`AppOpsService.resetAllModes`). `GET_USAGE_STATS` allows a reset
+  (`AppOpsManager`'s table), so **Belay's usage access, granted with `appops set`, goes**: the
+  same as the kid turning it off in Settings (R1, U4), and reported the same way.
+- No user restriction covers Settings' usage access switch for an app that has it
+  (`applications/UsageAccessDetails.java`: only "restricted settings" when turning it on).
+
+Belay's consequence: no lock for either reset. `DISALLOW_NETWORK_RESET` would add nothing
+while Private DNS is locked, and `DISALLOW_APPS_CONTROL` wouldn't keep usage access on (the
+switch stays) but would stop the kid uninstalling, force-stopping or clearing any app.
+
+### H2. Proxies: Wi-Fi, the APN, and a global one
+
+**A proxy gets around Private DNS; Chrome can be told to ignore it, and Belay reports one.**
+Verified on: AOSP; Chromium source; Emulator pending (Phase 2 CI: `EnforcementInstrumentedTest`
+sets a global proxy, and Chrome's configuration); Pixel pending.
+
+- An HTTP proxy resolves the names it's asked for itself, so an app that uses one doesn't look
+  them up on the phone, and Private DNS never sees them. A proxy given by IP address needs no
+  lookup at all; CleanBrowsing's Family filter "blocks proxy and VPN domains", which doesn't
+  cover an address (cleanbrowsing.org/filters, read 2026-11-17).
+- Where a proxy comes from: a Wi-Fi network's Advanced options (manual, or a proxy script's
+  URL), only blocked by `DISALLOW_CONFIG_WIFI`, which also stops adding networks; an APN's
+  proxy on mobile data (Settings' `network/apn/ApnSettings.java` is a restricted fragment for
+  `DISALLOW_CONFIG_MOBILE_NETWORKS`; carriers can also make APNs read-only); or a global proxy:
+  `settings put global http_proxy host:port` over adb (`ProxyTracker.loadDeprecatedGlobalHttpProxy`;
+  `:0` clears it), or a device owner's `setRecommendedGlobalProxy`.
+- Reading it: `ConnectivityManager.getDefaultProxy()` is `ConnectivityService.getProxyForNetwork`
+  for the caller's default network: the global proxy if there is one, otherwise the network's
+  own (`LinkProperties.getHttpProxy`), with no permission needed. A network callback's
+  `onLinkPropertiesChanged` sees a Wi-Fi or APN proxy change; a global one doesn't change link
+  properties.
+- Chrome's `ProxySettings` policy (`components/policy/resources/templates/policy_definitions/
+  Miscellaneous/ProxySettings.yaml`): a dictionary, supported on Android from Chrome 30, whose
+  `ProxyMode` "direct" means "Never use a proxy server and always connect directly". The older
+  `ProxyMode` policy (`Proxy/ProxyMode.yaml`, also Android 30+) is deprecated in its favor.
+  Chrome on Android parses a string given for a dictionary policy as JSON
+  (`components/policy/core/common/android/policy_converter.cc`, `ConvertValueToSchema`).
+- WebView (in-app browsers) and other apps' HTTP stacks follow the system proxy; Chrome's
+  managed configuration doesn't reach them.
+
+Belay's consequence: Chrome's configuration carries `ProxySettings` `{"ProxyMode":"direct"}`
+(core's `ChromeConfig.PROXY_DIRECT`). On a network that only works through a proxy, Chrome then
+can't open pages. Belay reports a proxy on the default network while the policy has a web
+filter (core's `Workarounds`), at every step and at once when link properties change, without
+its address; the server shows it as someone maybe getting around Belay. Locking Wi-Fi's or the
+mobile network's settings is the family's choice (threat model).
+
+### H3. Apps a parent approved, in special roles
+
+**Nothing an approved app does in these roles undoes Belay; profiles can't be made.**
+Verified on: AOSP; Docs.
+
+- Work, clone and private profiles: `DevicePolicyManagerService.setDeviceOwner` sets
+  `DISALLOW_ADD_MANAGED_PROFILE`, `DISALLOW_ADD_CLONE_PROFILE` and `DISALLOW_ADD_PRIVATE_PROFILE`
+  on every user ("to prevent the co-existence of a managed profile and a device owner"), and
+  `applyProfileRestrictionsIfDeviceOwnerLocked` sets them again; `UserManagerService.createUserInternal`
+  checks each type's own restriction. Settings' cloned apps use `createProfile`
+  (`applications/manageapplications/CloneBackend.java`), so they're refused. The UserManager
+  reference: `DISALLOW_ADD_MANAGED_PROFILE` is "silently ignored when applied by the device
+  owner" (deprecated since API 30). They show in `foreign_restrictions` (V4).
+- `DISALLOW_GRANT_ADMIN` (API 34) is about admin *users* ("only effective in environments where
+  multiple admins are allowed"), not device admin apps. Nothing stops an app becoming a device
+  admin; one can't wipe the phone while `DISALLOW_FACTORY_RESET` holds
+  (`DevicePolicyManagerService.wipeDataNoLock`: `isAdminAffectedByRestriction`), and without
+  that lock the kid can reset from Settings anyway.
+- An accessibility service or a notification listener acts as the kid could: it can't change a
+  locked setting, a policy-fixed permission, a suspension or a managed configuration. A
+  listener can snooze notifications, Belay's ongoing notice too
+  (`NotificationManagerService.snoozeNotificationInt` has no ongoing check), which only hides it
+  from the kid. A keyboard sees everything typed.
+- `setPermittedAccessibilityServices` and `setPermittedInputMethods` (API 21): "System
+  accessibility services are always available to the user", and "System input methods are
+  always available" (the DevicePolicyManager javadoc), so the phone's own (on a Pixel, Gboard and
+  the Accessibility Suite) stay whatever the list; a list must include every non-system one
+  that's on, or the call fails. Android 17's UserManager also has a hidden
+  `DISALLOW_NON_TOOL_ACCESSIBILITY_SERVICE`, for Advanced Protection.
+
+Belay's consequence: no default change. Belay already reports, per app, an enabled
+accessibility service or notification listener and an active device admin (core's
+`SensitivePermissions`); keyboards aren't listed yet.
+
+### H4. Chrome itself
+
+**Its configuration survives what the kid can do to Chrome.** Verified on: AOSP; Chromium
+source; Pixel pending.
+
+- Managed configurations live in the user's system directory (`UserManagerService.setApplicationRestrictions`:
+  `res_<package>.xml` under `/data/system/users/<user>`), so clearing Chrome's storage, or
+  "Uninstall updates" on the factory Chrome, keeps them. Belay's policies need at most Chrome
+  131 on Android (`DownloadRestrictions`; `SafeSitesFilterBehavior` 116, `DnsOverHttpsMode` 85,
+  `ProxySettings` 30), from late 2024; which Chrome a Pixel's Android 17 image has is to check.
+  `policy_converter.cc` passes a key outside Chrome's schema on as given; chrome://policy shows
+  what Chrome applied.
+- `DnsOverHttpsMode` "off" (`Miscellaneous/DnsOverHttpsMode.yaml`, Android 85+) keeps Chrome on
+  the phone's resolver (C7). A Custom Tab another app opens is Chrome's, under the same
+  configuration (to check on the Pixel). "Request desktop site" changes what a site is told,
+  not a policy; Lens opens the Google app (H5).
+
+### H5. Browsing without a browser
+
+**Everything that looks names up on the phone gets the filter, except the captive portal.**
+Verified on: AOSP; Docs.
+
+- An app that looks names up through Android's resolver gets the filter: WebView (in-app
+  browsers) does, and the Google app, Play and YouTube are expected to (to check on the Pixel:
+  a filtered site should show the filter's block page in each). CleanBrowsing's Family filter
+  "sets Google, Bing and Youtube to SafeSearch" at the DNS level (cleanbrowsing.org/filters,
+  read 2026-11-17), so SafeSearch holds there too. Only Chrome gets Chrome's policies. "No
+  browsers" hides only apps that pass the browser role's test (C10), which the Google app,
+  Gemini, Files, Play and YouTube don't.
+- Gemini and the Google app's AI answers fetch and summarize pages on Google's servers: the
+  phone's filter never sees those pages.
+- The captive-portal login (`packages/modules/CaptivePortalLogin`,
+  `CaptivePortalLoginActivity.java`) binds to the network with `getPrivateDnsBypassingCopy()`, on
+  purpose: a portal can't be reached through Private DNS. Its web view opens any http or https
+  address (`shouldOverrideUrlLoading`) until the network validates. From Android 16 it may use a
+  Custom Tab of the default browser instead, with Private DNS bypassed for that browser on that
+  network (`bypassVpnAndPrivateDnsForCustomTabsProvider`). A network the kid makes that never
+  validates (a laptop's hotspot with a portal) keeps it open.
+
+### H6. Developer options without USB debugging
+
+**Wireless debugging is adb without a computer; Belay reports it.** Verified on: AOSP.
+
+- `Settings.Global.ADB_WIFI_ENABLED` ("adb_wifi_enabled") is `@Readable` for apps;
+  `ADB_ENABLED` is `@Readable(redactedValue = "0")`, "always 0 for all third-party apps"
+  (`core/java/android/provider/Settings.java`; `SettingsProvider.getEffectiveValue`). Wireless
+  debugging pairs with a code from another phone, or from an app on the same phone (an
+  on-device adb client), so it needs no computer.
+- What adb's shell can't do under Belay's locks (`UserRestrictionsUtils.isSettingRestrictedForUser`):
+  write Private DNS's mode or host, automatic time or time zone, or turn adb on again while the
+  debugging lock holds; nor lift a suspension Android attributes to "android" (C1), force-stop
+  the device owner (B5) or uninstall it. What it can: turn usage access off, set a global proxy
+  (H2), install apps (C5; they still wait for a parent), and crash Belay (it comes back).
+- Mock locations need a mock-location app chosen in Developer options; Belay marks a fix with
+  `Location.isMock()` (L1, the protocol's `mock`). "Background process limit" only kills cached
+  processes (`ActivityManagerService.setProcessLimit` → `psc/OomAdjuster`); Belay's isn't one.
+  "Standby apps" can't move an app out of the exempted bucket
+  (`AppStandbyController.setAppStandbyBucket`: "Don't allow changing bucket if higher than
+  ACTIVE"). "Don't keep activities" only closes screens; "Force allow apps on external" moves
+  storage.
+
+Belay's consequence: wireless debugging on is reported (core's `Workarounds`) except in
+maintenance or repair access; the debugging lock (hardening, release builds) is what closes it.
+
+### H7. Instant apps
+
+**Gone.** developer.android.com/topic/google-play-instant [2026-06-24]: "Starting December 2025,
+Instant Apps cannot be published through Google Play, and all Google Play services Instant
+APIs will no longer work. Users will no longer be served Instant Apps by Play using any
+mechanism." An instant app could still be installed over adb (`pm install --instant`), which is
+H6's.
+
+### H8. The time zone
+
+**The date and time lock covers the zone, but keeps the zone the phone has; Belay keeps it
+automatic.** Verified on: AOSP; Emulator pending (Phase 2 CI: `EnforcementInstrumentedTest`).
+
+- The time zone detector refuses user configuration (manual zone, and the automatic switch)
+  while `DISALLOW_CONFIG_DATE_TIME` holds
+  (`services/core/java/com/android/server/timezonedetector/ServiceConfigAccessorImpl.isUserConfigAllowed`),
+  and SettingsProvider refuses writes of `AUTO_TIME_ZONE` under it, from adb too.
+- `DevicePolicyManager.setAutoTimeZonePolicy` (API 36) sets the automatic time zone through the
+  policy engine (`AUTO_TIME_ZONE_ENABLED`, or `…_NOT_CONTROLLED_BY_POLICY` to hand it back);
+  `setAutoTimeZoneEnabled(admin, true)` (API 30) only writes the setting.
+
+Belay's consequence: with the date and time locked, Belay sets the automatic time zone as it
+sets automatic time, so a zone set by hand before the lock can't shift a schedule (screen
+time's zone is the phone's by default).
+
+### H9. Other screens and modes
+
+**Verified on: AOSP; Pixel pending.**
+
+- Guest mode: `UserManagerService.createUserInternal` checks `DISALLOW_ADD_USER` for a guest
+  (and `DISALLOW_ADD_GUEST` when that flag is on), and Belay also sets `DISALLOW_USER_SWITCH`.
+- The lock screen's emergency dialer (`packages/services/Telephony` `EmergencyDialer.placeCall`)
+  calls only numbers `TelephonyManager.isEmergencyNumber` accepts; 988 isn't one (T3), so 988
+  needs the phone unlocked, which the kid can.
+- Screen pinning, split screen and picture-in-picture: when packages are suspended,
+  `RecentTasks.onPackagesSuspendedChanged` removes the tasks whose root activity is theirs
+  (`ActivityTaskSupervisor.removeTask`, which also ends screen pinning: `clearLockedTask`), and
+  their overlay windows hide (`WindowState.setHiddenWhileSuspended`, overlays and toasts only).
+  An activity of a suspended app inside another app's task (a Custom Tab) isn't removed.
+- The assistant: the voice-interaction service has no suspension check
+  (`services/voiceinteraction`), and an assistant's session window isn't an overlay, so the
+  assistant may still answer while its app is suspended by a pause or bedtime. What it can open
+  is suspended; its own answers aren't.
+
+### H10. Offline
+
+**Nothing in the policy expires.** Verified on: Belay's code (core). The phone keeps enforcing the
+last policy it stored; `issued_at` isn't used to stop. Only what's meant to end does: a pause's
+`until`, maintenance, the recovery key's 24 hours, screen time's days and extra minutes, and
+commands past `expires_at`. Suspensions and restrictions are Android's own state, kept across
+restarts (C1, C4).
+
+### H11. Bluetooth, Quick Share, USB file transfer and USB drives
+
+**No way round the rules.** Verified on: AOSP; SDK. An APK received any of these ways can't be
+installed (`DISALLOW_INSTALL_UNKNOWN_SOURCES_GLOBALLY`, C5); apps shared from Play install
+through Play and wait for a parent. Photos, videos and files can arrive, which Belay doesn't
+filter. `DISALLOW_USB_FILE_TRANSFER` (API 18), `DISALLOW_MOUNT_PHYSICAL_MEDIA` (21) and
+`DISALLOW_BLUETOOTH_SHARING` (26) stop those ways, and the parent's own copying too.
+
+### H12. Belay's own settings that a device owner doesn't lock
+
+**Verified on: AOSP.**
+
+- Belay's runtime permissions are fixed by policy (R2), and survive "Reset app preferences" (H1).
+- Battery: Settings shows a device owner as Unrestricted and greyed (B6), and the reset skips it.
+- Exact alarms: the battery allowlist exempts Belay, with `USE_EXACT_ALARM` behind it (S6).
+- Its foreground service: quick settings' active-apps list shows no Stop button for a device
+  owner or active admin (SystemUI `qs/FgsManagerController.kt`: `REASON_DEVICE_DPC`,
+  `REASON_ACTIVE_DEVICE_ADMIN` → `HIDE_BUTTON`); force stop is ignored (B5).
+- Usage access: the kid can turn it off (U4), and "Reset app preferences" does (H1); Belay
+  notices within a second (U7) and reports it.
 
 ## Updating Belay, other users (Phases 6 and 10)
 
