@@ -161,13 +161,13 @@ nav.tabs a[aria-current="page"] { color: var(--text); font-weight: 600; border-b
 .bars { display: grid; gap: 8px; margin-bottom: 8px; }
 .barrow { display: grid; grid-template-columns: 9.5rem 1fr 8rem; grid-template-areas: "label bar value"; gap: 4px 12px; align-items: center; }
 .barrow > .label { grid-area: label; overflow-wrap: anywhere; }
-.barrow > .bar { grid-area: bar; }
 .barrow > .value { grid-area: value; font-variant-numeric: tabular-nums; text-align: right; color: var(--muted); font-size: 0.9rem; }
 .barrow + .note { margin: -4px 0 2px; }
-.bar { display: block; height: 12px; }
+/* Only the chart's bars: the header's inner box is a .bar too, and a height here squeezed it. */
+.barrow > .bar { grid-area: bar; display: block; height: 12px; }
 .bar > i { display: block; height: 12px; background: var(--bar); border-radius: 0 4px 4px 0; min-width: 2px; }
 .bar > i.w0 { min-width: 0; }
-.bar.unknown { height: auto; color: var(--muted); font-size: 0.85rem; }
+.barrow > .bar.unknown { height: auto; color: var(--muted); font-size: 0.85rem; }
 svg.hours { display: block; width: 100%; height: auto; }
 svg.hours .col { fill: var(--bar); }
 svg.hours .grid { stroke: var(--line); stroke-width: 1; }
