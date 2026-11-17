@@ -14,13 +14,14 @@ import type { Deps } from "../deps.js";
 import { packageName, ruleId } from "../device/schemas.js";
 import { type CommandState, listCommands } from "../family/commands.js";
 import { type DeviceRow, deviceFacts, findDeviceByName, listDevices } from "../family/devices.js";
-import { type Changer, LOCK_MINUTES, LOCK_NOW_MS, LIMITS, RuleRefused, lockPhone, type PolicyContext } from "../family/policy.js";
+import { type Changer, LOCK_MINUTES, LOCK_NOW_MS, RuleRefused, lockPhone, type PolicyContext } from "../family/policy.js";
 import { MAX_PENDING_PROPOSALS, changeWords, createProposal, listProposals, screenTimeWords } from "../family/proposals.js";
 import { recentRequests } from "../family/requests.js";
 import { currentAgreement } from "../family/screentime/agreement.js";
 import { setPhoneRules } from "../family/screentime/changes.js";
 import { classifyScreenTimeChange } from "../family/screentime/classify.js";
 import { WEEKDAYS, addDays, validDay, weekdayOf } from "../family/screentime/days.js";
+import { NAME_MAX, SCHEDULE_NAMES, appNamesOn, limitName } from "../family/screentime/names.js";
 import { patchOf } from "../family/screentime/patch.js";
 import {
   type Limit,
@@ -67,7 +68,6 @@ const LOCK_STATE_WORDS: Record<CommandState, string> = {
   not_done: "not done: the phone didn't get it in time",
   replaced: "replaced by a newer one",
 };
-const KIND_NAMES = { school: "School", bedtime: "Bedtime", custom: "Schedule" } as const;
 const DAY_NAMES = { mon: "Monday", tue: "Tuesday", wed: "Wednesday", thu: "Thursday", fri: "Friday", sat: "Saturday", sun: "Sunday" } as const;
 /** At most this many days in one get_screen_time. */
 const MAX_DAYS = 92;
@@ -306,7 +306,12 @@ export function registerScreenTimeTools(server: McpServer, deps: Deps, caller: C
 
   const limitInput = z.strictObject({
     id: ruleId.optional().describe("To change a limit get_rules lists; leave it out to add one"),
-    name: z.string().min(1).max(60).optional().describe("The family's name for it, like Games"),
+    name: z
+      .string()
+      .min(1)
+      .max(60)
+      .optional()
+      .describe("Not shown as you write it: the kid sees a limit's name, so Belay names one you add after its apps. A name unlike the limit's asks to rename it, to Belay's name: a proposal"),
     packages: z.array(packageName.or(z.literal("*"))).min(1).max(500).optional().describe('The apps that share it; ["*"] for a daily total of every app'),
     minutes: dayMinutes.optional().describe("Minutes a day, 0 to 1440"),
     by_day: z
@@ -318,7 +323,12 @@ export function registerScreenTimeTools(server: McpServer, deps: Deps, caller: C
   const scheduleInput = z.strictObject({
     id: ruleId.optional().describe("To change a schedule get_rules lists; leave it out to add one"),
     kind: z.enum(["school", "bedtime", "custom"]).optional(),
-    name: z.string().min(1).max(60).optional(),
+    name: z
+      .string()
+      .min(1)
+      .max(60)
+      .optional()
+      .describe("Not shown as you write it: Belay names a schedule you add by its kind (School, Bedtime, Schedule). A name unlike the schedule's asks to rename it, to Belay's name: a proposal"),
     days: z.array(weekday).max(7).optional().describe('Like ["mon","tue","wed","thu","fri"]; a new one: every day'),
     start: hhmm.optional().describe("Like 21:00, the phone's time"),
     end: hhmm.optional().describe("Like 07:00; at or before start: the next day"),
@@ -332,7 +342,7 @@ export function registerScreenTimeTools(server: McpServer, deps: Deps, caller: C
     {
       title: "Change screen time",
       description:
-        "Changes one phone's screen-time rules: add or change limits (by id from get_rules) and schedules, remove them, add or remove exempt apps, set self-serve, or what happens when Belay can't count. The server decides: a change that only tightens (a lower or new limit, more apps under a limit, a schedule that starts earlier, ends later or runs on more days, fewer apps left open or exempt, less self-serve, pausing apps when Belay can't count) applies at once, within seconds when the phone is online; use it only when the parent asks. Anything else, or a mix, becomes a proposal a parent approves or rejects on the parent page: then say it's waiting for them, never that it's done. Moving the phone to another stage (stage, alone) is always a proposal. Measuring isn't something you can change.",
+        "Changes one phone's screen-time rules: add or change limits (by id from get_rules) and schedules, remove them, add or remove exempt apps, set self-serve, or what happens when Belay can't count. The server decides: a change that only tightens (a lower or new limit, more apps under a limit, a schedule that starts earlier, ends later or runs on more days, fewer apps left open or exempt, less self-serve, pausing apps when Belay can't count) applies at once, within seconds when the phone is online; use it only when the parent asks. Anything else, or a mix, becomes a proposal a parent approves or rejects on the parent page: then say it's waiting for them, never that it's done. Moving the phone to another stage (stage, alone) is always a proposal. Measuring isn't something you can change. The kid sees each limit's and schedule's name, so Belay writes the name of one you add or rename, never in your words: a limit is named after its apps (\"Chess Club and Puzzle Pop\"; a daily total is \"Screen time\"), a schedule after its kind (School, Bedtime, Schedule). Only a parent gives one a name of their own, on the parent page.",
       inputSchema: {
         device: deviceParam,
         change: z
@@ -363,6 +373,9 @@ export function registerScreenTimeTools(server: McpServer, deps: Deps, caller: C
       const now = deps.now();
       const p = phoneRules(db, row.id);
       const label = phoneLabels(db, row.id);
+      // The kid sees the names: Belay writes them for what the AI app adds or renames (names.ts).
+      const appNames = appNamesOn(db, row.id);
+      const renames = (given: string | undefined, current: string) => given !== undefined && oneLine(given, NAME_MAX).toLowerCase() !== current.toLowerCase();
       const tooMany = () =>
         listProposals(db, { deviceId: row.id, status: "pending", limit: MAX_PENDING_PROPOSALS }).length >= MAX_PENDING_PROPOSALS
           ? refusal(`${MAX_PENDING_PROPOSALS} proposals for ${row.name} are already waiting. Ask the parent to look at them on the Proposals page first.`)
@@ -406,19 +419,17 @@ export function registerScreenTimeTools(server: McpServer, deps: Deps, caller: C
           const index = wanted.limits.findIndex((l) => l.id === input.id);
           const limit = wanted.limits[index];
           if (!limit) return refusal(`No limit on ${row.name} has the id ${input.id}. get_rules lists them.`);
-          wanted.limits[index] = {
+          const changed: Limit = {
             ...limit,
-            ...(input.name !== undefined ? { name: input.name.trim() } : {}),
             ...(input.packages !== undefined ? { packages: input.packages.includes("*") ? ["*"] : [...new Set(input.packages)] } : {}),
             ...(input.minutes !== undefined ? { minutes: input.minutes } : {}),
             ...(input.by_day !== undefined ? { by_day: input.by_day } : {}),
           };
+          wanted.limits[index] = renames(input.name, limit.name) ? { ...changed, name: limitName(changed.packages, appNames) } : changed;
         } else {
           if (!input.packages || input.minutes === undefined) return refusal("A new limit needs packages (or [\"*\"] for a daily total) and minutes.");
-          const total = input.packages.includes("*");
-          const apps = total ? ["*"] : [...new Set(input.packages)];
-          const name = input.name?.trim() || (total ? "Screen time" : apps.length === 1 ? oneLine(label(apps[0] ?? ""), 60) || "App" : "Apps");
-          wanted.limits.push({ id: newRuleId("l"), name, packages: apps, minutes: input.minutes, by_day: input.by_day ?? null });
+          const apps = input.packages.includes("*") ? ["*"] : [...new Set(input.packages)];
+          wanted.limits.push({ id: newRuleId("l"), name: limitName(apps, appNames), packages: apps, minutes: input.minutes, by_day: input.by_day ?? null });
         }
       }
       for (const id of change.remove_limits ?? []) {
@@ -430,10 +441,11 @@ export function registerScreenTimeTools(server: McpServer, deps: Deps, caller: C
           const index = wanted.schedules.findIndex((s) => s.id === input.id);
           const schedule = wanted.schedules[index];
           if (!schedule) return refusal(`No schedule on ${row.name} has the id ${input.id}. get_rules lists them.`);
+          const kind = input.kind ?? schedule.kind;
           wanted.schedules[index] = {
             ...schedule,
-            ...(input.kind !== undefined ? { kind: input.kind } : {}),
-            ...(input.name !== undefined ? { name: input.name.trim() } : {}),
+            kind,
+            ...(renames(input.name, schedule.name) ? { name: SCHEDULE_NAMES[kind] } : {}),
             ...(input.days !== undefined ? { days: [...new Set(input.days)] } : {}),
             ...(input.start !== undefined ? { start: input.start } : {}),
             ...(input.end !== undefined ? { end: input.end } : {}),
@@ -447,7 +459,7 @@ export function registerScreenTimeTools(server: McpServer, deps: Deps, caller: C
           wanted.schedules.push({
             id: newRuleId("s"),
             kind,
-            name: input.name?.trim() || KIND_NAMES[kind],
+            name: SCHEDULE_NAMES[kind],
             days: input.days ? [...new Set(input.days)] : [...WEEKDAYS],
             start: input.start,
             end: input.end,
@@ -512,23 +524,22 @@ export function registerScreenTimeTools(server: McpServer, deps: Deps, caller: C
     "lock_phone",
     {
       title: "Lock the phone now",
-      description: `Pauses a phone at once for ${LOCK_MINUTES.min} to ${LOCK_MINUTES.max} minutes and locks its screen: every app but the phone app, texting and Belay is suspended, so calls, texts, 911 and 988 still work. Tightening, so it acts directly; use it only when the parent asks. The screen locks if the phone gets this within ${LOCK_NOW_MS / 60_000} minutes. A pause already running for longer stays as it is. Only a parent can resume early, on the parent page (you can propose that with propose_change).`,
+      description: `Pauses a phone at once for ${LOCK_MINUTES.min} to ${LOCK_MINUTES.max} minutes and locks its screen: every app but the phone app, texting and Belay is suspended, so calls, texts, 911 and 988 still work. Tightening, so it acts directly; use it only when the parent asks. The screen locks if the phone gets this within ${LOCK_NOW_MS / 60_000} minutes. A pause already running for longer stays as it is. The kid's phone says so in Belay's own words ("Your parent paused this phone until 6:30 PM."), never yours: a parent can add a note of their own on the parent page. Only a parent can resume early, on the parent page (you can propose that with propose_change).`,
       inputSchema: {
         device: deviceParam,
         minutes: z.int().min(LOCK_MINUTES.min).max(LOCK_MINUTES.max).describe("How long the phone stays paused"),
-        note: z.string().max(LIMITS.pauseNote).optional().describe('Shown to the kid on the phone, like "Dinner time". Kind and short.'),
       },
       annotations: { ...TIGHTEN, idempotentHint: false },
     },
-    ({ device, minutes, note }) => {
+    ({ device, minutes }) => {
       const row = phone(device);
       if (isRefusal(row)) return row;
       if (row.revoked_at !== null) return refusal(`${row.name} is disconnected, so Belay can't change anything on it.`);
-      const done = lockPhone(ctx(), row.id, { minutes, note: note ?? null }, ai);
+      const done = lockPhone(ctx(), row.id, { minutes }, ai);
       return result({
         phone: row.name,
         paused_until: done.result.until === null ? "a parent resumes it" : iso(done.result.until),
-        ...(done.result.kept ? { note: `It was already paused at least that long, and that stays${note?.trim() ? ", with the note it had" : ""}.` } : {}),
+        ...(done.result.kept ? { note: "It was already paused at least that long, and that stays as it was." } : {}),
         locks: `The phone locks its screen when it gets this, within seconds if it's online, if that's within ${LOCK_NOW_MS / 60_000} minutes.`,
         version: done.version,
         still_works: "The phone app and texting, so 911 and 988 always work.",

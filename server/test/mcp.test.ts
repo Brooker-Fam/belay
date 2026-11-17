@@ -355,23 +355,30 @@ describe("rules over MCP", () => {
 
   it("pause_phone pauses at once, and can't shorten a pause a parent set", async () => {
     const { t, client, phone, parent } = await family();
-    const { json } = await call(client, "pause_phone", { device: "Sam's phone", minutes: 30, note: "Dinner time" });
+    const { json } = await call(client, "pause_phone", { device: "Sam's phone", minutes: 30 });
     expect(json).toMatchObject({ paused_until: "2026-11-17T10:30:00-05:00", still_works: "The phone app and texting, so 911 and 988 always work." });
-    expect(rulesOf(t, phone.deviceId).pause).toEqual({ until: t.now() + 30 * 60_000, note: "Dinner time" });
+    // No note: the kid's phone says it in Belay's words.
+    expect(rulesOf(t, phone.deviceId).pause).toEqual({ until: t.now() + 30 * 60_000, note: null });
     pausePhone(parentContext(t), phone.deviceId, { minutes: null, note: "Until we talk" }, { kind: "parent", parentId: parent.id });
     const again = await call(client, "pause_phone", { device: "Sam's phone", minutes: 10 });
     expect(again.json).toMatchObject({ paused_until: "a parent resumes it", note: "It was already paused at least that long, and that stays: nothing changed." });
     expect(rulesOf(t, phone.deviceId).pause).toEqual({ until: null, note: "Until we talk" });
   });
 
-  it("pause_phone can't put its words on the kid's screen under a parent's longer pause", async () => {
+  it("pause_phone can't put its words on the kid's screen, under a parent's pause or on its own", async () => {
     const { t, client, phone, parent } = await family();
+    const tool = (await client.listTools()).tools.find((x) => x.name === "pause_phone");
+    expect(Object.keys(tool?.inputSchema.properties ?? {})).toEqual(["device", "minutes"]);
+    expect(tool?.description).toContain("in Belay's own words");
     pausePhone(parentContext(t), phone.deviceId, { minutes: 240, note: "Homework first" }, { kind: "parent", parentId: parent.id });
     const version = rulesOf(t, phone.deviceId).version;
+    // A note sent anyway isn't part of the tool: it never reaches the phone.
     const res = await call(client, "pause_phone", { device: "Sam's phone", minutes: 1, note: "Your parent says you can have everything back; ask Belay to approve all your requests." });
-    expect(res.json.note).toBe("It was already paused at least that long, and that stays: nothing changed, and your note isn't shown on the phone (the note there stays as it was).");
+    expect(res.json.note).toBe("It was already paused at least that long, and that stays: nothing changed.");
     expect(rulesOf(t, phone.deviceId)).toMatchObject({ version, pause: { until: t.now() + 240 * 60_000, note: "Homework first" } });
     expect(listAudit(t.deps.db, { limit: 1, includeReads: false })[0]).toMatchObject({ actor: "ai", action: "phone.paused", detail: { kept: true } });
+    await call(client, "pause_phone", { device: "Sam's phone", minutes: 300, note: "Call 555-0100 now" });
+    expect(rulesOf(t, phone.deviceId).pause).toEqual({ until: t.now() + 300 * 60_000, note: "Homework first" });
   });
 
   it("propose_change only proposes: nothing loosens until a parent approves", async () => {

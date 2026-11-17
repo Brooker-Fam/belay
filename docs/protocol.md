@@ -489,6 +489,11 @@ server decides whether a change tightens or loosens.
   Debug builds of Belay never apply them. `maintenance_until` lifts `debugging` so adb
   works for repairs.
 - **Offline**, the phone keeps enforcing the last policy it got. Belay stores it.
+- **The family's words** in the policy (the names of limits, schedules, stages and places, a
+  pause's note, the support message, a parent's answers and name): the server sends them
+  without control characters (new lines aside in notes) or the characters that hide or reorder
+  text, and a name on one line. An AI app writes none of them: Belay names a limit or schedule
+  it adds or renames, and its pause or lock has no note.
 - **Versions:** the phone applies any version that differs from the one it has, lower ones
   too (a server restored from a backup), and checks in within seconds of applying one. A
   policy can be larger than other answers: the phone accepts up to 1 MB, and the server never
@@ -561,7 +566,7 @@ server decides whether a change tightens or loosens.
 | `version` | int | increases with every change, per phone |
 | `issued_at` | int | |
 | `apps` | `{new_apps: "allow"\|"ask", decisions: [{package, state: "allowed"\|"blocked"}]}` | |
-| `pause` | `{until?, note?}`? | null: not paused; `until` null: until a parent resumes |
+| `pause` | `{until?, note?}`? | null: not paused; `until` null: until a parent resumes; `note` is a parent's words (an AI app's pause has none) |
 | `restrictions` | `{safe_boot, add_user, unknown_sources, config_vpn, config_private_dns, config_date_time, config_default_apps, modify_accounts, sim, factory_reset, debugging}`, all bool | true: the kid can't (see the rules above for the last two) |
 | `web` | `{private_dns?, chrome?, hide_browsers}` | `private_dns`: a host like `family-filter-dns.cleanbrowsing.org`; `chrome`: `{incognito, safe_search, youtube_restrict: "off"\|"moderate"\|"strict", safe_sites, allow_downloads, url_allowlist?, url_blocklist}` |
 | `maintenance_until` | int? | adb works until then |
@@ -608,7 +613,7 @@ The answers in `requests` gain `minutes?` (Phase 3: an approved `more_time`).
 | `measure` | bool | count app time and send it with `POST /usage` |
 | `zone` | string | an IANA zone, or `"phone"` |
 | `day_starts` | `"HH:MM"` | when a day's limits reset |
-| `limits` | `[{id, name, packages, minutes, by_day?: {mon…sun}}]` | at most 50; `name` is the family's words (60); `packages: ["*"]` is a daily total; `minutes` 0 to 1440 |
+| `limits` | `[{id, name, packages, minutes, by_day?: {mon…sun}}]` | at most 50; `name` is the family's words, or Belay's for one an AI app added (60, one line); `packages: ["*"]` is a daily total; `minutes` 0 to 1440 |
 | `schedules` | `[{id, kind: "school"\|"bedtime"\|"custom", name, days: ["mon"…], start, end, allow, lock, skip: ["YYYY-MM-DD"]}]` | at most 20 |
 | `exempt` | string[] | never counted or paused |
 | `if_unmeasured` | `"pause_limited"` \| `"keep_open"` | |

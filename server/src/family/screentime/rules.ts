@@ -15,8 +15,10 @@ import { z } from "zod";
 import type { DB } from "../../db.js";
 import { type Policy, ScreenTime } from "../../device/schemas.js";
 import { getSettings } from "../../settings.js";
+import { cleanText, oneLine } from "../../text.js";
 import { type RulesSide, stageChanges } from "./classify.js";
 import { addDays, dayAt, dayClock, resolveZone } from "./days.js";
+import { tidyLimit, tidySchedule } from "./names.js";
 import { type Labels, changeSentence } from "./words.js";
 
 export type Limit = ScreenTime["limits"][number];
@@ -101,9 +103,10 @@ export function parseRuleSet(text: string | null | undefined): RuleSet {
   const r = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
   const exempt = packages.safeParse(r.exempt);
   const selfServe = SelfServeSchema.safeParse(r.self_serve);
+  // Names as the kid sees them, kept before Belay tidied every name it saves (names.ts) included.
   return {
-    limits: parsedList(r.limits, LimitSchema),
-    schedules: parsedList(r.schedules, ScheduleSchema),
+    limits: parsedList(r.limits, LimitSchema).map((l) => tidyLimit(l)),
+    schedules: parsedList(r.schedules, ScheduleSchema).map(tidySchedule),
     exempt: exempt.success ? [...new Set(exempt.data)].sort() : [],
     if_unmeasured: r.if_unmeasured === "keep_open" ? "keep_open" : "pause_limited",
     self_serve: selfServe.success ? selfServe.data : null,
@@ -148,8 +151,8 @@ export function phoneRow(db: DB, deviceId: string): { settings: PhoneSettings; o
   return {
     settings: { measure: row.measure === 1, zone: row.zone, day_starts: row.day_starts },
     own: {
-      limits: ownEntries(json(row.limits), LimitSchema),
-      schedules: ownEntries(json(row.schedules), ScheduleSchema),
+      limits: ownEntries(json(row.limits), LimitSchema).map((e) => ("rule" in e ? { ...e, rule: tidyLimit(e.rule) } : e)),
+      schedules: ownEntries(json(row.schedules), ScheduleSchema).map((e) => ("rule" in e ? { ...e, rule: tidySchedule(e.rule) } : e)),
       exempt: { add: add.success ? add.data : [], remove: remove.success ? remove.data : [] },
       if_unmeasured: row.if_unmeasured,
       self_serve: selfServe === undefined || selfServe === null ? selfServe : selfServe.success ? selfServe.data : undefined,
@@ -459,16 +462,16 @@ export function stageFor(db: DB, deviceId: string, phone = phoneRules(db, device
   const next = nextStage(db, stage.number);
   const label = phoneLabels(db, deviceId);
   return {
-    name: stage.name.slice(0, 60),
+    name: oneLine(stage.name, 60),
     number: stage.number,
     since,
     next: next
       ? {
-          name: next.name.slice(0, 60),
+          name: oneLine(next.name, 60),
           unlocks: stageChanges(sideOf(phone.settings, phone.rules), sideOf(phone.settings, next.rules))
             .slice(0, 30)
             .map((c) => changeSentence(c, { for: "kid", label })),
-          how: next.how?.slice(0, 1000) ?? null,
+          how: next.how === null ? null : cleanText(next.how, 1000) || null,
           screen_time: decidesSomething(phone.settings, next.rules) ? { ...phone.settings, ...structuredClone(next.rules), extra: [] } : null,
         }
       : null,

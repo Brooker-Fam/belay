@@ -225,10 +225,11 @@ describe("screen time over MCP", () => {
     const { t, phone, sam, ctx, call, policy } = await family();
     expect((await call("lock_phone", { device: "Alex's phone", minutes: 4 })).isError).toBe(true);
     expect((await call("lock_phone", { device: "Alex's phone", minutes: 241 })).isError).toBe(true);
+    // A note isn't part of the tool: the kid's phone says it in Belay's own words.
     const locked = await call("lock_phone", { device: "Alex's phone", minutes: 30, note: "Dinner" });
     expect(locked.json).toMatchObject({ paused_until: "2026-11-16T10:30:00-05:00", still_works: expect.stringContaining("911 and 988") });
     const p = policy();
-    expect(p.pause).toEqual({ until: t.now() + 30 * MIN, note: "Dinner" });
+    expect(p.pause).toEqual({ until: t.now() + 30 * MIN, note: null });
     expect(p.commands).toEqual([{ id: expect.any(String), kind: "lock_now", issued_at: t.now(), expires_at: t.now() + 10 * MIN, via: "Claude" }]);
     expect(listAudit(t.deps.db, { limit: 2, includeReads: false }).map((e) => [e.actor, e.action, e.detail?.kind])).toEqual([
       ["ai", "command.issued", "lock_now"],

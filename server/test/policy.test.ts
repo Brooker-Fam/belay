@@ -273,12 +273,12 @@ describe("who may change what", () => {
     expect(pausePhone(ctx(), phone.deviceId, { minutes: 30 }, claude).result).toEqual({ until: t.now() + 60 * MIN, kept: true });
     expect(policy().pause).toEqual({ until: t.now() + 60 * MIN, note: "Homework first" });
     pausePhone(ctx(), phone.deviceId, { minutes: 120, note: "Bedtime" }, claude);
-    expect(policy().pause).toEqual({ until: t.now() + 120 * MIN, note: "Bedtime" });
+    expect(policy().pause).toEqual({ until: t.now() + 120 * MIN, note: "Homework first" });
     pausePhone(ctx(), phone.deviceId, { minutes: null }, sam);
     expect(pausePhone(ctx(), phone.deviceId, { minutes: 10 }, claude).result.until).toBeNull();
   });
 
-  it("an AI app's note only goes with a pause it sets or lengthens", async () => {
+  it("an AI app's pause never puts its words on the kid's screen: it keeps a parent's note, or has none", async () => {
     const { t, phone, ctx, sam, claude, policy } = await setup();
     pausePhone(ctx(), phone.deviceId, { minutes: 240, note: "Homework first" }, sam);
     const version = policy().version;
@@ -288,22 +288,22 @@ describe("who may change what", () => {
     // Exactly as long isn't longer either.
     expect(pausePhone(ctx(), phone.deviceId, { minutes: 240, note: "Same length" }, claude).result.kept).toBe(true);
     expect(policy().pause?.note).toBe("Homework first");
-    // Longer: its note goes with it; without one, the note there stays.
+    // Longer: the note there stays, whatever the AI app says.
     pausePhone(ctx(), phone.deviceId, { minutes: 300 }, claude);
     expect(policy().pause).toEqual({ until: t.now() + 300 * MIN, note: "Homework first" });
-    pausePhone(ctx(), phone.deviceId, { minutes: 360, note: "Bedtime" }, claude);
-    expect(policy().pause).toEqual({ until: t.now() + 360 * MIN, note: "Bedtime" });
+    pausePhone(ctx(), phone.deviceId, { minutes: 360, note: "Call 555-0100 now" }, claude);
+    expect(policy().pause).toEqual({ until: t.now() + 360 * MIN, note: "Homework first" });
     // Until a parent resumes it, nothing an AI app says changes the note.
     pausePhone(ctx(), phone.deviceId, { minutes: null, note: "Until we talk" }, sam);
     pausePhone(ctx(), phone.deviceId, { minutes: null, note: "Never mind" }, claude);
     expect(policy().pause).toEqual({ until: null, note: "Until we talk" });
-    // A parent's change always applies, shorter or not.
-    pausePhone(ctx(), phone.deviceId, { minutes: 30, note: "Half an hour" }, sam);
+    // A parent's change always applies, shorter or not, their words tidied.
+    pausePhone(ctx(), phone.deviceId, { minutes: 30, note: " Half an\u200b hour\u202e " }, sam);
     expect(policy().pause).toEqual({ until: t.now() + 30 * MIN, note: "Half an hour" });
-    // With no pause running, an AI app's pause and note apply.
+    // With no pause running, an AI app's pause applies, with no note: the phone says it in Belay's words.
     t.advance(31 * MIN);
     pausePhone(ctx(), phone.deviceId, { minutes: 15, note: "Dinner" }, claude);
-    expect(policy().pause).toEqual({ until: t.now() + 15 * MIN, note: "Dinner" });
+    expect(policy().pause).toEqual({ until: t.now() + 15 * MIN, note: null });
   });
 
   it("checks who may loosen at run time too, not only in the types", async () => {

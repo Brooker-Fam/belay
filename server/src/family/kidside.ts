@@ -8,6 +8,7 @@
 import type { DB } from "../db.js";
 import type { Policy } from "../device/schemas.js";
 import { type ParentNumber, aiReads, getSettings, parentNumbersFrom } from "../settings.js";
+import { oneLine } from "../text.js";
 
 /** The policy's help_seen and the parent page's "seen" both cover this long. */
 export const HELP_SEEN_WINDOW_MS = 30 * 86_400_000;
@@ -51,5 +52,5 @@ export function helpSeenFor(db: DB, deviceId: string, now: number): Policy["help
        ORDER BY r.seen_at DESC, r.rowid DESC LIMIT 200`,
     )
     .all(deviceId, now - HELP_SEEN_WINDOW_MS)
-    .map((r) => ({ request_id: r.request_id, at: r.at, by: r.by?.slice(0, 60) ?? null }));
+    .map((r) => ({ request_id: r.request_id, at: r.at, by: r.by === null ? null : oneLine(r.by, 60) || null }));
 }

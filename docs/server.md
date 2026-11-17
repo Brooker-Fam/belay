@@ -342,7 +342,10 @@ itself, offline too; the server keeps the rules and what the phone reports.
 Every change gives the phone a new rules version and is in the activity log. AI apps can
 tighten screen time and lock the phone directly; anything that loosens, or moves the phone to
 another stage, is a proposal ([mcp.md](mcp.md)). They can't turn measuring on or off, or
-answer the kid.
+answer the kid, and what the kid reads is never their words: Belay names a limit or schedule an
+AI app adds or renames after what it is (a limit after its apps, a schedule after its kind), and
+an AI app's pause or lock has no note. Every name and note the kid sees, whoever wrote it, goes
+to the phone without control, invisible or direction-changing characters.
 
 Screen time is kept 13 months by default (Settings, 1 to 36 months): the hourly clean-up
 deletes older days, and the extra time given for them. When a phone that measures or has a
