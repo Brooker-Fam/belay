@@ -78,6 +78,45 @@ class ProtocolTest {
     }
 
     @Test
+    fun `an installed event carries the package, so its details arrive with it`() {
+        val record = app("com.example.drawing", code = 3).copy(permissions = listOf(SensitivePermissions.CAMERA))
+        val change = AppChange(
+            id = "e2", kind = ChangeKind.INSTALLED, packageName = record.packageName, label = record.label,
+            to = record.version, happenedAt = T0, detectedAt = T0 + 1, detection = Detection.BROADCAST,
+        )
+        val event = change.toWire(record)
+        assertEquals(record.toWire(), event.app)
+        val obj = Json.parseToJsonElement(Wire.json.encodeToString(WireEvent.serializer(), event)).jsonObject
+        val app = obj["app"] as JsonObject
+        assertEquals("\"com.example.drawing\"", app["package"].toString())
+        assertEquals("\"play_store\"", app["source"].toString())
+        assertEquals("[\"camera\"]", app["permissions"].toString())
+    }
+
+    @Test
+    fun `a removed event leaves the package out, even when one is passed`() {
+        val record = app("com.example.drawing")
+        val change = AppChange(
+            id = "e3", kind = ChangeKind.REMOVED, packageName = record.packageName, label = record.label,
+            from = record.version, detectedAt = T0, detection = Detection.BROADCAST,
+        )
+        val event = change.toWire(record)
+        assertEquals(null, event.app)
+        val obj = Json.parseToJsonElement(Wire.json.encodeToString(WireEvent.serializer(), event)).jsonObject
+        assertFalse("app" in obj, "a null app is left out of the JSON")
+    }
+
+    @Test
+    fun `an event never carries another package's record`() {
+        val change = AppChange(
+            id = "e4", kind = ChangeKind.UPDATED, packageName = "com.example.maps", label = "Maps",
+            from = VersionRef("1", 1), to = VersionRef("2", 2), detectedAt = T0, detection = Detection.SNAPSHOT,
+        )
+        assertEquals(null, change.toWire(app("com.example.other")).app)
+        assertEquals("com.example.maps", change.toWire(app("com.example.maps", code = 2)).app?.packageName)
+    }
+
+    @Test
     fun `responses with fields the agent doesn't know still parse`() {
         val response = Wire.json.decodeFromString(
             CheckinResponse.serializer(),
