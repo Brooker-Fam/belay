@@ -100,6 +100,10 @@ data class WireHealth(
     @SerialName("background_restricted") val backgroundRestricted: Boolean,
     @SerialName("service_running") val serviceRunning: Boolean,
     @SerialName("test_only") val testOnly: Boolean,
+    /** Phase 10: users or profiles other than the kid's own (getSecondaryUsers); null when not device owner. */
+    @SerialName("other_users") val otherUsers: Int? = null,
+    /** Phase 10: user restriction keys in force that Belay didn't set, like "no_factory_reset". */
+    @SerialName("foreign_restrictions") val foreignRestrictions: List<String> = emptyList(),
 )
 
 @Serializable
@@ -123,6 +127,8 @@ data class WireDevice(
     val health: WireHealth,
     /** Phase 2: which policy the phone enforces, and what it couldn't. Null before the first policy. */
     val enforcement: WireEnforcement? = null,
+    /** Phase 6: SHA-256 of the certificate Belay is signed with, lowercase hex. The server pins the first. */
+    @SerialName("agent_signing_sha256") val agentSigningSha256: String? = null,
 )
 
 /** What the phone enforces now (docs/protocol.md, "Enforcement"). */
@@ -135,6 +141,56 @@ data class WireEnforcement(
     @SerialName("suspended_count") val suspendedCount: Int = 0,
     /** Belay's own words for what it couldn't do, like "Private DNS: the host didn't answer". */
     val problems: List<String> = emptyList(),
+    /** Phase 6: how the update the policy offers is going. Null when none is offered. */
+    @SerialName("agent_update") val agentUpdate: WireAgentUpdateState? = null,
+    /** Phase 6: the last use of the recovery key on this phone. */
+    val recovery: WireRecoveryUse? = null,
+    /** The results of the last one-shot commands, newest first. */
+    val commands: List<WireCommandResult> = emptyList(),
+    /**
+     * The apps this phone never blocks, whatever the policy says (docs/protocol.md, "Enforcement
+     * rules"): Belay, the dialer, the SMS app, the keyboard, the home screen and so on, as this
+     * phone resolves them. The server refuses to block them.
+     */
+    @SerialName("never_blocked") val neverBlocked: List<String> = emptyList(),
+)
+
+/** Phase 6: where an update is. */
+@Serializable
+enum class WireUpdateState {
+    @SerialName("downloading") DOWNLOADING,
+    @SerialName("checking") CHECKING,
+    @SerialName("installing") INSTALLING,
+    @SerialName("failed") FAILED,
+
+    /** Belay runs this version or a newer one. */
+    @SerialName("done") DONE,
+}
+
+@Serializable
+data class WireAgentUpdateState(
+    @SerialName("version_code") val versionCode: Long,
+    val state: WireUpdateState,
+    /** Belay's own words, or Android's status message word for word, when it failed. */
+    val problem: String? = null,
+    val at: Long,
+)
+
+/** Phase 6: the recovery key was typed on the phone; repair access is open until [until]. */
+@Serializable
+data class WireRecoveryUse(
+    /** The key's version (WireRecovery.version). */
+    val version: Int,
+    @SerialName("used_at") val usedAt: Long,
+    val until: Long,
+)
+
+@Serializable
+data class WireCommandResult(
+    val id: String,
+    @SerialName("done_at") val doneAt: Long,
+    val ok: Boolean,
+    val problem: String? = null,
 )
 
 @Serializable
@@ -261,6 +317,42 @@ data class WireRequestAnswer(
     @SerialName("answered_by") val answeredBy: String? = null,
 )
 
+/** Phase 6: a version of Belay a parent approved for this phone. */
+@Serializable
+data class WireAgentUpdate(
+    @SerialName("version_code") val versionCode: Long,
+    @SerialName("version_name") val versionName: String? = null,
+    /** SHA-256 of the APK file, lowercase hex; also its name: `GET /api/v1/agent/<sha256>.apk`. */
+    val sha256: String,
+    val size: Long,
+)
+
+/**
+ * Phase 6: the check for the recovery key, never the key. [hash] is SHA-256 of the salt's 16
+ * bytes followed by the normalized key's UTF-8 (RecoveryKey in :core), lowercase hex.
+ */
+@Serializable
+data class WireRecovery(
+    /** Increases with every new key; a used version never works again on the phone. */
+    val version: Int,
+    val salt: String,
+    val hash: String,
+)
+
+/** A one-shot command, run once per [id] and reported in enforcement.commands. */
+@Serializable
+data class WireCommand(
+    val id: String,
+    /** [WireCommand.REMOVE_OTHER_USERS]; a kind this Belay doesn't know is reported as failed, not run. */
+    val kind: String,
+    @SerialName("issued_at") val issuedAt: Long,
+) {
+    companion object {
+        /** Phase 10: remove every other user or profile (Android's own Parental Controls make one). */
+        const val REMOVE_OTHER_USERS = "remove_other_users"
+    }
+}
+
 @Serializable
 data class WirePolicy(
     val version: Int,
@@ -278,6 +370,12 @@ data class WirePolicy(
     @SerialName("support_message") val supportMessage: String? = null,
     /** The kid's requests of the last 30 days, newest first, with their answers. */
     val requests: List<WireRequestAnswer> = emptyList(),
+    /** Phase 6: the update to install. */
+    @SerialName("agent_update") val agentUpdate: WireAgentUpdate? = null,
+    /** Phase 6: lets the recovery key open repair access for 24 hours, offline. */
+    val recovery: WireRecovery? = null,
+    /** One-shot commands not yet reported done. */
+    val commands: List<WireCommand> = emptyList(),
 )
 
 @Serializable
@@ -362,6 +460,13 @@ object WireLimits {
     const val MAX_REASON = 500
     const val MAX_PROBLEMS = 20
     const val MAX_PROBLEM = 200
+    const val MAX_COMMAND_RESULTS = 20
+    const val MAX_NEVER_BLOCKED = 100
+    const val MAX_FOREIGN_RESTRICTIONS = 20
+    const val MAX_RESTRICTION_KEY = 64
+
+    /** Phase 6: the largest APK the server serves and the phone downloads. */
+    const val MAX_AGENT_BYTES = 100L * 1024 * 1024
 }
 
 fun PackageRecord.toWire(): WirePackage = WirePackage(

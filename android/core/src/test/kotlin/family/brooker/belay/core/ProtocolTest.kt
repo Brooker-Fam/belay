@@ -161,6 +161,42 @@ class ProtocolTest {
     }
 
     @Test
+    fun `a Phase 6 policy parses, with an update, the recovery check and commands`() {
+        val policy = Wire.json.decodeFromString(
+            WirePolicy.serializer(),
+            """
+            {"version":9,
+             "agent_update":{"version_code":4,"version_name":"0.4.0","sha256":"${"ab".repeat(32)}","size":12345678},
+             "recovery":{"version":2,"salt":"000102030405060708090a0b0c0d0e0f","hash":"${"cd".repeat(32)}"},
+             "commands":[{"id":"command-0001","kind":"remove_other_users","issued_at":$T0},
+                         {"id":"command-0002","kind":"from_a_newer_server","issued_at":$T0}]}
+            """.trimIndent(),
+        )
+        assertEquals(4L, policy.agentUpdate?.versionCode)
+        assertEquals(12345678L, policy.agentUpdate?.size)
+        assertEquals(2, policy.recovery?.version)
+        assertEquals(listOf(WireCommand.REMOVE_OTHER_USERS, "from_a_newer_server"), policy.commands.map { it.kind })
+    }
+
+    @Test
+    fun `the Phase 6 enforcement report uses the server's names`() {
+        val report = WireEnforcement(
+            policyVersion = 9,
+            agentUpdate = WireAgentUpdateState(4, WireUpdateState.FAILED, "Android said: INSTALL_FAILED_VERIFICATION_FAILURE", T0),
+            recovery = WireRecoveryUse(version = 2, usedAt = T0, until = T0 + 24 * 3_600_000L),
+            commands = listOf(WireCommandResult("command-0001", T0, ok = true)),
+            neverBlocked = listOf("com.android.dialer"),
+        )
+        val json = Json.parseToJsonElement(Wire.json.encodeToString(WireEnforcement.serializer(), report)).jsonObject
+        assertEquals(
+            setOf("policy_version", "suspended_count", "problems", "agent_update", "recovery", "commands", "never_blocked"),
+            json.keys,
+        )
+        assertEquals("\"failed\"", json["agent_update"]!!.jsonObject["state"].toString())
+        assertEquals(setOf("id", "done_at", "ok"), (json["commands"] as kotlinx.serialization.json.JsonArray).single().jsonObject.keys)
+    }
+
+    @Test
     fun `responses with fields the agent doesn't know still parse`() {
         val response = Wire.json.decodeFromString(
             CheckinResponse.serializer(),

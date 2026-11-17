@@ -393,6 +393,10 @@ export function buildPolicy(db: DB, deviceId: string, now: number): Policy {
     frp_accounts: [...rules.frpAccounts],
     support_message: rules.supportMessage,
     requests: requestAnswers(db, deviceId, now),
+    // Phase 6 and 10: not built yet.
+    agent_update: null,
+    recovery: null,
+    commands: [],
   };
 }
 

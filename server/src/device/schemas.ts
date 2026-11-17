@@ -19,6 +19,12 @@ export const LIMITS = {
   maxProblem: 200,
   /** Longest a policy long-poll is held, in seconds. */
   maxWaitSeconds: 55,
+  maxCommandResults: 20,
+  maxNeverBlocked: 100,
+  maxForeignRestrictions: 20,
+  maxRestrictionKey: 64,
+  /** Phase 6: the largest APK of Belay the server stores and serves. */
+  maxAgentBytes: 100 * 1024 * 1024,
 } as const;
 
 const time = z.int().min(0);
@@ -31,6 +37,8 @@ export const packageName = z
   .min(1)
   .max(255)
   .regex(/^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)*$/, "not a package name");
+/** A SHA-256, lowercase hex. */
+export const sha256Hex = z.string().regex(/^[0-9a-f]{64}$/, "not a lowercase hex SHA-256");
 const clientId = z
   .string()
   .min(8)
@@ -112,6 +120,10 @@ export const Health = z.strictObject({
   background_restricted: z.boolean(),
   service_running: z.boolean(),
   test_only: z.boolean(),
+  /** Phase 10: users or profiles other than the kid's own; null when not device owner. */
+  other_users: z.int().min(0).nullish(),
+  /** Phase 10: user restrictions in force that Belay didn't set. */
+  foreign_restrictions: z.array(text(LIMITS.maxRestrictionKey)).max(LIMITS.maxForeignRestrictions).optional(),
 });
 export type Health = z.infer<typeof Health>;
 
@@ -121,6 +133,24 @@ export const Enforcement = z.strictObject({
   applied_at: time.nullish(),
   suspended_count: z.int().min(0).optional(),
   problems: z.array(text(LIMITS.maxProblem)).max(LIMITS.maxProblems).optional(),
+  /** Phase 6: how the update the policy offers is going. */
+  agent_update: z
+    .strictObject({
+      version_code: versionCode,
+      state: z.enum(["downloading", "checking", "installing", "failed", "done"]),
+      problem: text(LIMITS.maxProblem).nullish(),
+      at: time,
+    })
+    .nullish(),
+  /** Phase 6: the last use of the recovery key on the phone. */
+  recovery: z.strictObject({ version: z.int().min(1), used_at: time, until: time }).nullish(),
+  /** The results of the last one-shot commands, newest first. */
+  commands: z
+    .array(z.strictObject({ id: clientId, done_at: time, ok: z.boolean(), problem: text(LIMITS.maxProblem).nullish() }))
+    .max(LIMITS.maxCommandResults)
+    .optional(),
+  /** The apps this phone never blocks (Belay, the dialer, the SMS app, the keyboard…): the server refuses to block them. */
+  never_blocked: z.array(packageName).max(LIMITS.maxNeverBlocked).optional(),
 });
 export type Enforcement = z.infer<typeof Enforcement>;
 
@@ -143,6 +173,8 @@ export const Device = z.strictObject({
   storage_total_bytes: z.int().min(0).nullish(),
   health: Health,
   enforcement: Enforcement.nullish(),
+  /** Phase 6: SHA-256 of the certificate Belay is signed with. The server pins the first. */
+  agent_signing_sha256: sha256Hex.nullish(),
 });
 export type Device = z.infer<typeof Device>;
 
@@ -232,5 +264,20 @@ export const Policy = z.strictObject({
       answered_by: text(60).nullable(),
     }),
   ),
+  /** Phase 6: the version of Belay a parent approved for this phone, if any. */
+  agent_update: z
+    .strictObject({
+      version_code: versionCode,
+      version_name: text(50).nullable(),
+      sha256: sha256Hex,
+      size: z.int().min(1).max(LIMITS.maxAgentBytes),
+    })
+    .nullable(),
+  /** Phase 6: the recovery key's check (family/recovery.ts); never the key. */
+  recovery: z
+    .strictObject({ version: z.int().min(1), salt: z.string().regex(/^[0-9a-f]{32}$/), hash: sha256Hex })
+    .nullable(),
+  /** One-shot commands the phone hasn't reported done. */
+  commands: z.array(z.strictObject({ id: clientId, kind: z.enum(["remove_other_users"]), issued_at: time })),
 });
 export type Policy = z.infer<typeof Policy>;

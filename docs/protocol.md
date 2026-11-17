@@ -27,6 +27,7 @@ schemas in `server/src/device/schemas.ts`. Change all three together.
 | `POST /api/v1/events` | 512 KB, at most 1000 events |
 | `GET /api/v1/policy` | (no body) |
 | `POST /api/v1/requests` | 128 KB, at most 100 requests |
+| `GET /api/v1/agent/<sha256>.apk` | (no body; the answer is at most 100 MB) |
 
 Errors: `{"error": "<code>", "error_description": "<words>"}` with
 
@@ -154,6 +155,39 @@ pending. When a new app is suspended, Belay makes its request at once (without a
 so the parent sees it even if the kid never opens Belay. The answers come back in the
 policy's `requests`, which Belay shows the kid.
 
+## `GET /api/v1/agent/<sha256>.apk`
+
+Phase 6. The version of Belay a parent approved for this phone (the policy's
+`agent_update`), named by the APK's SHA-256. `200` with `Content-Type:
+application/vnd.android.package-archive`, `Content-Length` and `Accept-Ranges: bytes`;
+`Range: bytes=<from>-` answers `206` with the rest, so a download over cellular can resume.
+`404 not_found` unless that file is the one the policy offers this phone right now.
+
+The phone checks everything before it installs (see the rules below): the server stores
+the file and the version a parent gives it, and doesn't parse it.
+
+## The recovery key
+
+Phase 6. If the family's server is ever lost, the recovery key opens the same repair
+access as maintenance mode, offline, for 24 hours: the `debugging` and `factory_reset`
+locks are lifted, so adb and Settings' reset work.
+
+- The server makes it when a parent first turns on `debugging` or `factory_reset`, or
+  asks for a new one: 26 random characters of Crockford's base32 alphabet
+  (`0123456789ABCDEFGHJKMNPQRSTVWXYZ`, 130 bits), shown once, in groups
+  (`7KD2M-8Q4ZX-1HNP3-RT6VW-B9CF0G`). The server keeps only its check.
+- The policy's `recovery` is that check: `hash` = SHA-256 of the 16 bytes of `salt`
+  followed by the UTF-8 of the normalized key, lowercase hex. Normalized: upper case,
+  without spaces or dashes, with O read as 0 and I and L as 1. A random 130-bit key
+  makes a slow hash unnecessary. (`RecoveryKey.kt` and `server/src/family/recovery.ts`
+  share a test vector.)
+- Belay's screen takes the key under "About Belay", with no server. Three wrong tries,
+  then a wait of a minute that doubles with each further wrong try, kept across restarts.
+- A key's `version` works once on the phone: after it's used, the phone refuses it
+  even if the policy still has it. The phone reports the use in `enforcement.recovery`
+  when it can; the server then drops that check from the policy and asks a parent to
+  make a new key.
+
 ## Enforcement rules (both sides)
 
 - **Never blocked, whatever the policy says:** Belay itself, the phone app and anything
@@ -187,6 +221,22 @@ policy's `requests`, which Belay shows the kid.
 - **Tightening vs. loosening:** an AI client may tighten directly (block an app, pause
   the phone). Anything that loosens (approve, unblock, resume, lift a restriction) is
   only a proposal until a parent approves it on the parent page.
+- **The phone reports what it never blocks** (`enforcement.never_blocked`), as it resolves
+  the roles on that phone; the server refuses to block those packages, and names a few
+  well-known ones itself before the first report.
+- **Updates** (Phase 6, `agent_update`): before installing, the phone checks that the
+  download's SHA-256 and size match, and that the APK (`getPackageArchiveInfo` with
+  signing certificates) is Belay's own package, has exactly the offered version code,
+  higher than the one running, and is signed with exactly the certificate Belay runs with.
+  Anything else is refused and reported. A device owner's `PackageInstaller` session
+  installs silently; if Android refuses, Belay reports Android's message word for word.
+  An update is a parent's action only, from the parent page or the server's CLI, never an
+  AI client's.
+- **Commands** (`commands`): each runs once per `id`, even if the policy still lists it;
+  the result goes in `enforcement.commands`, and the server drops a command from the
+  policy once it's reported. A `kind` this Belay doesn't know is reported as failed, not
+  run. `remove_other_users` (Phase 10) removes every user or profile `getSecondaryUsers`
+  lists, such as the one Android's own Parental Controls make; only a parent issues it.
 
 ## Objects
 
@@ -233,6 +283,9 @@ policy's `requests`, which Belay shows the kid.
 | `frp_accounts` | string[] | Google account ids for factory reset protection |
 | `support_message` | string? | the parent's words for blocked-app screens |
 | `requests` | `[{id, status: "pending"\|"approved"\|"declined"\|"talk", note?, answered_at?, answered_by?}]` | the kid's requests of the last 30 days |
+| `agent_update` | `{version_code, version_name?, sha256, size}`? | Phase 6: the version of Belay a parent approved for this phone |
+| `recovery` | `{version, salt, hash}`? | Phase 6: the recovery key's check (above); `salt` is 16 bytes, hex |
+| `commands` | `[{id, kind: "remove_other_users", issued_at}]` | one-shot commands not yet reported done |
 
 **Request** (phone → server)
 
@@ -253,6 +306,10 @@ policy's `requests`, which Belay shows the kid.
 | `applied_at` | int? | |
 | `suspended_count` | int | apps held suspended or hidden now |
 | `problems` | string[] | Belay's own words for what it couldn't do, at most 20 of 200 characters |
+| `agent_update` | `{version_code, state: "downloading"\|"checking"\|"installing"\|"failed"\|"done", problem?, at}`? | Phase 6: the offered update; `done` once Belay runs that version or a newer one |
+| `recovery` | `{version, used_at, until}`? | Phase 6: the last use of the recovery key; repair access is open until `until` |
+| `commands` | `[{id, done_at, ok, problem?}]` | the last 20 commands' results, newest first |
+| `never_blocked` | string[] | the packages this phone never blocks, at most 100 |
 
 **Device** (facts and the agent's own health; nothing about the kid's content)
 
@@ -270,6 +327,7 @@ policy's `requests`, which Belay shows the kid.
 | `storage_free_bytes`, `storage_total_bytes` | int? |
 | `health` | Health |
 | `enforcement` | Enforcement? (Phase 2) |
+| `agent_signing_sha256` | string? (Phase 6: SHA-256 of Belay's signing certificate, hex; the server pins the first it sees) |
 
 **Health**
 
@@ -279,3 +337,5 @@ policy's `requests`, which Belay shows the kid.
 | `uninstall_blocked` | bool? (null when not device owner) |
 | `standby_bucket` | int (5 = exempted) |
 | `permissions` | `[{name, granted, fixed_by_policy}]`, Belay's own runtime permissions |
+| `other_users` | int? (Phase 10: users or profiles other than the kid's own; null when not device owner) |
+| `foreign_restrictions` | string[] (Phase 10: user restrictions in force that Belay didn't set, at most 20) |
