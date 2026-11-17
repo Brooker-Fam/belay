@@ -23,8 +23,11 @@ import java.security.MessageDigest
  */
 object Apks {
     /** Belay itself, as installed: the version code this process runs and its signers. */
-    fun self(context: Context): ApkFacts {
-        val info = context.packageManager.packageInfoCompat(context.packageName, PackageManager.GET_SIGNING_CERTIFICATES)
+    fun self(context: Context): ApkFacts = installed(context, context.packageName)
+
+    /** [packageName] as installed; throws NameNotFoundException if it isn't. */
+    fun installed(context: Context, packageName: String): ApkFacts {
+        val info = context.packageManager.packageInfoCompat(packageName, PackageManager.GET_SIGNING_CERTIFICATES)
         return ApkFacts(info.packageName, info.longVersionCode, signers(info.signingInfo))
     }
 
