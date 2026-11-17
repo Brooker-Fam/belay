@@ -45,6 +45,17 @@ class AlwaysAllowedTest {
     }
 
     @Test
+    fun `the Lifeline's older number counts as 988, however it's written`() {
+        val forms = listOf("+18002738255", "+1 (800) 273-8255", "1-800-273-8255", "18002738255", "(800) 273-8255", "800.273.8255", "8002738255,1")
+        for (android in androids) {
+            forms.forEach { assertEquals(AlwaysAllowedKind.CRISIS_988, AlwaysAllowed.kind(it, android), "'$it'") }
+        }
+        // Its neighbors are ordinary numbers.
+        assertNull(AlwaysAllowed.kind("+18002738256", us))
+        assertNull(AlwaysAllowed.kind("8002738254", us))
+    }
+
+    @Test
     fun `every number Android reports as an emergency number works, as Android reports it`() {
         assertTrue(AlwaysAllowed.allows("112", us))
         assertTrue(AlwaysAllowed.allows("999", uk))

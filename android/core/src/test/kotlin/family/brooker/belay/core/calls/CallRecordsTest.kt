@@ -23,7 +23,7 @@ class CallRecordsTest {
 
     @Test
     fun `calls with emergency numbers, 988 and private numbers are never kept`() {
-        val never = listOf("911", "9-1-1", "988", "(988)", "112", "+15555550150", "+1 (555) 555-0150")
+        val never = listOf("911", "9-1-1", "988", "(988)", "112", "+15555550150", "+1 (555) 555-0150", "+18002738255", "1-800-273-8255")
         for (number in never) {
             assertNull(entry(number), number)
             assertTrue(!CallRecords.keepable(number, private, android), number)

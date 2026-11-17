@@ -110,7 +110,7 @@ class CallRulesTest {
         val strict = WireCalls(WireCallMode.CONTACTS, WireCallAction.REJECT, WireCallAction.REJECT, WireOutgoing.CONTACTS, quiet = true, log = true)
         // Even if a broken policy listed them as blocked, which Belay never puts on the block list either.
         val now = CallsNow(strict, contacts = emptyList(), blocked = setOf("911", "988", "112"), quietSchedule = true, now = T0)
-        for (n in listOf("911", "988", "112", "9-1-1", "(988)")) {
+        for (n in listOf("911", "988", "112", "9-1-1", "(988)", "+18002738255", "1-800-273-8255")) {
             val decision = CallRules.incoming(number(n), now, android)
             assertEquals(Ring.RING, decision.action, n)
             assertEquals(RingBecause.ALWAYS_ALLOWED, decision.because, n)

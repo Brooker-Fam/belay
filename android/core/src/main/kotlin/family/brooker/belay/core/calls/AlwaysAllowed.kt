@@ -19,7 +19,9 @@ enum class AlwaysAllowedKind { EMERGENCY, CRISIS_988 }
  * an emergency number, and 988. They're decided here, in code, never from the policy, so no policy
  * or server bug can remove them; calls with them are never recorded or sent (CallRecords).
  *
- * 988 is an ordinary number to Android (platform notes T3), so it's here by name. When Android
+ * 988 is an ordinary number to Android (platform notes T3), so it's here by name, with the
+ * Lifeline's older number (1-800-273-8255), which still reaches it; the server treats that one as
+ * 988 too (never blocked, never recorded). When Android
  * can't say whether a number is an emergency number, Belay uses Android's own list for a phone
  * with no SIM (AOSP's EmergencyNumberTracker: 112, 911, 000, 08, 110, 118, 119 and 999), so a
  * broken telephony service never makes an emergency number stop working.
@@ -27,6 +29,12 @@ enum class AlwaysAllowedKind { EMERGENCY, CRISIS_988 }
 object AlwaysAllowed {
     const val EMERGENCY_911 = "911"
     const val CRISIS_988 = "988"
+
+    /** The 988 Lifeline's older number, 1-800-273-8255 ("TALK"), which still reaches it: it counts as 988. */
+    const val LIFELINE_800 = "+18002738255"
+
+    /** How the older number is dialed: in E.164, with the 1, or as a 10-digit US number. */
+    private val LIFELINE_800_FORMS: Set<String> = setOf(LIFELINE_800, "18002738255", "8002738255")
 
     /** AOSP 17 EmergencyNumberTracker's numbers for a phone without a SIM. */
     val WHEN_ANDROID_CANT_SAY: Set<String> = setOf("112", "911", "000", "08", "110", "118", "119", "999")
@@ -36,7 +44,7 @@ object AlwaysAllowed {
         val dialable = PhoneNumbers.dialable(number)
         if (dialable.isEmpty()) return null
         if (dialable == EMERGENCY_911) return AlwaysAllowedKind.EMERGENCY
-        if (dialable == CRISIS_988) return AlwaysAllowedKind.CRISIS_988
+        if (dialable == CRISIS_988 || dialable in LIFELINE_800_FORMS) return AlwaysAllowedKind.CRISIS_988
         val emergency = try {
             android.isEmergency(dialable)
         } catch (e: RuntimeException) {

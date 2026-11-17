@@ -57,8 +57,8 @@ class CallContactsTest {
 
     @Test
     fun `blocked and private numbers are read as E164, and an always-allowed number is never blocked`() {
-        val policy = WirePolicy(version = 1, blockedNumbers = listOf("+15555550177", "+1 555 555 0178", "911", "junk"), privateNumbers = listOf("+15555550150"))
-        assertEquals(setOf("+15555550177", "+15555550178"), CallContacts.blocked(policy, android))
+        val policy = WirePolicy(version = 1, blockedNumbers = listOf("+15555550177", "+1 555 555 0178", "911", "junk", "+18002738255"), privateNumbers = listOf("+15555550150"))
+        assertEquals(setOf("+15555550177", "+15555550178"), CallContacts.blocked(policy, android), "never 911 or the Lifeline")
         val emergencyE164 = EmergencyNumbers { it == "+15555550177" }
         assertEquals(setOf("+15555550178"), CallContacts.blocked(policy, emergencyE164))
         assertEquals(setOf("+15555550150"), CallContacts.private(policy))
