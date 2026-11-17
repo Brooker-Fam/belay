@@ -1,7 +1,16 @@
 package family.brooker.belay.core.screentime
 
 import family.brooker.belay.core.PolicyResponse
+import family.brooker.belay.core.RequestsRequest
 import family.brooker.belay.core.Wire
+import family.brooker.belay.core.WireCommand
+import family.brooker.belay.core.WireCommandOutcome
+import family.brooker.belay.core.WireCommandResult
+import family.brooker.belay.core.WireEnforcement
+import family.brooker.belay.core.WirePolicy
+import family.brooker.belay.core.WireRequest
+import family.brooker.belay.core.WireRequestAnswer
+import family.brooker.belay.core.WireRequestStatus
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -46,7 +55,7 @@ class ScreenTimeProtocolTest {
 
     @Test
     fun `a policy without Phase 3 fields enforces and collects nothing`() {
-        val policy = Wire.json.decodeFromString(PolicyResponsePhase3.serializer(), """{"server_time":1,"policy":{"version":0}}""").policy
+        val policy = Wire.json.decodeFromString(PolicyResponse.serializer(), """{"server_time":1,"policy":{"version":0}}""").policy
         assertNull(policy.screenTime)
         assertNull(policy.stage)
         assertNull(policy.agreement)
@@ -84,7 +93,7 @@ class ScreenTimeProtocolTest {
             "commands":[{"id":"c-1","kind":"lock_now","issued_at":3,"expires_at":4},
               {"id":"c-2","kind":"locate_now","issued_at":3,"expires_at":4}],
             "requests":[{"id":"r-1","status":"approved","minutes":15,"answered_at":4}]}}"""
-        val policy = Wire.json.decodeFromString(PolicyResponsePhase3.serializer(), json).policy
+        val policy = Wire.json.decodeFromString(PolicyResponse.serializer(), json).policy
         val st = policy.screenTime!!
         assertEquals("04:00", st.dayStarts)
         assertEquals(120, st.limits.single().byDay?.get(DayOfWeek.SATURDAY))
@@ -117,14 +126,15 @@ class ScreenTimeProtocolTest {
     fun `every policy type survives a round trip`() {
         roundTrip(WireScreenTime.serializer(), screenTime)
         roundTrip(
-            WirePolicyPhase3.serializer(),
-            WirePolicyPhase3(
+            WirePolicy.serializer(),
+            WirePolicy(
+                version = 9,
                 screenTime = screenTime,
                 stage = WireStage("Explorer", 2, 100, WireStageNext("Navigator", listOf("More time"), "Ask us", screenTime)),
                 agreement = WireAgreement(3, listOf(WireAgreementSection("Dinner", "No phones")), kidAgreedAt = 5, parentsAgreedAt = 4),
                 networkLog = WireNetworkLog(enabled = true),
                 commands = listOf(WireCommand("c-1", WireCommand.LOCK_NOW, 1, 2)),
-                requests = listOf(WireRequestMinutes("r-1", 30)),
+                requests = listOf(WireRequestAnswer("r-1", WireRequestStatus.APPROVED, minutes = 30)),
             ),
         )
     }
@@ -173,24 +183,24 @@ class ScreenTimeProtocolTest {
 
     @Test
     fun `a more-time request writes only its own fields`() {
-        val request = WireRequestPhase3.moreTime(
+        val request = MoreTime.request(
             "r-1", limitId = "l-games", minutes = 15, askedAt = 7, packageName = "com.example.blocks",
             reason = "One more level",
         )
-        roundTrip(WireRequestPhase3.serializer(), request)
-        val json = obj(Wire.json.encodeToString(RequestsRequestPhase3.serializer(), RequestsRequestPhase3(listOf(request))))
+        roundTrip(WireRequest.serializer(), request)
+        val json = obj(Wire.json.encodeToString(RequestsRequest.serializer(), RequestsRequest(listOf(request))))
         val sent = (json["requests"] as JsonArray).single().jsonObject
         assertEquals(setOf("id", "kind", "limit_id", "minutes", "package", "reason", "asked_at"), sent.keys)
         assertEquals("\"more_time\"", sent["kind"].toString())
-        val bare = obj(Wire.json.encodeToString(WireRequestPhase3.serializer(), WireRequestPhase3.moreTime("r-2", "l-games", 30, 8)))
+        val bare = obj(Wire.json.encodeToString(WireRequest.serializer(), MoreTime.request("r-2", "l-games", 30, 8)))
         assertEquals(setOf("id", "kind", "limit_id", "minutes", "asked_at"), bare.keys)
     }
 
     @Test
     fun `an agreement answer writes only its own fields`() {
-        val answer = WireRequestPhase3.agreement("r-3", version = 3, answer = WireAgreementAnswer.TALK, askedAt = 9)
-        roundTrip(WireRequestPhase3.serializer(), answer)
-        val sent = obj(Wire.json.encodeToString(WireRequestPhase3.serializer(), answer))
+        val answer = AgreementAnswer.request("r-3", version = 3, answer = WireAgreementAnswer.TALK, askedAt = 9)
+        roundTrip(WireRequest.serializer(), answer)
+        val sent = obj(Wire.json.encodeToString(WireRequest.serializer(), answer))
         assertEquals(setOf("id", "kind", "version", "answer", "asked_at"), sent.keys)
         assertEquals("\"talk\"", sent["answer"].toString())
     }
@@ -203,13 +213,14 @@ class ScreenTimeProtocolTest {
             schedule = WireScheduleNow("s-bed", 9),
             selfServe = listOf(WireSelfServeTake(WireExtra.EVERY_LIMIT, "com.example.blocks", 10, 8)),
         )
-        val report = WireEnforcementPhase3(
+        val report = WireEnforcement(
+            policyVersion = 9,
             screenTime = status,
-            commands = listOf(WireCommandReport("c-1", WireCommandResult.EXPIRED, 3)),
+            commands = listOf(WireCommandResult("c-1", WireCommandOutcome.EXPIRED, 3)),
             networkLog = WireNetworkLogStatus(enabled = true, paused = true),
         )
-        roundTrip(WireEnforcementPhase3.serializer(), report)
-        val json = obj(Wire.json.encodeToString(WireEnforcementPhase3.serializer(), report))
+        roundTrip(WireEnforcement.serializer(), report)
+        val json = obj(Wire.json.encodeToString(WireEnforcement.serializer(), report))
         val sent = json["screen_time"] as JsonObject
         assertEquals(setOf("day", "measured", "limits", "schedule", "self_serve"), sent.keys, "no used_minutes")
         assertEquals(setOf("id", "state"), (sent["limits"] as JsonArray).single().jsonObject.keys)

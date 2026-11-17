@@ -1,5 +1,7 @@
 package family.brooker.belay.core.screentime
 
+import family.brooker.belay.core.WireRequestKind
+
 import family.brooker.belay.core.screentime.Fx.BLOCKS
 import family.brooker.belay.core.screentime.Fx.MIN
 import family.brooker.belay.core.screentime.Fx.NY
@@ -114,20 +116,8 @@ class GrantsTest {
         assertEquals(240, MoreTime.request("r-1", "l-video", 1000, t("15:00")).minutes)
         val request = MoreTime.request("r-1", "l-video", 15, t("15:00"), packageName = VIDEO, reason = "  ${"x".repeat(600)}  ")
         assertEquals(500, request.reason?.length)
-        assertEquals(WireRequestKindPhase3.MORE_TIME, request.kind)
+        assertEquals(WireRequestKind.MORE_TIME, request.kind)
         assertEquals(VIDEO, request.packageName)
         assertNull(MoreTime.request("r-2", "l-video", 15, t("15:00"), reason = "   ").reason)
-    }
-
-    @Test
-    fun `commands run once each, expire, and kinds Belay doesn't know are reported`() {
-        val lockNow = WireCommand("c-1", WireCommand.LOCK_NOW, issuedAt = t("15:00"), expiresAt = t("15:10"))
-        val expired = WireCommand("c-2", WireCommand.LOCK_NOW, issuedAt = t("14:00"), expiresAt = t("14:10"))
-        val later = WireCommand("c-3", "locate_now", issuedAt = t("15:00"), expiresAt = t("16:00"))
-        val done = WireCommand("c-4", WireCommand.LOCK_NOW, issuedAt = t("15:00"), expiresAt = t("16:00"))
-        val plan = Commands.plan(listOf(lockNow, expired, later, done, lockNow), done = setOf("c-4"), now = t("15:05"))
-        assertEquals(CommandPlan(lockNow = listOf(lockNow), expired = listOf(expired), unknown = listOf(later)), plan)
-        assertEquals(listOf(lockNow), Commands.plan(listOf(lockNow), emptySet(), t("15:09")).lockNow)
-        assertEquals(listOf(lockNow), Commands.plan(listOf(lockNow), emptySet(), t("15:10")).expired)
     }
 }

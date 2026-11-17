@@ -1,5 +1,6 @@
 package family.brooker.belay.core.screentime
 
+import family.brooker.belay.core.WirePolicy
 import java.time.DayOfWeek
 import java.time.LocalTime
 import java.util.BitSet
@@ -70,7 +71,7 @@ object Stages {
     fun changes(from: Stage, to: Stage): List<RuleChange> = changes(from.rules, to.rules)
 
     /** What the policy's next stage changes, for "Your stage"; empty when the policy doesn't say. */
-    fun next(policy: WirePolicyPhase3): List<RuleChange> {
+    fun next(policy: WirePolicy): List<RuleChange> {
         val next = policy.stage?.next?.screenTime ?: return emptyList()
         return changes(policy.screenTime, next)
     }

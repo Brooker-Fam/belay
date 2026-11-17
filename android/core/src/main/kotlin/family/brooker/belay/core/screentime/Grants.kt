@@ -1,6 +1,8 @@
 package family.brooker.belay.core.screentime
 
 import family.brooker.belay.core.WireLimits
+import family.brooker.belay.core.WireRequest
+import family.brooker.belay.core.WireRequestKind
 import kotlinx.serialization.Serializable
 import java.time.LocalDate
 import java.time.ZoneId
@@ -127,8 +129,9 @@ object MoreTime {
         askedAt: Long,
         packageName: String? = null,
         reason: String? = null,
-    ): WireRequestPhase3 = WireRequestPhase3.moreTime(
+    ): WireRequest = WireRequest(
         id = id,
+        kind = WireRequestKind.MORE_TIME,
         limitId = limitId,
         minutes = minutes.coerceIn(ScreenTimeWireLimits.MIN_MORE_TIME_MINUTES, ScreenTimeWireLimits.MAX_MORE_TIME_MINUTES),
         askedAt = askedAt,
@@ -136,9 +139,24 @@ object MoreTime {
         reason = reason?.trim()?.take(WireLimits.MAX_REASON)?.takeIf { it.isNotEmpty() },
     )
 
+
     /** The limit to ask about for [packageName]: the first that pauses it, else the one with the least time left. */
     fun limitFor(decision: Decision, packageName: String): String? {
         decision.suspend[packageName]?.reasons?.filterIsInstance<Reason.Limit>()?.firstOrNull()?.let { return it.limitId }
         return decision.limits.filter { packageName in it.packages }.minByOrNull { it.leftMillis }?.id
     }
+}
+
+/** The kid's answer to the family agreement, which a parent sees on the parent page. */
+object AgreementAnswer {
+    /** An `agreement` request: agree, or "let's talk"; the kid's [reason] kept to 500 characters. */
+    fun request(id: String, version: Int, answer: WireAgreementAnswer, askedAt: Long, reason: String? = null): WireRequest =
+        WireRequest(
+            id = id,
+            kind = WireRequestKind.AGREEMENT,
+            version = version,
+            answer = answer,
+            askedAt = askedAt,
+            reason = reason?.trim()?.take(WireLimits.MAX_REASON)?.takeIf { it.isNotEmpty() },
+        )
 }

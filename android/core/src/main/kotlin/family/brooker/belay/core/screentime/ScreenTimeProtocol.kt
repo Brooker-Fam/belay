@@ -4,13 +4,11 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import java.time.DayOfWeek
 
-// Phase 3's part of the device API, as docs/design/phase3-screen-time.md ("Protocol") proposes it,
-// with core/Protocol.kt's conventions: snake_case names, and every policy field defaults to
-// enforcing and collecting nothing. Wire.json writes every field and leaves nulls out, and ignores
-// fields it doesn't know. Until these types fold into Protocol.kt, docs/protocol.md and
-// server/src/device/schemas.ts, the agent decodes the same policy JSON a second time as
-// WirePolicyPhase3 to read just these fields. Where the proposal was open, the KDoc says
-// "Decision:".
+// Phase 3's part of the device API (docs/protocol.md), with core/Protocol.kt's conventions:
+// snake_case names, and every policy field defaults to enforcing and collecting nothing.
+// Protocol.kt's WirePolicy, WireEnforcement, WireRequest and WireCommand carry these types, and
+// the server's Zod schemas (server/src/device/schemas.ts) mirror them. Where the design was open,
+// the KDoc says "Decision:".
 
 /** A day of the week as the policy writes it. */
 @Serializable
@@ -198,43 +196,6 @@ data class WireAgreement(
 @Serializable
 data class WireNetworkLog(val enabled: Boolean = false)
 
-/**
- * A one-shot action, shared with later phases. The phone runs each id once, ignores it after
- * [expiresAt], and reports it in `enforcement.commands`. [kind] is a string, not an enum, so a
- * kind from a later phase doesn't stop an older phone from reading the policy.
- */
-@Serializable
-data class WireCommand(
-    val id: String,
-    val kind: String,
-    @SerialName("issued_at") val issuedAt: Long,
-    @SerialName("expires_at") val expiresAt: Long,
-) {
-    companion object {
-        const val LOCK_NOW = "lock_now"
-    }
-}
-
-/** A request's answer gains the minutes a parent gave (`more_time`). */
-@Serializable
-data class WireRequestMinutes(val id: String, val minutes: Int? = null)
-
-/** The fields Phase 3 adds to the policy, read from the same JSON as Protocol.kt's WirePolicy. */
-@Serializable
-data class WirePolicyPhase3(
-    @SerialName("screen_time") val screenTime: WireScreenTime? = null,
-    val stage: WireStage? = null,
-    val agreement: WireAgreement? = null,
-    @SerialName("network_log") val networkLog: WireNetworkLog = WireNetworkLog(),
-    val commands: List<WireCommand> = emptyList(),
-    /** The same list as WirePolicy.requests, read again for each answer's minutes. */
-    val requests: List<WireRequestMinutes> = emptyList(),
-)
-
-/** The Phase 3 fields of a check-in or policy answer (`{"server_time", "policy"}`). */
-@Serializable
-data class PolicyResponsePhase3(val policy: WirePolicyPhase3)
-
 // ── What the phone reports: enforcement additions, in Device ──
 
 @Serializable
@@ -287,35 +248,10 @@ data class WireScreenTimeStatus(
 )
 
 @Serializable
-enum class WireCommandResult {
-    @SerialName("done") DONE,
-    @SerialName("failed") FAILED,
-    @SerialName("expired") EXPIRED,
-}
-
-@Serializable
-data class WireCommandReport(
-    val id: String,
-    val result: WireCommandResult,
-    val at: Long,
-    /** Belay's own words when it failed. */
-    val problem: String? = null,
-)
-
-@Serializable
 data class WireNetworkLogStatus(
     val enabled: Boolean,
     /** Android paused logging (another user or profile exists). */
     val paused: Boolean = false,
-)
-
-/** The fields Phase 3 adds to Protocol.kt's WireEnforcement. */
-@Serializable
-data class WireEnforcementPhase3(
-    @SerialName("screen_time") val screenTime: WireScreenTimeStatus? = null,
-    /** The last 20. */
-    val commands: List<WireCommandReport> = emptyList(),
-    @SerialName("network_log") val networkLog: WireNetworkLogStatus? = null,
 )
 
 // ── POST /api/v1/usage ──
@@ -379,61 +315,10 @@ data class UsageResponse(
 // ── POST /api/v1/requests: Phase 3 kinds ──
 
 @Serializable
-enum class WireRequestKindPhase3 {
-    @SerialName("more_time") MORE_TIME,
-    @SerialName("agreement") AGREEMENT,
-}
-
-@Serializable
 enum class WireAgreementAnswer {
     @SerialName("agree") AGREE,
     @SerialName("talk") TALK,
 }
-
-/**
- * A Phase 3 request. The design makes Request a union on `kind`; this flat form writes only the
- * fields of its own kind (nulls are left out), so it folds into Protocol.kt's WireRequest by
- * making `package` and `label` optional there. Build one with [moreTime] or [agreement].
- */
-@Serializable
-data class WireRequestPhase3(
-    val id: String,
-    val kind: WireRequestKindPhase3,
-    @SerialName("limit_id") val limitId: String? = null,
-    /** more_time: 5 to 240. */
-    val minutes: Int? = null,
-    /** more_time: the app the kid was in. */
-    @SerialName("package") val packageName: String? = null,
-    /** agreement: the version the kid answers. */
-    val version: Int? = null,
-    val answer: WireAgreementAnswer? = null,
-    /** The kid's own words, at most 500 characters: untrusted. */
-    val reason: String? = null,
-    @SerialName("asked_at") val askedAt: Long,
-) {
-    companion object {
-        fun moreTime(
-            id: String,
-            limitId: String,
-            minutes: Int,
-            askedAt: Long,
-            packageName: String? = null,
-            reason: String? = null,
-        ) = WireRequestPhase3(
-            id = id, kind = WireRequestKindPhase3.MORE_TIME, limitId = limitId, minutes = minutes,
-            packageName = packageName, reason = reason, askedAt = askedAt,
-        )
-
-        fun agreement(id: String, version: Int, answer: WireAgreementAnswer, askedAt: Long, reason: String? = null) =
-            WireRequestPhase3(
-                id = id, kind = WireRequestKindPhase3.AGREEMENT, version = version, answer = answer,
-                reason = reason, askedAt = askedAt,
-            )
-    }
-}
-
-@Serializable
-data class RequestsRequestPhase3(val requests: List<WireRequestPhase3>)
 
 /** Limits from the design's protocol proposal; the agent stays below them. */
 object ScreenTimeWireLimits {

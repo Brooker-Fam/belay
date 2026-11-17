@@ -1,5 +1,7 @@
 package family.brooker.belay.core.screentime
 
+import family.brooker.belay.core.WirePolicy
+
 import family.brooker.belay.core.screentime.Fx.BLOCKS
 import family.brooker.belay.core.screentime.Fx.HOMEWORK
 import family.brooker.belay.core.screentime.Fx.MATH
@@ -182,7 +184,8 @@ class StagesTest {
     @Test
     fun `what the policy's next stage changes`() {
         val next = rules(limits = listOf(total.copy(minutes = 120), games))
-        val policy = WirePolicyPhase3(
+        val policy = WirePolicy(
+            version = 1,
             screenTime = rules(),
             stage = WireStage("Explorer", 2, since = 1, next = WireStageNext("Navigator", listOf("Daily screen time goes from 1 h 30 min to 2 h"), screenTime = next)),
         )
