@@ -1,8 +1,10 @@
 package family.brooker.belay
 
+import android.content.pm.ApplicationInfo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import family.brooker.belay.core.InstallSource
+import family.brooker.belay.core.PackagePresence
 import family.brooker.belay.core.SensitivePermissions
 import family.brooker.belay.health.DeviceStatus
 import family.brooker.belay.health.HealthReader
@@ -39,6 +41,11 @@ class InventoryInstrumentedTest {
         assertEquals("Belay", self.label)
         // Installed over adb by provision.sh (or by the test runner): never a store.
         assertTrue(self.source in setOf(InstallSource.ADB, InstallSource.UNKNOWN))
+    }
+
+    @Test
+    fun coresMirroredInstalledFlagIsAndroids() {
+        assertEquals(ApplicationInfo.FLAG_INSTALLED, PackagePresence.FLAG_INSTALLED)
     }
 
     @Test

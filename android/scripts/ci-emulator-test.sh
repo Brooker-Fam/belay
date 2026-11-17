@@ -18,8 +18,13 @@
 #   BELAY_E2E_SERVER   the server as the emulator sees it, like http://10.0.2.2:8080
 #   BELAY_E2E_CODE     an enrollment code from it (server: node dist/cli.js create-code)
 #   BELAY_E2E_STATUS   a command printing the server's status as JSON (cli.js status --json)
+#   BELAY_E2E_CLI      optional (Phase 2): a command prefix that runs the server's CLI, like
+#                      "BELAY_PUBLIC_URL=… BELAY_DATA_DIR=… node server/dist/cli.js"
 # Then provision.sh also connects the phone, and the test checks that the server got the
 # phone's app list and, with the fixture APKs, the fixture app's install, update and removal.
+# With BELAY_E2E_CLI too, it checks Phase 2 enforcement: with new apps on "ask", the fixture
+# app is suspended on install and the server has a pending request for it; a parent's
+# "allow" lets it run within seconds (the long-poll), and "block" hides it.
 set -euo pipefail
 # shellcheck source-path=SCRIPTDIR source=lib.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -35,10 +40,14 @@ fi
 E2E_SERVER="${BELAY_E2E_SERVER:-}"
 E2E_CODE="${BELAY_E2E_CODE:-}"
 E2E_STATUS="${BELAY_E2E_STATUS:-}"
+E2E_CLI="${BELAY_E2E_CLI:-}"
 FIXTURE_PKG="$PKG.fixture"
 if [ -n "$E2E_SERVER" ]; then
   [ -n "$E2E_CODE" ] && [ -n "$E2E_STATUS" ] || die "BELAY_E2E_SERVER needs BELAY_E2E_CODE and BELAY_E2E_STATUS too."
   command -v jq >/dev/null || die "The end-to-end checks need jq."
+fi
+if [ -n "$E2E_CLI" ] && [ -z "$E2E_SERVER" ]; then
+  die "BELAY_E2E_CLI needs BELAY_E2E_SERVER (and its code and status) too."
 fi
 
 find_adb
@@ -51,6 +60,30 @@ phone_summary
 step() { printf '\n=== %s\n' "$*"; }
 # The server's status as JSON (end to end only).
 server_status() { bash -c "$E2E_STATUS"; }
+# Runs the server's CLI with these arguments, each quoted for bash (Phase 2 end to end).
+server_cli() {
+  printf '  server: %s\n' "$*"
+  bash -c "$E2E_CLI $(printf '%q ' "$@")"
+}
+# The fixture app's state for user 0, from `dumpsys package` (AOSP 17 Settings.dumpPackageLPr
+# prints "User 0: … installed=… hidden=… suspended=…"), like "hidden=false suspended=true".
+fixture_state() {
+  local text
+  text="$(ash dumpsys package "$FIXTURE_PKG" 2>/dev/null || true)"
+  sed -n 's/^ *User 0: .*\(hidden=[a-z]*\) \(suspended=[a-z]*\).*/\1 \2/p' <<<"$text" | head -n 1
+}
+# A hidden app is left out of `pm list packages` unless -u asks for uninstalled ones too.
+fixture_listed() { ash pm list packages "$FIXTURE_PKG" | contains "package:$FIXTURE_PKG"; }
+# Waits up to $2 seconds (default 15) until the fixture's state is exactly $1.
+wait_fixture() {
+  local _
+  for _ in $(seq 1 "${2:-15}"); do
+    [ "$(fixture_state)" = "$1" ] && return 0
+    sleep 1
+  done
+  echo "--- the fixture app's state: $(fixture_state)"
+  return 1
+}
 # Waits until the jq filter $1 holds for the server's view of the phone; $2 says what for.
 wait_server() {
   local _
@@ -76,6 +109,8 @@ diagnose() {
   ash "ps -A | grep -F $PKG" || true
   echo "--- last heartbeats:"
   state | grep -o '"heartbeats":.*' | cut -c 1-1500 || true
+  echo "--- what Belay enforces:"
+  state | grep -o '"enforcement":{[^}]*}' || true
 }
 # A summary of Belay's stored state: heartbeats, changes and outbox counts, which debug
 # builds write after every agent step (DebugTools.afterStep). Read with run-as (debug builds
@@ -126,9 +161,11 @@ service_running || die "BelayService isn't running in the foreground"
 ash dumpsys activity services "$PKG/.service.BelayAdminService" | contains 'ServiceRecord' ||
   die "Android didn't bind BelayAdminService (the DeviceAdminService)"
 echo "DeviceAdminService bound by the system"
-record="$(ash dumpsys notification --noredact | grep -F "pkg=$PKG " || true)"
+# The managed notice is notification id 1 (ManagedNotice.NOTIFICATION_ID); Phase 2 can also
+# show "Waiting for your parent" (id 2).
+record="$(ash dumpsys notification --noredact | grep -F "pkg=$PKG " | grep -F " id=1 " || true)"
 record="${record%%$'\n'*}"
-[ -n "$record" ] || die "no notification from $PKG"
+[ -n "$record" ] || die "no managed notice (notification id 1) from $PKG"
 printf '%s\n' "$record"
 # FLAG_NO_DISMISS (hidden, 0x2000): Android 14+ keeps a device owner's ongoing notice
 # undismissable. Android 17's dumpsys prints the flags by name; older versions in hex.
@@ -186,6 +223,52 @@ if [ -n "$E2E_SERVER" ] && [ -n "$FIXTURE_V1" ]; then
     echo "the server has: $kind $FIXTURE_PKG"
   done
   server_status | jq -c '.phones[0].recent_changes[]'
+fi
+
+if [ -n "$E2E_CLI" ] && [ -n "$FIXTURE_V1" ]; then
+  phone="$(server_status | jq -r '.phones[0].name')"
+  # Waits until the phone reports the server's current policy version as applied (it checks
+  # in when what it enforces changes).
+  wait_applied() {
+    local version
+    version="$(server_status | jq -r '.phones[0].policy_version')"
+    [[ "$version" =~ ^[0-9]+$ ]] || die "the server's status has no policy_version" "$(server_status | jq -c '.phones[0]')"
+    wait_server ".enforcement.policy_version == $version" "the phone's report that it applied policy $version"
+    echo "the phone applied policy $version"
+  }
+
+  step "Phase 2: with new apps on \"ask\", a new app waits for a parent"
+  server_cli policy "$phone" --new-apps ask
+  wait_applied
+  adb uninstall "$FIXTURE_PKG" >/dev/null 2>&1 || true
+  adb install -r -t "$FIXTURE_V1"
+  wait_fixture "hidden=false suspended=true" 30 || { diagnose; die "the new app wasn't suspended on install"; }
+  echo "suspended on install: $(fixture_state)"
+  wait_server "[.requests[] | select(.package == \"$FIXTURE_PKG\" and .status == \"pending\")] | length > 0" \
+    "a pending request for the new app"
+  server_status | jq -c ".phones[0].requests[] | select(.package == \"$FIXTURE_PKG\")"
+
+  step "A parent allows it: it runs within seconds (the long-poll)"
+  server_cli decide "$phone" "$FIXTURE_PKG" allow
+  wait_fixture "hidden=false suspended=false" 15 || { diagnose; die "the allowed app was still suspended after 15 s"; }
+  echo "allowed: $(fixture_state)"
+
+  step "A parent blocks it: it's hidden"
+  server_cli decide "$phone" "$FIXTURE_PKG" block
+  wait_fixture "hidden=true suspended=true" 15 || { diagnose; die "the blocked app wasn't hidden and suspended after 15 s"; }
+  if fixture_listed; then die "the blocked app is still listed by pm list packages"; fi
+  ash pm list packages -u "$FIXTURE_PKG" | contains "package:$FIXTURE_PKG" || die "the blocked app is gone, not hidden"
+  echo "blocked: $(fixture_state), and only listed with -u"
+
+  step "Put it back: new apps allowed again, no decision, the app removed"
+  server_cli policy "$phone" --new-apps allow
+  server_cli decide "$phone" "$FIXTURE_PKG" undecided
+  wait_applied
+  wait_fixture "hidden=false suspended=false" 15 || { diagnose; die "the app was still held back after the policy allowed it"; }
+  adb uninstall "$FIXTURE_PKG"
+  server_status | jq '.phones[0] | {policy_version, enforcement, requests}'
+elif [ -n "$E2E_SERVER" ]; then
+  echo "BELAY_E2E_CLI or the fixture APKs not given: the Phase 2 end-to-end checks are skipped"
 fi
 
 adb logcat -c

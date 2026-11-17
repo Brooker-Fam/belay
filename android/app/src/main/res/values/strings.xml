@@ -11,6 +11,9 @@
     <!-- Device admin. -->
     <string name="admin_description">Lets your parent manage this phone with Belay.</string>
     <string name="admin_disable_warning">Belay is how your parent manages this phone. Only your parent can turn it off.</string>
+    <!-- Android shows this under "Blocked by work policy" whenever something is locked or an
+         app is held back, unless the parent wrote their own words. At most 200 characters. -->
+    <string name="support_message_default">Your parent manages this phone with Belay. Open Belay to see this phone\'s rules, or to ask your parent for an app.</string>
 
     <!-- Main screen. Plain, respectful words for a 12-year-old. -->
     <string name="main_title">This phone is managed by your parent.</string>
@@ -83,6 +86,92 @@
     <string name="enroll_problem_server_error">The server had a problem. Try again in a few minutes.</string>
     <string name="enroll_problem_already_connected">This phone is already connected to a Belay server. Only your parent can change that.</string>
     <string name="enroll_problem_phone_error">Something went wrong on this phone. Try again. If it keeps happening, your parent can check Belay.</string>
+    <!-- Phase 2: the phone's rules, for the kid. Plain and respectful, for a 12-year-old, and
+         never more than the code does. App names come from their developers: shown as text. -->
+    <string name="paused_title">Your parent paused this phone</string>
+    <string name="paused_until">Until %1$s.</string>
+    <string name="paused_until_resumed">Until your parent turns it back on.</string>
+    <string name="paused_note">Your parent says: “%1$s”</string>
+    <string name="paused_still_work">Apps are paused, but the phone app and your texting app still work, and so does Belay. Belay never blocks calling or texting 911 or 988.</string>
+
+    <!-- A quiet notification when a new app starts waiting. %1$s is the app's name. -->
+    <string name="waiting_channel_name">Apps waiting for your parent</string>
+    <string name="waiting_channel_description">Tells you when a new app is paused until your parent says yes.</string>
+    <string name="waiting_notice_title">Waiting for your parent</string>
+    <string name="waiting_notice_one">%1$s is paused until your parent says yes. Tap to tell them why you want it.</string>
+    <plurals name="waiting_notice_many">
+        <item quantity="one">%d new app is paused until your parent says yes. Tap to tell them why you want it.</item>
+        <item quantity="other">%d new apps are paused until your parent says yes. Tap to tell them why you want them.</item>
+    </plurals>
+
+    <string name="section_waiting">Waiting for your parent</string>
+    <string name="waiting_intro">These apps are new, so they stay paused until your parent says yes. You can tell your parent why you want each one.</string>
+    <string name="waiting_asked">Belay already asked your parent for you.</string>
+    <string name="waiting_will_ask">Belay will ask your parent as soon as it can reach their Belay server.</string>
+    <string name="why_label">Why I want it</string>
+    <string name="why_hint">Tell your parent why you want this app</string>
+    <string name="why_counter">%1$d of %2$d</string>
+    <string name="why_send">Send</string>
+    <string name="why_sent">Sent. You can change it and send it again.</string>
+    <string name="why_waiting_to_send">Belay will send it as soon as it can reach your parent\'s Belay server.</string>
+    <string name="not_answered">Your parent hasn\'t answered yet.</string>
+
+    <string name="section_answers">Your parent\'s answers</string>
+    <string name="answer_yes">Your parent said yes.</string>
+    <string name="answer_no">Your parent said no.</string>
+    <string name="answer_talk">Your parent wants to talk with you about it.</string>
+    <string name="answer_note">“%1$s”</string>
+    <string name="answer_by">%1$s, %2$s</string>
+
+    <string name="section_blocked">Apps your parent blocked</string>
+    <string name="blocked_intro">These apps are hidden and can\'t open. You can ask your parent about one.</string>
+    <string name="ask_about_it">Ask about it</string>
+
+    <string name="section_rules">This phone\'s rules</string>
+    <string name="rules_intro">Your parent chose these rules. Here is what each one means.</string>
+    <string name="rules_none">Your parent hasn\'t turned on any rules yet.</string>
+    <string name="rules_emergency">Belay never blocks calling or texting 911 or 988. Call 911 in an emergency. 988 is the Suicide &amp; Crisis Lifeline: you can call or text it any time you need someone to talk to.</string>
+    <string name="rule_new_apps">New apps wait for your parent.</string>
+    <string name="rule_new_apps_why">When you install an app, it stays paused until your parent says yes.</string>
+    <string name="rule_safe_mode">Safe mode is off.</string>
+    <string name="rule_safe_mode_why">Safe mode would stop Belay from running.</string>
+    <string name="rule_users">You can\'t add other users to this phone.</string>
+    <string name="rule_users_why">Another user wouldn\'t have these rules.</string>
+    <string name="rule_unknown_sources">You can\'t install apps from downloaded files or other app stores.</string>
+    <string name="rule_unknown_sources_why">The Play Store checks apps for harmful software first.</string>
+    <string name="rule_vpn">You can\'t set up a VPN.</string>
+    <string name="rule_vpn_why">A VPN could get around the phone\'s website settings.</string>
+    <string name="rule_web_filter">Websites go through a filter.</string>
+    <string name="rule_web_filter_why">The phone looks up websites through %1$s, which your parent chose.</string>
+    <string name="rule_private_dns">You can\'t change Private DNS.</string>
+    <string name="rule_private_dns_why">It keeps the phone\'s website settings the way your parent set them.</string>
+    <string name="rule_clock">You can\'t change the date, time or time zone.</string>
+    <string name="rule_clock_why">Changing the clock could end a pause early.</string>
+    <string name="rule_default_apps">You can\'t change your default apps.</string>
+    <string name="rule_default_apps_why">Belay always lets the default phone and texting apps work, so they stay the ones your parent set up.</string>
+    <string name="rule_accounts">You can\'t add or remove accounts.</string>
+    <string name="rule_accounts_why">The accounts on this phone stay the ones your parent set up.</string>
+    <string name="rule_esim">You can\'t add an eSIM.</string>
+    <string name="rule_esim_why">Adding a phone plan is up to your parent.</string>
+    <string name="rule_factory_reset">You can\'t reset the phone from Settings.</string>
+    <string name="rule_factory_reset_why">A reset would erase the phone and remove Belay.</string>
+    <string name="rule_reset_protection">After a reset, the phone asks for your parent\'s Google account.</string>
+    <string name="rule_reset_protection_why">That\'s factory reset protection: only your parent can set the phone up again.</string>
+    <string name="rule_debugging">Developer options and USB debugging are off.</string>
+    <string name="rule_debugging_why">With them, a computer could change this phone\'s settings around these rules.</string>
+    <string name="rule_repair">Repair mode is on until %1$s.</string>
+    <string name="rule_repair_why">Until then, the phone can be connected to a computer to fix something.</string>
+    <string name="rule_no_browsers">Web browsers are turned off.</string>
+    <string name="rule_no_browsers_why">Your parent turned off apps for browsing the web.</string>
+    <string name="rule_chrome">In Chrome:</string>
+    <string name="rule_chrome_incognito">No incognito tabs</string>
+    <string name="rule_chrome_safe_search">Google searches use SafeSearch</string>
+    <string name="rule_chrome_youtube">YouTube\'s Restricted Mode is on</string>
+    <string name="rule_chrome_safe_sites">Websites for adults are filtered out</string>
+    <string name="rule_chrome_downloads">Downloads are off</string>
+    <string name="rule_chrome_allowlist">Only the websites your parent allowed open</string>
+    <string name="rule_chrome_blocklist">Some websites are blocked</string>
+
     <string name="section_changes">Recent app changes</string>
     <string name="no_changes">No app changes yet.</string>
     <string name="kind_installed">Installed</string>

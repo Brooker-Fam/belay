@@ -4,8 +4,8 @@ import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
 
-/** What the outbox holds. */
-enum class OutboxType { EVENT, SNAPSHOT }
+/** What the outbox holds: app events, inventory snapshots, and the kid's requests (Phase 2). */
+enum class OutboxType { EVENT, SNAPSHOT, REQUEST }
 
 /**
  * One item waiting to be sent. [id]s grow in the order the agent made the items, and
@@ -44,6 +44,12 @@ object OutboxPolicy {
 
     /** `{"events":[` and `]}` around the comma-separated events. */
     const val EVENTS_WRAPPER_BYTES = 13
+
+    /** Well under the server's 128 KB limit for `POST /api/v1/requests`. */
+    const val MAX_REQUESTS_BODY_BYTES = 96 * 1024
+
+    /** `{"requests":[` and `]}` around the comma-separated requests. */
+    const val REQUESTS_WRAPPER_BYTES = 15
 
     const val BACKOFF_FIRST_MS = 30_000L
     const val BACKOFF_MAX_MS = 60L * 60 * 1000
@@ -117,19 +123,22 @@ object OutboxPolicy {
 
     /**
      * How many items from [from] go in one request. A snapshot goes alone. Events go
-     * together up to the server's count limit and [maxBytes], and never past a snapshot:
-     * always at least one.
+     * together up to the server's count limit and [maxBytes], and so do requests (with their
+     * own limits); a batch never mixes kinds or passes a snapshot: always at least one item.
      */
-    fun batchSize(queue: List<OutboxItem>, from: Int = 0, maxBytes: Int = MAX_EVENTS_BODY_BYTES): Int {
+    fun batchSize(queue: List<OutboxItem>, from: Int = 0, maxBytes: Int? = null): Int {
         require(from in queue.indices) { "nothing to send" }
-        if (queue[from].type == OutboxType.SNAPSHOT) return 1
+        val type = queue[from].type
+        if (type == OutboxType.SNAPSHOT) return 1
+        val maxCount = if (type == OutboxType.EVENT) WireLimits.MAX_EVENTS_PER_REQUEST else WireLimits.MAX_REQUESTS_PER_REQUEST
+        val byteLimit = maxBytes ?: if (type == OutboxType.EVENT) MAX_EVENTS_BODY_BYTES else MAX_REQUESTS_BODY_BYTES
         var count = 0
-        var bytes = EVENTS_WRAPPER_BYTES.toLong()
-        while (from + count < queue.size && count < WireLimits.MAX_EVENTS_PER_REQUEST) {
+        var bytes = (if (type == OutboxType.EVENT) EVENTS_WRAPPER_BYTES else REQUESTS_WRAPPER_BYTES).toLong()
+        while (from + count < queue.size && count < maxCount) {
             val item = queue[from + count]
-            if (item.type != OutboxType.EVENT) break
+            if (item.type != type) break
             val next = bytes + item.bytes + (if (count > 0) 1 else 0)
-            if (count > 0 && next > maxBytes) break
+            if (count > 0 && next > byteLimit) break
             bytes = next
             count++
         }
@@ -141,7 +150,8 @@ object OutboxPolicy {
  * Sends the outbox in the order the agent made it. The server applies events and
  * inventories in arrival order, and diffs each inventory against what it has, so nothing
  * may overtake anything older: consecutive events go in batches, each snapshot on its own,
- * and an item that can't go now holds back everything after it.
+ * and an item that can't go now holds back everything after it. A request for a new app
+ * goes after the event that reported its install.
  */
 object OutboxDrain {
     data class Dropped(val id: Long, val reason: String)

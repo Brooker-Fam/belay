@@ -24,10 +24,18 @@ fun PackageManager.installedPackagesCompat(flags: Int): List<PackageInfo> =
         getInstalledPackages(flags)
     }
 
-fun PackageManager.queryActivitiesCompat(intent: Intent): List<ResolveInfo> =
+fun PackageManager.queryActivitiesCompat(intent: Intent, flags: Int = 0): List<ResolveInfo> =
     if (Build.VERSION.SDK_INT >= 33) {
-        queryIntentActivities(intent, PackageManager.ResolveInfoFlags.of(0))
+        queryIntentActivities(intent, PackageManager.ResolveInfoFlags.of(flags.toLong()))
     } else {
         @Suppress("DEPRECATION")
-        queryIntentActivities(intent, 0)
+        queryIntentActivities(intent, flags)
+    }
+
+fun PackageManager.resolveActivityCompat(intent: Intent, flags: Int = 0): ResolveInfo? =
+    if (Build.VERSION.SDK_INT >= 33) {
+        resolveActivity(intent, PackageManager.ResolveInfoFlags.of(flags.toLong()))
+    } else {
+        @Suppress("DEPRECATION")
+        resolveActivity(intent, flags)
     }

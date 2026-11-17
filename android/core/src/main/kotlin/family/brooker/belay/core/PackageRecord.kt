@@ -35,6 +35,22 @@ data class PackageRecord(
     val version: VersionRef get() = VersionRef(versionName, versionCode)
 }
 
+/**
+ * Which packages the inventory counts as installed. Apps Belay hides (blocked apps) are
+ * still installed, but PackageManager treats a hidden package as uninstalled unless asked
+ * with MATCH_UNINSTALLED_PACKAGES, and that flag also returns packages uninstalled with
+ * their data kept. ApplicationInfo.FLAG_INSTALLED tells the two apart (AOSP 17
+ * `PackageUserStateUtils.isAvailable`, `PackageInfoUtils`). So the reader asks with the
+ * flag and keeps what [installed] says: hiding an app never reads as removing it.
+ */
+object PackagePresence {
+    /** ApplicationInfo.FLAG_INSTALLED (1 << 23), mirrored so :core stays free of Android classes. */
+    const val FLAG_INSTALLED = 0x00800000
+
+    /** [appFlags] is ApplicationInfo.flags from a read with MATCH_UNINSTALLED_PACKAGES. */
+    fun installed(appFlags: Int): Boolean = appFlags and FLAG_INSTALLED != 0
+}
+
 /** The raw fields of InstallSourceInfo. Kept so the mapping can be checked on a real phone. */
 @Serializable
 data class InstallerInfo(

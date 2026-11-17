@@ -1,0 +1,198 @@
+package family.brooker.belay
+
+import android.app.admin.DevicePolicyManager
+import android.content.pm.PackageManager
+import android.os.ParcelFileDescriptor
+import android.os.UserManager
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import family.brooker.belay.core.Lock
+import family.brooker.belay.core.Wire
+import family.brooker.belay.core.WireAppDecision
+import family.brooker.belay.core.WireAppState
+import family.brooker.belay.core.WireChangeKind
+import family.brooker.belay.core.WireEvent
+import family.brooker.belay.core.WireNewApps
+import family.brooker.belay.core.WirePolicy
+import family.brooker.belay.core.WireRequest
+import family.brooker.belay.health.DeviceStatus
+import family.brooker.belay.health.HealthReader
+import family.brooker.belay.store.AgentStore
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+
+/**
+ * Phase 2 enforcement on the phone, as device owner (skipped otherwise), with a policy set
+ * in place of the server's (DebugTools.policyOverride, debug builds only), so the long-poll
+ * can't change it mid-test. Each test puts the phone back as it found it: the override is
+ * cleared and a step re-applies the real policy, and the fixture app is removed.
+ *
+ * Only safe things: suspending and hiding the made-up fixture app, and DISALLOW_SAFE_BOOT.
+ * Never DISALLOW_FACTORY_RESET, DISALLOW_DEBUGGING_FEATURES or reset protection (CLAUDE.md,
+ * "Ask before"); debug builds refuse them anyway.
+ *
+ * The fixture test needs the fixture APK on the device, like FixtureEventsInstrumentedTest.
+ */
+@RunWith(AndroidJUnit4::class)
+class EnforcementInstrumentedTest {
+    private val instrumentation = InstrumentationRegistry.getInstrumentation()
+    private val context = instrumentation.targetContext
+    private val pm = context.packageManager
+    private val dpm = context.getSystemService(DevicePolicyManager::class.java)
+    private val um = context.getSystemService(UserManager::class.java)
+    private val admin = DeviceOwnerSetup.admin(context)
+    private val store = AgentStore.get(context)
+
+    @Before
+    fun deviceOwner() {
+        assumeTrue("not device owner", DeviceOwnerSetup.isDeviceOwner(context))
+    }
+
+    @After
+    fun putBack() {
+        DebugTools.policyOverride = null
+        agentStep()
+    }
+
+    @Test
+    fun askSuspendsANewAppAndAParentsDecisionLetsItRunOrHidesIt() {
+        assumeTrue("fixture APK not in /data/local/tmp", V1 in shell("ls $V1"))
+        shell("pm uninstall $FIXTURE")
+        agentStep()
+        val base = basePolicy()
+        try {
+            DebugTools.policyOverride = asking(base, 1)
+            agentStep()
+            // Every app already here is allowed, so turning on "ask" holds nothing back.
+            assertEquals(emptyList<String>(), Agent.view.value?.kid?.plan?.waiting)
+
+            val installedAt = System.currentTimeMillis()
+            assertTrue(shell("pm install -r -t $V1").contains("Success"))
+            awaitTrue("the new app wasn't suspended on install") { isSuspended(FIXTURE) }
+            awaitTrue("Belay didn't ask for the new app") { store.requestsQueuedFor(FIXTURE).any { it.createdAt >= installedAt } }
+            val asked = Wire.json.decodeFromString(WireRequest.serializer(), store.requestsQueuedFor(FIXTURE).last().payload)
+            assertEquals("Belay asks by itself, without a reason", null, asked.reason)
+
+            // A parent approves it: it runs.
+            DebugTools.policyOverride = asking(base, 2, WireAppState.ALLOWED)
+            agentStep()
+            assertFalse("approved, but still suspended", isSuspended(FIXTURE))
+            assertFalse(FIXTURE in store.applied().suspended)
+
+            // A parent blocks it: hidden and suspended, and still in the inventory (not "removed").
+            DebugTools.policyOverride = asking(base, 3, WireAppState.BLOCKED)
+            agentStep()
+            assertTrue("blocked, but not hidden", dpm.isApplicationHidden(admin, FIXTURE))
+            assertTrue("blocked, but not suspended", isSuspended(FIXTURE))
+            Thread.sleep(2_000) // hiding sends PACKAGE_REMOVED: let its step run
+            agentStep()
+            assertTrue("a hidden app left the inventory", FIXTURE in store.loadBaseline().inventory)
+            assertFalse("hiding read as a removal", events(installedAt).any { it.kind == WireChangeKind.REMOVED })
+
+            // The block lifted: shown again and running.
+            DebugTools.policyOverride = asking(base, 4, WireAppState.ALLOWED)
+            agentStep()
+            assertFalse(dpm.isApplicationHidden(admin, FIXTURE))
+            assertFalse(isSuspended(FIXTURE))
+        } finally {
+            DebugTools.policyOverride = null
+            agentStep()
+            shell("pm uninstall $FIXTURE")
+            agentStep()
+        }
+        val applied = store.applied()
+        assertFalse("Belay still holds the removed app", FIXTURE in applied.suspended || FIXTURE in applied.hidden)
+    }
+
+    @Test
+    fun aSafeRestrictionIsSetAndCleared() {
+        val before = um.hasUserRestriction(UserManager.DISALLOW_SAFE_BOOT)
+        assumeTrue("safe boot is locked by something other than Belay", !before || Lock.SAFE_BOOT in store.applied().locks)
+        val base = basePolicy()
+        DebugTools.policyOverride = base.copy(version = base.version + VERSION_OFFSET, restrictions = base.restrictions.copy(safeBoot = !before))
+        agentStep()
+        assertEquals(!before, um.hasUserRestriction(UserManager.DISALLOW_SAFE_BOOT))
+        assertEquals(!before, Lock.SAFE_BOOT in store.applied().locks)
+
+        DebugTools.policyOverride = null
+        agentStep()
+        assertEquals(before, um.hasUserRestriction(UserManager.DISALLOW_SAFE_BOOT))
+    }
+
+    @Test
+    fun theEnforcementReportGoesWithTheDeviceStatus() {
+        val base = basePolicy()
+        DebugTools.policyOverride = base.copy(version = base.version + VERSION_OFFSET)
+        agentStep()
+        val device = DeviceStatus.read(context, HealthReader(context).read())
+        assertEquals(base.version + VERSION_OFFSET, device.enforcement?.policyVersion)
+        assertTrue((device.enforcement?.problems ?: emptyList()).all { it.length <= 200 })
+    }
+
+    /**
+     * The real policy (or none), changed so that it changes nothing for the apps already on
+     * the phone: each user app without a decision is allowed, as the server records when a
+     * parent first turns on "ask". The fixture never has a decision here.
+     */
+    private fun basePolicy(): WirePolicy {
+        val real = store.policy() ?: WirePolicy(version = 0)
+        val decided = real.apps.decisions.mapTo(HashSet()) { it.packageName }
+        val allowed = store.loadBaseline().inventory.values
+            .filter { !it.system && it.packageName != FIXTURE && it.packageName !in decided }
+            .map { WireAppDecision(it.packageName, WireAppState.ALLOWED) }
+        return real.copy(apps = real.apps.copy(decisions = real.apps.decisions.filter { it.packageName != FIXTURE } + allowed))
+    }
+
+    private fun asking(base: WirePolicy, step: Int, fixture: WireAppState? = null) = base.copy(
+        version = base.version + VERSION_OFFSET + step,
+        apps = base.apps.copy(
+            newApps = WireNewApps.ASK,
+            decisions = base.apps.decisions + listOfNotNull(fixture?.let { WireAppDecision(FIXTURE, it) }),
+        ),
+    )
+
+    private fun isSuspended(name: String): Boolean = try {
+        pm.isPackageSuspended(name)
+    } catch (e: PackageManager.NameNotFoundException) {
+        false
+    }
+
+    private fun events(since: Long): List<WireEvent> = store.eventsFor(FIXTURE)
+        .filter { it.createdAt >= since }
+        .map { Wire.json.decodeFromString(WireEvent.serializer(), it.payload) }
+
+    private fun agentStep() {
+        val done = CountDownLatch(1)
+        Agent.handle(context, Trigger.APP_OPENED) { done.countDown() }
+        assertTrue("the agent didn't finish a step", done.await(60, TimeUnit.SECONDS))
+    }
+
+    private fun awaitTrue(what: String, check: () -> Boolean) {
+        val deadline = System.currentTimeMillis() + 30_000
+        while (!check()) {
+            check(System.currentTimeMillis() < deadline) { "$what (after 30 s)" }
+            Thread.sleep(250)
+        }
+    }
+
+    /** As the shell user; its standard output. */
+    private fun shell(command: String): String =
+        ParcelFileDescriptor.AutoCloseInputStream(instrumentation.uiAutomation.executeShellCommand(command))
+            .bufferedReader().use { it.readText() }
+
+    private companion object {
+        const val FIXTURE = "family.brooker.belay.fixture"
+        const val V1 = "/data/local/tmp/belay-fixture-v1.apk"
+
+        /** Test policies get versions of their own, well past the server's. */
+        const val VERSION_OFFSET = 1_000_000
+    }
+}

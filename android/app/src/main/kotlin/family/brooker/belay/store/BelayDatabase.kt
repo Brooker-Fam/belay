@@ -1,6 +1,7 @@
 package family.brooker.belay.store
 
 import android.content.Context
+import androidx.room.AutoMigration
 import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Database
@@ -59,6 +60,48 @@ data class HeartbeatRow(
     val note: String?,
 )
 
+/** Phase 2. One row: the last policy the phone got, enforced offline and after a restart. */
+@Entity(tableName = "policy")
+data class PolicyRow(
+    @PrimaryKey val id: Int = 0,
+    val version: Int,
+    /** A WirePolicy, as JSON. */
+    val policy: String,
+    @ColumnInfo(name = "received_at") val receivedAt: Long,
+)
+
+/** Phase 2. One row: what Belay itself applied (core's Applied, as JSON), so it only undoes its own. */
+@Entity(tableName = "enforcement")
+data class EnforcementRow(
+    @PrimaryKey val id: Int = 0,
+    val applied: String,
+    @ColumnInfo(name = "updated_at") val updatedAt: Long,
+)
+
+/** Phase 2. The kid's requests (core's KidRequest, as JSON), newest kept 60 days. */
+@Entity(tableName = "requests", indices = [Index(value = ["package_name"])])
+data class RequestRow(
+    @PrimaryKey val id: String,
+    @ColumnInfo(name = "package_name") val packageName: String,
+    val request: String,
+    @ColumnInfo(name = "asked_at") val askedAt: Long,
+)
+
+/**
+ * Phase 2. One row, written only by the Private DNS thread: the host Belay set (null: none),
+ * and how the last attempt went. Setting a host checks it over the network first, which can
+ * take seconds, so it doesn't run on the agent thread.
+ */
+@Entity(tableName = "private_dns")
+data class PrivateDnsRow(
+    @PrimaryKey val id: Int = 0,
+    @ColumnInfo(name = "set_host") val setHost: String?,
+    @ColumnInfo(name = "attempt_host") val attemptHost: String?,
+    @ColumnInfo(name = "attempt_at") val attemptAt: Long?,
+    /** Null when the last attempt worked. */
+    val error: String?,
+)
+
 /**
  * What waits to be sent, in the order it was made: [id] is AUTOINCREMENT, so it only ever
  * grows. Events are written in the same transaction as the baseline that found them.
@@ -71,13 +114,17 @@ data class HeartbeatRow(
 )
 data class OutboxRow(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    /** [TYPE_EVENT] or [TYPE_SNAPSHOT]. */
+    /** [TYPE_EVENT], [TYPE_SNAPSHOT] or [TYPE_REQUEST]. */
     val type: String,
-    /** The event's id or the snapshot's snapshot_id: the server de-duplicates on it. */
+    /**
+     * The event's id or the snapshot's snapshot_id: the server de-duplicates on it. A request
+     * is sent again with each new reason, so its item id also counts the sends (core's
+     * Requests.itemId); the server de-duplicates on the request's own id.
+     */
     @ColumnInfo(name = "item_id") val itemId: String,
-    /** The event's package (null for snapshots). */
+    /** The event's or the request's package (null for snapshots). */
     @ColumnInfo(name = "package_name") val packageName: String?,
-    /** The WireEvent or InventoryRequest, as the JSON that is sent. */
+    /** The WireEvent, InventoryRequest or WireRequest, as the JSON that is sent. */
     val payload: String,
     @ColumnInfo(name = "created_at") val createdAt: Long,
     val attempts: Int = 0,
@@ -91,6 +138,7 @@ data class OutboxRow(
     companion object {
         const val TYPE_EVENT = "event"
         const val TYPE_SNAPSHOT = "snapshot"
+        const val TYPE_REQUEST = "request"
         const val STATE_PENDING = "pending"
         const val STATE_SENT = "sent"
         const val STATE_DROPPED = "dropped"
@@ -160,8 +208,8 @@ interface OutboxDao {
     )
     fun queue(limit: Int): List<QueuedRow>
 
-    @Query("SELECT id, payload FROM outbox WHERE id IN (:ids) AND type = 'event' ORDER BY id")
-    fun eventPayloads(ids: List<Long>): List<PayloadRow>
+    @Query("SELECT id, payload FROM outbox WHERE id IN (:ids) AND type = :type ORDER BY id")
+    fun payloads(ids: List<Long>, type: String): List<PayloadRow>
 
     @Query("SELECT length(payload) FROM outbox WHERE id = :id")
     fun payloadLength(id: Long): Int?
@@ -170,8 +218,9 @@ interface OutboxDao {
     @Query("SELECT substr(payload, :start, :length) FROM outbox WHERE id = :id")
     fun payloadPart(id: Long, start: Int, length: Int): String?
 
-    @Query("UPDATE outbox SET state = 'sent', finished_at = :at, last_error = NULL WHERE id IN (:ids) AND type = 'event'")
-    fun markEventsSent(ids: List<Long>, at: Long)
+    /** Events and requests; a sent snapshot is deleted instead ([deleteSnapshots]). */
+    @Query("UPDATE outbox SET state = 'sent', finished_at = :at, last_error = NULL WHERE id IN (:ids) AND type != 'snapshot'")
+    fun markItemsSent(ids: List<Long>, at: Long)
 
     @Query("DELETE FROM outbox WHERE id IN (:ids) AND type = 'snapshot'")
     fun deleteSnapshots(ids: List<Long>)
@@ -227,21 +276,77 @@ interface OutboxDao {
     @Query("SELECT * FROM outbox WHERE type = 'event' AND package_name = :packageName ORDER BY id")
     fun eventsFor(packageName: String): List<OutboxRow>
 
+    @Query("SELECT * FROM outbox WHERE type = 'request' AND package_name = :packageName ORDER BY id")
+    fun requestsFor(packageName: String): List<OutboxRow>
+
+    /** The kid's screen shows whether each request has reached the server yet. */
+    @Query("SELECT item_id FROM outbox WHERE type = 'request' AND state = 'pending'")
+    fun pendingRequestItemIds(): Flow<List<String>>
+
+    /** An unsent earlier send of the same request: the newer one replaces it. */
+    @Query("DELETE FROM outbox WHERE type = 'request' AND state = 'pending' AND item_id LIKE :itemIdPrefix || '%'")
+    fun deletePendingRequestSends(itemIdPrefix: String)
+
     @Query("SELECT state, COUNT(*) AS count FROM outbox GROUP BY state")
     fun countsByState(): List<StateCount>
 }
 
 data class StateCount(val state: String, val count: Int)
 
+/** Phase 2: the policy, what Belay applied, the kid's requests, Private DNS. */
+@Dao
+interface EnforcementDao {
+    @Query("SELECT * FROM policy WHERE id = 0")
+    fun policy(): PolicyRow?
+
+    /** For the long-poll's `have`, without reading the whole policy. */
+    @Query("SELECT version FROM policy WHERE id = 0")
+    fun policyVersion(): Int?
+
+    @Upsert
+    fun setPolicy(row: PolicyRow)
+
+    @Query("SELECT * FROM enforcement WHERE id = 0")
+    fun enforcement(): EnforcementRow?
+
+    @Upsert
+    fun setEnforcement(row: EnforcementRow)
+
+    @Query("SELECT * FROM requests ORDER BY asked_at DESC")
+    fun requests(): List<RequestRow>
+
+    @Upsert
+    fun upsertRequests(rows: List<RequestRow>)
+
+    @Query("DELETE FROM requests WHERE asked_at < :before")
+    fun pruneRequests(before: Long)
+
+    @Query("SELECT * FROM private_dns WHERE id = 0")
+    fun privateDns(): PrivateDnsRow?
+
+    @Upsert
+    fun setPrivateDns(row: PrivateDnsRow)
+}
+
+/**
+ * Version 2 (Phase 2) adds the policy, enforcement, requests and private_dns tables; the
+ * outbox gains a third type ("request") without a schema change. Room migrates 1 to 2 by
+ * itself from the exported schemas in app/schemas/.
+ */
 @Database(
-    entities = [PackageRow::class, ScanStateRow::class, ChangeRow::class, HeartbeatRow::class, OutboxRow::class],
-    version = 1,
+    entities = [
+        PackageRow::class, ScanStateRow::class, ChangeRow::class, HeartbeatRow::class, OutboxRow::class,
+        PolicyRow::class, EnforcementRow::class, RequestRow::class, PrivateDnsRow::class,
+    ],
+    version = 2,
     exportSchema = true,
+    autoMigrations = [AutoMigration(from = 1, to = 2)],
 )
 abstract class BelayDatabase : RoomDatabase() {
     abstract fun inventory(): InventoryDao
     abstract fun log(): LogDao
     abstract fun outbox(): OutboxDao
+    abstract fun enforcement(): EnforcementDao
 
     companion object {
         const val NAME = "belay.db"

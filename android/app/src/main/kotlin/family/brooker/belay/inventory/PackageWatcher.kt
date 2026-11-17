@@ -14,6 +14,10 @@ import java.util.concurrent.atomic.AtomicBoolean
  * manifest receivers, only to receivers registered in a live process. It is registered
  * once per process (BelayApp), so it works whatever keeps the process alive: the
  * foreground service, the DeviceAdminService the system keeps bound, or a periodic check.
+ *
+ * Phase 2: also ACTION_PACKAGES_UNSUSPENDED, sent only to registered receivers that can see
+ * the packages. Something other than Belay (Android's own Parental Controls) can lift a
+ * suspension Belay holds; the step that follows checks and suspends again.
  */
 object PackageWatcher {
     private val registered = AtomicBoolean(false)
@@ -29,6 +33,12 @@ object PackageWatcher {
         }
         // Not exported: only the system can deliver these.
         ContextCompat.registerReceiver(context.applicationContext, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+        ContextCompat.registerReceiver(
+            context.applicationContext,
+            suspensions,
+            IntentFilter(Intent.ACTION_PACKAGES_UNSUSPENDED),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
     }
 
     private val receiver = object : BroadcastReceiver() {
@@ -38,6 +48,12 @@ object PackageWatcher {
             val replacing = intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)
             if (replacing && intent.action != Intent.ACTION_PACKAGE_REPLACED) return
             Agent.handle(context, Trigger.PACKAGE_BROADCAST, setOf(name))
+        }
+    }
+
+    private val suspensions = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action == Intent.ACTION_PACKAGES_UNSUSPENDED) Agent.handle(context, Trigger.SUSPENSION_CHANGED)
         }
     }
 }

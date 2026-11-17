@@ -4,13 +4,17 @@ import android.app.admin.DevicePolicyManager
 import android.content.Context
 import android.util.AtomicFile
 import android.util.Log
+import family.brooker.belay.core.WirePolicy
+import family.brooker.belay.enforce.Enforcer
 import family.brooker.belay.service.BelayService
+import family.brooker.belay.store.AgentStore
 import java.io.File
 
 /**
  * Debug builds only (this file is in src/debug). Release builds get
  * src/release/.../DebugTools.kt, which contains none of this, so nothing in a release build
- * can switch Belay off, talk plain http, or write the state file.
+ * can switch Belay off, talk plain http, write the state file, or take a policy from
+ * anywhere but the family's server.
  */
 object DebugTools {
     const val CAN_RELEASE = true
@@ -21,12 +25,26 @@ object DebugTools {
      */
     val CLEARTEXT_HOSTS: Set<String> = setOf("10.0.2.2", "127.0.0.1")
 
+    /**
+     * For instrumented tests, which run in Belay's own process: while set, the agent enforces
+     * this policy instead of the server's, so a test isn't undone by the long-poll. Memory
+     * only; a test clears it and runs a step to put the phone back as it was. Debug builds
+     * never apply factory_reset, debugging or reset protection, whatever this says.
+     */
+    @Volatile
+    var policyOverride: WirePolicy? = null
+
     /** Release device owner without a factory reset. */
     fun releasePhone(context: Context): String {
         val dpm = context.getSystemService(DevicePolicyManager::class.java)
         val pkg = context.packageName
         if (!dpm.isDeviceOwnerApp(pkg)) return "Belay isn't the device owner."
         BelayService.stop(context)
+        // Take back what Belay enforces (releasing device owner leaves Private DNS as it is).
+        runCatching {
+            val store = AgentStore.get(context)
+            Enforcer(context).release(store.applied(), store.privateDns()?.setHost)
+        }
         runCatching { dpm.setUninstallBlocked(DeviceOwnerSetup.admin(context), pkg, false) }
         @Suppress("DEPRECATION")
         dpm.clearDeviceOwnerApp(pkg)
@@ -35,7 +53,8 @@ object DebugTools {
 
     /**
      * After each agent step: no_backup/debug-state.json, which ci-emulator-test.sh reads with
-     * `run-as` (heartbeats, changes, outbox counts; never the token).
+     * `run-as` (heartbeats, changes, outbox counts, enforcement; never the token or the
+     * kid's words).
      */
     fun afterStep(context: Context, dump: () -> String) {
         val file = AtomicFile(File(context.noBackupFilesDir, STATE_FILE))

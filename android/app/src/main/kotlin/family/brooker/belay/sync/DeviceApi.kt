@@ -8,11 +8,16 @@ import family.brooker.belay.core.EnrollRequest
 import family.brooker.belay.core.EnrollResponse
 import family.brooker.belay.core.EventsResponse
 import family.brooker.belay.core.InventoryResponse
+import family.brooker.belay.core.PolicyResponse
+import family.brooker.belay.core.PolicyRules
+import family.brooker.belay.core.RequestsResponse
 import family.brooker.belay.core.Wire
 import family.brooker.belay.core.WireError
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerializationException
+import okhttp3.Call
 import okhttp3.ConnectionSpec
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -57,6 +62,28 @@ class DeviceApi(private val origin: String, private val client: OkHttpClient = H
     fun events(token: String, events: List<String>): Answer<EventsResponse> =
         post("events", token, events.joinToString(",", prefix = "{\"events\":[", postfix = "]}"), EventsResponse.serializer())
 
+    /** Phase 2. [requests] are WireRequests as queued, oldest first. */
+    fun requests(token: String, requests: List<String>): Answer<RequestsResponse> =
+        post("requests", token, requests.joinToString(",", prefix = "{\"requests\":[", postfix = "]}"), RequestsResponse.serializer())
+
+    /**
+     * Phase 2, the long-poll: `GET /api/v1/policy?have=&wait=`. The server answers at once
+     * when its version differs from [have], or holds the request up to [waitSeconds] for a
+     * change. Ok with a null body is its 204: no change. [started] gets the call, so the
+     * service can cancel it when it stops.
+     */
+    fun policy(token: String, have: Int, waitSeconds: Int, started: (Call) -> Unit = {}): Answer<PolicyResponse?> {
+        val url = "$origin/api/v1/policy".toHttpUrl().newBuilder()
+            .addQueryParameter("have", have.toString())
+            .addQueryParameter("wait", waitSeconds.toString())
+            .build()
+        val request = Request.Builder().url(url).get().header("Authorization", "Bearer $token").build()
+        val call = Http.longPoll.newCall(request)
+        call.timeout().timeout(waitSeconds + LONG_POLL_SLACK_S, TimeUnit.SECONDS)
+        started(call)
+        return execute(call, PolicyResponse.serializer(), noContent = true)
+    }
+
     private fun <T> post(
         endpoint: String,
         token: String?,
@@ -69,13 +96,22 @@ class DeviceApi(private val origin: String, private val client: OkHttpClient = H
             .post(json.toRequestBody(JSON))
             .apply { if (token != null) header("Authorization", "Bearer $token") }
             .build()
-        val sentAt = System.currentTimeMillis()
         val call = client.newCall(request)
         call.timeout().timeout(timeoutSeconds, TimeUnit.SECONDS)
+        // A check-in's answer carries the whole policy (Phase 2).
+        val maxBytes = if (endpoint == "checkin") MAX_POLICY_BYTES else MAX_ANSWER_BYTES
+        @Suppress("UNCHECKED_CAST")
+        return execute(call, serializer, noContent = false, maxBytes = maxBytes) as Answer<T>
+    }
+
+    /** [noContent]: a 204 is an answer (Ok with a null body), not an unexpected one. */
+    private fun <T> execute(call: Call, serializer: KSerializer<T>, noContent: Boolean, maxBytes: Long = MAX_POLICY_BYTES): Answer<T?> {
+        val sentAt = System.currentTimeMillis()
         return try {
             call.execute().use { response ->
                 val receivedAt = System.currentTimeMillis()
-                val text = response.body.readCapped()
+                if (noContent && response.code == 204) return Answer.Ok(null, sentAt, receivedAt)
+                val text = response.body.readCapped(maxBytes)
                     ?: return Answer.Failed("answer too large (HTTP ${response.code})", answered = true)
                 if (response.isSuccessful) {
                     try {
@@ -102,10 +138,10 @@ class DeviceApi(private val origin: String, private val client: OkHttpClient = H
         }
     }
 
-    /** The body as text, or null when it is larger than any answer of the API. */
-    private fun ResponseBody.readCapped(): String? {
+    /** The body as text, or null when it is larger than [maxBytes] (no answer of the API is). */
+    private fun ResponseBody.readCapped(maxBytes: Long): String? {
         val source = source()
-        if (source.request(MAX_ANSWER_BYTES + 1)) return null
+        if (source.request(maxBytes + 1)) return null
         return source.buffer.readUtf8()
     }
 
@@ -114,14 +150,28 @@ class DeviceApi(private val origin: String, private val client: OkHttpClient = H
 
         /** The API's answers are small. */
         const val MAX_ANSWER_BYTES = 64L * 1024
+
+        /** A policy holds every decision and 30 days of answered requests with the parent's notes. */
+        const val MAX_POLICY_BYTES = 1024L * 1024
         const val CALL_TIMEOUT_S = 120L
 
         /** Shorter: provision.sh's broadcast has to finish within Android's 60 s. */
         const val ENROLL_TIMEOUT_S = 40L
+
+        /** The long-poll's whole call may take this much longer than the server's wait. */
+        const val LONG_POLL_SLACK_S = 40L
     }
 }
 
 object Http {
+    /**
+     * For the long-poll: the same client (connections, pool and dispatcher shared) with a
+     * read timeout longer than the server holds a request (PolicyRules.POLL_WAIT_S).
+     */
+    val longPoll: OkHttpClient by lazy {
+        client.newBuilder().readTimeout(PolicyRules.POLL_WAIT_S + 25L, TimeUnit.SECONDS).build()
+    }
+
     /** One client for the whole process, so connections are reused. */
     val client: OkHttpClient by lazy {
         val specs = if (DebugTools.CLEARTEXT_HOSTS.isEmpty()) {
