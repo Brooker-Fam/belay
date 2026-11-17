@@ -515,6 +515,21 @@ class RulesTest {
         assertEquals(at("2026-11-18T00:00", LA), d.nextAt)
     }
 
+    @Test
+    fun `a phone that changes zone mid-day counts the day in its new zone, each minute in one day only`() {
+        // 1:00 to 2:00 a.m. in New York is 10:00 to 11:00 p.m. the day before in Los Angeles.
+        val log = UsageLog(t("00:00"), t("10:00"), mapOf(BLOCKS to listOf(Span(t("01:00"), t("02:00")))))
+        val phone = policy(zone = WireScreenTime.ZONE_PHONE)
+        val inNewYork = decide(phone, now = t("10:00"), usage = log, phoneZone = NY)
+        assertEquals("2026-11-17", inNewYork.day.toString())
+        assertTrue(BLOCKS in inNewYork.suspend)
+        val inLosAngeles = decide(phone, now = t("10:00"), usage = log, phoneZone = LA)
+        assertEquals("2026-11-17", inLosAngeles.day.toString())
+        assertFalse(BLOCKS in inLosAngeles.suspend, "that hour belongs to the 16th in Los Angeles")
+        assertEquals(60 * MIN, inLosAngeles.left[BLOCKS])
+        assertEquals(at("2026-11-18T00:00", LA), inLosAngeles.nextAt)
+    }
+
     // What the phone reports and shows.
 
     @Test

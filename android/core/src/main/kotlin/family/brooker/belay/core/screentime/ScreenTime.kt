@@ -137,6 +137,11 @@ data class UsageUpdate(
  *   [UsageUpdate.usage] but read again next time, so a late event still counts.
  * - Without usage access the cursor waits, and the time is a gap only in [UsageUpdate.usage]:
  *   Android keeps recording, so when access is back the ledger catches up and the gap goes.
+ *
+ * Known limits, all of which count less rather than more: two windows of the same activity class
+ * count as one, so when one closes the other counts again from its next event; an event Android
+ * adds more than [SETTLE_MS] late is missed; an activity that stays resumed through screen off and
+ * on (one shown over the lock screen) counts again only from its next event.
  */
 object ScreenTime {
     const val SETTLE_MS = 10_000L
@@ -153,11 +158,16 @@ object ScreenTime {
     /**
      * A new ledger counting from [at]. Pass what the phone knows now (PowerManager.isInteractive,
      * KeyguardManager.isKeyguardLocked) when starting from now, or nothing when starting in the past.
+     * Until the events say otherwise, an unknown keyguard counts as unlocked, so the first time the
+     * screen comes on can count a few seconds of the lock screen, and one unlock.
      */
     fun start(at: Long, screenOn: Boolean? = null, keyguardShown: Boolean? = null): UsageLedger =
         UsageLedger(UsageLog(from = at, asOf = at), DeviceState(screenOn = screenOn, keyguardShown = keyguardShown))
 
-    /** Where to start the next query: the cursor, moved if the clock changed. Up to [UsageReading.wall]. */
+    /**
+     * Query the events from here up to [UsageReading.wall], for the same reading: the ledger's
+     * cursor, moved by as much as the clock changed since the last read.
+     */
     fun queryFrom(ledger: UsageLedger, reading: UsageReading): Long = prepare(ledger, reading).ledger.cursor
 
     /**
