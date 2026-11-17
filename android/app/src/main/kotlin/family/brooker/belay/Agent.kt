@@ -569,7 +569,7 @@ object Agent {
                 val private = CallContacts.private(policy)
                 val entry = CallRecords.entry(
                     UUID.randomUUID().toString(), call.at, call.direction, call.number, call.contact,
-                    call.durationS, call.outcome, call.reason, private, android,
+                    call.durationS, call.outcome, call.reason, private, android, callback = call.callback,
                 )
                 val record = entry?.takeIf { calls.log }?.let { CallRecords.toWire(it, private, android) }
                 val now = System.currentTimeMillis()

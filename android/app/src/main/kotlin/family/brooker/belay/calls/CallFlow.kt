@@ -39,6 +39,8 @@ data class EndedCall(
     val durationS: Int,
     val outcome: WireCallOutcome,
     val reason: WireCallReason?,
+    /** It rang only because of the 2-hour callback window: kept on the phone, never sent (core's CallRecords). */
+    val callback: Boolean = false,
 )
 
 /**
@@ -324,7 +326,8 @@ object CallFlow {
             }
         }
         val direction = if (t.port.incoming) WireCallDirection.IN else WireCallDirection.OUT
-        return EndedCall(t.addedAt, direction, t.key, t.contact, duration, outcome, reason)
+        val callback = t.port.incoming && t.incoming?.because == RingBecause.EMERGENCY_CALLBACK
+        return EndedCall(t.addedAt, direction, t.key, t.contact, duration, outcome, reason, callback)
     }
 
     // What the kid does, from the call screen and the notifications.

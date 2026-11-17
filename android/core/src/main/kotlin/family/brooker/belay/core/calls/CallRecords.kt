@@ -21,6 +21,12 @@ data class CallEntry(
     val outcome: WireCallOutcome,
     /** Why Belay refused it, if it did. */
     val reason: WireCallReason? = null,
+    /**
+     * It rang only because of the 2-hour callback window (RingBecause.EMERGENCY_CALLBACK): the kid
+     * sees it in their recent calls, and it's never sent, because its record would tell a parent
+     * that the kid called 911 or 988 (a 988 counselor calling back, say).
+     */
+    val callback: Boolean = false,
 )
 
 /** A call in Android's own call log (CallLog.Calls), as the phone reads it, for what's below. */
@@ -48,6 +54,7 @@ data class PrivateCall(val number: String, val at: Long, val direction: WireCall
  *   has it (the kid can delete it there), read when the screen opens and never stored.
  * - A record names the contact by id, or carries the number for a caller who isn't a contact
  *   (so a parent can approve or block them), or neither for a withheld caller.
+ * - A call that rang only because of the callback window is kept on the phone and never sent.
  */
 object CallRecords {
     /** Belay's own recent calls are kept 30 days, at most 500. */
@@ -76,6 +83,7 @@ object CallRecords {
         reason: WireCallReason?,
         privateNumbers: Set<String>,
         android: EmergencyNumbers,
+        callback: Boolean = false,
     ): CallEntry? {
         if (!keepable(number, privateNumbers, android)) return null
         return CallEntry(
@@ -87,16 +95,18 @@ object CallRecords {
             durationS = durationS.coerceIn(0, MAX_DURATION_S),
             outcome = outcome,
             reason = reason,
+            callback = callback,
         )
     }
 
     /**
-     * [entry] for POST /api/v1/calls, or null when it must not be sent: checked again against the
-     * policy's private numbers as they are now (a number made private after the call stays on the
-     * phone). The number goes only for a caller who isn't a contact, and only in E.164.
+     * [entry] for POST /api/v1/calls, or null when it must not be sent: a call that rang only
+     * because of the callback window, or one checked again against the policy's private numbers as
+     * they are now (a number made private after the call stays on the phone). The number goes only
+     * for a caller who isn't a contact, and only in E.164.
      */
     fun toWire(entry: CallEntry, privateNumbers: Set<String>, android: EmergencyNumbers): WireCallRecord? {
-        if (!keepable(entry.number, privateNumbers, android)) return null
+        if (entry.callback || !keepable(entry.number, privateNumbers, android)) return null
         return WireCallRecord(
             id = entry.id,
             at = entry.at,

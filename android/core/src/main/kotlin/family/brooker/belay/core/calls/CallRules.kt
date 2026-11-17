@@ -33,7 +33,11 @@ enum class Ring {
     VOICEMAIL,
 }
 
-/** Why a call may ring, for Belay's log and the debug state. */
+/**
+ * Why a call may ring, for Belay's log and the debug state. [EMERGENCY_CALLBACK]: it rings only
+ * because of the 2-hour callback window (the rules would have refused it otherwise), so it's never
+ * sent: its record would tell a parent that the kid called 911 or 988 (CallRecords).
+ */
 enum class RingBecause { CALLS_OFF, ALWAYS_ALLOWED, EMERGENCY_CALLBACK, PARENT, OPEN, CONTACT, RULE }
 
 data class IncomingDecision(
@@ -76,6 +80,8 @@ data class CallsNow(
  * 2. Always allowed (AlwaysAllowed: 911, Android's emergency numbers, 988) rings.
  * 3. For 2 hours after the kid called an emergency number or 988 (or texted 988), every caller rings,
  *    withheld and blocked ones too, so a dispatcher or the 988 line can call back from any number.
+ *    A call the steps below let ring rings for its own reason, with its contact; one they'd refuse
+ *    rings because of the window (RingBecause.EMERGENCY_CALLBACK), and is never sent.
  * 4. A number that failed the network's verification counts as unknown: it's no contact, no parent.
  * 5. A `parent` contact rings in every mode, quiet time included.
  * 6. A number a parent blocked is rejected (Android's block list usually stops it first).
@@ -90,9 +96,15 @@ object CallRules {
         val calls = now.calls ?: return IncomingDecision(Ring.RING, because = RingBecause.CALLS_OFF)
         val number = call.number?.takeIf { call.presentation == Presentation.NUMBER }
         if (number != null && AlwaysAllowed.allows(number, android)) return IncomingDecision(Ring.RING, because = RingBecause.ALWAYS_ALLOWED)
-        if (callbackWindow(now.lastEmergencyContactAt, call.lastEmergencyCallAt, now.now)) {
-            return IncomingDecision(Ring.RING, because = RingBecause.EMERGENCY_CALLBACK)
+        val usual = byTheRules(call, number, calls, now)
+        if (usual.action != Ring.RING && callbackWindow(now.lastEmergencyContactAt, call.lastEmergencyCallAt, now.now)) {
+            return IncomingDecision(Ring.RING, contact = usual.contact, because = RingBecause.EMERGENCY_CALLBACK)
         }
+        return usual
+    }
+
+    /** Steps 4 to 8, for a call that isn't always allowed. */
+    private fun byTheRules(call: IncomingCall, number: String?, calls: WireCalls, now: CallsNow): IncomingDecision {
         val trusted = call.verification != Verification.FAILED
         val contact = if (trusted) CallContacts.find(number, now.contacts) else null
         if (contact?.parent == true) return IncomingDecision(Ring.RING, contact = contact, because = RingBecause.PARENT)

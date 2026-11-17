@@ -98,7 +98,11 @@ class CallRulesTest {
                 val what = "${caller.name} with $calls, quiet now $quietNow, callback window $window"
                 assertEquals(action, decision.action, what)
                 assertEquals(reason, decision.reason, what)
+                assertEquals(caller.contact, decision.contact, what)
                 if (decision.action == Ring.RING) assertTrue(decision.because != null && decision.reason == null, what)
+                // Only a call the rules would refuse rings because of the window (and is never sent).
+                val onlyForTheWindow = window && !caller.always && expected(caller, calls, quietNow, window = false).first != Ring.RING
+                assertEquals(onlyForTheWindow, decision.because == RingBecause.EMERGENCY_CALLBACK, what)
                 cases++
             }
         }
@@ -156,6 +160,13 @@ class CallRulesTest {
         val withExtra = number("+15555550199").copy(lastEmergencyCallAt = T0 - 30 * 60_000)
         assertEquals(RingBecause.EMERGENCY_CALLBACK, decide(withExtra, null).because)
         assertEquals(Ring.REJECT, decide(number("+15555550199").copy(lastEmergencyCallAt = 0), null).action)
+        // A call that would ring anyway rings for its own reason, with its contact, so its record
+        // looks like any other; a contact the quiet time would send to voicemail rings for the window.
+        assertEquals(IncomingDecision(Ring.RING, contact = mom, because = RingBecause.PARENT), decide(number("+15555550100"), T0 - 1))
+        assertEquals(IncomingDecision(Ring.RING, contact = sam, because = RingBecause.EMERGENCY_CALLBACK), decide(number("+15555550123"), T0 - 1))
+        val open = CallsNow(WireCalls(WireCallMode.OPEN), contacts, blocked, lastEmergencyContactAt = T0 - 1, now = T0)
+        assertEquals(IncomingDecision(Ring.RING, contact = sam, because = RingBecause.OPEN), CallRules.incoming(number("+15555550123"), open, android))
+        assertEquals(IncomingDecision(Ring.RING, because = RingBecause.OPEN), CallRules.incoming(number("+15555550199"), open, android))
     }
 
     @Test

@@ -68,6 +68,20 @@ class CallRecordsTest {
     }
 
     @Test
+    fun `a call that rang only because of the callback window stays on the phone and is never sent`() {
+        // A 988 counselor calling back from a number that isn't a contact: its record would tell.
+        val callback = assertNotNull(
+            CallRecords.entry("call-0004", T0, WireCallDirection.IN, "+15555550199", null, 300, WireCallOutcome.ANSWERED, null, private, android, callback = true),
+        )
+        assertTrue(callback.callback)
+        assertNull(CallRecords.toWire(callback, private, android))
+        assertNotNull(CallRecords.toWire(callback.copy(callback = false), private, android))
+        // Stored before the field existed: an ordinary call.
+        val old = Wire.json.decodeFromString(CallEntry.serializer(), """{"id":"call-0005","at":$T0,"direction":"in","outcome":"answered"}""")
+        assertTrue(!old.callback)
+    }
+
+    @Test
     fun `durations stay within what the server takes`() {
         val long = assertNotNull(CallRecords.entry("call-0002", T0, WireCallDirection.IN, "+15555550199", null, 100_000, WireCallOutcome.ANSWERED, null, private, android))
         assertEquals(CallRecords.MAX_DURATION_S, long.durationS)
