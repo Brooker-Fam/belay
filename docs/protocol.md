@@ -325,7 +325,8 @@ The endpoint is rate limited per phone apart from the phone's other calls (30 a 
   phone's own app" (`enforcement.calls.problem`).
 - **Records** (`log`): when, direction, duration, outcome, and the contact, or the number for
   a caller who isn't one. Calls with emergency numbers, 988 or the family's private numbers
-  are never recorded or sent.
+  are never recorded or sent, and neither is a call that rang only because of the 2 hours
+  after an emergency contact (the rules would have refused it): its record would tell.
 - **Contacts** live in the policy and in Belay's own storage; Belay never writes them into
   Android's Contacts. A `contact` request is the kid asking for one; a parent approves it.
 - Only a parent turns calls on or off or changes who may call; an AI client may only
