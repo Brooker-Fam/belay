@@ -68,7 +68,9 @@ export type Labels = (pkg: string) => string;
 export const packageNames: Labels = (pkg) => pkg;
 
 const name = (text: string) => oneLine(text, 60) || "(no name)";
-const apps = (packages: string[], label: Labels) => list_(packages.map((p) => oneLine(label(p), 40) || p));
+/** The apps by name ("Chess Club and Puzzle Pop"), or with no labels, only how many ("2 apps"). */
+const apps = (packages: string[], label: Labels | null) =>
+  label === null ? `${packages.length} app${packages.length === 1 ? "" : "s"}` : list_(packages.map((p) => oneLine(label(p), 40) || p));
 /** Singular or plural verb for a list of apps. */
 const verb = (packages: string[], one: string, many: string) => (packages.length === 1 ? one : many);
 const times = (n: number) => (n === 1 ? "once" : n === 2 ? "twice" : `${n} times`);
@@ -76,7 +78,11 @@ const times = (n: number) => (n === 1 ? "once" : n === 2 ? "twice" : `${n} times
 export interface Audience {
   /** "kid": the phone's own words ("You can take…"); "parent": about the kid. */
   for: "kid" | "parent";
-  label: Labels;
+  /**
+   * The apps' names; null names none and counts them ("2 apps"): for an AI app while a parent
+   * keeps the apps on the phone from AI apps (the Apps category off).
+   */
+  label: Labels | null;
   /** The schedule kind and limit names of the ids a sentence names, for the parent's words about a phone. */
   limitName?: (id: string) => string | null;
 }

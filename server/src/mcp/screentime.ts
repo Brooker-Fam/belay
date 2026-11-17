@@ -76,6 +76,10 @@ const MAX_DAYS = 92;
 
 const isTotal = (l: Limit) => l.packages.includes("*");
 
+/** With the Apps category off: the rules' apps, counted, never named. */
+const APPS_HIDDEN =
+  "A parent turned off AI access to apps in Belay's settings, so the apps under each rule are only counted: their names and package names are hidden. The names of limits and schedules are the family's (or the one Belay gave a limit after its apps), as the kid sees them.";
+
 export function registerScreenTimeTools(server: McpServer, deps: Deps, caller: Caller): void {
   const { db } = deps;
   const ai: Changer = { kind: "ai", parentId: caller.parentId, clientName: caller.clientName };
@@ -103,24 +107,29 @@ export function registerScreenTimeTools(server: McpServer, deps: Deps, caller: C
   const isRefusal = (v: DeviceRow | CallToolResult): v is CallToolResult => "content" in v;
   const parentsPage = (path: string) => `${deps.config.publicUrl}${path}`;
 
-  /** The phone's rules, in words: ids in plain fields (for change_screen_time), the family's names and apps untrusted. */
-  const rulesEntry = (deviceId: string) => {
+  /**
+   * The phone's rules, in words: ids in plain fields (for change_screen_time), the family's names
+   * and apps untrusted. With the Apps category off (`apps` false), the apps under each rule are
+   * only counted: a package name says which app is on the phone as plainly as its label does.
+   */
+  const rulesEntry = (deviceId: string, apps: boolean) => {
     const p = phoneRules(db, deviceId);
     const label = phoneLabels(db, deviceId);
     const app = (pkg: string) => ({ label: label(pkg), package: pkg });
     const from = (id: string) => (p.stage ? { from: { stage: "the stage's", changed: "the stage's, changed for this phone", own: "this phone's own" }[p.origin(id)] } : {});
     return {
+      ...(apps ? {} : { which_apps: APPS_HIDDEN }),
       measuring: p.settings.measure
         ? "on: the phone sends how long apps are used, for get_screen_time"
         : "off: the phone counts only to enforce its limits, and sends no minutes. Only a parent turns measuring on, on the parent page.",
       days: { follow: p.settings.zone === "phone" ? "the phone's own time zone" : p.settings.zone, limits_reset_at: p.settings.day_starts },
       limits: p.rules.limits.map((l) => ({
         id: l.id,
-        ...(isTotal(l) ? { daily_total: "every app that isn't exempt" } : {}),
+        ...(isTotal(l) ? { daily_total: "every app that isn't exempt" } : apps ? {} : { apps: new Set(l.packages).size }),
         minutes_a_day: l.minutes,
         ...(l.by_day && Object.keys(l.by_day).length ? { minutes_on: l.by_day } : {}),
         ...from(l.id),
-        untrusted: { name: l.name, ...(isTotal(l) ? {} : { apps: [...new Set(l.packages)].map(app) }) },
+        untrusted: { name: l.name, ...(isTotal(l) || !apps ? {} : { apps: [...new Set(l.packages)].map(app) }) },
       })),
       schedules: p.rules.schedules.map((s) => ({
         id: s.id,
@@ -131,10 +140,13 @@ export function registerScreenTimeTools(server: McpServer, deps: Deps, caller: C
         ...(s.end <= s.start ? { ends: "the next day" } : {}),
         locks_the_screen: s.lock,
         ...(s.skip.length ? { not_on: s.skip } : {}),
+        ...(s.allow.length && !apps ? { stay_open: s.allow.length } : {}),
         ...from(s.id),
-        untrusted: { name: s.name, ...(s.allow.length ? { stay_open: s.allow.map(app) } : {}) },
+        untrusted: { name: s.name, ...(s.allow.length && apps ? { stay_open: s.allow.map(app) } : {}) },
       })),
-      exempt: p.rules.exempt.length ? { never_counted_or_paused: p.rules.exempt.length, untrusted: { apps: p.rules.exempt.map(app) } } : "none",
+      exempt: p.rules.exempt.length
+        ? { never_counted_or_paused: p.rules.exempt.length, ...(apps ? { untrusted: { apps: p.rules.exempt.map(app) } } : {}) }
+        : "none",
       self_serve: p.rules.self_serve ? `the kid may take ${p.rules.self_serve.minutes} more minutes, ${p.rules.self_serve.times} times a day, without asking` : "none",
       when_belay_cant_count: p.rules.if_unmeasured === "pause_limited" ? "apps with a limit are paused (usage access is off)" : "apps with a limit stay open",
       warning: p.rules.warn_before ? `${p.rules.warn_before} minutes before time's up or a schedule starts` : "none",
@@ -148,7 +160,7 @@ export function registerScreenTimeTools(server: McpServer, deps: Deps, caller: C
     {
       title: "A phone's screen-time rules",
       description:
-        "One phone's screen-time rules: measuring, its limits (with ids, for change_screen_time) and schedules, exempt apps, self-serve, what happens when Belay can't count, extra time given today, and proposals waiting for a parent. With the Screen time category, today's state (\"Games: 20 minutes left\"); with the Requests category, more-time requests waiting; with the Stage and agreement category, the stage, what the next one changes, and the family agreement.",
+        "One phone's screen-time rules: measuring, its limits (with ids, for change_screen_time) and schedules, exempt apps, self-serve, what happens when Belay can't count, extra time given today, and proposals waiting for a parent. The apps under each rule need the Apps category: without it they're only counted. With the Screen time category, today's state (\"Games: 20 minutes left\"); with the Requests category, more-time requests waiting; with the Stage and agreement category, the stage, what the next one changes, and the family agreement.",
       inputSchema: { device: deviceParam },
       annotations: READ,
     },
@@ -157,6 +169,9 @@ export function registerScreenTimeTools(server: McpServer, deps: Deps, caller: C
       if (isRefusal(row)) return row;
       const now = deps.now();
       logRead("the phone's screen-time rules", row.id);
+      const apps = scopeOn("apps");
+      // With the Apps category off, words about the rules count apps instead of naming them.
+      const label = apps ? phoneLabels(db, row.id) : null;
       const p = phoneRules(db, row.id);
       const names = new Map(p.rules.limits.map((l) => [l.id, l.name]));
       const limitName = (id: string) => (id === "*" ? "every limit" : (names.get(id) ?? "a limit that isn't in the rules any more"));
@@ -168,11 +183,11 @@ export function registerScreenTimeTools(server: McpServer, deps: Deps, caller: C
       const proposals = listProposals(db, { deviceId: row.id, status: "pending" }).filter((x) => x.change.kind === "screen_time" || x.change.kind === "move_stage");
       const requests = settings.aiScopes.requests ? recentRequests(db, now, { deviceId: row.id, kind: "more_time", status: "pending" }) : [];
       const agreement = settings.aiScopes.agreement ? currentAgreement(db, row.id) : null;
-      const stage = settings.aiScopes.agreement ? stageFor(db, row.id, p) : null;
+      const stage = settings.aiScopes.agreement ? stageFor(db, row.id, p, label) : null;
       return result({
         phone: row.name,
         day_on_the_phone: today,
-        ...rulesEntry(row.id),
+        ...rulesEntry(row.id, apps),
         extra_time_today: extra.map((e) => ({ minutes: e.minutes, given: iso(e.givenAt), by: e.givenBy ?? "the server's admin command", untrusted: { limit: limitName(e.limit_id) } })),
         today: !settings.aiScopes.screen_time
           ? "Hidden: a parent turned off AI access to screen time."
@@ -233,7 +248,7 @@ export function registerScreenTimeTools(server: McpServer, deps: Deps, caller: C
                 },
               }
             : {})(listCommands(db, row.id, now, { kind: "lock_now", limit: 5 }).find((x) => x.state !== "replaced")),
-        proposals_waiting: proposals.map((x) => ({ proposed: iso(x.createdAt), by: x.clientName, untrusted: { change: changeWords(x.change, x.label, phoneLabels(db, row.id)).title } })),
+        proposals_waiting: proposals.map((x) => ({ proposed: iso(x.createdAt), by: x.clientName, untrusted: { change: changeWords(x.change, x.label, label).title } })),
         how_to_change: `change_screen_time applies a change at once only when it only tightens; anything else becomes a proposal a parent approves on the parent page (${parentsPage("/proposals")}). lock_phone pauses and locks the phone now.`,
       });
     },
@@ -246,7 +261,7 @@ export function registerScreenTimeTools(server: McpServer, deps: Deps, caller: C
     {
       title: "Screen time",
       description:
-        "How one phone was used, day by day, as the phone counts its days: screen minutes, unlocks, the hours it was used, the apps most used with minutes and opens, and the times Belay couldn't count, with why. Days the phone sent nothing for are listed as not sent: that's not zero. The last 7 days by default. Calls and texting are never counted per app. Needs the Screen time category.",
+        "How one phone was used, day by day, as the phone counts its days: screen minutes, unlocks, the hours it was used, the apps most used with minutes and opens, and the times Belay couldn't count, with why. Days the phone sent nothing for are listed as not sent: that's not zero. The last 7 days by default. Calls and texting are never counted per app. Needs the Screen time category; the apps' names need the Apps category too (without it, their package names).",
       inputSchema: {
         device: deviceParam,
         from: day.optional().describe("The first day, like 2026-11-10. Default: 6 days before `to`."),
@@ -268,6 +283,8 @@ export function registerScreenTimeTools(server: McpServer, deps: Deps, caller: C
       if (first < addDays(last, -(MAX_DAYS - 1))) return refusal(`Ask for at most ${MAX_DAYS} days at a time.`);
       logRead(`screen time from ${first} to ${last}`, row.id);
       const zone = phoneZone(db, row.id, p.settings);
+      // The apps' names come from the phone's app list: with the Apps category off, only the package names the phone counted.
+      const named = scopeOn("apps");
       const label = phoneLabels(db, row.id);
       const sent = new Map(oneEach(usageDays(db, row.id, { from: first, to: last })).map((d) => [d.day, d]));
       const days: unknown[] = [];
@@ -287,7 +304,7 @@ export function registerScreenTimeTools(server: McpServer, deps: Deps, caller: C
           screen_minutes: u.screenMinutes,
           unlocks: u.unlocks,
           minutes_by_hour: Object.fromEntries(u.byHour.flatMap((m, h) => (m > 0 ? [[`${String(h).padStart(2, "0")}:00`, m]] : []))),
-          top_apps: u.apps.slice(0, 10).map((a) => ({ minutes: a.minutes, opens: a.opens, untrusted: { label: label(a.package), package: a.package } })),
+          top_apps: u.apps.slice(0, 10).map((a) => ({ minutes: a.minutes, opens: a.opens, untrusted: { ...(named ? { label: label(a.package) } : {}), package: a.package } })),
           ...(rest.length ? { other_apps: { count: rest.length, minutes: rest.reduce((n, a) => n + a.minutes, 0) } } : {}),
           couldnt_count: u.gaps.map((g) => ({ from: iso(g.from), to: iso(g.to), why: GAP_WORDS[g.reason] })),
         });
@@ -375,6 +392,8 @@ export function registerScreenTimeTools(server: McpServer, deps: Deps, caller: C
       const now = deps.now();
       const p = phoneRules(db, row.id);
       const label = phoneLabels(db, row.id);
+      // What this AI app reads back names no app while the Apps category is off: the apps are counted.
+      const said = scopeOn("apps") ? label : null;
       // The kid sees the names: Belay writes them for what the AI app adds or renames (names.ts).
       const appNames = appNamesOn(db, row.id);
       const renames = (given: string | undefined, current: string) => given !== undefined && oneLine(given, NAME_MAX).toLowerCase() !== current.toLowerCase();
@@ -409,7 +428,7 @@ export function registerScreenTimeTools(server: McpServer, deps: Deps, caller: C
           phone: row.name,
           status: "proposed: waiting for a parent to approve or reject it",
           effect: classification.effect,
-          untrusted: { proposed: words.title, what_changes: classification.changes.map((c) => changeSentence(c, { for: "parent", label })) },
+          untrusted: { proposed: words.title, what_changes: classification.changes.map((c) => changeSentence(c, { for: "parent", label: said })) },
           ...(made.duplicate ? { note: "The same change was already proposed, and is still waiting." } : {}),
           where: parentsPage("/proposals"),
           reminder: "Only a parent moves a phone to another stage. Nothing has changed yet: tell the parent it's waiting for them on the Proposals page.",
@@ -487,7 +506,7 @@ export function registerScreenTimeTools(server: McpServer, deps: Deps, caller: C
       if (canonical(wanted) === canonical(p.rules)) return refusal(`Nothing to change: ${row.name}'s rules are already like that.`);
       const classification = classifyScreenTimeChange(sideOf(p.settings, p.rules), sideOf(p.settings, wanted));
       const names = new Map(p.rules.limits.map((l) => [l.id, l.name]));
-      const changes = classification.changes.map((c) => ({ effect: c.effect, untrusted: { change: changeSentence(c, { for: "parent", label, limitName: (id) => names.get(id) ?? null }) } }));
+      const changes = classification.changes.map((c) => ({ effect: c.effect, untrusted: { change: changeSentence(c, { for: "parent", label: said, limitName: (id) => names.get(id) ?? null }) } }));
 
       if (classification.onlyTightens) {
         try {
@@ -514,7 +533,7 @@ export function registerScreenTimeTools(server: McpServer, deps: Deps, caller: C
         phone: row.name,
         status: "proposed: waiting for a parent to approve or reject it",
         why: classification.effect === "loosens" ? "Part of it loosens the rules, so a parent decides." : "It doesn't only tighten the rules, so a parent decides.",
-        changes: screenTimeWords({ kind: "screen_time", patch: patchOf(p.rules, wanted) }, label).map((c) => ({ effect: c.effect, untrusted: { change: c.words } })),
+        changes: screenTimeWords({ kind: "screen_time", patch: patchOf(p.rules, wanted) }, said).map((c) => ({ effect: c.effect, untrusted: { change: c.words } })),
         ...(made.duplicate ? { note: "The same change was already proposed, and is still waiting." } : {}),
         where: parentsPage("/proposals"),
         reminder: "Nothing has changed yet. Tell the parent it's waiting for them on the Proposals page; don't say it's done.",

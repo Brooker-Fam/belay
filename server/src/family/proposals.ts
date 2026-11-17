@@ -189,7 +189,7 @@ export function screenTimeChanges(change: Extract<ProposalChange, { kind: "scree
 }
 
 /** A screen-time proposal's changes in the parents' words, with their effect. */
-export function screenTimeWords(change: Extract<ProposalChange, { kind: "screen_time" }>, labels: Labels = packageNames): { effect: RuleChange["effect"]; words: string }[] {
+export function screenTimeWords(change: Extract<ProposalChange, { kind: "screen_time" }>, labels: Labels | null = packageNames): { effect: RuleChange["effect"]; words: string }[] {
   return screenTimeChanges(change).map((c) => ({ effect: c.effect, words: changeSentence(c, { for: "parent", label: labels }) }));
 }
 
@@ -220,7 +220,7 @@ const SELECT = `SELECT x.id, x.device_id, d.name AS device_name, x.kind, x.packa
   LEFT JOIN parents p ON p.id = x.parent_id LEFT JOIN parents q ON q.id = x.decided_by`;
 
 /** "Allow "Chatter Box"", and "allowing "Chatter Box"" for a sentence. */
-export function changeWords(change: ProposalChange, label: string | null, labels: Labels = packageNames): { title: string; gerund: string } {
+export function changeWords(change: ProposalChange, label: string | null, labels: Labels | null = packageNames): { title: string; gerund: string } {
   switch (change.kind) {
     case "screen_time": {
       const words = screenTimeWords(change, labels).map((c) => c.words);

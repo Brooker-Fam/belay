@@ -117,7 +117,14 @@ where it is (off, on demand, or how often), and whether it's in lost mode: never
 From Phase 5: whether calls are on and the call rules, and the contacts' names, whether each may
 call and text and whether they're a parent, and how many blocked and private numbers there
 are: never who called, a number, or which numbers are private. Blocked and waiting apps are
-listed only with the Apps category.
+listed only with the Apps category, and so are the apps under each screen-time rule (a limit's,
+a schedule's that stay open, the exempt ones): without it, `get_rules` only counts them, and so
+do the sentences about the next stage and proposals waiting, and what `change_screen_time`
+says it changed. A package name says which app is on the phone as plainly as its name does,
+so neither shows; how many apps a rule covers says how the rules are shaped, not which apps.
+The names of limits and schedules show as the kid sees them: the family's, or the one Belay
+gave a limit after its apps when it was made (a parent can rename it). `get_screen_time` shows
+the apps' package names, which the phone counted, without their names from the app list.
 
 Also always included: the server's own health (`get_server_health`): backups, disk, database
 size, its clock. It names no phone or app.
@@ -155,8 +162,8 @@ says so, once an hour. A parent, on the parent page or with the CLI, isn't limit
 | `locate_now(device)` | Phase 4: asks the phone for a fresh fix and waits up to a minute for it. Only while the phone shares where it is on demand or periodically, and with the Location category. The kid's phone shows a notice naming the AI app ("Your parent checked where this phone is, using Claude"). At most 6 an hour per connection and phone. |
 | `get_place_events(device, from?, to?)` | Phase 4: arrivals at and departures from the family's places, newest first; the last 7 days by default, at most 92. Needs the Location category. |
 | `get_policy(device)` | What a phone enforces now, in words, with the rules' version and whether the phone has applied it; blocked and waiting apps; a line on its screen time; proposals waiting for a parent; whether the phone has a recovery key, and when one was last used. |
-| `get_rules(device)` | Phase 3: the phone's screen-time rules (measuring, limits with their ids, schedules, exempt apps, self-serve, what happens when Belay can't count), extra time given today, the last "lock now", and proposals waiting. With the Screen time category, where each limit stands today; with Requests, more-time requests waiting; with Stage and agreement, the stage, what the next one changes, and the agreement with the kid's answer. |
-| `get_screen_time(device, from?, to?)` | Phase 3: day by day, in the phone's days: screen minutes, unlocks, minutes by hour, the most used apps with minutes and opens, and the times Belay couldn't count, with why. A day the phone sent nothing for says so: that's unknown, not zero. The last 7 days by default, at most 92. Needs the Screen time category. |
+| `get_rules(device)` | Phase 3: the phone's screen-time rules (measuring, limits with their ids, schedules, exempt apps, self-serve, what happens when Belay can't count), extra time given today, the last "lock now", and proposals waiting. The apps under each rule with the Apps category; without it, only how many. With the Screen time category, where each limit stands today; with Requests, more-time requests waiting; with Stage and agreement, the stage, what the next one changes, and the agreement with the kid's answer. |
+| `get_screen_time(device, from?, to?)` | Phase 3: day by day, in the phone's days: screen minutes, unlocks, minutes by hour, the most used apps with minutes and opens (their names with the Apps category, else their package names), and the times Belay couldn't count, with why. A day the phone sent nothing for says so: that's unknown, not zero. The last 7 days by default, at most 92. Needs the Screen time category. |
 | `block_app(device, package, note?)` | Blocks an app at once (tightening). It refuses the apps the phone never blocks, so 911 and 988 always work: Belay itself, the dialer and the services that place calls, the texting app, the keyboard, the home screen, emergency and safety apps, System UI, Settings, and anything else the phone reports it never blocks. An app that isn't on the phone yet can be blocked ahead of time, but AI apps may have at most 50 of those per phone; a parent clears them on the phone's page. |
 | `pause_phone(device, minutes?)` | Pauses the phone at once, for some minutes or until a parent resumes it. The kid's phone says so in Belay's own words ("Your parent paused this phone until 6:30 PM."): the AI app writes no note (a parent can, on the parent page). It can't shorten a pause already running, and against one at least as long it changes nothing; a longer one keeps a parent's note. At most 6 pauses and locks an hour per connection and phone. |
 | `lock_phone(device, minutes)` | Phase 3: pauses the phone for 5 to 240 minutes and locks its screen, if the phone gets it within 10 minutes, with no note, like `pause_phone`. Calls, texts, 911 and 988 still work. A phone that couldn't lock says why, word for word, under `untrusted` in `get_rules`. Counted with `pause_phone`'s pauses. |
