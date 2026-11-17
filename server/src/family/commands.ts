@@ -1,16 +1,21 @@
 /**
- * Phase 10: one-shot commands to a phone (docs/protocol.md, "Commands"). A parent issues one on the
- * parent page, or the CLI does as a person; never an AI client. It's in the policy's commands
- * until the phone reports its result in enforcement.commands; after expires_at (7 days) the phone
- * doesn't run it and reports it expired. The first kind is remove_other_users: the phone removes
- * every other user or profile, such as the one Android's own Parental Controls make.
+ * One-shot commands to a phone (docs/protocol.md, "Commands"). It's in the policy's commands until
+ * the phone reports its result in enforcement.commands; after expires_at the phone doesn't run it
+ * and reports it expired.
+ *
+ * - remove_other_users (Phase 10): the phone removes every other user or profile, such as the one
+ *   Android's own Parental Controls make. A parent issues it on the parent page, or the CLI does
+ *   as a person; never an AI client. It lasts 7 days.
+ * - lock_now (Phase 3): the phone locks its screen once. MCP's lock_phone sends it with a pause
+ *   (policy.ts, lockPhone); the CLI's lock-now sends it alone. It lasts 10 minutes by default:
+ *   a lock that arrives much later would surprise the kid.
  */
-import { newId } from "../crypto.js";
 import type { DB } from "../db.js";
-import { changePolicy, type Changed, type Person, type PolicyContext } from "./policy.js";
+import { type CommandKind, LOCK_NOW_MS, changePolicy, insertCommandRow, type Changed, type Person, type PolicyContext } from "./policy.js";
 
-export type CommandKind = "remove_other_users";
+export type { CommandKind } from "./policy.js";
 export const COMMAND_LIFETIME_MS = 7 * 86_400_000;
+const LIFETIME: Record<CommandKind, number> = { remove_other_users: COMMAND_LIFETIME_MS, lock_now: LOCK_NOW_MS };
 
 /** "waiting" for the phone; "not_done": it expired with no word from the phone; "replaced" by a newer one. */
 export type CommandState = "waiting" | "done" | "failed" | "expired" | "not_done" | "replaced";
@@ -74,27 +79,27 @@ export function listCommands(db: DB, deviceId: string, now: number, opts: { kind
 }
 
 /**
- * Sends a command to the phone with its next policy. One of a kind at a time: while one is still
- * waiting and not expired, that's the answer (`already`); an expired one without a result is
- * replaced. A person's action, never an AI client's.
+ * Sends a command to the phone with its next policy. remove_other_users is one at a time: while
+ * one is still waiting and not expired, that's the answer (`already`); an expired one without a
+ * result is replaced. lock_now is always a new one, replacing any still waiting: the phone locks
+ * once, for the newest. A person's action here (an AI app locks only through lockPhone).
  */
-export function issueCommand(ctx: PolicyContext, deviceId: string, kind: CommandKind, who: Person): Changed<{ command: Command; already: boolean }> {
+export function issueCommand(
+  ctx: PolicyContext,
+  deviceId: string,
+  kind: CommandKind,
+  who: Person,
+  opts: { expiresInMs?: number } = {},
+): Changed<{ command: Command; already: boolean }> {
   if ((who as { kind: string }).kind === "ai") throw new Error("Only a person sends a phone a command");
   const { db, now } = ctx;
+  const lifetime = opts.expiresInMs ?? LIFETIME[kind];
   return changePolicy(ctx, deviceId, who, (log) => {
-    const waiting = listCommands(db, deviceId, now, { kind, limit: 50 }).find((c) => c.state === "waiting");
+    const waiting = kind === "lock_now" ? undefined : listCommands(db, deviceId, now, { kind, limit: 50 }).find((c) => c.state === "waiting");
     if (waiting) return { command: waiting, already: true };
     db.prepare("UPDATE commands SET replaced_at = ? WHERE device_id = ? AND kind = ? AND result IS NULL AND replaced_at IS NULL").run(now, deviceId, kind);
-    const id = newId();
-    db.prepare("INSERT INTO commands (id, device_id, kind, issued_at, expires_at, issued_by) VALUES (?, ?, ?, ?, ?, ?)").run(
-      id,
-      deviceId,
-      kind,
-      now,
-      now + COMMAND_LIFETIME_MS,
-      who.kind === "parent" ? who.parentId : null,
-    );
-    log("command.issued", { kind, command: id, expires_at: now + COMMAND_LIFETIME_MS });
+    const id = insertCommandRow(db, deviceId, kind, now, now + lifetime, who);
+    log("command.issued", { kind, command: id, expires_at: now + lifetime });
     const command = listCommands(db, deviceId, now, { kind, limit: 1 })[0];
     if (!command) throw new Error("command vanished");
     return { command, already: false };

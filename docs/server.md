@@ -74,8 +74,8 @@ home network; see docs/platform-notes.md.)
 | `BELAY_BACKUP_PASSPHRASE` | none | Encrypts the daily backups with this passphrase, at least 15 characters ([Encrypted backups](#encrypted-backups)). Without it they're plain SQLite files. Prefer the `_FILE` form. |
 | `BELAY_BACKUP_PASSPHRASE_FILE` | none | A file that holds the passphrase instead, like a Docker secret (`/run/secrets/belay_backup`); a final new line is ignored. Set one of the two, not both. |
 
-The family's timezone, the silent threshold, what AI apps may read, notifications and the
-daily summary are set on the Settings page, not here.
+The family's timezone, the silent threshold, what AI apps may read, how long screen time is
+kept, notifications and the daily summary are set on the Settings page, not here.
 
 ## Notifications
 
@@ -116,8 +116,10 @@ that's down for that whole hour skips the day rather than send it late.
 - The notice is the phone's name and the app's name or the proposed change, like
   `Sam's phone: "Chatter Box" is waiting for you` or
   `Sam's phone: Claude proposes resuming the paused phone`, and which page to open
-  (Requests or Proposals). Notices about the server and the daily summary name no phone or
-  app, and open the Phones page. Each is encrypted for that browser (RFC 8291, `aes128gcm`):
+  (Requests or Proposals). A request for more time names the limit and quotes the kid's
+  reason, like `Sam's phone asks for 15 more minutes for Games: "One more level, please"`,
+  and so does wanting to talk about the family agreement. Notices about the server and the
+  daily summary name no phone or app, and open the Phones page. Each is encrypted for that browser (RFC 8291, `aes128gcm`):
   only the browser can read it, not the push service.
 - The push service does see the browser's subscription address, when each notice is sent
   and how long it is, the server's VAPID public key, and a token signed with it (RFC 8292)
@@ -170,18 +172,40 @@ docker compose exec belay node dist/cli.js recovery-key "Sam's phone"           
 docker compose exec belay node dist/cli.js remove-other-users "Sam's phone"     # remove every other user and profile
 ```
 
+And for screen time (Phase 3), as the phone's Rules and Screen time pages set it:
+
+```bash
+docker compose exec belay node dist/cli.js limit "Sam's phone" com.example.game --minutes 60 --name Games   # a daily limit for one app
+docker compose exec belay node dist/cli.js limit "Sam's phone" '*' --minutes 120              # a daily total for every app
+docker compose exec belay node dist/cli.js limit "Sam's phone" com.example.game --remove
+docker compose exec belay node dist/cli.js schedule "Sam's phone" --name Bedtime --start 21:00 --end 07:00 --lock   # every day unless --days mon,tue,…
+docker compose exec belay node dist/cli.js schedule "Sam's phone" --remove <id>
+docker compose exec belay node dist/cli.js lock-now "Sam's phone"                    # locks the screen once, if the phone gets it within 10 minutes (--minutes)
+docker compose exec belay node dist/cli.js screen-time "Sam's phone" --measure on    # or off: whether the phone sends how long apps are used
+docker compose exec belay node dist/cli.js answer "Sam's phone" <request id> approve --minutes 15   # or decline, or talk; --note "…"
+```
+
+`limit` sets the limit that names only that app (or the daily total), so running it again
+changes it; `schedule` adds a custom schedule (`--allow` lists apps that stay open, comma
+separated; times are the phone's). Times like `21:00` to `07:00` end the next day.
+
 They're logged as the server's ("The server" on the Activity page), and a running server
 passes them to the phone within a second or two. `status --json` gives each phone's
 `policy_version` (the server's), `enforcement` (what the phone last said it applied, exactly
-as it sent it, or `null`), `requests` (`[{package, status, reason}]`), `agent_version_code`
-and `agent_signing_sha256` (as the phone reported them), `agent_update` (the offer, and what
-the phone said about it), `recovery` (`{version, last_used}`: the key version the policy
-carries, or `null`) and `commands` (the latest, with their results). Hardening (factory reset,
-debugging, reset protection) can only be turned on on the parent page.
+as it sent it, or `null`), `requests` (`[{id, kind, package, status, reason}]`, with
+`limit_id`, `minutes` and `given_minutes` for more time, `version` and `answer` for the
+agreement), `agent_version_code` and `agent_signing_sha256` (as the phone reported them),
+`agent_update` (the offer, and what the phone said about it), `recovery` (`{version,
+last_used}`: the key version the policy carries, or `null`), `commands` (the latest, with
+their results), `screen_time` (the policy's screen-time rules, or `null` while the phone has
+none) and `usage` (the days the phone sent, newest first, at most 31: `[{day, zone, as_of,
+screen_minutes, apps: [{package, minutes, opens}]}]`). Hardening (factory reset, debugging,
+reset protection) can only be turned on on the parent page.
 
-For scripts: `agent-add` prints only the APK's SHA-256 (lowercase) on stdout, and
-`recovery-key` prints only the key, grouped like `7KD2M-8Q4ZX-1HNP3-RT6VW-B9CF0G`; everything
-else goes to stderr. Both exit 1 with a reason on stderr when they can't.
+For scripts: `agent-add` prints only the APK's SHA-256 (lowercase) on stdout,
+`recovery-key` prints only the key, grouped like `7KD2M-8Q4ZX-1HNP3-RT6VW-B9CF0G`, and
+`limit`, `schedule` and `lock-now` print only the id of the limit, schedule or command;
+everything else goes to stderr. They exit 1 with a reason on stderr when they can't.
 
 Outside Docker, use `npm run cli -- <command>` from `server/`.
 
@@ -241,6 +265,47 @@ phone's page says so at the top, with "Remove other users and profiles": the pho
 every one, with everything in it, when it gets that, if that's within 7 days. The page shows
 whether it was done, couldn't be, or expired. It also lists the user restrictions in force that
 Belay didn't set.
+
+## Screen time, stages and the agreement (Phase 3)
+
+Off until a parent sets a limit or a schedule, or turns measuring on: until then the policy's
+`screen_time` is `null`, and the phone counts nothing. The phone counts and enforces by
+itself, offline too; the server keeps the rules and what the phone reports.
+
+- **Rules** (a phone's Rules tab): daily limits (one app, a group, or a daily total of every
+  app), school, bedtime and custom schedules, apps never counted or paused, self-serve minutes
+  the kid may take without asking, what happens when Belay can't count (pause the apps with a
+  limit, the default, or keep them open), the warning before a limit or schedule, extra time
+  for today, the time zone the phone's days follow (its own, by default) and when they start,
+  and a preview of a day under the rules. **Measuring** is there too: whether the phone sends
+  how long apps are used. Only a parent turns it on or off; without it the phone still keeps
+  the limits, and the server keeps no minutes.
+- **Screen time** (a phone's Screen time tab): a day by the hour and the last seven days,
+  with the apps that took the time and the times Belay couldn't count, each chart with a table
+  of the same numbers; **Lock now**, a pause of 15 minutes to 4 hours and the screen locked
+  once if the phone gets it within 10 minutes; and the kid's requests for more time,
+  answered with 15, 30 or 60 minutes, "Let's talk" or "No". Approving gives the minutes for
+  that limit today, in the phone's day.
+- **Stages** (in the menu): the family's numbered sets of rules. A phone on a stage gets its
+  rules with the phone's own changes on top (Rules marks them, and "Put back all of the
+  stage's rules" drops them); a change to a stage reaches every phone on it at once; moving
+  a phone to a stage starts it on exactly that stage's rules. The kid's screen shows what the
+  next stage changes, in sentences the server writes from the two sets of rules, and how to
+  get there, in the family's words.
+- **Agreement** (a phone's Agreement tab): the family agreement in sections. Each save is a
+  new version, agreed by the parents as they save it. The kid answers on the phone: "I agree",
+  or "I want to talk about it" with their reason, which waits on the Requests page.
+
+Every change gives the phone a new rules version and is in the activity log. AI apps can
+tighten screen time and lock the phone directly; anything that loosens, or moves the phone to
+another stage, is a proposal ([mcp.md](mcp.md)). They can't turn measuring on or off, or
+answer the kid.
+
+Screen time is kept 13 months by default (Settings, 1 to 36 months): the hourly clean-up
+deletes older days, and the extra time given for them. When a phone that measures or has a
+limit reports it can't count, its page and the daily summary say so ("Usage access for Belay
+is turned off, so Belay can't count screen time", and what that does to the apps with a
+limit).
 
 ## Backups
 

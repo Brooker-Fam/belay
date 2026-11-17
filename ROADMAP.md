@@ -123,8 +123,9 @@ self-update, recovery key, backups and health checks, Phase 10's removal of anot
 profile, and the fixes from a security review of the Phase 2 server. **In progress:** Phase 3,
 whose contract is in [docs/protocol.md](docs/protocol.md): its phone side is built (the engine in
 `:core`, and the app: counting, enforcing, notices, lock now, uploads and the kid's screens;
-[phase3-checklist.md](docs/phase3-checklist.md) is for the Pixel), and its server side is next.
-Network logging comes after.
+[phase3-checklist.md](docs/phase3-checklist.md) is for the Pixel), and so is its server side
+(each phone's rules, stages, the agreement, more-time answers, usage storage, the Screen time
+page, the CLI and the MCP tools). Network logging comes after.
 
 ### Phase 3: screen time, schedules and stages ([design](docs/design/phase3-screen-time.md))
 

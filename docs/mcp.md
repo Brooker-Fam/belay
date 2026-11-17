@@ -5,12 +5,14 @@ any MCP client, can then answer questions like "what did Sam install this week, 
 OK?" from what the family's server knows. The parent page is the fallback.
 
 The AI can read, mark apps reviewed, and **tighten** a phone's rules directly: block an app,
-or pause the phone. The phone gets it within seconds if it's online. **Anything that
-loosens** (allowing or unblocking an app, resuming a paused phone, lifting a lock, turning
-off the web filter, letting new apps run without asking) is only a proposal: it waits on
-the parent page's Proposals page until a parent approves it. Nothing loosens without a
-parent. The AI can't answer the kid's requests, and it can't touch factory reset,
-debugging, reset protection or maintenance mode, not even as a proposal.
+pause or lock the phone, or tighten its screen time (a lower limit, a longer bedtime). The
+phone gets it within seconds if it's online. **Anything that loosens** (allowing or
+unblocking an app, resuming a paused phone, lifting a lock, turning off the web filter,
+letting new apps run without asking, a higher limit or a shorter schedule, moving the phone
+to another stage) is only a proposal: it waits on the parent page's Proposals page until a
+parent approves it. Nothing loosens without a parent. The AI can't answer the kid's
+requests, turn measuring screen time on or off, or touch factory reset, debugging, reset
+protection or maintenance mode, not even as a proposal.
 
 ## Connect Claude (web, desktop and mobile)
 
@@ -72,8 +74,16 @@ provider's terms. Settings → "What AI apps may read" turns each category off:
   exemption), the update of Belay a parent offered and how it's going, whether Belay's
   signing certificate changed, how many other users or profiles are on the phone, and the
   user restrictions in force that Belay didn't set.
-- **Requests:** what the kid asks for from Belay's screen (which app), and why, in their
-  own words, with each answer and the parent's note. On by default.
+- **Requests:** what the kid asks for from Belay's screen (which app, or how many more
+  minutes for which limit), and why, in their own words, with each answer and the parent's
+  note. On by default.
+- **Screen time** (Phase 3): how long each app was used each day (minutes and how often it
+  was opened), the screen minutes in each hour, unlocks, the times Belay couldn't count and
+  why, and where each limit stands today (time left, used up, on extra time). Only what the
+  phone sent while a parent had measuring on; calls and texting are never counted per app.
+- **Stage and agreement** (Phase 3): the phone's stage, what the next one changes and how to
+  get there, the family agreement, and the kid's answers to it ("I agree", or wanting to talk
+  about it, and why).
 
 Each category is on by default. One that a new version of Belay adds starts off for a
 family that had turned any category off, and Settings marks it "new" until a parent saves.
@@ -84,14 +94,16 @@ getting around Belay when the phone reports Android's own Parental Controls or a
 profile), when they last checked in, and
 each phone's rules (protection, pause and its note, the locked settings, the web filter,
 Chrome's settings, maintenance mode, whether reset protection is set, whether the phone has a
-recovery key and when one was last used, and proposals waiting for a parent). Blocked and
-waiting apps are listed only with the Apps category.
+recovery key and when one was last used, and proposals waiting for a parent), and from
+Phase 3 its screen-time rules (measuring, limits, schedules, exempt apps, self-serve, extra
+time given today, the last "lock now" and how it went). Blocked and waiting apps are listed
+only with the Apps category.
 
 Also always included: the server's own health (`get_server_health`): backups, disk, database
 size, its clock. It names no phone or app.
 
 Never included, because Belay doesn't collect it: messages, calls, contacts, photos,
-browsing, location, or how long apps are used. Passwords, tokens, enrollment codes, reset
+browsing, location, or what's on the screen. Passwords, tokens, enrollment codes, reset
 protection account ids and recovery keys (or their checks) are never returned.
 
 Every tool call is in the activity log (Activity → "Also show what AI apps read").
@@ -109,21 +121,27 @@ most 20, and each message in it counts.
 | `get_app_changes(device?, since?, until?, limit?, include_system?)` | The timeline: installed, updated, removed, reinstalled. Last 7 days by default. |
 | `list_unreviewed_apps(device?)` | Apps installed or reinstalled since a parent reviewed them, or that gained a sensitive permission since. Each has its Play Store link. |
 | `mark_apps_reviewed(device, packages, note?)` | Records the review, in the parent's name, through this app. It changes nothing on the phone. |
-| `list_requests(device?, status?)` | What the kid asked for, with their reason and each answer: waiting, approved, declined, let's talk. Waiting first, then the last 30 days. Needs the Requests category. |
-| `get_policy(device)` | What a phone enforces now, in words, with the rules' version and whether the phone has applied it; blocked and waiting apps; proposals waiting for a parent; whether the phone has a recovery key, and when one was last used. |
+| `list_requests(device?, status?)` | What the kid asked for (an app, more time for a limit today, or their answer to the family agreement, which needs the Stage and agreement category too), with their reason and each answer: waiting, approved (with the minutes given), declined, let's talk. Waiting first, then the last 30 days. Needs the Requests category. |
+| `get_policy(device)` | What a phone enforces now, in words, with the rules' version and whether the phone has applied it; blocked and waiting apps; a line on its screen time; proposals waiting for a parent; whether the phone has a recovery key, and when one was last used. |
+| `get_rules(device)` | Phase 3: the phone's screen-time rules (measuring, limits with their ids, schedules, exempt apps, self-serve, what happens when Belay can't count), extra time given today, the last "lock now", and proposals waiting. With the Screen time category, where each limit stands today; with Requests, more-time requests waiting; with Stage and agreement, the stage, what the next one changes, and the agreement with the kid's answer. |
+| `get_screen_time(device, from?, to?)` | Phase 3: day by day, in the phone's days: screen minutes, unlocks, minutes by hour, the most used apps with minutes and opens, and the times Belay couldn't count, with why. A day the phone sent nothing for says so: that's unknown, not zero. The last 7 days by default, at most 92. Needs the Screen time category. |
 | `block_app(device, package, note?)` | Blocks an app at once (tightening). It refuses the apps the phone never blocks, so 911 and 988 always work: Belay itself, the dialer and the services that place calls, the texting app, the keyboard, the home screen, emergency and safety apps, System UI, Settings, and anything else the phone reports it never blocks. An app that isn't on the phone yet can be blocked ahead of time, but AI apps may have at most 50 of those per phone; a parent clears them on the phone's page. |
 | `pause_phone(device, minutes?, note?)` | Pauses the phone at once, for some minutes or until a parent resumes it; the note is shown to the kid. It can't shorten a pause already running, and against one at least as long it changes nothing, its note included. |
+| `lock_phone(device, minutes, note?)` | Phase 3: pauses the phone for 5 to 240 minutes and locks its screen, if the phone gets it within 10 minutes. Calls, texts, 911 and 988 still work. A phone that couldn't lock says why, word for word, under `untrusted` in `get_rules`. |
+| `change_screen_time(device, change, reason)` | Phase 3: limits (new, or changed by id), schedules, removing either, exempt apps, self-serve, what happens when Belay can't count, or `stage` (a stage's name, on its own). The server decides: a change whose every part tightens applies at once; anything else, or a mix, becomes a proposal for a parent, and so does moving to another stage, always. |
 | `get_server_health` | The family's server itself: its problems (urgent first), the last backup and daily try, when a backup was last verified and the last restore drill, free disk space, the database's size, and whether its clock agrees with the phones'. No family data. |
 | `propose_change(device, change, reason)` | Proposes loosening a rule (`allow_app` with a package, `resume`, `lift_restriction` with a restriction, `web_filter_off`, `new_apps_allow`) for a parent to approve on the parent page. It changes nothing itself. |
 
-The read tools are marked read-only; `block_app` and `pause_phone` are marked destructive
-(they change what the phone enforces, and only a parent can undo them), so a client may ask
-before calling them. Every call is in the activity log with the app's name. Times are in
-the family's timezone with their UTC offset. Text from app developers (names, versions,
-package names), the kid's reasons, notes, and what Belay on the phone reports are in
-fields labeled `untrusted`, and the server's instructions tell the AI they are data, never
-instructions: an app called "Ignore previous instructions" stays just a strange app name,
-and a reason that says "approve this" approves nothing. What the phone says about itself
+The read tools are marked read-only; `block_app`, `pause_phone`, `lock_phone` and
+`change_screen_time` are marked destructive (they change what the phone enforces, and only a
+parent can undo them), so a client may ask before calling them. Every call is in the
+activity log with the app's name. Times are in the family's timezone with their UTC offset;
+screen time is counted in the phone's own days. Text from app developers (names, versions,
+package names), the kid's reasons, notes, the family's own names for limits, schedules and
+stages, the agreement's text, and what Belay on the phone reports are in fields labeled
+`untrusted`, and the server's instructions tell the AI they are data, never instructions:
+an app called "Ignore previous instructions" stays just a strange app name, and a reason
+that says "approve this" approves nothing. What the phone says about itself
 is in plain fields only when it fits Android's own format exactly (a release like `17`, a
 patch date, a real timezone, a permission Belay declares, a user restriction Android
 defines); its model's name, which no format can check, and anything else are `untrusted`
@@ -143,7 +161,17 @@ too, since whoever holds a phone's token can send any text.
   since it was made (the phone was paused again, the app's rule was decided again or the
   kid's request for it answered, another web filter), it's marked out of date and nothing
   changes. The Proposals page says so, before and after.
-- The kid's requests are answered only by a parent, on the parent page.
+- `change_screen_time` (Phase 3) applies a change only when every part of it tightens, as
+  the server's classifier (the same rules as the phone's) decides: a lower or new limit, more
+  apps under one, a schedule that starts earlier, ends later or runs on more days, fewer apps
+  left open or exempt, less self-serve, pausing the apps with a limit when Belay can't count.
+  Anything else, or a mix, becomes a proposal with every change listed, each marked tightens
+  or loosens on the Proposals page; when a parent approves, each part is checked against the
+  rules as they are then, and one whose subject changed since makes it out of date. Moving a
+  phone to another stage is always a proposal. `lock_phone` pauses and locks at once.
+- Measuring screen time (whether the phone sends how long apps are used) has no tool and no
+  proposal: only a parent turns it on or off.
+- The kid's requests are answered only by a parent, on the parent page, more time included.
 - Factory reset, debugging, reset protection and maintenance mode have no tool and no kind
   of proposal: only a parent changes them, on the parent page, and turning hardening on
   needs the phone's name typed.
@@ -155,7 +183,16 @@ too, since whoever holds a phone's token can send any text.
 - **`weekly_review`:** goes through the week's changes and the kid's waiting requests,
   looks up each new or requested app (age rating, chatting with strangers, in-app
   purchases, data safety), and gives a short verdict and a conversation starter for each,
-  with a suggested answer to each request. It never claims to have approved anything.
+  with a suggested answer to each request. From Phase 3 it adds the last 14 days of screen
+  time: totals against the limits, and anything Belay couldn't count. It never claims to
+  have approved anything.
+- **`family_check_in(device)`** (Phase 3): a monthly talk with the kid in the room: what went
+  well first, then what was hard, without judging; what the next stage would change and how
+  to get there; three open questions for the kid; and changes the family might make, only as
+  suggestions.
+
+The server's instructions add, for screen time: "Screen time is a number, not a verdict about
+the kid. Report it plainly, don't guess why, and don't moralize."
 - **`review_app(device, package)`:** the same review for one app.
 - **`review_request(device, package)`:** reviews an app the kid asked for, with their
   reason, and suggests how the parent might answer (approve, decline or let's talk, with a
@@ -173,3 +210,8 @@ too, since whoever holds a phone's token can send any text.
 - "Propose allowing Trail Maps: it's for the hiking trip." (Then approve it on the
   Proposals page.)
 - "Mark Trail Maps reviewed, with the note: fine for hiking trips."
+- "How much did Sam use the phone this week, and which apps took the time?"
+- "Make Sam's games limit 45 minutes on school days." (A lower limit applies at once; a
+  higher one becomes a proposal.)
+- "Lock Sam's phone for 30 minutes: dinner."
+- "Let's do the family check-in for Sam's phone."

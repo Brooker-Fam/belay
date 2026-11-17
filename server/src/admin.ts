@@ -20,6 +20,16 @@
  *   agent-offer "<phone>" <sha256>                offers that version to the phone, as a parent would
  *   recovery-key "<phone>"                        a new recovery key for the phone; prints only the key, grouped
  *   remove-other-users "<phone>"                  asks the phone to remove every other user and profile (Phase 10)
+ *   limit "<phone>" <package|*> --minutes <n> [--name <words>]
+ *                                                 that phone's daily limit for the app (* : the daily total); prints only its id
+ *   limit "<phone>" <package|*> --remove          removes it; prints only its id
+ *   schedule "<phone>" --name <words> --start HH:MM --end HH:MM [--days mon,tue,...] [--lock] [--allow p1,p2]
+ *                                                 a custom schedule, in the phone's time; prints only its id
+ *   schedule "<phone>" --remove <id>
+ *   lock-now "<phone>" [--minutes <n>]            locks the screen once, if the phone gets it within n minutes (10); prints only the command's id
+ *   screen-time "<phone>" --measure on|off        whether the phone sends how long apps are used (Phase 3)
+ *   answer "<phone>" <request id> approve|decline|talk [--minutes <n>] [--note <words>]
+ *                                                 answers the kid's request; approving more time needs --minutes
  *
  * Changes are logged as the server's (the activity log's "The server"). A running server sees
  * them within a second or two and passes them to the phone's long-poll. Hardening (factory
@@ -36,8 +46,14 @@ import { type RecoveryState, makePhoneRecoveryKey, recoveryState, usableKey } fr
 import { issueCommand, listCommands } from "./family/commands.js";
 import { appCounts, listChanges } from "./family/apps.js";
 import { type DeviceRow, findDeviceByName, listDevices, nameTaken } from "./family/devices.js";
-import { LIMITS, RuleRefused, askAgainSummary, decideApp, pausePhone, protect, resumePhone, setNewApps, type PolicyContext } from "./family/policy.js";
+import { LIMITS, RuleRefused, answerRequest, askAgainSummary, decideApp, pausePhone, protect, resumePhone, setNewApps, type PolicyContext } from "./family/policy.js";
 import { recentRequests } from "./family/requests.js";
+import { setPhoneRules, setPhoneSettings } from "./family/screentime/changes.js";
+import { WEEKDAYS, type Weekday, clockMinutes } from "./family/screentime/days.js";
+import { newRuleId, phoneLabels, phoneRules, screenTimeFor } from "./family/screentime/rules.js";
+import { usageDays } from "./family/screentime/usage.js";
+import { duration } from "./family/screentime/words.js";
+import { oneLine } from "./text.js";
 import { runOpsCommand } from "./ops/cli.js";
 import { getSettings } from "./settings.js";
 import { formatAgo, isoInZone } from "./time.js";
@@ -104,7 +120,17 @@ const USAGE = `Commands:
   agent-add <apk> --version-code <n> [--version-name <name>]
   agent-offer "<phone>" <sha256>
   recovery-key "<phone>"
-  remove-other-users "<phone>"`;
+  remove-other-users "<phone>"
+  limit "<phone>" <package|*> --minutes <n> [--name <words>]
+  limit "<phone>" <package|*> --remove
+  schedule "<phone>" --name <words> --start HH:MM --end HH:MM [--days mon,tue,...] [--lock] [--allow p1,p2]
+  schedule "<phone>" --remove <id>
+  lock-now "<phone>" [--minutes <n>]
+  screen-time "<phone>" --measure on|off
+  answer "<phone>" <request id> approve|decline|talk [--minutes <n>] [--note <words>]`;
+
+/** How many of the newest usage days status --json lists per phone. */
+const STATUS_USAGE_DAYS = 31;
 
 /** Positional arguments, and --name value (or --name=value, or a bare --name) flags. */
 function parseArgs(args: string[]): { positional: string[]; flags: Map<string, string | true> } {
@@ -228,13 +254,31 @@ async function run(argv: string[], io: CliIO): Promise<void> {
             at: iso(c.resultAt),
             problem: c.problem,
           })),
-          /** The kid's requests: waiting ones, and the last 30 days'. */
-          requests: recentRequests(db, now, { deviceId: d.id }).map((r) => ({ package: r.package, status: r.status, reason: r.reason })),
+          /** The kid's requests: waiting ones, and the last 30 days'. Phase 3 adds more_time and agreement ones. */
+          requests: recentRequests(db, now, { deviceId: d.id }).map((r) => ({
+            id: r.id,
+            kind: r.kind,
+            package: r.kind === "agreement" ? null : r.package,
+            status: r.status,
+            reason: r.reason,
+            ...(r.kind === "more_time" ? { limit_id: r.limitId, minutes: r.minutes, given_minutes: r.givenMinutes } : {}),
+            ...(r.kind === "agreement" ? { version: r.version, answer: r.answer } : {}),
+          })),
           recent_changes: listChanges(db, { deviceId: d.id, includeSystem: true, limit: 20 }).map((c) => ({
             kind: c.kind,
             package: c.package,
             at: iso(c.at),
             found_by: c.backfilled ? "server snapshot" : c.detection,
+          })),
+          /** Phase 3: the screen-time rules the server sends the phone (the policy's screen_time), or null. */
+          screen_time: screenTimeFor(db, d.id, now),
+          /** Phase 3: the days of usage the phone sent, newest first (as_of as the phone sent it). */
+          usage: usageDays(db, d.id, { limit: STATUS_USAGE_DAYS }).map((u) => ({
+            day: u.day,
+            zone: u.zone,
+            as_of: u.asOf,
+            screen_minutes: u.screenMinutes,
+            apps: u.apps.map((a) => ({ package: a.package, minutes: a.minutes, opens: a.opens })),
           })),
         };
       });
@@ -248,6 +292,13 @@ async function run(argv: string[], io: CliIO): Promise<void> {
         io.out(`${p.name}: ${p.status}${p.problems.length ? ` (${p.problems.join("; ")})` : ""}`);
         io.out(`  last heard from ${p.heard_ago}; ${p.user_apps} apps, ${p.apps_to_review} to review; ${waiting} request${waiting === 1 ? "" : "s"} waiting`);
         io.out(`  rules version ${p.policy_version}; the phone applied ${p.enforcement ? `version ${p.enforcement.policy_version}` : "none yet"}`);
+        if (p.screen_time) {
+          const today = p.usage[0];
+          io.out(
+            `  screen time: ${p.screen_time.limits.length} limit${p.screen_time.limits.length === 1 ? "" : "s"}, ${p.screen_time.schedules.length} schedule${p.screen_time.schedules.length === 1 ? "" : "s"}, measuring ${p.screen_time.measure ? "on" : "off"}` +
+              (today ? `; ${today.day}: ${duration(today.screen_minutes)} so far` : ""),
+          );
+        }
         for (const c of p.recent_changes.slice(0, 5)) io.out(`  ${c.at ?? ""} ${c.kind} ${c.package}`);
       }
       return;
@@ -355,6 +406,126 @@ async function run(argv: string[], io: CliIO): Promise<void> {
         `Recovery key version ${done.result.version} for ${row.name} (rules version ${done.version}). It's shown only now: print it, or keep it in a password manager.` +
           (done.result.replaced ? " The earlier key stops working once the phone has this one." : ""),
       );
+      return;
+    }
+    case "limit": {
+      // Its only line on stdout is the limit's id, for scripts.
+      const row = phone();
+      const pkg = positional[1] ?? "";
+      const usage = `Usage: limit "<phone>" <package|*> --minutes <n> [--name <words>], or --remove`;
+      if (pkg !== "*" && !packageName.safeParse(pkg).success) throw new CliError(usage);
+      const p = phoneRules(db, row.id);
+      const total = pkg === "*";
+      const wanted = structuredClone(p.rules);
+      const index = wanted.limits.findIndex((l) => (total ? l.packages.includes("*") : l.packages.length === 1 && l.packages[0] === pkg));
+      const what = total ? "the daily total" : pkg;
+      if (flags.has("remove")) {
+        const [removed] = index < 0 ? [] : wanted.limits.splice(index, 1);
+        if (!removed) throw new CliError(`${row.name} has no limit for ${what}.`);
+        const done = setPhoneRules(ctx, row.id, wanted, server);
+        io.out(removed.id);
+        io.err(`${row.name}: no more limit for ${what} (rules version ${done.version}).`);
+        return;
+      }
+      const minutes = Number(flags.get("minutes"));
+      const name = flags.get("name");
+      if (!flags.has("minutes") || !Number.isInteger(minutes) || minutes < 0 || minutes > 1440 || name === true || (name !== undefined && !name.trim())) {
+        throw new CliError(`${usage}. Minutes are 0 to 1440 a day.`);
+      }
+      const words = name?.trim().slice(0, 60);
+      const existing = index < 0 ? undefined : wanted.limits[index];
+      const limit = existing
+        ? { ...existing, minutes, by_day: null, ...(words ? { name: words } : {}) }
+        : { id: newRuleId("l"), name: words ?? (total ? "Screen time" : oneLine(phoneLabels(db, row.id)(pkg), 60) || pkg), packages: [pkg], minutes, by_day: null };
+      if (existing) wanted.limits[index] = limit;
+      else wanted.limits.push(limit);
+      const done = setPhoneRules(ctx, row.id, wanted, server);
+      io.out(limit.id);
+      io.err(`${row.name}: ${duration(minutes)} a day for ${what} (rules version ${done.version}).`);
+      return;
+    }
+    case "schedule": {
+      // Its only line on stdout is the schedule's id, for scripts.
+      const row = phone();
+      const wanted = structuredClone(phoneRules(db, row.id).rules);
+      const remove = flags.get("remove");
+      if (remove !== undefined) {
+        const gone = typeof remove === "string" ? wanted.schedules.find((s) => s.id === remove) : undefined;
+        if (!gone) throw new CliError(`Usage: schedule "<phone>" --remove <id>, the id schedule printed. ${row.name} has no schedule with that id.`);
+        wanted.schedules = wanted.schedules.filter((s) => s.id !== gone.id);
+        const done = setPhoneRules(ctx, row.id, wanted, server);
+        io.out(gone.id);
+        io.err(`${row.name}: no more ${gone.name} (rules version ${done.version}).`);
+        return;
+      }
+      const name = flags.get("name");
+      const start = flags.get("start");
+      const end = flags.get("end");
+      const daysFlag = flags.get("days");
+      const allowFlag = flags.get("allow");
+      const usage = `Usage: schedule "<phone>" --name <words> --start HH:MM --end HH:MM [--days mon,tue,...] [--lock] [--allow p1,p2]`;
+      if (typeof name !== "string" || !name.trim() || typeof start !== "string" || typeof end !== "string" || clockMinutes(start) === null || clockMinutes(end) === null) {
+        throw new CliError(`${usage}. Times are like 21:00, in the phone's time.`);
+      }
+      const days = daysFlag === undefined ? [...WEEKDAYS] : typeof daysFlag === "string" ? daysFlag.split(",").map((d) => d.trim().toLowerCase()) : [];
+      if (!days.length || days.some((d) => !(WEEKDAYS as readonly string[]).includes(d))) throw new CliError(`${usage}. Days are mon, tue, wed, thu, fri, sat and sun.`);
+      const allow = allowFlag === undefined ? [] : typeof allowFlag === "string" ? allowFlag.split(",").map((p) => p.trim()) : [""];
+      if (allow.some((p) => !packageName.safeParse(p).success)) throw new CliError(`${usage}. --allow takes package names, like com.example.app.`);
+      const schedule = {
+        id: newRuleId("s"),
+        kind: "custom" as const,
+        name: name.trim().slice(0, 60),
+        days: [...new Set(days)] as Weekday[],
+        start,
+        end,
+        allow: [...new Set(allow)],
+        lock: flags.has("lock"),
+        skip: [],
+      };
+      wanted.schedules.push(schedule);
+      const done = setPhoneRules(ctx, row.id, wanted, server);
+      io.out(schedule.id);
+      const nextDay = (clockMinutes(end) ?? 0) <= (clockMinutes(start) ?? 0);
+      io.err(`${row.name}: ${schedule.name} from ${start} to ${end}${nextDay ? " the next day" : ""} (rules version ${done.version}).`);
+      return;
+    }
+    case "lock-now": {
+      // Its only line on stdout is the command's id, for scripts.
+      const row = phone();
+      if (row.revoked_at !== null) throw new CliError(`${row.name} is disconnected, so it wouldn't get that.`);
+      const minutesFlag = flags.get("minutes");
+      const minutes = minutesFlag === undefined ? 10 : Number(minutesFlag);
+      if (!Number.isInteger(minutes) || minutes < 1 || minutes > 1440) throw new CliError(`Usage: lock-now "<phone>" [--minutes <n>], n from 1 to 1440 (10 if left out)`);
+      const done = issueCommand(ctx, row.id, "lock_now", server, { expiresInMs: minutes * 60_000 });
+      io.out(done.result.command.id);
+      io.err(`${row.name}: the phone locks its screen when it gets this (rules version ${done.version}), if that's by ${iso(done.result.command.expiresAt) ?? ""}.`);
+      return;
+    }
+    case "screen-time": {
+      const row = phone();
+      const measure = flags.get("measure");
+      if (measure !== "on" && measure !== "off") throw new CliError(`Usage: screen-time "<phone>" --measure on|off`);
+      const done = setPhoneSettings(ctx, row.id, { measure: measure === "on" }, server);
+      io.out(
+        `${row.name}: measuring screen time is ${measure} (rules version ${done.version}). ${measure === "on" ? "The phone sends how long apps are used." : "The phone counts only to enforce its limits, and sends no minutes."}`,
+      );
+      return;
+    }
+    case "answer": {
+      const row = phone();
+      const [, id = "", choice = ""] = positional;
+      const answers = { approve: "approved", decline: "declined", talk: "talk" } as const;
+      const answer = answers[choice as keyof typeof answers] as (typeof answers)[keyof typeof answers] | undefined;
+      const minutesFlag = flags.get("minutes");
+      const minutes = minutesFlag === undefined ? undefined : Number(minutesFlag);
+      const note = flags.get("note");
+      if (!id || !answer || (minutes !== undefined && (!Number.isInteger(minutes) || minutes < 1 || minutes > 240))) {
+        throw new CliError(`Usage: answer "<phone>" <request id> approve|decline|talk [--minutes <n>] [--note <words>]; minutes are 1 to 240, for more time`);
+      }
+      const done = answerRequest(ctx, row.id, id, answer, server, typeof note === "string" ? note : null, minutes === undefined ? {} : { minutes });
+      if (!done.result) throw new CliError(`${row.name} has no request ${id}.`);
+      const given = done.result.minutes !== null ? `: ${done.result.minutes} more minutes for ${done.result.day ?? "today"}` : "";
+      io.out(`${row.name}: request ${id} is ${answer === "talk" ? "answered \"let's talk\"" : answer}${given} (rules version ${done.version}).`);
       return;
     }
     case "agent-offer": {

@@ -7,7 +7,7 @@ import { RESTRICTION_WORDS } from "../../family/android.js";
 import { type App, type Change, type Review, PERMISSION_NAMES, SOURCE_NAMES, playStoreUrl, versionText } from "../../family/apps.js";
 import { type DeviceView, patchAgeDays } from "../../family/devices.js";
 import { type AskAgain, type Decision, LIMITS, type Rules } from "../../family/policy.js";
-import type { RequestView } from "../../family/requests.js";
+import type { AppRequestView as RequestView } from "../../family/requests.js";
 import { formatAgo, formatDate, formatDuration } from "../../time.js";
 import { Csrf, Layout, Notice, PermissionChips, PostButton, Problems, StatusBadge, Time, type View } from "../ui.js";
 import {
@@ -25,6 +25,7 @@ import {
 } from "./rules.js";
 import { OtherUsersCard, RecoveryCard, UpdateCard } from "./belay.js";
 import { ChangeLine } from "./timeline.js";
+import { PhoneTabs } from "./screentime.js";
 
 export interface DeviceSummary {
   device: DeviceView;
@@ -319,6 +320,7 @@ export const DevicePage: FC<{
         <h1>{device.name}</h1>
         <StatusBadge status={device.status} />
       </div>
+      <PhoneTabs view={view} device={device} current="apps" />
       {message && <Notice>{message}</Notice>}
       {error && <Notice kind="error">{error}</Notice>}
       {tampering.length > 0 && (

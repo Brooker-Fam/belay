@@ -7,15 +7,18 @@ import { audit } from "../audit.js";
 import { normalizeCode, sha256 } from "../crypto.js";
 import type { Deps } from "../deps.js";
 import { offeredFile } from "../family/agent.js";
-import { buildPolicy, policyVersion } from "../family/policy.js";
+import { buildPolicy, neverBlockedOn, policyVersion } from "../family/policy.js";
 import { receiveReport } from "../family/reports.js";
 import { saveRequests } from "../family/requests.js";
+import { recordAgreementAnswers } from "../family/screentime/changes.js";
+import { phoneRow, phoneRules } from "../family/screentime/rules.js";
+import { saveUsage } from "../family/screentime/usage.js";
 import { bearerToken, clientAddress, parseRange, readJson, type Bindings } from "../http.js";
-import { notifyParents, recoveryUsedNotice, requestNotice, updateFailedNotice } from "../push.js";
+import { notifyParents, recoveryUsedNotice, requestsNotice, updateFailedNotice } from "../push.js";
 import type { Verdict } from "../ratelimit.js";
 import { applyEvents, applyInventory } from "./apps.js";
 import { enroll } from "./enroll.js";
-import { CheckinRequest, EnrollRequest, EventsRequest, InventoryRequest, LIMITS, PolicyQuery, RequestsRequest, type Device } from "./schemas.js";
+import { CheckinRequest, EnrollRequest, EventsRequest, InventoryRequest, LIMITS, PolicyQuery, RequestsRequest, UsageRequest, type Device } from "./schemas.js";
 
 interface PhoneRow {
   id: string;
@@ -165,14 +168,46 @@ export function deviceRoutes(deps: Deps): Hono<DeviceEnv> {
     const phone = c.var.phone;
     db.prepare("UPDATE devices SET last_seen_at = ? WHERE id = ?").run(now, phone.id);
     const saved = saveRequests(db, phone.id, body.value.requests, now);
+    // The kid's answers to the agreement: the policy's kid_agreed_at follows, in a new version.
+    const ctx = {
+      db,
+      now,
+      changed: (id: string) => {
+        deps.waiters.changed(id);
+      },
+    };
+    recordAgreementAnswers(ctx, phone.id, saved.agreement);
+    const limitNames = new Map(phoneRules(db, phone.id).rules.limits.map((l) => [l.id, l.name]));
     for (const r of saved.created) {
-      audit(db, now, { kind: "phone", deviceId: phone.id }, "request.made", { detail: { package: r.package, label: r.label, ...(r.again ? { again: true } : {}) } });
+      const detail =
+        r.kind === "app"
+          ? { package: r.package ?? undefined, label: r.label ?? undefined }
+          : r.kind === "more_time"
+            ? { kind: r.kind, limit: r.limitId === "*" ? "every limit" : (limitNames.get(r.limitId ?? "") ?? "a limit"), minutes: r.minutes, package: r.package ?? undefined }
+            : { kind: r.kind, agreement_version: r.version, answer: r.answer };
+      audit(db, now, { kind: "phone", deviceId: phone.id }, "request.made", { detail: { ...detail, ...(r.again ? { again: true } : {}) } });
     }
     // A few notices an hour per phone at most: a burst of requests still shows on the parent page.
-    // Asking again for an app already waiting isn't news.
+    // Asking again for what's already waiting isn't news.
     const fresh = saved.created.filter((r) => !r.again);
-    if (fresh.length && limits.noticesPerPhone.hit(phone.id).ok) notifyParents(deps, requestNotice(phone.name, fresh.map((r) => r.label)));
+    if (fresh.length && limits.noticesPerPhone.hit(phone.id).ok) notifyParents(deps, requestsNotice(phone.name, fresh, (id) => limitNames.get(id) ?? null));
     if (saved.refused) return fail(429, "rate_limited", "Too many requests are waiting for a parent already", 3600);
+    return c.json({ server_time: now, accepted: saved.accepted });
+  });
+
+  /**
+   * Phase 3: what the phone counted, one local day per entry. Idempotent by (day, zone): a day
+   * sent again replaces the stored one when its as_of is the same or newer. Kept only while the phone's
+   * rules measure (a parent's choice); never-blocked apps' time is never kept.
+   */
+  app.post("/usage", limit(LIMITS.usageBytes), async (c) => {
+    const body = await readJson(c, UsageRequest);
+    if (!body.ok) return fail(400, "invalid_request", body.description);
+    const now = deps.now();
+    const phone = c.var.phone;
+    db.prepare("UPDATE devices SET last_seen_at = ? WHERE id = ?").run(now, phone.id);
+    const never = neverBlockedOn(db, phone.id);
+    const saved = saveUsage(db, phone.id, body.value.days, now, { measure: phoneRow(db, phone.id).settings.measure, keep: (pkg) => never(pkg) === null });
     return c.json({ server_time: now, accepted: saved.accepted });
   });
 

@@ -10,9 +10,12 @@
  * which only the parent page calls, after the parent types the phone's name.
  */
 import { type Actor, audit } from "../audit.js";
+import { newId } from "../crypto.js";
 import type { DB } from "../db.js";
 import { Policy } from "../device/schemas.js";
 import { deviceFacts } from "./devices.js";
+import { agreementFor } from "./screentime/agreement.js";
+import { insertExtra, phoneDay, phoneRules, screenTimeFor, stageFor } from "./screentime/rules.js";
 
 // ── Names ────────────────────────────────────────────────────────────────
 
@@ -490,9 +493,16 @@ function requestAnswers(db: DB, deviceId: string, now: number): Policy["requests
   return db
     .prepare<
       [string, number, number, number],
-      { id: string; status: Policy["requests"][number]["status"]; note: string | null; answered_at: number | null; answered_by: string | null }
+      {
+        id: string;
+        status: Policy["requests"][number]["status"];
+        note: string | null;
+        answered_at: number | null;
+        answered_by: string | null;
+        given_minutes: number | null;
+      }
     >(
-      `SELECT r.id, r.status, r.note, r.answered_at, p.name AS answered_by FROM requests r LEFT JOIN parents p ON p.id = r.answered_by
+      `SELECT r.id, r.status, r.note, r.answered_at, p.name AS answered_by, r.given_minutes FROM requests r LEFT JOIN parents p ON p.id = r.answered_by
        WHERE r.device_id = ? AND r.status != 'superseded' AND (r.status = 'pending' OR r.received_at >= ? OR r.answered_at >= ?)
        ORDER BY r.received_at DESC, r.rowid DESC LIMIT ?`,
     )
@@ -503,6 +513,8 @@ function requestAnswers(db: DB, deviceId: string, now: number): Policy["requests
       note: r.note?.slice(0, LIMITS.answerNote) ?? null,
       answered_at: r.answered_at,
       answered_by: r.answered_by?.slice(0, 60) ?? null,
+      // Phase 3: the minutes a parent gave, for an approved more_time request.
+      minutes: r.status === "approved" ? r.given_minutes : null,
     }));
 }
 
@@ -551,6 +563,7 @@ function commandsFor(db: DB, deviceId: string): Policy["commands"] {
 export function buildPolicy(db: DB, deviceId: string, now: number): Policy {
   const rules = getRules(db, deviceId);
   const pause = activePause(rules, now);
+  const screen = phoneRules(db, deviceId);
   return {
     version: rules.version,
     issued_at: rules.changedAt ?? now,
@@ -568,6 +581,12 @@ export function buildPolicy(db: DB, deviceId: string, now: number): Policy {
     agent_update: agentUpdate(db, deviceId),
     recovery: recoveryCheck(db, deviceId),
     commands: commandsFor(db, deviceId),
+    // Phase 3 (family/screentime): the stage's rules with the phone's own on top, and today's extra time.
+    screen_time: screenTimeFor(db, deviceId, now, screen),
+    stage: stageFor(db, deviceId, screen),
+    agreement: agreementFor(db, deviceId),
+    // Network logging is a later part of Phase 3: off until a parent can turn it on.
+    network_log: { enabled: false },
   };
 }
 
@@ -614,6 +633,38 @@ export type Log = (action: string, detail?: Record<string, unknown>) => void;
  */
 export function changePolicy<T>(ctx: PolicyContext, deviceId: string, actor: Actor, change: (log: Log) => T): Changed<T> {
   return mutate(ctx, deviceId, actor, (_rules, log) => change(log));
+}
+
+/**
+ * A change to what several phones get at once (a stage's rules: every phone on it gets them), in
+ * one transaction: each phone whose policy changed gets a new version, within the size limit,
+ * and its long-poll wakes. The activity log's entries name no phone; their detail says how many
+ * changed.
+ */
+export function changePolicies<T>(ctx: PolicyContext, deviceIds: string[], actor: Changer, change: (log: Log) => T): { result: T; changed: string[] } {
+  const { db, now } = ctx;
+  const outcome = db.transaction(() => {
+    const before = new Map(deviceIds.map((id) => [id, content(db, id, now)]));
+    const entries: [string, Record<string, unknown> | undefined][] = [];
+    const result = change((action, detail) => entries.push([action, detail]));
+    const changed: string[] = [];
+    for (const id of deviceIds) {
+      const after = content(db, id, now);
+      const was = before.get(id) ?? "";
+      if (after === was) continue;
+      const stored = getRules(db, id);
+      // A phone without rules yet still needs the row, for the version.
+      saveRules(db, id, stored, now);
+      const version = stored.version + 1;
+      if (policyBytes(after, version, now) > LIMITS.maxPolicyBytes && Buffer.byteLength(after) > Buffer.byteLength(was)) throw new RuleRefused(TOO_LARGE);
+      db.prepare("UPDATE policies SET version = ?, changed_at = ? WHERE device_id = ?").run(version, now, id);
+      changed.push(id);
+    }
+    for (const [action, detail] of entries) audit(db, now, actor, action, { detail: { ...detail, phones_changed: changed.length } });
+    return { result, changed };
+  })();
+  for (const id of outcome.changed) ctx.changed?.(id);
+  return outcome;
 }
 
 function mutate<T>(ctx: PolicyContext, deviceId: string, actor: Actor, change: (rules: Rules, log: Log) => T): Changed<T> {
@@ -671,8 +722,9 @@ function insertDecision(
 function appLabel(db: DB, deviceId: string, pkg: string): string | null {
   return (
     db.prepare<[string, string], { label: string }>("SELECT label FROM apps WHERE device_id = ? AND package = ?").get(deviceId, pkg)?.label ??
-    db.prepare<[string, string], { label: string }>("SELECT label FROM requests WHERE device_id = ? AND package = ? ORDER BY received_at DESC").get(deviceId, pkg)
-      ?.label ??
+    db
+      .prepare<[string, string], { label: string }>("SELECT label FROM requests WHERE device_id = ? AND package = ? AND kind = 'app' ORDER BY received_at DESC")
+      .get(deviceId, pkg)?.label ??
     null
   );
 }
@@ -768,7 +820,7 @@ function approveOpenRequests(db: DB, now: number, deviceId: string, pkg: string,
   return db
     .prepare(
       `UPDATE requests SET status = 'approved', note = ?, answered_by = ?, answered_at = ?
-       WHERE device_id = ? AND package = ? AND status IN ('pending', 'talk')`,
+       WHERE device_id = ? AND package = ? AND kind = 'app' AND status IN ('pending', 'talk')`,
     )
     .run(note, parentOf(who), now, deviceId, pkg).changes;
 }
@@ -903,25 +955,68 @@ export function pausePhone(
   input: { minutes: number | null; note?: string | null },
   who: Changer,
 ): Changed<{ until: number | null; kept: boolean }> {
+  return mutate(ctx, deviceId, who, (rules, log) => applyPause(ctx.now, rules, input, who, log));
+}
+
+/** pausePhone's change, on rules being changed. */
+function applyPause(now: number, rules: Rules, input: { minutes: number | null; note?: string | null }, who: Changer, log: Log): { until: number | null; kept: boolean } {
+  const current = activePause(rules, now);
+  const minutes = input.minutes === null ? null : Math.min(Math.max(1, Math.round(input.minutes)), LIMITS.maxPauseMinutes);
+  let until = minutes === null ? null : now + minutes * 60_000;
+  const kept = who.kind === "ai" && current !== null && (current.until === null || (until !== null && current.until >= until));
+  const given = input.note !== undefined && input.note !== null ? clean(input.note, LIMITS.pauseNote) : undefined;
+  let note: string | null;
+  let setAt: number | null = now;
+  if (kept) {
+    until = current.until;
+    note = current.note;
+    setAt = current.setAt;
+  } else {
+    // Without a note of its own, an AI app's longer pause keeps the note there is.
+    note = given !== undefined ? given : who.kind === "ai" ? (current?.note ?? null) : null;
+  }
+  rules.pause = { until, note, setAt };
+  log("phone.paused", { until, minutes, note: note ?? undefined, ...(kept ? { kept: true } : {}) });
+  return { until, kept };
+}
+
+/** Phase 3's lock_now: the phone locks its screen once, if it gets the command within this long. */
+export const LOCK_NOW_MS = 10 * 60_000;
+/** How long lock_phone may pause the phone, in minutes. */
+export const LOCK_MINUTES = { min: 5, max: 240 } as const;
+
+export type CommandKind = "remove_other_users" | "lock_now";
+
+/** A one-shot command's row (family/commands.ts): the phone runs each id once. */
+export function insertCommandRow(db: DB, deviceId: string, kind: CommandKind, now: number, expiresAt: number | null, who: Changer): string {
+  const id = newId();
+  db.prepare("INSERT INTO commands (id, device_id, kind, issued_at, expires_at, issued_by, client_name) VALUES (?, ?, ?, ?, ?, ?, ?)").run(
+    id,
+    deviceId,
+    kind,
+    now,
+    expiresAt,
+    parentOf(who),
+    who.kind === "ai" ? who.clientName : null,
+  );
+  return id;
+}
+
+/**
+ * Locks the phone now (MCP's lock_phone): a pause of 5 to 240 minutes (an AI app's only ever
+ * lengthens one running, as pausePhone says) and a lock_now command, which the phone runs once if
+ * it gets it within 10 minutes; one still waiting is replaced. Calls, texts, 911, 988 and Belay
+ * keep working, as in any pause. Tightening, so an AI app may.
+ */
+export function lockPhone(ctx: PolicyContext, deviceId: string, input: { minutes: number; note?: string | null }, who: Changer): Changed<{ until: number | null; kept: boolean; command: string }> {
+  const minutes = Math.min(Math.max(LOCK_MINUTES.min, Math.round(input.minutes)), LOCK_MINUTES.max);
   return mutate(ctx, deviceId, who, (rules, log) => {
-    const current = activePause(rules, ctx.now);
-    const minutes = input.minutes === null ? null : Math.min(Math.max(1, Math.round(input.minutes)), LIMITS.maxPauseMinutes);
-    let until = minutes === null ? null : ctx.now + minutes * 60_000;
-    const kept = who.kind === "ai" && current !== null && (current.until === null || (until !== null && current.until >= until));
-    const given = input.note !== undefined && input.note !== null ? clean(input.note, LIMITS.pauseNote) : undefined;
-    let note: string | null;
-    let setAt: number | null = ctx.now;
-    if (kept) {
-      until = current.until;
-      note = current.note;
-      setAt = current.setAt;
-    } else {
-      // Without a note of its own, an AI app's longer pause keeps the note there is.
-      note = given !== undefined ? given : who.kind === "ai" ? (current?.note ?? null) : null;
-    }
-    rules.pause = { until, note, setAt };
-    log("phone.paused", { until, minutes, note: note ?? undefined, ...(kept ? { kept: true } : {}) });
-    return { until, kept };
+    const { db, now } = ctx;
+    const pause = applyPause(now, rules, { minutes, note: input.note }, who, log);
+    db.prepare("UPDATE commands SET replaced_at = ? WHERE device_id = ? AND kind = 'lock_now' AND result IS NULL AND replaced_at IS NULL").run(now, deviceId);
+    const command = insertCommandRow(db, deviceId, "lock_now", now, now + LOCK_NOW_MS, who);
+    log("command.issued", { kind: "lock_now", command, expires_at: now + LOCK_NOW_MS });
+    return { ...pause, command };
   });
 }
 
@@ -1035,10 +1130,28 @@ export function setSupportMessage(ctx: PolicyContext, deviceId: string, message:
 
 export type Answer = "approved" | "declined" | "talk";
 
+/** The extra minutes a parent may give for a "more time" request, on the parent page. */
+export const MORE_TIME_CHOICES = [15, 30, 60] as const;
+
+export interface Answered {
+  kind: "app" | "more_time" | "agreement";
+  /** app: the app; more_time: the app the kid was in, if any. */
+  package: string | null;
+  label: string | null;
+  /** The status before this answer. */
+  status: string;
+  /** more_time, approved: the minutes given, for the phone's day `day`. */
+  minutes: number | null;
+  day: string | null;
+}
+
 /**
  * A parent's answer to one of the kid's requests, shown to the kid with the note. Approving
- * an app request also allows the app. Declining or "let's talk" leave the app as it is:
- * waiting, if it was.
+ * an app request also allows the app. Approving a "more time" request gives `minutes` (1 to
+ * 240) of extra time for its limit, for the phone's day now (its zone and day_starts); answering
+ * it again takes back what the earlier answer gave. Declining or "let's talk" leave the app or
+ * the limit as they are. The kid's answer to the agreement only needs a parent's word: "let's
+ * talk", or that they saw it.
  */
 export function answerRequest(
   ctx: PolicyContext,
@@ -1047,33 +1160,59 @@ export function answerRequest(
   answer: Answer,
   who: Person,
   noteText: string | null,
-): Changed<{ package: string; label: string; status: string } | null> {
+  opts: { minutes?: number } = {},
+): Changed<Answered | null> {
   onlyPeople(who);
   return mutate(ctx, deviceId, who, (_rules, log) => {
     const { db, now } = ctx;
-    const find = db.prepare<[string, string], { id: string; package: string; label: string; status: string; superseded_by: string | null }>(
-      "SELECT id, package, label, status, superseded_by FROM requests WHERE device_id = ? AND id = ?",
-    );
+    const find = db.prepare<
+      [string, string],
+      { id: string; kind: Answered["kind"]; package: string | null; label: string | null; status: string; superseded_by: string | null; limit_id: string | null; extra_id: string | null; agreement_version: number | null }
+    >("SELECT id, kind, package, label, status, superseded_by, limit_id, extra_id, agreement_version FROM requests WHERE device_id = ? AND id = ?");
     let row = find.get(deviceId, requestId);
     // Asked again since (a page from before): the answer goes to the request that took its place.
     for (let hops = 0; row?.status === "superseded" && row.superseded_by !== null && hops < 50; hops++) row = find.get(deviceId, row.superseded_by);
     if (!row || row.status === "superseded") return null;
     requestId = row.id;
     const note = clean(noteText, LIMITS.answerNote);
-    db.prepare("UPDATE requests SET status = ?, note = ?, answered_by = ?, answered_at = ? WHERE device_id = ? AND id = ?").run(
+    let minutes: number | null = null;
+    let day: string | null = null;
+    let extraId: string | null = null;
+    if (row.kind === "more_time") {
+      // Answering again: the earlier answer's extra time goes; this one decides.
+      if (row.extra_id) db.prepare("DELETE FROM extra_time WHERE device_id = ? AND id = ?").run(deviceId, row.extra_id);
+      if (answer === "approved") {
+        const given = opts.minutes;
+        if (given === undefined || !Number.isInteger(given) || given < 1 || given > 240) throw new RuleRefused("Choose how many minutes to give: 1 to 240.");
+        minutes = given;
+        day = phoneDay(db, deviceId, now);
+        extraId = insertExtra(db, deviceId, { limitId: row.limit_id ?? "*", minutes, package: null, requestId, day }, now, parentOf(who));
+      }
+    }
+    db.prepare("UPDATE requests SET status = ?, note = ?, answered_by = ?, answered_at = ?, given_minutes = ?, extra_id = ? WHERE device_id = ? AND id = ?").run(
       answer,
       note,
       parentOf(who),
       now,
+      minutes,
+      extraId,
       deviceId,
       requestId,
     );
-    if (answer === "approved") {
+    if (row.kind === "app" && answer === "approved" && row.package) {
       insertDecision(db, now, { deviceId, pkg: row.package, state: "allowed", by: decidedBy(who), parentId: parentOf(who), note });
       approveOpenRequests(db, now, deviceId, row.package, who, note);
     }
-    log("request.answered", { answer, package: row.package, label: row.label, note: note ?? undefined });
-    return { package: row.package, label: row.label, status: row.status };
+    const limit = row.kind === "more_time" ? (row.limit_id === "*" ? "every limit" : (phoneRules(db, deviceId).rules.limits.find((l) => l.id === row.limit_id)?.name ?? "a limit")) : undefined;
+    log("request.answered", {
+      answer,
+      ...(row.kind === "app" ? { package: row.package ?? undefined, label: row.label ?? undefined } : { kind: row.kind }),
+      ...(limit !== undefined ? { limit } : {}),
+      ...(minutes !== null ? { minutes, day } : {}),
+      ...(row.kind === "agreement" ? { agreement_version: row.agreement_version ?? undefined } : {}),
+      note: note ?? undefined,
+    });
+    return { kind: row.kind, package: row.package, label: row.label, status: row.status, minutes, day };
   });
 }
 

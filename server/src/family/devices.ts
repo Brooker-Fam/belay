@@ -35,14 +35,21 @@ export interface DeviceRow {
   update_done_at: number | null;
   /** Phase 6: when the phone's newest recovery key was used, by the phone's clock (null: not used, or none). */
   recovery_used_at: number | null;
+  /** Phase 3: whether the phone's rules measure screen time (1), and what they do when Belay can't count. */
+  st_measure: number | null;
+  st_if_unmeasured: "pause_limited" | "keep_open";
 }
 
 const DEVICE_SELECT = `SELECT d.*, p.version AS policy_version, p.changed_at AS policy_changed_at,
     f.version_code AS update_version_code, f.version_name AS update_version_name, o.offered_at AS update_offered_at, o.state AS update_state,
     o.problem AS update_problem, o.state_at AS update_state_at, o.installing_at AS update_installing_at, o.done_at AS update_done_at,
-    (SELECT k.used_at FROM recovery_keys k WHERE k.device_id = d.id ORDER BY k.version DESC LIMIT 1) AS recovery_used_at
+    (SELECT k.used_at FROM recovery_keys k WHERE k.device_id = d.id ORDER BY k.version DESC LIMIT 1) AS recovery_used_at,
+    st.measure AS st_measure,
+    COALESCE(st.if_unmeasured, json_extract(sg.rules, '$.if_unmeasured'), 'pause_limited') AS st_if_unmeasured
   FROM devices d LEFT JOIN policies p ON p.device_id = d.id
-  LEFT JOIN agent_offers o ON o.device_id = d.id LEFT JOIN agent_files f ON f.sha256 = o.sha256`;
+  LEFT JOIN agent_offers o ON o.device_id = d.id LEFT JOIN agent_files f ON f.sha256 = o.sha256
+  LEFT JOIN screen_time_rules st ON st.device_id = d.id
+  LEFT JOIN phone_stages ps ON ps.device_id = d.id LEFT JOIN stages sg ON sg.id = ps.stage_id`;
 
 /** Phase 6: the update a parent offered the phone, and what the phone last said about it. */
 export interface UpdateView {
@@ -86,7 +93,8 @@ export interface Problem {
     | "update_failed"
     | "update_silent"
     | "recovery_used"
-    | "other_users";
+    | "other_users"
+    | "screen_time_unmeasured";
   text: string;
   /** For phone_reported: what Belay on the phone said, as it said it. It comes from the kid's phone: untrusted. */
   fromPhone?: string;
@@ -185,7 +193,17 @@ export function problemsOf(row: DeviceRow, facts: Device | null, settings: Setti
     if (!h.device_owner) problems.push({ code: "not_device_owner", text: "Belay is no longer the device owner" });
     else if (h.uninstall_blocked === false) problems.push({ code: "uninstall_allowed", text: "Belay can be uninstalled" });
     if (!h.service_running) problems.push({ code: "service_stopped", text: "Belay's background service isn't running" });
-    if (!h.usage_access) problems.push({ code: "usage_access_off", text: "Usage access for Belay is turned off" });
+    // Phase 3: the phone can't count screen time while it measures, or has limits to count.
+    const st = facts.enforcement?.screen_time;
+    if (st && !st.measured && (row.st_measure === 1 || st.limits.length > 0)) {
+      const limited = st.limits.length > 0;
+      const then = !limited
+        ? ""
+        : row.st_if_unmeasured === "keep_open"
+          ? ". Apps with a time limit stay open until it's back on, as the rules say"
+          : ". Apps with a time limit are paused until it's back on";
+      problems.push({ code: "screen_time_unmeasured", text: `Usage access for Belay is turned off, so Belay can't count screen time${then}` });
+    } else if (!h.usage_access) problems.push({ code: "usage_access_off", text: "Usage access for Belay is turned off" });
     if (!h.battery_exempt) problems.push({ code: "battery_optimized", text: "Battery optimization is on for Belay, so it may miss changes" });
     if (!h.notifications_shown) problems.push({ code: "notifications_off", text: "Belay's notifications are turned off" });
     if (h.background_restricted) problems.push({ code: "background_restricted", text: "Background use is restricted for Belay" });

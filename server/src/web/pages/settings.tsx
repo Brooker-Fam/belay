@@ -2,7 +2,7 @@ import type { Child, FC } from "hono/jsx";
 import type { Parent } from "../../auth/parents.js";
 import type { Grant } from "../../oauth/store.js";
 import type { PushSubscription } from "../../push.js";
-import { AI_SCOPES, type Settings } from "../../settings.js";
+import { AI_SCOPES, type Settings, USAGE_MONTHS } from "../../settings.js";
 import { formatAgo, timeZones } from "../../time.js";
 import { ChangePasswordForm } from "./auth.js";
 import { Csrf, Layout, Notice, PostButton, Time, type View } from "../ui.js";
@@ -99,6 +99,8 @@ export const SettingsPage: FC<{
         </datalist>
         <label for="silent">Report a phone as silent after this many hours without contact</label>
         <input id="silent" type="number" name="silent_hours" min={1} max={168} required value={String(settings.silentHours)} />
+        <label for="usage-months">Keep screen time for this many months, then delete it (with the extra time given that long ago)</label>
+        <input id="usage-months" type="number" name="usage_months" min={USAGE_MONTHS.min} max={USAGE_MONTHS.max} required value={String(settings.usageMonths)} />
         <fieldset>
           <legend>
             <strong>What AI apps may read</strong>
@@ -131,8 +133,9 @@ export const SettingsPage: FC<{
       <h2>AI access</h2>
       <div class="card">
         <p>
-          Connect Claude or another MCP client to <code>{mcpUrl}</code>. It can read what you allow above, mark apps reviewed, block an app and
-          pause a phone. Anything that loosens a rule is only a proposal until a parent approves it on the Proposals page.
+          Connect Claude or another MCP client to <code>{mcpUrl}</code>. It can read what you allow above, mark apps reviewed, block an app, pause
+          or lock a phone, and tighten its screen time. Anything that loosens a rule is only a proposal until a parent approves it on the Proposals
+          page, and only a parent answers the kid's requests or turns measuring screen time on or off.
         </p>
         <h3>Connected apps</h3>
         {apps.length === 0 && <p class="muted">None.</p>}
