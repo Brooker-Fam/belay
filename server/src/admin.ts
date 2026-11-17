@@ -55,10 +55,12 @@
  *                                                 a number on Android's block list (never 911, 988 or an emergency number)
  *   private-number "<phone>" <E.164>, or private-number "<phone>" --remove <E.164>
  *                                                 a number Belay never records
+ *   handover "<phone>"                            hands the phone over to the kid (Phase 11); prints one sentence
  *
  * Changes are logged as the server's (the activity log's "The server"). A running server sees
  * them within a second or two and passes them to the phone's long-poll. Hardening (factory
- * reset, debugging, reset protection) is only on the parent page.
+ * reset, debugging, reset protection) is only turned on on the parent page; `handover` lifts it,
+ * as the phone page's "Hand this phone over" does.
  */
 import { endAllSessions, newSetupToken, parentCount, passwordProblem, setPassword } from "./auth/parents.js";
 import { audit } from "./audit.js";
@@ -83,6 +85,8 @@ import { type CallsSettingsChange, blockNumber, putContact, removeContact, setCa
 import { listCallRecords } from "./family/calls/records.js";
 import { callSettings, callsFor, contactsFor, listContacts, numbersOf } from "./family/calls/store.js";
 import { callsSummary } from "./family/calls/words.js";
+import { handOver } from "./family/offbelay/changes.js";
+import { handoverOf } from "./family/offbelay/store.js";
 import { setPhoneRules, setPhoneSettings } from "./family/screentime/changes.js";
 import { WEEKDAYS, type Weekday, clockMinutes } from "./family/screentime/days.js";
 import { newRuleId, phoneLabels, phoneRules, screenTimeFor } from "./family/screentime/rules.js";
@@ -133,6 +137,12 @@ function recoveryStatus(state: RecoveryState, iso: (ms: number | null) => string
   };
 }
 
+/** status --json's handover. */
+function handoverStatus(db: DB, deviceId: string) {
+  const h = handoverOf(db, deviceId);
+  return h ? { at: h.at, by: h.byName, version: h.version } : null;
+}
+
 /** "Of the apps without a decision, 1 is allowed and 2 wait for a parent." */
 function askAgainWords(r: { grandfathered: number; stillWaiting: number }): string {
   return `Of the apps without a decision, ${r.grandfathered} ${r.grandfathered === 1 ? "is" : "are"} allowed and ${r.stillWaiting} ${r.stillWaiting === 1 ? "waits" : "wait"} for a parent.`;
@@ -180,7 +190,8 @@ const USAGE = `Commands:
   block-number "<phone>" <E.164>
   unblock-number "<phone>" <E.164>
   private-number "<phone>" <E.164>
-  private-number "<phone>" --remove <E.164>`;
+  private-number "<phone>" --remove <E.164>
+  handover "<phone>"`;
 
 /** How many of the newest call records status --json lists per phone. */
 const STATUS_CALLS = 50;
@@ -395,6 +406,8 @@ async function run(argv: string[], io: CliIO): Promise<void> {
             outcome: r.outcome,
             reason: r.reason,
           })),
+          /** Phase 11: the hand-over, as the policy carries it (at: milliseconds since the epoch), with the rules version that carried it; null: none. */
+          handover: handoverStatus(db, d.id),
         };
       });
       if (flags.has("json")) {
@@ -427,6 +440,17 @@ async function run(argv: string[], io: CliIO): Promise<void> {
         if (cs) io.out(`  calls: ${callsSummary(cs)}; ${p.contacts.length} contact${p.contacts.length === 1 ? "" : "s"}, ${p.blocked_numbers.length} blocked`);
         for (const c of p.recent_changes.slice(0, 5)) io.out(`  ${c.at ?? ""} ${c.kind} ${c.package}`);
       }
+      return;
+    }
+    case "handover": {
+      // Phase 11: what the phone page's "Hand this phone over" does, where typing the phone's name is the confirmation.
+      const row = phone();
+      const done = handOver(ctx, row.id, server);
+      io.out(
+        done.result.already
+          ? `${row.name} was already handed over (rules version ${done.result.handover.version}).`
+          : `${row.name} is handed over (rules version ${done.version}): factory reset, debugging and accounts are unlocked and reset protection is cleared, and the phone tells the kid to back up and reset it from Settings.`,
+      );
       return;
     }
     case "protect": {

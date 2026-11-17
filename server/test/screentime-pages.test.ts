@@ -193,7 +193,8 @@ describe("stages", () => {
     expect(await refused.text()).toContain("Alex&#39;s phone is on this stage");
     expect((await page("/stages")).html).toContain("On it: Alex&#39;s phone");
     await form(`/stages/${starter?.id ?? ""}`, { name: "Starter", number: "2", how: "" });
-    expect(listStages(t.deps.db).map((s) => s.name)).toEqual(["Explorer", "Starter"]);
+    // Every family's list ends with Off belay (Phase 11).
+    expect(listStages(t.deps.db).map((s) => s.name)).toEqual(["Explorer", "Starter", "Off belay"]);
   });
 });
 

@@ -212,7 +212,10 @@ describe("migration 7 (calls)", () => {
     db.prepare("INSERT INTO requests (device_id, id, kind, reason, status, seen_at, seen_by, asked_at, received_at, updated_at) VALUES ('phone-1', 'request-0001', 'help', 'Lost', 'approved', ?, 'parent-1', 0, 0, 0)").run(T);
     db.prepare("INSERT INTO requests (device_id, id, kind, reason, status, withdrawn_at, asked_at, received_at, updated_at) VALUES ('phone-1', 'request-0002', 'talk', 'Curfew', 'withdrawn', 5, 0, 0, 0)").run();
     db.prepare("INSERT INTO proposals (id, device_id, kind, payload, reason, client_name, created_at, status, outdated_why) VALUES ('p-1', 'phone-1', 'screen_time', '{}', 'x', 'Claude', 0, 'outdated', 'It changed')").run();
-    migrate(db);
+    migrate(
+      db,
+      loadMigrations().filter((m) => m.version <= 7),
+    );
     expect(db.pragma("user_version", { simple: true })).toBe(7);
     expect(db.prepare("SELECT id, kind, reason, status, seen_at, seen_by, withdrawn_at, contact_name, contact_number, contact_id FROM requests ORDER BY id").all()).toEqual([
       { id: "request-0001", kind: "help", reason: "Lost", status: "approved", seen_at: T, seen_by: "parent-1", withdrawn_at: null, contact_name: null, contact_number: null, contact_id: null },

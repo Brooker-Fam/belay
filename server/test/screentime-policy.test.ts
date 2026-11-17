@@ -161,7 +161,8 @@ describe("stages", () => {
     setPhoneRules(ctx(), phone.deviceId, rules({ limits: [games({ minutes: 45 })], schedules: [] }), sam);
     moveToStage(ctx(), phone.deviceId, explorer.id, sam);
     expect(policy().screen_time).toMatchObject({ limits: explorer.rules.limits, schedules: explorer.rules.schedules });
-    expect(policy().stage).toMatchObject({ name: "Explorer", number: 2, next: null });
+    // Off belay is every family's last stage (Phase 11).
+    expect(policy().stage).toMatchObject({ name: "Explorer", number: 2, next: { name: "Off belay", unlocks: expect.any(Array) as unknown } });
     moveToStage(ctx(), phone.deviceId, null, sam);
     expect(policy().stage).toBeNull();
     expect(policy().screen_time).toMatchObject({ limits: explorer.rules.limits, schedules: explorer.rules.schedules });
@@ -173,9 +174,9 @@ describe("stages", () => {
     const middle = saveStage(ctx(), null, { name: "Middle", number: 2, how: null, rules: rules() }, sam).stage;
     const db = server.deps.db;
     const numbers = () => Object.fromEntries(db.prepare<[], { name: string; number: number }>("SELECT name, number FROM stages").all().map((s) => [s.name, s.number]));
-    expect(numbers()).toEqual({ Starter: 1, Middle: 2, Explorer: 3 });
+    expect(numbers()).toEqual({ Starter: 1, Middle: 2, Explorer: 3, "Off belay": 4 });
     saveStage(ctx(), explorer.id, { name: "Explorer", number: 1, how: null, rules: explorer.rules }, sam);
-    expect(numbers()).toEqual({ Starter: 3, Middle: 2, Explorer: 1 });
+    expect(numbers()).toEqual({ Starter: 3, Middle: 2, Explorer: 1, "Off belay": 4 });
     expect(() => saveStage(ctx(), middle.id, { name: "starter", how: null, rules: rules() }, sam)).toThrow(/already called/);
     expect(starter.id).not.toBe(middle.id);
   });

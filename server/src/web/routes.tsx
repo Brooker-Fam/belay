@@ -87,6 +87,8 @@ import { isValidTimeZone } from "../time.js";
 import type { Assets } from "./assets.js";
 import { callsWebRoutes } from "./calls.js";
 import { locationWebRoutes, whereFor } from "./location.js";
+import { offBelayData, offBelayWebRoutes } from "./offbelay.js";
+import { OffBelaySection } from "./pages/offbelay.js";
 import { screenTimeWebRoutes } from "./screentime.js";
 import { ActivityPage } from "./pages/activity.js";
 import { AddPage, CodePage } from "./pages/add.js";
@@ -150,6 +152,9 @@ const SAVED: Record<string, string> = {
   digest: "Daily summary saved.",
   seen: "Marked seen. The kid's phone shows that you saw it.",
   parent_numbers: "Saved. Each phone that uses the family's numbers gets them within seconds if it's online.",
+  collection_stopped: "Stopped and deleted. The phone gets the change within seconds if it's online.",
+  handed_over: "Handed over. The phone shows the kid what happens next within seconds if it's online.",
+  handover_cancelled: "The hand-over is taken back. The phone stops showing it within seconds if it's online.",
 };
 
 /** Google account ids for reset protection: long numbers, one per line ("people/" before one is fine). */
@@ -484,6 +489,7 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
         phone={phone}
         filter={filter}
         help={<HelpBanner requests={unseenHelp(db, device.id)} showDevice={false} />}
+        offBelay={<OffBelaySection view={view(c)} data={offBelayData(db, device, deps.now())} />}
         message={extra.message}
         error={extra.error}
       />,
@@ -1188,6 +1194,8 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
   app.route("/", locationWebRoutes(deps, { view, message }));
   // Phase 5: a phone's Calls tab (web/calls.tsx).
   app.route("/", callsWebRoutes(deps, { view, message }));
+  // Phase 11: stopping collecting, and handing a phone over (web/offbelay.tsx).
+  app.route("/", offBelayWebRoutes(deps, { view, message }));
 
   app.get("/activity", (c) => {
     const includeReads = c.req.query("reads") === "1";

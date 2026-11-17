@@ -449,7 +449,28 @@ data class WirePolicy(
     @SerialName("blocked_numbers") val blockedNumbers: List<String> = emptyList(),
     /** Phase 11: a parent is handing the phone over to the kid; the phone shows what happens next. */
     val handover: WireHandover? = null,
+    /** Phase 11: the family's last stage, for the kid's "My stage" from the first day. */
+    @SerialName("off_belay") val offBelay: WireOffBelay? = null,
 )
+
+/**
+ * Phase 11: Off belay, the family's last stage (docs/protocol.md, "Off belay"): it blocks nothing,
+ * and the kid sees it from the first day, with the family's words for when it comes.
+ */
+@Serializable
+data class WireOffBelay(
+    /** The family's words for when it comes ("When you turn 16"); null until they write some. */
+    val how: String? = null,
+    val position: WireOffBelayPosition = WireOffBelayPosition.LATER,
+)
+
+/** Where Off belay is for this phone: its stage now, the next one, or later (or the phone is on none). */
+@Serializable
+enum class WireOffBelayPosition {
+    @SerialName("on") ON,
+    @SerialName("next") NEXT,
+    @SerialName("later") LATER,
+}
 
 /**
  * Phase 11: the hand-over (docs/protocol.md, "Off belay"). Its effects are ordinary policy fields

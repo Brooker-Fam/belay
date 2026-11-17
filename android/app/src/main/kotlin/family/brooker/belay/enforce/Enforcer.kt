@@ -268,7 +268,7 @@ class Enforcer(context: Context) {
             false
         } catch (e: RuntimeException) {
             Log.w(Agent.TAG, "reset protection", e)
-            problems += "Couldn't set factory reset protection: ${e.javaClass.simpleName}."
+            problems += "Couldn't ${if (change is Setting.Set) "set" else "clear"} factory reset protection: ${e.javaClass.simpleName}."
             false
         }
     }
