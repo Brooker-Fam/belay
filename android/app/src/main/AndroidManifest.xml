@@ -28,11 +28,11 @@
         android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"
         tools:ignore="BatteryLife" />
 
-    <!-- Phase 0 makes no network calls. These two are declared now so the Phase 0 tests on
-         the real phone (Play Protect, pre-granting by policy) cover the permissions the
-         Phase 1 agent will have when it talks to the family's own server. -->
+    <!-- Talking to the family's own server, and only that (sync/DeviceApi.kt). A server on
+         the home network needs ACCESS_LOCAL_NETWORK (targetSdk 37), granted by policy. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <application
         android:name=".BelayApp"

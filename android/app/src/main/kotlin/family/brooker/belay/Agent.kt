@@ -11,22 +11,28 @@ import family.brooker.belay.health.Health
 import family.brooker.belay.health.HealthReader
 import family.brooker.belay.inventory.Reconciler
 import family.brooker.belay.service.BelayService
+import family.brooker.belay.settings.ConnectionStore
 import family.brooker.belay.store.AgentStore
 import family.brooker.belay.store.StateDump
+import family.brooker.belay.sync.Sync
+import family.brooker.belay.sync.SyncWork
 import family.brooker.belay.work.WatchdogWorker
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.concurrent.Executors
 
-/** What woke the agent. Every trigger runs the same idempotent steps. */
-enum class Trigger(val label: String, val heartbeat: Boolean) {
+/**
+ * What woke the agent. Every trigger runs the same idempotent steps. [checkin]: the sync
+ * that follows checks in with the server even if a check-in isn't due yet.
+ */
+enum class Trigger(val label: String, val heartbeat: Boolean, val checkin: Boolean = false) {
     ADMIN_ENABLED("device admin enabled", true),
     OWNER_CHANGED("device owner changed", true),
     PROVISIONED("provisioning finished", true),
     BOOT("phone started", true),
     AGENT_UPDATED("Belay updated", true),
-    SERVICE_STARTED("service started", true),
+    SERVICE_STARTED("service started", true, checkin = true),
     ADMIN_SERVICE_BOUND("admin service bound", true),
     WATCHDOG("periodic check", true),
     PACKAGE_BROADCAST("package broadcast", false),
@@ -55,11 +61,11 @@ object Agent {
     /**
      * Runs the agent's steps on its own thread:
      * 1. If Belay is device owner, apply its setup again (idempotent) and make sure the
-     *    service and the periodic check are running.
+     *    service and the periodic checks are running.
      * 2. Reconcile the inventory: getChangedPackages since the last check, or a full scan
      *    after a boot and once a day. What it finds goes into the outbox in the same
      *    transaction.
-     * 3. Publish the result for the main screen.
+     * 3. Publish the result for the main screen, and ask the sync thread to send.
      *
      * [done] runs afterwards on the agent thread; receivers pass PendingResult.finish.
      */
@@ -75,10 +81,14 @@ object Agent {
             Log.i(TAG, "step: ${trigger.label}" + if (packages.isEmpty()) "" else " $packages")
             try {
                 val store = AgentStore.get(app)
-                if (trigger != Trigger.PACKAGE_BROADCAST && DeviceOwnerSetup.isDeviceOwner(app)) {
-                    DeviceOwnerSetup.ensure(app)
-                    BelayService.start(app)
-                    WatchdogWorker.schedule(app)
+                val connection = ConnectionStore.read(app)
+                if (trigger != Trigger.PACKAGE_BROADCAST) {
+                    if (DeviceOwnerSetup.isDeviceOwner(app)) {
+                        DeviceOwnerSetup.ensure(app)
+                        BelayService.start(app)
+                        WatchdogWorker.schedule(app)
+                    }
+                    if (connection.connected) SyncWork.scheduleCheckins(app)
                 }
                 val health = HealthReader(app).read()
                 var device: WireDevice? = null
@@ -91,7 +101,8 @@ object Agent {
                     changes = store.recentChanges(SCREEN_CHANGES),
                     heartbeats = store.recentHeartbeats(SCREEN_HEARTBEATS),
                 )
-                DebugTools.afterStep(app) { StateDump.json(store) }
+                DebugTools.afterStep(app) { StateDump.json(store, connection) }
+                Sync.request(app, checkin = trigger.checkin)
             } catch (t: Throwable) {
                 Log.e(TAG, "agent step failed (${trigger.label})", t)
             } finally {

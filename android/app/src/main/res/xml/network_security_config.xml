@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- HTTPS only, system CAs only. Phase 0 makes no network calls; this is the policy the
-     Phase 1 agent will run with (and targetSdk 37 adds Certificate Transparency). -->
+<!-- HTTPS only, system CAs only: what the agent uses to reach the family's server
+     (targetSdk 37 also turns on Certificate Transparency). Debug builds replace this file
+     (src/debug/res/xml) to allow plain http to the emulator's host. -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="false">
         <trust-anchors>

@@ -10,10 +10,16 @@ import java.io.File
 /**
  * Debug builds only (this file is in src/debug). Release builds get
  * src/release/.../DebugTools.kt, which contains none of this, so nothing in a release build
- * can switch Belay off or write the state file.
+ * can switch Belay off, talk plain http, or write the state file.
  */
 object DebugTools {
     const val CAN_RELEASE = true
+
+    /**
+     * Plain http is allowed to these hosts only (with src/debug/res/xml/network_security_config.xml):
+     * the emulator's host and the phone itself, for an end-to-end test against a local server.
+     */
+    val CLEARTEXT_HOSTS: Set<String> = setOf("10.0.2.2", "127.0.0.1")
 
     /** Release device owner without a factory reset. */
     fun releasePhone(context: Context): String {
