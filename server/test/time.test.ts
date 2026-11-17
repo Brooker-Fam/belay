@@ -36,6 +36,16 @@ describe("times in the family's timezone", () => {
     expect(dayKey(localToEpoch(NY, 2026, 11, 1, 0, 0), NY)).toBe("2026-11-01");
   });
 
+  it("put a skipped time after the gap and a doubled one at its first, as the phone does (java.time)", () => {
+    expect(isoInZone(localToEpoch(NY, 2026, 3, 8, 2, 30), NY)).toBe("2026-03-08T03:30:00-04:00");
+    expect(isoInZone(localToEpoch(NY, 2026, 3, 8, 1, 59), NY)).toBe("2026-03-08T01:59:00-05:00");
+    expect(isoInZone(localToEpoch(NY, 2026, 11, 1, 1, 30), NY)).toBe("2026-11-01T01:30:00-04:00");
+    expect(isoInZone(localToEpoch(NY, 2026, 11, 1, 2, 0), NY)).toBe("2026-11-01T02:00:00-05:00");
+    // Santiago skips midnight: its day starts at 1:00 a.m., on its own date.
+    expect(isoInZone(localToEpoch("America/Santiago", 2026, 9, 6, 0, 0), "America/Santiago")).toBe("2026-09-06T01:00:00-03:00");
+    expect(isoInZone(localToEpoch("Asia/Kolkata", 2026, 11, 16, 0, 0), "Asia/Kolkata")).toBe("2026-11-16T00:00:00+05:30");
+  });
+
   it("say how long, in plain words", () => {
     expect(formatDuration(30_000)).toBe("less than a minute");
     expect(formatDuration(60_000)).toBe("1 minute");
