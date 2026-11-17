@@ -25,7 +25,7 @@ import { createEnrollmentCode } from "./device/enroll.js";
 import { packageName } from "./device/schemas.js";
 import { appCounts, listChanges } from "./family/apps.js";
 import { type DeviceRow, findDeviceByName, listDevices, nameTaken } from "./family/devices.js";
-import { LIMITS, decideApp, neverBlocked, pausePhone, protect, resumePhone, setNewApps, type PolicyContext } from "./family/policy.js";
+import { LIMITS, RuleRefused, decideApp, neverBlocked, pausePhone, protect, resumePhone, setNewApps, type PolicyContext } from "./family/policy.js";
 import { recentRequests } from "./family/requests.js";
 import { getSettings } from "./settings.js";
 import { formatAgo, isoInZone } from "./time.js";
@@ -82,7 +82,8 @@ export async function runCommand(argv: string[], io: CliIO): Promise<number> {
     await run(argv, io);
     return 0;
   } catch (error) {
-    if (error instanceof CliError) {
+    // A change the server refuses (rules too large, an app the phone never blocks…) says why.
+    if (error instanceof CliError || error instanceof RuleRefused) {
       io.err(error.message);
       return 1;
     }

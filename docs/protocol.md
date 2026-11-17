@@ -268,7 +268,8 @@ server decides whether a change tightens or loosens.
 - **Offline**, the phone keeps enforcing the last policy it got. Belay stores it.
 - **Versions:** the phone applies any version that differs from the one it has, lower ones
   too (a server restored from a backup), and checks in within seconds of applying one. A
-  policy can be larger than other answers: the phone accepts up to 1 MB.
+  policy can be larger than other answers: the phone accepts up to 1 MB, and the server never
+  makes one larger than 256 KB (it refuses the change that would).
 - **`web.private_dns: null`** leaves the phone's setting alone, except that if the phone
   still has the host Belay set, Belay puts it back to Android's default (Automatic).
 - **Requests can't be withdrawn yet:** an app removed while it waits leaves its request

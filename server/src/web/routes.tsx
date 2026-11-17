@@ -42,14 +42,17 @@ import {
   DNS_FILTERS,
   LIMITS,
   LOCK_RESTRICTIONS,
+  RuleRefused,
   SAFE_RESTRICTIONS,
   answerRequest,
+  clearPreDecisions,
   currentDecisions,
   decideApp,
   decisionHistory,
   getRules,
   neverBlocked,
   pausePhone,
+  preDecisions,
   protect,
   resumePhone,
   setHardening,
@@ -103,6 +106,7 @@ const SAVED: Record<string, string> = {
   new_apps_allow: "New apps now run without asking.",
   allowed: "Allowed.",
   blocked: "Blocked. The phone hides it within seconds if it's online.",
+  cleared: "Cleared: those apps have no decision now.",
   paused: "Paused. The phone gets it within seconds if it's online.",
   resumed: "Resumed.",
   rules: "Saved. The phone gets it within seconds if it's online.",
@@ -411,6 +415,7 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
       ruleOf,
       openRequests,
       requestsForUnknownApps: openRequests.filter((r) => !present.has(r.package)),
+      beforeInstall: preDecisions(db, deviceId),
     };
   };
 
@@ -489,6 +494,17 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
     if (mode !== "ask" && mode !== "allow") return showDevice(c, device, { error: "Choose Ask or Allow for new apps." }, 400);
     setNewApps(policyContext(), device.id, mode, asParent(c));
     return backTo(c, device, `new_apps_${mode}`, "new-apps");
+  });
+
+  app.post("/devices/:id/before-install/clear", async (c) => {
+    const device = deviceOr404(c);
+    if (!device) return noPhone(c);
+    const body = await form(c);
+    const pkg = first(body, "package");
+    const byAi = first(body, "ai") === "1";
+    if (!byAi && !packageName.safeParse(pkg).success) return showDevice(c, device, { error: "Choose an app to clear." }, 400);
+    clearPreDecisions(policyContext(), device.id, byAi ? { byAi: true } : { package: pkg }, asParent(c));
+    return backTo(c, device, "cleared", "before-install");
   });
 
   app.post("/devices/:id/decide", async (c) => {
@@ -666,7 +682,13 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
   app.post("/proposals/:id/approve", async (c) => {
     const note = first(await form(c), "note");
     if (note.length > LIMITS.answerNote) return proposalsPage(c, { error: `Keep the note under ${LIMITS.answerNote} characters.` }, 400);
-    const done = approveProposal(policyContext(), c.req.param("id"), me(c).parent.id, note || null);
+    let done: ReturnType<typeof approveProposal>;
+    try {
+      done = approveProposal(policyContext(), c.req.param("id"), me(c).parent.id, note || null);
+    } catch (error) {
+      if (error instanceof RuleRefused) return proposalsPage(c, { error: `Nothing changed. ${error.message}` }, 400);
+      throw error;
+    }
     if (!done.ok) return proposalsPage(c, { error: done.reason }, 400);
     return c.redirect("/proposals?saved=proposal_approved");
   });
@@ -929,6 +951,16 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
     const entries = listAudit(db, { before: Number.isInteger(before) && before > 0 ? before : undefined, limit: limit + 1, includeReads });
     const next = entries.length > limit ? (entries[limit - 1]?.id ?? null) : null;
     return render(c, <ActivityPage view={view(c)} entries={entries.slice(0, limit)} includeReads={includeReads} next={next} />);
+  });
+
+  // A change the server refuses (rules too large to send, an app the phone never blocks…) is
+  // shown with its reason, on the phone's page when it was one; nothing of it was saved.
+  app.onError((err, c) => {
+    if (!(err instanceof RuleRefused)) throw err;
+    const id = /^\/devices\/([^/]+)\//.exec(c.req.path)?.[1];
+    const device = id ? getDevice(db, decodeURIComponent(id), getSettings(db), deps.now()) : null;
+    if (device) return showDevice(c, device, { error: err.message }, 400);
+    return message(c, "That wasn't saved", err.message, 400);
   });
 
   return app;

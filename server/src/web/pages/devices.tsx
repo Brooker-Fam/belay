@@ -47,7 +47,49 @@ export interface PhoneRules {
   openRequests: RequestView[];
   /** Of those, the ones for apps the server doesn't know on the phone yet. */
   requestsForUnknownApps: RequestView[];
+  /** Decisions about apps the phone has never reported: blocked (or allowed) before install. */
+  beforeInstall: (Decision & { state: "allowed" | "blocked" })[];
 }
+
+/** Apps decided before the phone ever had them: each one clearable, and the AI apps' all at once. */
+const BeforeInstall: FC<{ view: View; device: DeviceView; decisions: PhoneRules["beforeInstall"] }> = ({ view, device, decisions }) => {
+  const byAi = decisions.filter((d) => d.decidedBy === "ai").length;
+  const action = `/devices/${device.id}/before-install/clear`;
+  return (
+    <>
+      <h3 id="before-install">Blocked before install</h3>
+      <div class="card">
+        <p class="muted small">
+          Apps that aren't on the phone, decided ahead of time: if one is installed, the phone {decisions.some((d) => d.state === "allowed") ? "blocks it, or lets it run" : "blocks it"}.
+          Each one is part of the rules the phone gets, so Belay keeps at most {LIMITS.maxPreDecisions}, and AI apps may add at most {LIMITS.maxPreBlocksByAi}.
+          Clearing one removes its decision.
+        </p>
+        {byAi > 0 && (
+          <p>
+            <PostButton view={view} action={action} fields={{ ai: "1" }} kind="quiet" confirm={`Clear the ${byAi} app${byAi === 1 ? "" : "s"} AI apps blocked before install?`}>
+              Clear the ones AI apps added ({byAi})
+            </PostButton>
+          </p>
+        )}
+        {decisions.map((d) => (
+          <div class="row spread">
+            <span>
+              <span class="pkg">{d.package}</span>
+              <br />
+              <span class="small muted">
+                {d.state} {decidedByWords(d)}, <Time ms={d.decidedAt} tz={view.tz} />
+              </span>
+              {d.note && <blockquote>{d.note}</blockquote>}
+            </span>
+            <PostButton view={view} action={action} fields={{ package: d.package }} kind="quiet">
+              Clear
+            </PostButton>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+};
 
 const RuleChip: FC<{ rule: AppRule }> = ({ rule }) =>
   rule.state === "allowed" ? (
@@ -330,6 +372,7 @@ export const DevicePage: FC<{
           </div>
         )}
       </form>
+      {phone.beforeInstall.length > 0 && <BeforeInstall view={view} device={device} decisions={phone.beforeInstall} />}
 
       <h2 id="web">Web</h2>
       <WebCard view={view} device={device} rules={phone.rules} />

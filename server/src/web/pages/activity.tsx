@@ -80,8 +80,11 @@ function what(e: AuditEntry): string {
     case "app.blocked":
     case "app.undecided": {
       const verb = e.action === "app.allowed" ? "allowed" : e.action === "app.blocked" ? "blocked" : "cleared the decision on";
-      return `${verb} ${str(d.label) || str(d.package) || "an app"}${device}${str(d.proposal) ? " (an AI app's proposal)" : ""}${str(d.note) ? `, noting: "${str(d.note)}"` : ""}`;
+      const ahead = d.before_install === true ? " (not on the phone)" : "";
+      return `${verb} ${str(d.label) || str(d.package) || "an app"}${ahead}${device}${str(d.proposal) ? " (an AI app's proposal)" : ""}${str(d.note) ? `, noting: "${str(d.note)}"` : ""}`;
     }
+    case "apps.pre_blocks_cleared":
+      return `cleared ${str(d.count) || "the"} app${d.count === 1 ? "" : "s"} AI apps blocked before install${device}`;
     case "policy.protected":
       return `turned protection on${device}`;
     case "policy.unprotected":

@@ -8,6 +8,14 @@ import { canonicalResource, mcpUrl, resourceMetadataUrl } from "../oauth/routes.
 import { SCOPE, grantForAccessToken, touchGrant } from "../oauth/store.js";
 import { buildMcpServer } from "./server.js";
 
+/**
+ * The most JSON-RPC messages one POST may carry. Each message counts toward the grant's rate
+ * limit, so a batch can't multiply what a client may do in a minute.
+ */
+export const MAX_BATCH = 20;
+
+const rpcError = (code: number, message: string) => ({ jsonrpc: "2.0", id: null, error: { code, message } });
+
 export function mcpRoutes(deps: Deps): Hono<{ Bindings: Bindings }> {
   const { db, config } = deps;
   const app = new Hono<{ Bindings: Bindings }>();
@@ -36,13 +44,24 @@ export function mcpRoutes(deps: Deps): Hono<{ Bindings: Bindings }> {
     }
     if (c.req.method !== "POST") {
       c.header("Allow", "POST");
-      return c.json({ jsonrpc: "2.0", id: null, error: { code: -32000, message: "This server is stateless: send JSON-RPC with POST" } }, 405);
+      return c.json(rpcError(-32000, "This server is stateless: send JSON-RPC with POST"), 405);
     }
-    const verdict = deps.limits.mcpPerGrant.hit(grant.id);
+    // Read the body here, to count its messages; the transport is handed what was read.
+    let body: unknown;
+    let parsed = true;
+    try {
+      body = JSON.parse(await c.req.text()) as unknown;
+    } catch {
+      parsed = false;
+    }
+    const messages = parsed && Array.isArray(body) ? body.length : 1;
+    const verdict = deps.limits.mcpPerGrant.hit(grant.id, Math.min(Math.max(messages, 1), MAX_BATCH));
     if (!verdict.ok) {
       c.header("Retry-After", String(verdict.retryAfterSeconds));
-      return c.json({ jsonrpc: "2.0", id: null, error: { code: -32000, message: "Too many requests; wait a moment" } }, 429);
+      return c.json(rpcError(-32000, "Too many requests; wait a moment"), 429);
     }
+    if (!parsed) return c.json(rpcError(-32700, "Parse error: Invalid JSON"), 400);
+    if (messages > MAX_BATCH) return c.json(rpcError(-32600, `Invalid Request: at most ${MAX_BATCH} messages in one batch`), 400);
     touchGrant(db, grant.id, now);
 
     const server = buildMcpServer(deps, { parentId: grant.parentId, parentName: grant.parentName, clientName: grant.clientName });
@@ -51,6 +70,7 @@ export function mcpRoutes(deps: Deps): Hono<{ Bindings: Bindings }> {
     try {
       return await transport.handleRequest(c.req.raw, {
         authInfo: { token: token ?? "", clientId: grant.clientId ?? grant.id, scopes: [grant.scope], resource: new URL(grant.resource) },
+        parsedBody: body,
       });
     } finally {
       await transport.close();

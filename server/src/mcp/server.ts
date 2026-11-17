@@ -41,6 +41,7 @@ import {
   lockedInWords,
   neverBlocked,
   pausePhone,
+  RuleRefused,
   type Changer,
   type PolicyContext,
   type Rules,
@@ -84,6 +85,16 @@ function result(value: unknown): CallToolResult {
 
 function refusal(message: string): CallToolResult {
   return { content: [{ type: "text", text: message }], isError: true };
+}
+
+/** A rule change, or the server's refusal of it in plain words (too many blocked apps, rules too large…). */
+function refusedOr<T extends object>(change: () => T): T | CallToolResult {
+  try {
+    return change();
+  } catch (error) {
+    if (error instanceof RuleRefused) return refusal(error.message);
+    throw error;
+  }
 }
 
 const deviceParam = z.string().min(1).max(100).describe("The phone's name, as list_devices shows it");
@@ -611,7 +622,8 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
       if (currentDecision(db, row.id, pkg)?.state === "blocked") {
         return result({ phone: row.name, already_blocked: { untrusted: { label, package: pkg } }, reminder: "Nothing changed: it was already blocked." });
       }
-      const done = decideApp(policyContext(), row.id, pkg, "blocked", ai, { note: note ?? null });
+      const done = refusedOr(() => decideApp(policyContext(), row.id, pkg, "blocked", ai, { note: note ?? null }));
+      if ("content" in done) return done;
       return result({
         phone: row.name,
         blocked: { untrusted: { label, package: pkg } },
@@ -643,7 +655,8 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
       if (isRefusal(row)) return row;
       const gone = connected(row);
       if (gone) return gone;
-      const done = pausePhone(policyContext(), row.id, { minutes: minutes ?? null, note: note ?? null }, ai);
+      const done = refusedOr(() => pausePhone(policyContext(), row.id, { minutes: minutes ?? null, note: note ?? null }, ai));
+      if ("content" in done) return done;
       return result({
         phone: row.name,
         paused_until: done.result.until === null ? "a parent resumes it" : iso(done.result.until),

@@ -126,7 +126,26 @@ export const LIMITS = {
   maxFrpAccounts: 5,
   maxUrlPatterns: 200,
   urlPattern: 500,
+  /**
+   * The largest policy the server makes. The phone takes up to 1 MiB; a policy it refused
+   * would cut off every later change, a parent's too.
+   */
+  maxPolicyBytes: 256 * 1024,
+  /** Apps blocked or allowed before the phone ever reported them, per phone. */
+  maxPreDecisions: 500,
+  /** Of those, the most AI apps may have blocked. */
+  maxPreBlocksByAi: 50,
 } as const;
+
+/**
+ * A change the server won't make, with the reason in plain words for the parent page, MCP and
+ * the CLI. Thrown inside the change's transaction, so nothing of it is kept.
+ */
+export class RuleRefused extends Error {
+  override name = "RuleRefused";
+}
+
+export const TOO_LARGE = `That change would make this phone's rules too large to send (over ${LIMITS.maxPolicyBytes / 1024} KB). Clear some apps under "Blocked before install" on the phone's page, or shorten Chrome's lists of sites, then try again.`;
 
 // ── Stored rules ─────────────────────────────────────────────────────────
 
@@ -345,6 +364,43 @@ export function neverBlocked(pkg: string): boolean {
   return NEVER_BLOCKED.has(pkg);
 }
 
+/** Whether the phone has ever reported this app (it's in its app list, now or before a removal). */
+function reported(db: DB, deviceId: string, pkg: string): boolean {
+  return !!db.prepare("SELECT 1 FROM apps WHERE device_id = ? AND package = ?").get(deviceId, pkg);
+}
+
+/**
+ * Decisions about apps the phone has never reported: blocked (or allowed) before they were
+ * installed, newest first. Each one is in every policy the phone gets, so there's a limit on
+ * them (LIMITS.maxPreDecisions), and the parent page lists them under "Blocked before install".
+ */
+export function preDecisions(db: DB, deviceId: string): (Decision & { state: AppState })[] {
+  return db
+    .prepare<[string, string], DecisionRow>(
+      `${DECISION_SELECT} WHERE d.device_id = ? AND d.id IN (SELECT MAX(id) FROM app_decisions WHERE device_id = ? GROUP BY package)
+         AND d.state != 'undecided' AND NOT EXISTS (SELECT 1 FROM apps a WHERE a.device_id = d.device_id AND a.package = d.package)
+       ORDER BY d.decided_at DESC, d.id DESC`,
+    )
+    .all(deviceId, deviceId)
+    .flatMap((r) => (r.state === "undecided" ? [] : [{ ...toDecision(r), state: r.state }]));
+}
+
+/** Refuses a new decision about an app the phone never reported, past the limits. */
+function checkPreDecisionLimits(db: DB, deviceId: string, pkg: string, who: Changer): void {
+  if (reported(db, deviceId, pkg) || currentDecision(db, deviceId, pkg)) return;
+  const pre = preDecisions(db, deviceId);
+  if (who.kind === "ai" && pre.filter((d) => d.decidedBy === "ai").length >= LIMITS.maxPreBlocksByAi) {
+    throw new RuleRefused(
+      `AI apps have already blocked ${LIMITS.maxPreBlocksByAi} apps that aren't on this phone, the most Belay keeps. A parent can clear them on the phone's page, under "Blocked before install". Apps on the phone can still be blocked.`,
+    );
+  }
+  if (pre.length >= LIMITS.maxPreDecisions) {
+    throw new RuleRefused(
+      `This phone already has ${LIMITS.maxPreDecisions} apps blocked or allowed before they were installed, the most Belay keeps. Clear some on the phone's page, under "Blocked before install". Apps on the phone can still be blocked.`,
+    );
+  }
+}
+
 // ── The policy the phone gets ────────────────────────────────────────────
 
 export const REQUEST_WINDOW_MS = 30 * 86_400_000;
@@ -406,6 +462,11 @@ function content(db: DB, deviceId: string, now: number): string {
   return JSON.stringify(rest);
 }
 
+/** The size of the policy's JSON, as sent, with this content, version and time. */
+function policyBytes(contentJson: string, version: number, issuedAt: number): number {
+  return Buffer.byteLength(contentJson) - 1 + `{"version":${version},"issued_at":${issuedAt},`.length;
+}
+
 // ── Changing it ──────────────────────────────────────────────────────────
 
 /** Who changes a rule: a parent, an AI app a parent connected, or the server's CLI. */
@@ -440,12 +501,17 @@ function mutate<T>(ctx: PolicyContext, deviceId: string, actor: Changer, change:
     const result = change(rules, (action, detail) => entries.push([action, detail]));
     const rulesChanged = JSON.stringify(rules) !== JSON.stringify(stored);
     if (rulesChanged) saveRules(db, deviceId, rules, now);
-    const changed = content(db, deviceId, now) !== before;
+    const after = content(db, deviceId, now);
+    const changed = after !== before;
     // A decision or an answer alone still needs the row, for the version.
     if (changed && !rulesChanged) saveRules(db, deviceId, rules, now);
     let version = stored.version;
     if (changed) {
       version += 1;
+      // Never more than the phone can take. A change that makes it smaller always goes through.
+      if (policyBytes(after, version, now) > LIMITS.maxPolicyBytes && Buffer.byteLength(after) > Buffer.byteLength(before)) {
+        throw new RuleRefused(TOO_LARGE);
+      }
       db.prepare("UPDATE policies SET version = ?, changed_at = ? WHERE device_id = ?").run(version, now, deviceId);
     }
     for (const [action, detail] of entries) audit(db, now, actor, action, { deviceId, detail: { ...detail, ...(changed ? { version } : {}) } });
@@ -577,6 +643,7 @@ export function decideApp(
   if (state === "blocked" && neverBlocked(pkg)) throw new Error(`${pkg} is never blocked`);
   return mutate(ctx, deviceId, who, (_rules, log) => {
     const { db, now } = ctx;
+    if (state !== "undecided") checkPreDecisionLimits(db, deviceId, pkg, who);
     const before = currentDecision(db, deviceId, pkg);
     const note = clean(opts.note, LIMITS.decisionNote);
     insertDecision(db, now, {
@@ -598,6 +665,23 @@ export function decideApp(
       ...(opts.proposalId ? { proposal: opts.proposalId } : {}),
     });
     return { before, label, requestsApproved };
+  });
+}
+
+/**
+ * Clears decisions about apps the phone has never reported ("Blocked before install"): one app,
+ * or every one whose decision an AI app made. They leave the policy, instead of staying in it
+ * as allowed the way Unblock would. A person's action: AI apps only add blocks.
+ */
+export function clearPreDecisions(ctx: PolicyContext, deviceId: string, which: { package: string } | { byAi: true }, who: Person): Changed<{ cleared: string[] }> {
+  onlyPeople(who);
+  return mutate(ctx, deviceId, who, (_rules, log) => {
+    const { db, now } = ctx;
+    const clearing = preDecisions(db, deviceId).filter((d) => ("package" in which ? d.package === which.package : d.decidedBy === "ai"));
+    for (const d of clearing) insertDecision(db, now, { deviceId, pkg: d.package, state: "undecided", by: decidedBy(who), parentId: parentOf(who) });
+    if ("package" in which && clearing.length) log("app.undecided", { package: which.package, before_install: true });
+    else if (clearing.length) log("apps.pre_blocks_cleared", { count: clearing.length });
+    return { cleared: clearing.map((d) => d.package) };
   });
 }
 

@@ -87,6 +87,9 @@ reset protection account ids are never returned.
 
 Every tool call is in the activity log (Activity → "Also show what AI apps read").
 
+Each connection may send 300 JSON-RPC messages a minute. A request may carry a batch of at
+most 20, and each message in it counts.
+
 ## Tools
 
 | Tool | What it does |
@@ -99,7 +102,7 @@ Every tool call is in the activity log (Activity → "Also show what AI apps rea
 | `mark_apps_reviewed(device, packages, note?)` | Records the review, in the parent's name, through this app. It changes nothing on the phone. |
 | `list_requests(device?, status?)` | What the kid asked for, with their reason and each answer: waiting, approved, declined, let's talk. Waiting first, then the last 30 days. Needs the Requests category. |
 | `get_policy(device)` | What a phone enforces now, in words, with the rules' version and whether the phone has applied it; blocked and waiting apps; proposals waiting for a parent. |
-| `block_app(device, package, note?)` | Blocks an app at once (tightening). Belay itself, the phone app and texting are never blocked. |
+| `block_app(device, package, note?)` | Blocks an app at once (tightening). Belay itself, the phone app and texting are never blocked. An app that isn't on the phone yet can be blocked ahead of time, but AI apps may have at most 50 of those per phone; a parent clears them on the phone's page. |
 | `pause_phone(device, minutes?, note?)` | Pauses the phone at once, for some minutes or until a parent resumes it; the note is shown to the kid. It can't shorten a pause already running. |
 | `propose_change(device, change, reason)` | Proposes loosening a rule (`allow_app` with a package, `resume`, `lift_restriction` with a restriction, `web_filter_off`, `new_apps_allow`) for a parent to approve on the parent page. It changes nothing itself. |
 
