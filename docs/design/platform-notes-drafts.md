@@ -656,7 +656,8 @@ not exhaustively checked).
 
 ### X1. adb over WebUSB: Tango (ya-webadb)
 
-**Confirmed.** Verified on: Docs; the npm registry.
+**Confirmed.** Verified on: Docs; the npm registry. Moved to
+[platform-notes.md](../platform-notes.md) (X1, with X2 to X4) and re-checked for Phase 8.
 
 - npm registry (2026-11-17): `@yume-chan/adb` 2.6.4, `@yume-chan/adb-daemon-webusb` 2.3.2,
   `@yume-chan/android-bin` 2.1.0, `@yume-chan/adb-credential-web` 2.1.0; all MIT, repository
