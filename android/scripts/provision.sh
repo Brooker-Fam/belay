@@ -229,12 +229,32 @@ enroll() {
     run "${cmd[@]}"
     return
   fi
-  out="$("${cmd[@]}" 2>&1 | tr -d '\r')" || true
-  result="$(sed -n 's/^Broadcast completed: //p' <<<"$out")"
+  # Right after the restart the phone may not be online yet. The code is only used once the
+  # server answers, so trying again while it can't be reached is safe.
+  local tries=0
+  while :; do
+    out="$("${cmd[@]}" 2>&1 | tr -d '\r')" || true
+    result="$(sed -n 's/^Broadcast completed: //p' <<<"$out")"
+    case "$result" in
+      *'data="failed: unreachable'*)
+        tries=$((tries + 1))
+        if [ "$tries" -lt 12 ]; then
+          [ "$tries" != 1 ] || info "The server can't be reached yet (the phone may still be connecting); trying again for a minute..."
+          sleep 5
+          continue
+        fi
+        ;;
+    esac
+    break
+  done
   case "$result" in
     "result=-1, data="*)
       ENROLLED="$(sed 's/^result=-1, data="//; s/"$//' <<<"$result")"
       info "Belay: $ENROLLED"
+      ;;
+    *'data="failed: unreachable'*)
+      warn "Belay couldn't reach the server: $(sed 's/^result=[-0-9]*, data="//; s/"$//' <<<"$result")"
+      warn "Check that the phone is online and the address is right, then run this again with the same --code (it works for 30 minutes)."
       ;;
     *"data="*)
       warn "Belay couldn't connect: $(sed 's/^result=[-0-9]*, data="//; s/"$//' <<<"$result")"
