@@ -535,13 +535,13 @@ export const RequestAnswer: FC<{ view: View; request: RequestView }> = ({ view, 
       </textarea>
       <div class="row">
         <button type="submit" form={form} name="answer" value="approved">
-          Approve
+          Approve<span class="sr-only"> {request.label}</span>
         </button>
         <button type="submit" form={form} name="answer" value="talk" class="quiet">
-          Let's talk
+          Let's talk<span class="sr-only"> about {request.label}</span>
         </button>
         <button type="submit" form={form} name="answer" value="declined" class="quiet">
-          Decline
+          Decline<span class="sr-only"> {request.label}</span>
         </button>
       </div>
     </div>

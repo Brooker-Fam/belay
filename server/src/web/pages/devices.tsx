@@ -116,23 +116,26 @@ const RuleChip: FC<{ rule: AppRule }> = ({ rule }) =>
     <span class="chip waiting">Waiting for you</span>
   ) : null;
 
-/** Allow or block, for the page's "decide" form (forms can't nest in the review form). */
-const DecideButtons: FC<{ app: Pick<App, "package" | "system">; rule: AppRule }> = ({ app, rule }) => (
+/**
+ * Allow or block, for the page's "decide" form (forms can't nest in the review form). Each button
+ * names its app to a screen reader: the list has dozens of them.
+ */
+const DecideButtons: FC<{ app: Pick<App, "package" | "system" | "label">; rule: AppRule }> = ({ app, rule }) => (
   <div class="row decide">
     {rule.state === "blocked" ? (
       <button type="submit" form="decide" name="allow" value={app.package} class="quiet">
-        Unblock
+        Unblock<span class="sr-only"> {app.label}</span>
       </button>
     ) : (
       <>
         {rule.state !== "allowed" && !app.system && (
           <button type="submit" form="decide" name="allow" value={app.package} class="quiet">
-            Allow
+            Allow<span class="sr-only"> {app.label}</span>
           </button>
         )}
         {rule.canBlock && (
           <button type="submit" form="decide" name="block" value={app.package} class="quiet">
-            Block
+            Block<span class="sr-only"> {app.label}</span>
           </button>
         )}
       </>
