@@ -42,7 +42,8 @@ export interface Problem {
     | "clock_off"
     | "no_app_list"
     | "rules_not_applied"
-    | "phone_reported";
+    | "phone_reported"
+    | "tampering";
   text: string;
   /** For phone_reported: what Belay on the phone said, as it said it. It comes from the kid's phone: untrusted. */
   fromPhone?: string;
@@ -81,6 +82,14 @@ const INVENTORY_EXPECTED_MS = 36 * 3_600_000;
  * new rules that aren't applied after this long are a problem.
  */
 export const RULES_EXPECTED_MS = 3 * 3_600_000;
+
+/**
+ * What Belay on the phone reports that can mean someone is getting around it: Android's own
+ * Parental Controls (in Settings, they can add a hidden profile that gets around the lock on
+ * adding users, and lift Belay's suspensions), or another user or profile on the phone. The
+ * words are the agent's own, not a code, so this matches the subject rather than a sentence.
+ */
+const TAMPERING = /parental control|supervis|profile|another user|second user|new user/i;
 
 function parseFacts(json: string | null): Device | null {
   if (!json) return null;
@@ -133,10 +142,13 @@ export function problemsOf(row: DeviceRow, facts: Device | null, settings: Setti
           : `The phone hasn't applied the rules changed ${ago} ago`,
     });
   }
+  const tampering: Problem[] = [];
   for (const said of facts?.enforcement?.problems ?? []) {
-    problems.push({ code: "phone_reported", text: `Belay on the phone says: ${said}`, fromPhone: said });
+    if (TAMPERING.test(said)) tampering.push({ code: "tampering", text: `Someone may be getting around Belay. Belay on the phone says: ${said}`, fromPhone: said });
+    else problems.push({ code: "phone_reported", text: `Belay on the phone says: ${said}`, fromPhone: said });
   }
-  return problems;
+  // A sign of tampering comes first.
+  return [...tampering, ...problems];
 }
 
 function statusOf(problems: Problem[]): DeviceStatus {

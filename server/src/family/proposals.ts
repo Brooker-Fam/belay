@@ -125,7 +125,9 @@ export function changeWords(change: ProposalChange, label: string | null): { tit
     case "resume":
       return { title: "Resume the paused phone", gerund: "resuming the paused phone" };
     case "lift_restriction": {
-      const what = RESTRICTION_NAMES[change.restriction].toLowerCase();
+      // "Safe mode" reads "safe mode" mid-sentence; "VPN settings" keeps its capitals.
+      const name = RESTRICTION_NAMES[change.restriction];
+      const what = /^[A-Z]{2}/.test(name) ? name : name.charAt(0).toLowerCase() + name.slice(1);
       return { title: `Lift the lock on ${what}`, gerund: `lifting the lock on ${what}` };
     }
     case "web_filter_off":

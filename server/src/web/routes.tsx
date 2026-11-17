@@ -539,7 +539,7 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
       return showDevice(c, device, { error: "Add the parent-owned Google account to the phone first, and tick that it's there: once accounts are locked, none can be added." }, 400);
     }
     if (locks.has("sim") && !rules.restrictions.sim && first(body, "sim_ready") !== "1") {
-      return showDevice(c, device, { error: "Activate the phone's line first, and tick that it works: once the SIM is locked, it can't be set up." }, 400);
+      return showDevice(c, device, { error: "Activate the phone's line first, and tick that it works: once eSIMs are locked, none can be added or downloaded." }, 400);
     }
     const changes = Object.fromEntries([...SAFE_RESTRICTIONS, ...LOCK_RESTRICTIONS].map((r) => [r, locks.has(r)]));
     setRestrictions(policyContext(), device.id, changes, asParent(c));

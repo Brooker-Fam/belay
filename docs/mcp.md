@@ -74,7 +74,9 @@ provider's terms. Settings → "What AI apps may read" turns each category off:
   own words, with each answer and the parent's note. On by default.
 
 Always included: the phones' names, their status and problems ("silent for 14 hours",
-"the phone hasn't applied the rules changed 4 hours ago"), when they last checked in, and
+"the phone hasn't applied the rules changed 4 hours ago", or, first, that someone may be
+getting around Belay when the phone reports Android's own Parental Controls or another
+profile), when they last checked in, and
 each phone's rules (protection, pause and its note, the locked settings, the web filter,
 Chrome's settings, maintenance mode, whether reset protection is set, and proposals waiting
 for a parent). Blocked and waiting apps are listed only with the Apps category.

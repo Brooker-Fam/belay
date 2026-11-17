@@ -58,7 +58,8 @@ export const RESTRICTION_NAMES: Record<Restriction, string> = {
   config_date_time: "Date and time",
   config_default_apps: "Changing default apps",
   modify_accounts: "Adding or removing accounts",
-  sim: "SIM and eSIM changes",
+  // DISALLOW_SIM_GLOBALLY stops adding or downloading eSIMs; it doesn't stop a physical SIM swap.
+  sim: "Adding or downloading eSIMs",
   factory_reset: "Factory reset",
   debugging: "Developer options and USB debugging",
 };

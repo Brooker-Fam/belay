@@ -188,6 +188,10 @@ export const WebCard: FC<{ view: View; device: DeviceView; rules: Rules }> = ({ 
           <input type="radio" name="filter" value="off" checked={filter === "off"} /> Off
         </label>
         <p class="muted small">Lock Private DNS settings (below) so the filter can't be turned off on the phone.</p>
+        <p class="muted small">
+          Belay on the phone reports when Private DNS isn't working. It does while the phone is offline, and while another user or profile is on
+          the phone, so one report now and then doesn't mean the filter is broken. One that stays while the phone is online is worth a look.
+        </p>
       </fieldset>
       <fieldset>
         <legend>
@@ -268,9 +272,13 @@ export const RestrictionsCard: FC<{ view: View; device: DeviceView; rules: Rules
       <label class="check">
         <input type="checkbox" name="lock" value="sim" checked={rules.restrictions.sim} /> {RESTRICTION_NAMES.sim}
       </label>
+      <p class="muted small">
+        This stops anyone adding or downloading an eSIM. It doesn't stop someone swapping in a different physical SIM card; Belay on the phone
+        reports a SIM change if it notices one.
+      </p>
       {!rules.restrictions.sim && (
         <>
-          <p class="muted small">Activate the phone's line first: once this is locked, its SIM or eSIM can't be changed or set up.</p>
+          <p class="muted small">Activate the phone's line first: once this is locked, no eSIM can be added, including the phone's own.</p>
           <label class="check">
             <input type="checkbox" name="sim_ready" value="1" /> The phone's line is activated and working
           </label>
@@ -338,7 +346,14 @@ export const HardeningCard: FC<{ view: View; device: DeviceView; rules: Rules }>
       only sets up again with one of the Google accounts listed here. If Belay or the phone breaks, it may not be fixable. Turn them on when the phone
       has worked well for a while and you're sure of the account.
     </p>
+    <p class="muted small">
+      None of these stops the kid opening Settings. Android's own Parental Controls, in Settings, can add a hidden profile that gets around the lock
+      on adding users, and can lift Belay's suspensions. When Belay on the phone notices that, it shows at the top of this page.
+    </p>
     {device.facts?.health.test_only && <Notice kind="warn">This is a debug build: Belay won't apply these.</Notice>}
+    {rules.frpAccounts.length > 0 && !rules.restrictions.debugging && (
+      <Notice kind="warn">Reset protection doesn't apply while OEM unlocking is on. Lock debugging too: that keeps OEM unlocking off.</Notice>
+    )}
     <form class="stack" method="post" action={`/devices/${device.id}/hardening`}>
       <Csrf view={view} />
       <label class="check">
@@ -371,6 +386,10 @@ export const HardeningCard: FC<{ view: View; device: DeviceView; rules: Rules }>
           </li>
         </ol>
         <p class="muted small">You do this in your own browser: Belay's server never contacts Google. A new account can take up to 72 hours before reset protection accepts it.</p>
+        <p class="muted small">
+          Reset protection doesn't apply while OEM unlocking is on (in Developer options). Locking debugging keeps OEM unlocking off, so turn both
+          on together.
+        </p>
       </details>
       <label for="confirm">
         To turn any of these on, type the phone's name: <strong>{device.name}</strong>

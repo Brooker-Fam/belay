@@ -158,6 +158,36 @@ describe("the phone's Rules section", () => {
     expect(await bad.text()).toContain("A Google account id is a long number");
   });
 
+  it("says what the locks really do: eSIMs, not a physical SIM; reset protection needs OEM unlocking off", async () => {
+    const { t, sam, phone, page } = await family();
+    let html = await page();
+    expect(html).toContain("Adding or downloading eSIMs");
+    expect(html).toContain("It doesn&#39;t stop someone swapping in a different physical SIM card");
+    expect(html).toContain("Reset protection doesn&#39;t apply while OEM unlocking is on (in Developer options).");
+    expect(html).toContain("None of these stops the kid opening Settings.");
+    expect(html).toContain("one report now and then doesn&#39;t mean the filter is broken");
+    expect(html).toContain("A blocked app is hidden and suspended, but stays installed, so it stays in this list.");
+    expect(html).not.toContain("Lock debugging too: that keeps OEM unlocking off.");
+    setHardening(parentCtx(t), phone.deviceId, { factoryReset: false, debugging: false, frpAccounts: ["112233445566778899000"] }, { kind: "parent", parentId: sam.parent.id });
+    html = await page();
+    expect(html).toContain("Reset protection doesn&#39;t apply while OEM unlocking is on. Lock debugging too: that keeps OEM unlocking off.");
+  });
+
+  it("puts a sign of tampering at the top, plainly, and shows Belay's other reports as they come", async () => {
+    const { t, phone, page } = await family();
+    const said = ["Android's Parental Controls are on: they can lift Belay's suspensions", "Private DNS: the host isn't serving"];
+    await deviceCall(t, phone.token, "checkin", { status: device({ device_time: t.now(), enforcement: { policy_version: 0, applied_at: t.now(), problems: said } }) });
+    const html = await page();
+    const alert = html.indexOf('<div class="notice error" role="alert"><p><strong>Someone may be getting around Belay on this phone.</strong>');
+    expect(alert).toBeGreaterThan(-1);
+    expect(alert).toBeLessThan(html.indexOf('<h2 id="rules">'));
+    expect(html).toContain("<li>Android&#39;s Parental Controls are on: they can lift Belay&#39;s suspensions</li>");
+    expect(html).toContain("<li>Belay on the phone says: Private DNS: the host isn&#39;t serving</li>");
+    const phones = await page("/");
+    expect(phones).toContain('<li class="tamper">Someone may be getting around Belay. Belay on the phone says: Android&#39;s Parental Controls are on');
+    expect(phones.indexOf("Someone may be getting around Belay")).toBeLessThan(phones.indexOf("Private DNS: the host"));
+  });
+
   it("says when the phone runs a debug build, which doesn't apply hardening", async () => {
     const { t, phone, page } = await family();
     await deviceCall(t, phone.token, "checkin", { status: device({ device_time: t.now() }, { test_only: true }) });
@@ -313,7 +343,7 @@ describe("the Proposals page", () => {
     const html = await page("/proposals");
     expect(html).toContain('Proposals<span class="badge" aria-label="2 waiting">2</span>');
     expect(html).toContain("Allow &quot;Chatter Box&quot;");
-    expect(html).toContain("Lift the lock on vpn settings");
+    expect(html).toContain("Lift the lock on VPN settings");
     expect(html).toContain('Its reason, in its words:</p><blockquote class="ai">It&#39;s the &lt;i&gt;class&lt;/i&gt; chat</blockquote>');
     expect(html).toContain("Proposed by Claude, through Sam&#39;s connection");
     expect(html).toContain(`formaction="/proposals/${lift.id}/reject"`);

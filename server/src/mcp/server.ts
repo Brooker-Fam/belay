@@ -186,8 +186,16 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
   /** Problems in plain words, with what Belay on the phone said kept apart, as the phone's words. */
   const problemEntries = (d: DeviceView) => {
     const fromPhone = d.problems.flatMap((p) => (p.fromPhone !== undefined ? [p.fromPhone] : []));
+    const tampering = d.problems.some((p) => p.code === "tampering");
     return {
-      problems: d.problems.filter((p) => p.fromPhone === undefined).map((p) => p.text),
+      problems: [
+        ...(tampering
+          ? [
+              "Someone may be getting around Belay: the phone reported something like Android's own Parental Controls or another profile, which can lift Belay's suspensions. Tell the parent first.",
+            ]
+          : []),
+        ...d.problems.filter((p) => p.fromPhone === undefined).map((p) => p.text),
+      ],
       ...(fromPhone.length ? { untrusted: { problems_belay_on_the_phone_reported: fromPhone } } : {}),
     };
   };
@@ -610,7 +618,7 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
         on_the_phone: app?.present ?? false,
         version: done.version,
         what_happens: app?.present
-          ? "The phone hides and suspends it within seconds if it's online, or as soon as it's back online."
+          ? "The phone hides and suspends it within seconds if it's online, or as soon as it's back online. It stays installed, and stays in the app list as blocked."
           : "It isn't on the phone now. If it's installed, the phone blocks it.",
         reminder: "Only a parent can unblock it, on the parent page. To suggest that later, use propose_change.",
       });

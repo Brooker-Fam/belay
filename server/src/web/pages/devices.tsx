@@ -238,6 +238,7 @@ export const DevicePage: FC<{
 }> = ({ view, device, apps, phone, filter, message, error }) => {
   const unreviewed = apps.filter((a) => a.unreviewed).length;
   const requestFor = new Map(phone.openRequests.map((r) => [r.package, r]));
+  const tampering = device.problems.filter((p) => p.code === "tampering");
   return (
     <Layout view={view} title={device.name}>
       <div class="row spread">
@@ -246,7 +247,21 @@ export const DevicePage: FC<{
       </div>
       {message && <Notice>{message}</Notice>}
       {error && <Notice kind="error">{error}</Notice>}
-      <Problems problems={device.problems} />
+      {tampering.length > 0 && (
+        <Notice kind="error">
+          <p>
+            <strong>Someone may be getting around Belay on this phone.</strong> Android's own Parental Controls, in Settings, can add a hidden
+            profile and lift Belay's suspensions, and Belay can't stop the phone's Settings opening. Have a look at the phone's Settings together.
+          </p>
+          <p class="small">Belay on the phone says:</p>
+          <ul class="problems">
+            {tampering.map((p) => (
+              <li>{p.fromPhone}</li>
+            ))}
+          </ul>
+        </Notice>
+      )}
+      <Problems problems={device.problems.filter((p) => p.code !== "tampering")} />
 
       <h2 id="rules">Rules</h2>
       <RulesStatus view={view} device={device} />
@@ -257,7 +272,10 @@ export const DevicePage: FC<{
       <NewAppsCard view={view} device={device} rules={phone.rules} />
 
       <h2 id="apps">Apps</h2>
-      <p class="muted small">Waiting apps first. Belay never blocks the phone app, texting, Settings or itself, so 911 and 988 always work.</p>
+      <p class="muted small">
+        Waiting apps first. A blocked app is hidden and suspended, but stays installed, so it stays in this list. Belay never blocks the phone app,
+        texting, Settings or itself, so 911 and 988 always work.
+      </p>
       <form class="filters" method="get" action={`/devices/${device.id}`}>
         <label class="sr-only" for="q">
           Search apps
@@ -387,7 +405,7 @@ const ReviewLine: FC<{ review: Review; view: View }> = ({ review, view }) => (
 
 const STATE_WORDS: Record<AppRule["state"], string> = {
   allowed: "Allowed",
-  blocked: "Blocked: hidden and suspended on the phone",
+  blocked: "Blocked: hidden and suspended on the phone, and still installed",
   waiting: "Waiting for your approval: suspended on the phone",
   runs: "Runs: there's no decision, and new apps run without asking",
 };

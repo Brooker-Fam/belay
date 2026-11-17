@@ -267,4 +267,13 @@ describe("what the phone enforces", () => {
     expect(view?.status).toBe("attention");
     expect(view?.problems).toEqual([{ code: "phone_reported", text: "Belay on the phone says: Private DNS: the host didn't answer", fromPhone: "Private DNS: the host didn't answer" }]);
   });
+
+  it("puts what can mean someone is getting around Belay first: Parental Controls, or another user or profile", async () => {
+    const { t, phone } = await setup();
+    const said = ["Private DNS: the host didn't answer", "Android's Parental Controls are on", "A second user is on the phone", "Another profile exists"];
+    await deviceCall(t, phone.token, "checkin", { status: enforcing(0, said) });
+    const problems = getDevice(t.deps.db, phone.deviceId, getSettings(t.deps.db), t.now())?.problems ?? [];
+    expect(problems.map((p) => p.code)).toEqual(["tampering", "tampering", "tampering", "phone_reported"]);
+    expect(problems[0]?.text).toBe("Someone may be getting around Belay. Belay on the phone says: Android's Parental Controls are on");
+  });
 });
