@@ -1,6 +1,7 @@
 package family.brooker.belay.update
 
 import android.content.Context
+import android.os.storage.StorageManager
 import android.util.Log
 import family.brooker.belay.Agent
 import family.brooker.belay.core.DownloadFacts
@@ -55,7 +56,7 @@ class UpdateDownload(private val app: Context, private val client: OkHttpClient 
             have = 0
         }
         // The rest of the file, and the installer's own copy of all of it.
-        if (dir.usableSpace < (offer.size - have) + offer.size + SPARE_BYTES) {
+        if (allocatable(dir) < (offer.size - have) + offer.size + SPARE_BYTES) {
             return Result.Failed("There isn't enough free storage on this phone for the update (about ${(2 * offer.size + SPARE_BYTES) shr 20} MB).")
         }
         val request = Request.Builder()
@@ -119,6 +120,16 @@ class UpdateDownload(private val app: Context, private val client: OkHttpClient 
         } catch (e: IOException) {
             Result.Failed("The download stopped (${e.javaClass.simpleName}). Belay goes on from there next time.")
         }
+    }
+
+    /** The bytes Android could make free for [dir] (clearable caches count); if it can't say, no limit. */
+    private fun allocatable(dir: File): Long = try {
+        val storage = app.getSystemService(StorageManager::class.java)
+        storage.getAllocatableBytes(storage.getUuidForPath(dir))
+    } catch (e: IOException) {
+        Long.MAX_VALUE
+    } catch (e: RuntimeException) {
+        Long.MAX_VALUE
     }
 
     private fun hashInto(file: File, length: Long, digest: MessageDigest) {
