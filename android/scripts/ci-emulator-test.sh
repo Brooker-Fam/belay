@@ -757,11 +757,13 @@ elif [ -n "$E2E_CLI" ]; then
 
   step "Phase 5: a call from a number that isn't a contact is rejected, never rings, and is reported"
   gsm_call "$STRANGER_NUMBER"
+  # The phone's own decision first: the calls instrumented tests may already have sent the server a
+  # record like this one, so the server's list alone can't show that this call was refused.
+  wait_calls_state '[.decided[]? | select(.action == "reject" and .reason == "unknown")] | length > 0 and (map(.rang) | any | not)' 30 ||
+    { gsm_cancel "$STRANGER_NUMBER"; diagnose; die "Belay didn't refuse the stranger's call without ringing" "$(calls_state)"; }
   # The record carries the number (the caller isn't a contact), so a parent can approve or block it.
   wait_server "[.call_records[]? | select(.direction == \"in\" and .number == \"$STRANGER_NUMBER\" and .outcome == \"rejected\" and .reason == \"unknown\")] | length > 0" \
     "a rejected call record from $STRANGER_NUMBER with reason unknown" 60
-  calls_state | jq -e '[.decided[]? | select(.action == "reject" and .reason == "unknown")] | length > 0 and (map(.rang) | any | not)' >/dev/null ||
-    { gsm_cancel "$STRANGER_NUMBER"; diagnose; die "Belay didn't refuse the stranger's call without ringing" "$(calls_state)"; }
   gsm_cancel "$STRANGER_NUMBER"
   # And the contact's call reached the server by its contact id, without the number.
   wait_server "[.call_records[]? | select(.direction == \"in\" and .contact_id == \"$contact_id\" and .number == null)] | length > 0" \
