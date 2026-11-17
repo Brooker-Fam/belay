@@ -238,6 +238,37 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
   });
 
   /** Problems in plain words, with what Belay on the phone said kept apart, as the phone's words. */
+  /** Phase 6: the update offered to the phone, read-only: the version in words, the phone's own words untrusted. */
+  const updateEntry = (d: DeviceView) => {
+    const u = d.update;
+    if (!u) return null;
+    const running = d.facts?.agent_version_code ?? null;
+    const words = {
+      downloading: "downloading it",
+      checking: "checking it",
+      installing: "installing it",
+      failed: "couldn't install it",
+      done: "installed it",
+    } as const;
+    const state =
+      u.doneAt !== null
+        ? "done: the phone runs it, or a newer version"
+        : running !== null && running >= u.versionCode
+          ? "won't be installed: the phone runs that version or a newer one"
+          : u.state === null
+            ? "not started yet: the phone gets it with its next rules"
+            : words[u.state];
+    return {
+      version: u.words,
+      offered: iso(u.offeredAt),
+      phone: state,
+      ...(u.stateAt !== null ? { phone_said_at: iso(u.stateAt) } : {}),
+      ...(u.doneAt !== null ? { done: iso(u.doneAt) } : {}),
+      ...(u.state === "failed" && u.doneAt === null && u.problem ? { untrusted: { why_belay_on_the_phone_says: u.problem } } : {}),
+      who_changes_it: "Only a parent offers an update or stops it, on the phone's page.",
+    };
+  };
+
   const problemEntries = (d: DeviceView): { problems: string[]; untrusted: Record<string, unknown> } => {
     const fromPhone = d.problems.flatMap((p) => (p.fromPhone !== undefined ? [p.fromPhone] : []));
     const tampering = d.problems.some((p) => p.code === "tampering");
@@ -301,6 +332,7 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
                   ...(facts.securityPatch !== undefined ? { security_patch: facts.securityPatch, security_patch_age_days: patchAgeDays(d.facts, now) } : {}),
                 }
               : {}),
+            ...(facts && d.update ? { belay_update: updateEntry(d) } : {}),
             ...(settings.aiScopes.apps ? (({ userApps, unreviewed }) => ({ user_apps: userApps, apps_to_review: unreviewed }))(appCounts(db, d.id)) : {}),
             ...(settings.aiScopes.requests ? { requests_waiting: pendingRequestCount(db, d.id) } : {}),
           };
@@ -362,6 +394,13 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
                 notifications_shown: f.health.notifications_shown,
                 background_restricted: f.health.background_restricted,
                 permissions: facts.permissions,
+                ...(d.update ? { update: updateEntry(d) } : {}),
+                signing:
+                  d.signing.pinned === null
+                    ? "not reported yet"
+                    : d.signing.changed
+                      ? "different from the certificate it was set up with: someone may have replaced Belay with another build"
+                      : "the same certificate it was set up with",
                 ...withUntrusted(facts.belayUnchecked),
               },
             }

@@ -11,7 +11,7 @@ import { buildPolicy, policyVersion } from "../family/policy.js";
 import { receiveReport } from "../family/reports.js";
 import { saveRequests } from "../family/requests.js";
 import { bearerToken, clientAddress, parseRange, readJson, type Bindings } from "../http.js";
-import { notifyParents, requestNotice } from "../push.js";
+import { notifyParents, requestNotice, updateFailedNotice } from "../push.js";
 import type { Verdict } from "../ratelimit.js";
 import { applyEvents, applyInventory } from "./apps.js";
 import { enroll } from "./enroll.js";
@@ -52,8 +52,8 @@ export function deviceRoutes(deps: Deps): Hono<DeviceEnv> {
   const { db, limits } = deps;
   const app = new Hono<DeviceEnv>();
 
-  const saveFacts = (deviceId: string, device: Device, now: number) => {
-    receiveReport(
+  const saveFacts = (phone: PhoneRow, device: Device, now: number) => {
+    const done = receiveReport(
       {
         db,
         now,
@@ -61,9 +61,11 @@ export function deviceRoutes(deps: Deps): Hono<DeviceEnv> {
           deps.waiters.changed(id);
         },
       },
-      deviceId,
+      phone.id,
       device,
     );
+    // Once per update offered: the report's news, in the server's words.
+    for (const tell of done.result.tell) notifyParents(deps, updateFailedNotice(phone, tell.version));
   };
 
   app.post("/enroll", limit(LIMITS.enrollBytes), async (c) => {
@@ -107,7 +109,7 @@ export function deviceRoutes(deps: Deps): Hono<DeviceEnv> {
     const body = await readJson(c, CheckinRequest);
     if (!body.ok) return fail(400, "invalid_request", body.description);
     const now = deps.now();
-    saveFacts(c.var.phone.id, body.value.status, now);
+    saveFacts(c.var.phone, body.value.status, now);
     db.prepare("UPDATE devices SET last_checkin_at = ? WHERE id = ?").run(now, c.var.phone.id);
     return c.json({ server_time: now, policy: buildPolicy(db, c.var.phone.id, now) });
   });
@@ -116,7 +118,7 @@ export function deviceRoutes(deps: Deps): Hono<DeviceEnv> {
     const body = await readJson(c, InventoryRequest);
     if (!body.ok) return fail(400, "invalid_request", body.description);
     const now = deps.now();
-    saveFacts(c.var.phone.id, body.value.device, now);
+    saveFacts(c.var.phone, body.value.device, now);
     const result = applyInventory(db, c.var.phone.id, body.value, now);
     return c.json({ server_time: now, duplicate: result.duplicate, backfilled: result.backfilled });
   });

@@ -106,3 +106,9 @@ CREATE TABLE agent_offers (
   done_at INTEGER,                          -- when the phone first ran this version or a newer one
   failure_told_at INTEGER                   -- when the parents were told it failed
 ) STRICT;
+
+-- The certificate Belay on each phone is signed with (Device.agent_signing_sha256): the first
+-- one the server hears is pinned, at enrollment or after; a different one later is a problem.
+-- Reconnecting a phone with a new code pins again.
+ALTER TABLE devices ADD COLUMN agent_signing_sha256 TEXT;
+ALTER TABLE devices ADD COLUMN agent_signing_at INTEGER;

@@ -19,6 +19,9 @@ function who(e: AuditEntry): string {
 
 const str = (v: unknown): string => (typeof v === "string" || typeof v === "number" ? String(v) : "");
 
+/** "0.4.0 (version 4)" from an entry's version_name and version_code. */
+const version = (d: Record<string, unknown>): string => (str(d.version_name) ? `${str(d.version_name)} (version ${str(d.version_code)})` : `version ${str(d.version_code)}`);
+
 function what(e: AuditEntry): string {
   const d = e.detail ?? {};
   const device = e.deviceName ? ` (${e.deviceName})` : "";
@@ -125,6 +128,16 @@ function what(e: AuditEntry): string {
       return `rejected ${str(d.client) || "an AI app"}'s proposal: ${str(d.change)}${device}`;
     case "proposal.outdated":
       return `approved ${str(d.client) || "an AI app"}'s proposal, but it was out of date, so nothing changed: ${str(d.change)}${device}`;
+    case "agent.added":
+      return `added Belay ${version(d)} to the server`;
+    case "agent.offered":
+      return `offered Belay ${version(d)}${device}`;
+    case "agent.withdrawn":
+      return `stopped offering Belay ${version(d)}${device}`;
+    case "agent.update_failed":
+      return `couldn't install Belay ${version(d)}`;
+    case "agent.updated":
+      return `updated Belay to ${version(d)}`;
     default:
       if (e.action === "ai.read") return `read ${str(d.what) || "data"}${device}`;
       return e.action;

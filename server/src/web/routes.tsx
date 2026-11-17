@@ -36,6 +36,7 @@ import type { Deps } from "../deps.js";
 import { cancelCode, createEnrollmentCode, pendingCodes } from "../device/enroll.js";
 import { packageName } from "../device/schemas.js";
 import { type App, getApp, listApps, listChanges, markReviewed, reviewHistory, appCounts } from "../family/apps.js";
+import { getAgentFile, listAgentFiles, offerAgent, withdrawOffer } from "../family/agent.js";
 import { type DeviceView, deleteDevice, getDevice, listDevices, nameTaken, renameDevice, revokeDevice } from "../family/devices.js";
 import {
   type ChromeSettings,
@@ -113,6 +114,9 @@ const SAVED: Record<string, string> = {
   allowed: "Allowed.",
   blocked: "Blocked. The phone hides it within seconds if it's online.",
   cleared: "Cleared: those apps have no decision now.",
+  update_offered: "Offered. The phone gets it with its next rules, within seconds if it's online.",
+  update_not_newer: "Offered, but the phone runs that version or a newer one already, so it won't install it.",
+  update_withdrawn: "The update isn't offered any more.",
   paused: "Paused. The phone gets it within seconds if it's online.",
   resumed: "Resumed.",
   rules: "Saved. The phone gets it within seconds if it's online.",
@@ -426,6 +430,7 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
       requestsForUnknownApps: openRequests.filter((r) => !present.has(r.package)),
       beforeInstall: preDecisions(db, deviceId),
       askAgain: askAgainSummary(db, deviceId),
+      agentFiles: listAgentFiles(db),
     };
   };
 
@@ -511,6 +516,25 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
     }
     const done = setNewApps(policyContext(), device.id, mode, asParent(c), confirmed ? { allow: all(body, "allow") } : {});
     return backTo(c, device, mode === "allow" ? "new_apps_allow" : done.result.firstTime || !done.changed ? "new_apps_ask" : "new_apps_ask_again", "new-apps");
+  });
+
+  // ── Updating Belay (Phase 6): a parent's action only ────────────────
+
+  app.post("/devices/:id/update", async (c) => {
+    const device = deviceOr404(c);
+    if (!device) return noPhone(c);
+    if (device.revokedAt !== null) return showDevice(c, device, { error: "This phone is disconnected, so it can't be updated." }, 400);
+    const sha256 = first(await form(c), "sha256");
+    if (!getAgentFile(db, sha256)) return showDevice(c, device, { error: "Choose a version of Belay that's on the server." }, 400);
+    const done = offerAgent(policyContext(), device.id, sha256, asParent(c));
+    return backTo(c, device, done.result.notNewerThan === null ? "update_offered" : "update_not_newer", "update");
+  });
+
+  app.post("/devices/:id/update/withdraw", (c) => {
+    const device = deviceOr404(c);
+    if (!device) return noPhone(c);
+    withdrawOffer(policyContext(), device.id, asParent(c));
+    return backTo(c, device, "update_withdrawn", "update");
   });
 
   app.post("/devices/:id/before-install/clear", async (c) => {

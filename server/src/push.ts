@@ -260,7 +260,7 @@ export function browserName(userAgent: string | undefined, endpoint: string): st
 export interface Notice {
   title: string;
   body: string;
-  url: "/" | "/requests" | "/proposals" | "/settings";
+  url: "/" | "/requests" | "/proposals" | "/settings" | `/devices/${string}`;
 }
 
 export interface SendResult {
@@ -339,6 +339,11 @@ export function requestNotice(deviceName: string, labels: string[]): Notice {
   const [only] = labels;
   const body = labels.length === 1 && only !== undefined ? `${phone}: "${oneLine(only, 60) || "an app"}" is waiting for you` : `${phone}: ${labels.length} apps are waiting for you`;
   return { title: "Belay", body, url: "/requests" };
+}
+
+/** `Sam's phone: Belay couldn't update to 0.4.0 (version 4)`. Never the phone's own words: those wait on the phone's page. */
+export function updateFailedNotice(phone: { id: string; name: string }, version: string): Notice {
+  return { title: "Belay", body: `${oneLine(phone.name, 60)}: Belay couldn't update to ${oneLine(version, 70)}. The phone's page says why.`, url: `/devices/${phone.id}` };
 }
 
 /** `Sam's phone: Claude proposes allowing "Chatter Box"`. */
