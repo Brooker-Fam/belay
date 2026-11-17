@@ -319,6 +319,28 @@ describe("what the phone says about its update", () => {
     expect(list.phones.find((p: { name: string }) => p.name === "CI phone").belay_update).toMatchObject({ phone: "couldn't install it" });
   });
 
+  it("after an older build goes back on over adb, offers it again, and the phone's refusal breaks nothing", async () => {
+    const pushService = vi.fn((_url: string | URL | Request, _init?: RequestInit) => Promise.resolve(new Response(null, { status: 201 })));
+    const { t, sam, report, view, page, policy } = await offered({ fetch: pushService as unknown as typeof fetch });
+    const keys = createECDH("prime256v1");
+    keys.generateKeys();
+    saveSubscription(t.deps.db, t.now(), sam.parent.id, { endpoint: "https://fcm.googleapis.com/fcm/send/made-up", p256dh: keys.getPublicKey().toString("base64url"), auth: randomBytes(16).toString("base64url") }, "Chrome");
+    await report("done", { running: 3 });
+    expect(policy().agent_update).toBeNull();
+    t.advance(MIN);
+    // What CI does: the test-only build (version 2) goes back over adb. The server offers 3 again; Belay won't install it.
+    await report("done", { running: 2 });
+    expect(policy().agent_update).toMatchObject({ version_code: 3 });
+    await report("failed", { running: 2, problem: "An older version was put over this one: not installing it again." });
+    expect(view()?.problems).toEqual([]);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(pushService).not.toHaveBeenCalled();
+    const html = await page();
+    expect(html).toContain("but runs version 2 now: an older one was put back, over adb. Belay on the phone won&#39;t install this one again by itself.");
+    const status = await mcpCall(t, sam.parent.id, "get_device_status", { device: "CI phone" });
+    expect(status.belay_on_the_phone.update.phone).toBe("the phone ran it, but runs an older version (2) now: one was put back over adb");
+  });
+
   it("flags a phone that goes quiet within an hour of updating", async () => {
     const { t, report, view } = await offered();
     await report("installing");

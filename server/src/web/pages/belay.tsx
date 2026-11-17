@@ -189,7 +189,12 @@ const OfferState: FC<{ view: View; device: DeviceView; update: UpdateView }> = (
       <p>
         <strong>Offered: Belay {update.words}</strong>, <Time ms={update.offeredAt} tz={view.tz} />.
       </p>
-      {update.doneAt !== null ? (
+      {update.doneAt !== null && running !== null && running < update.versionCode ? (
+        <p>
+          The phone ran it from <Time ms={update.doneAt} tz={view.tz} />, but runs version {running} now: an older one was put back, over adb.
+          {update.state === "failed" && " Belay on the phone won't install this one again by itself."}
+        </p>
+      ) : update.doneAt !== null ? (
         <p>
           <span class="status ok">The phone runs it, or a newer version,</span> since <Time ms={update.doneAt} tz={view.tz} />.
         </p>
