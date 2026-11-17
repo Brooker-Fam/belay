@@ -63,7 +63,7 @@ describe("remove_other_users", () => {
     expect(sent.code).toBe(0);
     expect(sent.out).toEqual(["CI phone: the phone removes every other user and profile when it gets its rules (rules version 1), if that's by 2026-11-23T15:00:00+00:00."]);
     const [command] = policy().commands;
-    expect(command).toEqual({ id: expect.stringMatching(/^[A-Za-z0-9_-]{8,64}$/) as unknown, kind: "remove_other_users", issued_at: t.now(), expires_at: t.now() + COMMAND_LIFETIME_MS });
+    expect(command).toEqual({ id: expect.stringMatching(/^[A-Za-z0-9_-]{8,64}$/) as unknown, kind: "remove_other_users", issued_at: t.now(), expires_at: t.now() + COMMAND_LIFETIME_MS, via: null });
     expect(listAudit(t.deps.db, { limit: 1, includeReads: false })[0]).toMatchObject({ actor: "server", action: "command.issued", detail: { kind: "remove_other_users" } });
     // Once at a time.
     expect((await cli(t, "remove-other-users", "CI phone")).out[0]).toContain("already asked to remove other users and profiles");

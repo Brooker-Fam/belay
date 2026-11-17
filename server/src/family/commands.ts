@@ -9,13 +9,18 @@
  * - lock_now (Phase 3): the phone locks its screen once. MCP's lock_phone sends it with a pause
  *   (policy.ts, lockPhone); the CLI's lock-now sends it alone. It lasts 10 minutes by default:
  *   a lock that arrives much later would surprise the kid.
+ * - locate_now (Phase 4): the phone takes one fix and sends it, naming the command. A parent's
+ *   "Check now", the CLI's locate-now, or MCP's locate_now (family/location/changes.ts). It lasts
+ *   2 minutes: a check is about now.
  */
 import type { DB } from "../db.js";
 import { type CommandKind, LOCK_NOW_MS, changePolicy, insertCommandRow, type Changed, type Person, type PolicyContext } from "./policy.js";
 
 export type { CommandKind } from "./policy.js";
 export const COMMAND_LIFETIME_MS = 7 * 86_400_000;
-const LIFETIME: Record<CommandKind, number> = { remove_other_users: COMMAND_LIFETIME_MS, lock_now: LOCK_NOW_MS };
+/** Phase 4: a check of where the phone is lasts this long. */
+export const LOCATE_NOW_MS = 2 * 60_000;
+const LIFETIME: Record<CommandKind, number> = { remove_other_users: COMMAND_LIFETIME_MS, lock_now: LOCK_NOW_MS, locate_now: LOCATE_NOW_MS };
 
 /** "waiting" for the phone; "not_done": it expired with no word from the phone; "replaced" by a newer one. */
 export type CommandState = "waiting" | "done" | "failed" | "expired" | "not_done" | "replaced";
@@ -26,6 +31,8 @@ export interface Command {
   issuedAt: number;
   expiresAt: number | null;
   issuedBy: string | null;
+  /** The AI app a parent used to send it, by the name it registered with: untrusted. Null when a person sent it. */
+  via: string | null;
   result: "done" | "failed" | "expired" | null;
   /** The phone's clock. */
   resultAt: number | null;
@@ -41,6 +48,7 @@ interface CommandRow {
   issued_at: number;
   expires_at: number | null;
   issued_by_name: string | null;
+  client_name: string | null;
   result: Command["result"];
   result_at: number | null;
   problem: string | null;
@@ -57,6 +65,7 @@ function toCommand(r: CommandRow, now: number): Command {
     issuedAt: r.issued_at,
     expiresAt: r.expires_at,
     issuedBy: r.issued_by_name,
+    via: r.client_name,
     result: r.result,
     resultAt: r.result_at,
     problem: r.problem,
@@ -65,7 +74,7 @@ function toCommand(r: CommandRow, now: number): Command {
   };
 }
 
-const SELECT = `SELECT c.id, c.kind, c.issued_at, c.expires_at, p.name AS issued_by_name, c.result, c.result_at, c.problem, c.reported_at, c.replaced_at
+const SELECT = `SELECT c.id, c.kind, c.issued_at, c.expires_at, p.name AS issued_by_name, c.client_name, c.result, c.result_at, c.problem, c.reported_at, c.replaced_at
   FROM commands c LEFT JOIN parents p ON p.id = c.issued_by`;
 
 /** The phone's commands, newest first; of one kind, if given. */
@@ -82,7 +91,8 @@ export function listCommands(db: DB, deviceId: string, now: number, opts: { kind
  * Sends a command to the phone with its next policy. remove_other_users is one at a time: while
  * one is still waiting and not expired, that's the answer (`already`); an expired one without a
  * result is replaced. lock_now is always a new one, replacing any still waiting: the phone locks
- * once, for the newest. A person's action here (an AI app locks only through lockPhone).
+ * once, for the newest; so is locate_now. A person's action here (an AI app locks only through
+ * lockPhone, and checks where the phone is only through family/location/changes.ts's locateNow).
  */
 export function issueCommand(
   ctx: PolicyContext,
@@ -95,7 +105,7 @@ export function issueCommand(
   const { db, now } = ctx;
   const lifetime = opts.expiresInMs ?? LIFETIME[kind];
   return changePolicy(ctx, deviceId, who, (log) => {
-    const waiting = kind === "lock_now" ? undefined : listCommands(db, deviceId, now, { kind, limit: 50 }).find((c) => c.state === "waiting");
+    const waiting = kind !== "remove_other_users" ? undefined : listCommands(db, deviceId, now, { kind, limit: 50 }).find((c) => c.state === "waiting");
     if (waiting) return { command: waiting, already: true };
     db.prepare("UPDATE commands SET replaced_at = ? WHERE device_id = ? AND kind = ? AND result IS NULL AND replaced_at IS NULL").run(now, deviceId, kind);
     const id = insertCommandRow(db, deviceId, kind, now, now + lifetime, who);

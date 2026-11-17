@@ -2,7 +2,7 @@ import type { Child, FC } from "hono/jsx";
 import type { Parent } from "../../auth/parents.js";
 import type { Grant } from "../../oauth/store.js";
 import type { PushSubscription } from "../../push.js";
-import { AI_SCOPES, type Settings, USAGE_MONTHS } from "../../settings.js";
+import { AI_SCOPES, OFF_BY_DEFAULT, type Settings, USAGE_MONTHS } from "../../settings.js";
 import { formatAgo, timeZones } from "../../time.js";
 import { ChangePasswordForm } from "./auth.js";
 import { Csrf, Layout, Notice, PostButton, Time, type View } from "../ui.js";
@@ -111,12 +111,15 @@ export const SettingsPage: FC<{
               <span class="chip new">new</span> marks what Belay added since you last saved these.{" "}
               {settings.newAiScopes.some((s) => settings.aiScopes[s])
                 ? "It's on, like the others you left on: save to keep it, or untick it."
-                : "Because you turned something off before, it starts off: tick it to let AI apps read it."}
+                : settings.newAiScopes.every((s) => OFF_BY_DEFAULT.includes(s))
+                  ? "It starts off for every family: tick it to let AI apps read it."
+                  : "Because you turned something off before, it starts off: tick it to let AI apps read it."}
             </p>
           )}
           {Object.entries(AI_SCOPES).map(([key, label]) => (
             <label class="check">
               <input type="checkbox" name="ai_scope" value={key} checked={settings.aiScopes[key as keyof typeof AI_SCOPES]} /> {label}
+              {OFF_BY_DEFAULT.includes(key as keyof typeof AI_SCOPES) && <span class="small muted"> (off until you turn it on)</span>}
               {settings.newAiScopes.includes(key as keyof typeof AI_SCOPES) && <span class="chip new">new</span>}
             </label>
           ))}

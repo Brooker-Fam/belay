@@ -85,7 +85,7 @@ const READ = { readOnlyHint: true, destructiveHint: false, idempotentHint: true,
 const TIGHTEN = { readOnlyHint: false, destructiveHint: true, openWorldHint: false } as const;
 
 const STATUS_WORDS: Record<DeviceView["status"], string> = { ok: "OK", attention: "needs attention", silent: "silent", disconnected: "disconnected" };
-const REQUEST_WORDS: Record<StoredRequestStatus, string> = { pending: "waiting for a parent", approved: "approved", declined: "declined", talk: "let's talk", superseded: "asked again since" };
+const REQUEST_WORDS: Record<StoredRequestStatus, string> = { pending: "waiting for a parent", approved: "approved", declined: "declined", talk: "let's talk", superseded: "asked again since", withdrawn: "withdrawn by the kid" };
 
 function result(value: unknown): CallToolResult {
   return { content: [{ type: "text", text: JSON.stringify(value) }] };
@@ -669,6 +669,10 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
               ...withUntrusted(r.reason ? { reason: r.reason } : {}),
               ...answer,
             };
+          }
+          // Phase 7's kinds, with the kid's words untrusted (MCP's own words for them come with its tools).
+          if (r.kind === "help" || r.kind === "talk") {
+            return { ...common, kind: r.kind === "help" ? "I need help" : "Talk to my parent", ...withUntrusted(r.reason ? { words: r.reason } : {}), ...answer };
           }
           const decision = showApps ? currentDecision(db, r.deviceId, r.package) : null;
           const app = showApps ? getApp(db, r.deviceId, r.package) : null;

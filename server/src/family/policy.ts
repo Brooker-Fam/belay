@@ -13,7 +13,10 @@ import { type Actor, audit } from "../audit.js";
 import { newId } from "../crypto.js";
 import type { DB } from "../db.js";
 import { Policy } from "../device/schemas.js";
+import { oneLine } from "../text.js";
 import { deviceFacts } from "./devices.js";
+import { aiReadsFor, helpSeenFor, parentNumbersFor } from "./kidside.js";
+import { locationFor } from "./location/store.js";
 import { agreementFor } from "./screentime/agreement.js";
 import { insertExtra, phoneDay, phoneRules, screenTimeFor, stageFor } from "./screentime/rules.js";
 
@@ -486,7 +489,9 @@ const MAX_POLICY_REQUESTS = 100;
 
 /**
  * The kid's requests of the last 30 days with their answers, newest first: those received or
- * answered in that time, and any still waiting.
+ * answered in that time, and any still waiting. One the kid withdrew, or that a newer one took
+ * the place of, isn't there. A help request a parent saw is answered, `approved`, at the time
+ * they saw it (help_seen says so too).
  */
 function requestAnswers(db: DB, deviceId: string, now: number): Policy["requests"] {
   const since = now - REQUEST_WINDOW_MS;
@@ -503,7 +508,7 @@ function requestAnswers(db: DB, deviceId: string, now: number): Policy["requests
       }
     >(
       `SELECT r.id, r.status, r.note, r.answered_at, p.name AS answered_by, r.given_minutes FROM requests r LEFT JOIN parents p ON p.id = r.answered_by
-       WHERE r.device_id = ? AND r.status != 'superseded' AND (r.status = 'pending' OR r.received_at >= ? OR r.answered_at >= ?)
+       WHERE r.device_id = ? AND r.status NOT IN ('superseded', 'withdrawn') AND (r.status = 'pending' OR r.received_at >= ? OR r.answered_at >= ?)
        ORDER BY r.received_at DESC, r.rowid DESC LIMIT ?`,
     )
     .all(deviceId, since, since, MAX_POLICY_REQUESTS)
@@ -549,14 +554,17 @@ function recoveryCheck(db: DB, deviceId: string): Policy["recovery"] {
 
 /**
  * Phase 10: the one-shot commands a parent sent (family/commands.ts) that the phone hasn't
- * reported yet. One past its expiry stays, so the phone can report it expired.
+ * reported yet. One past its expiry stays, so the phone can report it expired. `via` names the AI
+ * app a parent used to send it, for the kid's notice ("Your parent checked, using Claude"): the
+ * name the app registered with, on one line, at most 60 characters.
  */
 function commandsFor(db: DB, deviceId: string): Policy["commands"] {
   return db
-    .prepare<[string], Policy["commands"][number]>(
-      "SELECT id, kind, issued_at, expires_at FROM commands WHERE device_id = ? AND result IS NULL AND replaced_at IS NULL ORDER BY issued_at, rowid",
+    .prepare<[string], Omit<Policy["commands"][number], "via"> & { client_name: string | null }>(
+      "SELECT id, kind, issued_at, expires_at, client_name FROM commands WHERE device_id = ? AND result IS NULL AND replaced_at IS NULL ORDER BY issued_at, rowid",
     )
-    .all(deviceId);
+    .all(deviceId)
+    .map(({ client_name, ...c }) => ({ ...c, via: client_name === null ? null : oneLine(client_name, 60) || "an AI app" }));
 }
 
 /** The policy for one phone, as the device API sends it. */
@@ -587,6 +595,12 @@ export function buildPolicy(db: DB, deviceId: string, now: number): Policy {
     agreement: agreementFor(db, deviceId),
     // Network logging is a later part of Phase 3: off until a parent can turn it on.
     network_log: { enabled: false },
+    // Phase 4 (family/location): a parent's choice alone.
+    location: locationFor(db, deviceId),
+    // Phase 7 (family/kidside.ts): for the kid's screen.
+    ai_reads: aiReadsFor(db),
+    help_seen: helpSeenFor(db, deviceId, now),
+    parent_numbers: parentNumbersFor(db, deviceId),
   };
 }
 
@@ -985,7 +999,7 @@ export const LOCK_NOW_MS = 10 * 60_000;
 /** How long lock_phone may pause the phone, in minutes. */
 export const LOCK_MINUTES = { min: 5, max: 240 } as const;
 
-export type CommandKind = "remove_other_users" | "lock_now";
+export type CommandKind = "remove_other_users" | "lock_now" | "locate_now";
 
 /** A one-shot command's row (family/commands.ts): the phone runs each id once. */
 export function insertCommandRow(db: DB, deviceId: string, kind: CommandKind, now: number, expiresAt: number | null, who: Changer): string {
@@ -1134,7 +1148,7 @@ export type Answer = "approved" | "declined" | "talk";
 export const MORE_TIME_CHOICES = [15, 30, 60] as const;
 
 export interface Answered {
-  kind: "app" | "more_time" | "agreement";
+  kind: "app" | "more_time" | "agreement" | "talk";
   /** app: the app; more_time: the app the kid was in, if any. */
   package: string | null;
   label: string | null;
@@ -1150,8 +1164,10 @@ export interface Answered {
  * an app request also allows the app. Approving a "more time" request gives `minutes` (1 to
  * 240) of extra time for its limit, for the phone's day now (its zone and day_starts); answering
  * it again takes back what the earlier answer gave. Declining or "let's talk" leave the app or
- * the limit as they are. The kid's answer to the agreement only needs a parent's word: "let's
- * talk", or that they saw it.
+ * the limit as they are. The kid's answer to the agreement, and "Talk to my parent", only need a
+ * parent's word: "let's talk", or that they saw it. A help request isn't answered: a parent marks
+ * it seen (family/kidside-changes.ts), so answering one is refused, as is answering one the kid
+ * withdrew.
  */
 export function answerRequest(
   ctx: PolicyContext,
@@ -1167,12 +1183,15 @@ export function answerRequest(
     const { db, now } = ctx;
     const find = db.prepare<
       [string, string],
-      { id: string; kind: Answered["kind"]; package: string | null; label: string | null; status: string; superseded_by: string | null; limit_id: string | null; extra_id: string | null; agreement_version: number | null }
+      { id: string; kind: Answered["kind"] | "help"; package: string | null; label: string | null; status: string; superseded_by: string | null; limit_id: string | null; extra_id: string | null; agreement_version: number | null }
     >("SELECT id, kind, package, label, status, superseded_by, limit_id, extra_id, agreement_version FROM requests WHERE device_id = ? AND id = ?");
-    let row = find.get(deviceId, requestId);
+    let found = find.get(deviceId, requestId);
     // Asked again since (a page from before): the answer goes to the request that took its place.
-    for (let hops = 0; row?.status === "superseded" && row.superseded_by !== null && hops < 50; hops++) row = find.get(deviceId, row.superseded_by);
-    if (!row || row.status === "superseded") return null;
+    for (let hops = 0; found?.status === "superseded" && found.superseded_by !== null && hops < 50; hops++) found = find.get(deviceId, found.superseded_by);
+    if (!found || found.status === "superseded") return null;
+    if (found.kind === "help") throw new RuleRefused("A help request isn't answered: mark it seen instead, with \"I've seen it\".");
+    if (found.status === "withdrawn") throw new RuleRefused("The kid withdrew that request, so there's nothing to answer.");
+    const row = { ...found, kind: found.kind };
     requestId = row.id;
     const note = clean(noteText, LIMITS.answerNote);
     let minutes: number | null = null;

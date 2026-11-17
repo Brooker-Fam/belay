@@ -55,6 +55,7 @@ function main(): void {
     stopOps();
     // Phones holding a long-poll are answered now; they ask again when the server is back.
     deps.waiters.close();
+    deps.fixWaiters.close();
     server.close(() => {
       db.close();
       process.exit(0);

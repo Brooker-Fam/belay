@@ -38,6 +38,10 @@ export interface DeviceRow {
   /** Phase 3: whether the phone's rules measure screen time (1), and what they do when Belay can't count. */
   st_measure: number | null;
   st_if_unmeasured: "pause_limited" | "keep_open";
+  /** Phase 4: whether the phone shares where it is, keeps location on, and is in lost mode (null: no location settings). */
+  loc_mode: "off" | "on_demand" | "periodic" | null;
+  loc_keep_on: number | null;
+  loc_lost_since: number | null;
 }
 
 const DEVICE_SELECT = `SELECT d.*, p.version AS policy_version, p.changed_at AS policy_changed_at,
@@ -45,11 +49,13 @@ const DEVICE_SELECT = `SELECT d.*, p.version AS policy_version, p.changed_at AS 
     o.problem AS update_problem, o.state_at AS update_state_at, o.installing_at AS update_installing_at, o.done_at AS update_done_at,
     (SELECT k.used_at FROM recovery_keys k WHERE k.device_id = d.id ORDER BY k.version DESC LIMIT 1) AS recovery_used_at,
     st.measure AS st_measure,
-    COALESCE(st.if_unmeasured, json_extract(sg.rules, '$.if_unmeasured'), 'pause_limited') AS st_if_unmeasured
+    COALESCE(st.if_unmeasured, json_extract(sg.rules, '$.if_unmeasured'), 'pause_limited') AS st_if_unmeasured,
+    ls.mode AS loc_mode, ls.keep_on AS loc_keep_on, ls.lost_since AS loc_lost_since
   FROM devices d LEFT JOIN policies p ON p.device_id = d.id
   LEFT JOIN agent_offers o ON o.device_id = d.id LEFT JOIN agent_files f ON f.sha256 = o.sha256
   LEFT JOIN screen_time_rules st ON st.device_id = d.id
-  LEFT JOIN phone_stages ps ON ps.device_id = d.id LEFT JOIN stages sg ON sg.id = ps.stage_id`;
+  LEFT JOIN phone_stages ps ON ps.device_id = d.id LEFT JOIN stages sg ON sg.id = ps.stage_id
+  LEFT JOIN location_settings ls ON ls.device_id = d.id`;
 
 /** Phase 6: the update a parent offered the phone, and what the phone last said about it. */
 export interface UpdateView {
@@ -94,7 +100,9 @@ export interface Problem {
     | "update_silent"
     | "recovery_used"
     | "other_users"
-    | "screen_time_unmeasured";
+    | "screen_time_unmeasured"
+    | "location_permission"
+    | "location_off";
   text: string;
   /** For phone_reported: what Belay on the phone said, as it said it. It comes from the kid's phone: untrusted. */
   fromPhone?: string;
@@ -210,6 +218,17 @@ export function problemsOf(row: DeviceRow, facts: Device | null, settings: Setti
     for (const p of h.permissions) {
       const name = p.name.replace(/^android\.permission\./, "");
       if (!p.granted && NEEDED_PERMISSIONS.has(name)) problems.push({ code: "permission_missing", text: `Belay is missing the ${name} permission` });
+    }
+    // Phase 4: while the family has the phone share where it is (or it's lost), and the phone says it can't.
+    const location = facts.enforcement?.location;
+    if (location && row.loc_mode !== null && (row.loc_mode !== "off" || row.loc_lost_since !== null)) {
+      if (!location.permission) problems.push({ code: "location_permission", text: "Belay doesn't have location permission on the phone, so it can't share where the phone is" });
+      else if (!location.location_on) {
+        problems.push({
+          code: "location_off",
+          text: `Location is turned off on the phone, so Belay can't share where it is${row.loc_keep_on === 1 ? "" : ". Keeping location on, on the phone's Location and help tab, stops the kid turning it off"}`,
+        });
+      }
     }
     if (row.facts_at !== null && Math.abs(facts.device_time - row.facts_at) > CLOCK_TOLERANCE_MS) {
       const off = facts.device_time - row.facts_at;

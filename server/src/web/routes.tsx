@@ -72,6 +72,7 @@ import {
 } from "../family/policy.js";
 import { approveProposal, listProposals, outdatedBecause, pendingProposalCount, rejectProposal, screenTimeWords } from "../family/proposals.js";
 import { listAppRequests, pendingRequestCount, recentAppRequests, recentRequests } from "../family/requests.js";
+import { changeFamilySettings } from "../family/kidside-changes.js";
 import { phoneLabels, phoneRules as screenRules } from "../family/screentime/rules.js";
 import { clientAddress, type Bindings } from "../http.js";
 import { createPersonalToken, getGrant, listGrants, revokeAllGrants, revokeGrant } from "../oauth/store.js";
@@ -941,9 +942,8 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
     }
     const chosen = new Set(all(body, "ai_scope"));
     const aiScopes = Object.fromEntries(Object.keys(AI_SCOPES).map((k) => [k, chosen.has(k)])) as Record<AiScope, boolean>;
-    const before = getSettings(db);
-    const after = updateSettings(db, { timezone, silentHours, aiScopes, ...(usageMonths !== undefined ? { usageMonths } : {}) });
-    audit(db, deps.now(), { kind: "parent", parentId: me(c).parent.id }, "settings.changed", { detail: { before, after } });
+    // What AI apps may read is the policy's ai_reads, for the kid's screen: each phone's policy follows.
+    changeFamilySettings(policyContext(), { timezone, silentHours, aiScopes, ...(usageMonths !== undefined ? { usageMonths } : {}) }, asParent(c));
     return c.redirect("/settings?saved=settings");
   });
 

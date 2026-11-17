@@ -15,7 +15,7 @@ import type { DB } from "../db.js";
 import type { Deps } from "../deps.js";
 import { type DeviceView, type Problem, listDevices } from "../family/devices.js";
 import { pendingProposalCount } from "../family/proposals.js";
-import { pendingRequestCount } from "../family/requests.js";
+import { pendingRequestCount, unseenHelp } from "../family/requests.js";
 import { type Notice, sendNotice } from "../push.js";
 import { getSettings } from "../settings.js";
 import { dayKey, durations, formatDuration, zoned } from "../time.js";
@@ -138,6 +138,8 @@ const PHONE_WORDS: Partial<Record<Problem["code"], (n: number, longestSilence: n
   update_silent: (n) => `${a(n)} went quiet after updating Belay`,
   recovery_used: (n) => `the recovery key was used on ${a(n)}: make a new one`,
   other_users: (n) => `another user or profile is on ${a(n)}`,
+  location_permission: (n) => `Belay is missing location permission on ${a(n)}`,
+  location_off: (n) => `location is turned off on ${a(n)}`,
 };
 
 const PHONE_ORDER: Problem["code"][] = [
@@ -152,6 +154,8 @@ const PHONE_ORDER: Problem["code"][] = [
   "rules_not_applied",
   "service_stopped",
   "permission_missing",
+  "location_permission",
+  "location_off",
   "screen_time_unmeasured",
   "usage_access_off",
   "notifications_off",
@@ -166,7 +170,7 @@ const PHONE_ORDER: Problem["code"][] = [
  * What needs the parents, as short phrases: phones' problems by kind, requests and proposals
  * waiting, and the server's problems. Counts and kinds only.
  */
-export function digestItems(input: { phones: DeviceView[]; requests: number; proposals: number; server: ServerProblem[]; now: number }): string[] {
+export function digestItems(input: { phones: DeviceView[]; requests: number; proposals: number; server: ServerProblem[]; now: number; help?: number }): string[] {
   const kinds = new Map<Problem["code"], { n: number; silence: number }>();
   for (const phone of input.phones) {
     if (phone.revokedAt !== null) continue;
@@ -185,11 +189,15 @@ export function digestItems(input: { phones: DeviceView[]; requests: number; pro
     return [words ? words(entry.n, entry.silence) : `${a(entry.n)} ${entry.n === 1 ? "needs" : "need"} attention`];
   };
   const rest = [...kinds.keys()].filter((code) => code !== "tampering" && !PHONE_ORDER.includes(code));
+  const help = input.help ?? 0;
+  // Help requests are counted in `requests` too: said first, and not twice.
+  const otherRequests = input.requests - help;
   return [
+    ...(help ? [help === 1 ? "a help request hasn't been seen" : `${help} help requests haven't been seen`] : []),
     ...phone("tampering"),
     ...input.server.filter((p) => p.urgent).map((p) => p.short),
     ...[...PHONE_ORDER, ...rest].flatMap(phone),
-    ...(input.requests ? [input.requests === 1 ? "a request is waiting" : `${input.requests} requests are waiting`] : []),
+    ...(otherRequests > 0 ? [otherRequests === 1 ? "a request is waiting" : `${otherRequests} requests are waiting`] : []),
     ...(input.proposals ? [input.proposals === 1 ? "an AI app's proposal is waiting" : `${input.proposals} AI apps' proposals are waiting`] : []),
     ...input.server.filter((p) => !p.urgent).map((p) => p.short),
   ];
@@ -227,7 +235,7 @@ export async function sendDigestIfDue(deps: Deps, server: ServerProblem[]): Prom
   // Marked first: a crash halfway never sends it twice.
   writeJson(db, DIGEST_SENT_KEY, today);
   const phones = listDevices(db, settings, now).filter((p) => p.revokedAt === null);
-  const notice = digestNotice(digestItems({ phones, requests: pendingRequestCount(db), proposals: pendingProposalCount(db), server, now }), phones.length);
+  const notice = digestNotice(digestItems({ phones, requests: pendingRequestCount(db), help: unseenHelp(db).length, proposals: pendingProposalCount(db), server, now }), phones.length);
   let reached = 0;
   for (const parentId of digest.parents) {
     if ((await sendNotice(deps, notice, { parentId })).sent > 0) reached++;

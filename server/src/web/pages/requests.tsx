@@ -42,6 +42,10 @@ function subject(r: RequestView, limitName: LimitNames): string {
       return r.status === "approved" && r.givenMinutes !== null ? `${moreTimeTitle(r, limitName)}: ${r.givenMinutes} minutes given` : moreTimeTitle(r, limitName);
     case "agreement":
       return r.answer === "agree" ? `Agreed to the family agreement (version ${r.version})` : `Wants to talk about the family agreement (version ${r.version})`;
+    case "help":
+      return r.seenAt !== null ? `Needed help: seen${r.seenBy ? ` by ${r.seenBy}` : ""}` : "Needed help";
+    case "talk":
+      return "Would like to talk";
   }
 }
 
@@ -177,9 +181,9 @@ export const RequestsPage: FC<{
           <OpenRequest view={view} request={r} showDevice={phones > 1} known={known} />
         ) : r.kind === "more_time" ? (
           <OpenMoreTime view={view} request={r} showDevice={phones > 1} limitName={limitName} />
-        ) : (
+        ) : r.kind === "agreement" ? (
           <OpenAgreement view={view} request={r} showDevice={phones > 1} />
-        ),
+        ) : null,
       )}
       {answered.length > 0 && (
         <>

@@ -103,11 +103,11 @@ describe("the CLI's screen-time commands", () => {
     const lock = await cli(t, "lock-now", "CI phone");
     expect(lock.code).toBe(0);
     expect(lock.out).toMatch(/^[0-9a-f-]{36}$/);
-    expect(policy().commands).toEqual([{ id: lock.out, kind: "lock_now", issued_at: t.now(), expires_at: t.now() + 10 * 60_000 }]);
+    expect(policy().commands).toEqual([{ id: lock.out, kind: "lock_now", issued_at: t.now(), expires_at: t.now() + 10 * 60_000, via: null }]);
     expect(policy().version).toBe(1);
     // Another one takes the waiting one's place.
     const five = await cli(t, "lock-now", "CI phone", "--minutes", "5");
-    expect(policy().commands).toEqual([{ id: five.out, kind: "lock_now", issued_at: t.now(), expires_at: t.now() + 5 * 60_000 }]);
+    expect(policy().commands).toEqual([{ id: five.out, kind: "lock_now", issued_at: t.now(), expires_at: t.now() + 5 * 60_000, via: null }]);
     // The phone reports it: it leaves the policy.
     await deviceCall(t, phone.token, "checkin", { status: device({ enforcement: { policy_version: 2, commands: [{ id: five.out, result: "done", at: t.now() }] } }) });
     expect(policy().commands).toEqual([]);

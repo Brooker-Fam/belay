@@ -258,7 +258,7 @@ async function run(argv: string[], io: CliIO): Promise<void> {
           requests: recentRequests(db, now, { deviceId: d.id }).map((r) => ({
             id: r.id,
             kind: r.kind,
-            package: r.kind === "agreement" ? null : r.package,
+            package: r.kind === "app" || r.kind === "more_time" ? r.package : null,
             status: r.status,
             reason: r.reason,
             ...(r.kind === "more_time" ? { limit_id: r.limitId, minutes: r.minutes, given_minutes: r.givenMinutes } : {}),
