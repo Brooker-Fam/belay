@@ -146,7 +146,14 @@ export const Enforcement = z.strictObject({
   recovery: z.strictObject({ version: z.int().min(1), used_at: time, until: time }).nullish(),
   /** The results of the last one-shot commands, newest first. */
   commands: z
-    .array(z.strictObject({ id: clientId, done_at: time, ok: z.boolean(), problem: text(LIMITS.maxProblem).nullish() }))
+    .array(
+      z.strictObject({
+        id: clientId,
+        result: z.enum(["done", "failed", "expired"]),
+        at: time,
+        problem: text(LIMITS.maxProblem).nullish(),
+      }),
+    )
     .max(LIMITS.maxCommandResults)
     .optional(),
   /** The apps this phone never blocks (Belay, the dialer, the SMS app, the keyboard…): the server refuses to block them. */
@@ -278,6 +285,8 @@ export const Policy = z.strictObject({
     .strictObject({ version: z.int().min(1), salt: z.string().regex(/^[0-9a-f]{32}$/), hash: sha256Hex })
     .nullable(),
   /** One-shot commands the phone hasn't reported done. */
-  commands: z.array(z.strictObject({ id: clientId, kind: z.enum(["remove_other_users"]), issued_at: time })),
+  commands: z.array(
+    z.strictObject({ id: clientId, kind: z.enum(["remove_other_users"]), issued_at: time, expires_at: time.nullable() }),
+  ),
 });
 export type Policy = z.infer<typeof Policy>;

@@ -168,7 +168,7 @@ class ProtocolTest {
             {"version":9,
              "agent_update":{"version_code":4,"version_name":"0.4.0","sha256":"${"ab".repeat(32)}","size":12345678},
              "recovery":{"version":2,"salt":"000102030405060708090a0b0c0d0e0f","hash":"${"cd".repeat(32)}"},
-             "commands":[{"id":"command-0001","kind":"remove_other_users","issued_at":$T0},
+             "commands":[{"id":"command-0001","kind":"remove_other_users","issued_at":$T0,"expires_at":${T0 + 1}},
                          {"id":"command-0002","kind":"from_a_newer_server","issued_at":$T0}]}
             """.trimIndent(),
         )
@@ -176,6 +176,7 @@ class ProtocolTest {
         assertEquals(12345678L, policy.agentUpdate?.size)
         assertEquals(2, policy.recovery?.version)
         assertEquals(listOf(WireCommand.REMOVE_OTHER_USERS, "from_a_newer_server"), policy.commands.map { it.kind })
+        assertEquals(listOf(T0 + 1, null), policy.commands.map { it.expiresAt })
     }
 
     @Test
@@ -184,7 +185,7 @@ class ProtocolTest {
             policyVersion = 9,
             agentUpdate = WireAgentUpdateState(4, WireUpdateState.FAILED, "Android said: INSTALL_FAILED_VERIFICATION_FAILURE", T0),
             recovery = WireRecoveryUse(version = 2, usedAt = T0, until = T0 + 24 * 3_600_000L),
-            commands = listOf(WireCommandResult("command-0001", T0, ok = true)),
+            commands = listOf(WireCommandResult("command-0001", WireCommandOutcome.DONE, T0)),
             neverBlocked = listOf("com.android.dialer"),
         )
         val json = Json.parseToJsonElement(Wire.json.encodeToString(WireEnforcement.serializer(), report)).jsonObject
@@ -193,7 +194,9 @@ class ProtocolTest {
             json.keys,
         )
         assertEquals("\"failed\"", json["agent_update"]!!.jsonObject["state"].toString())
-        assertEquals(setOf("id", "done_at", "ok"), (json["commands"] as kotlinx.serialization.json.JsonArray).single().jsonObject.keys)
+        val result = (json["commands"] as kotlinx.serialization.json.JsonArray).single().jsonObject
+        assertEquals(setOf("id", "result", "at"), result.keys)
+        assertEquals("\"done\"", result["result"].toString())
     }
 
     @Test
