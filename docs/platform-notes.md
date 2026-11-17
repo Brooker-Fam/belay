@@ -73,9 +73,9 @@ relying on something new, it goes here first, with a source.
 | S6 | Exact alarms: the Doze allowlist exempts Belay; `USE_EXACT_ALARM` as the backup | Confirmed | AOSP |
 | S7 | Telling from a shell whether the screen is off or locked | Confirmed | AOSP |
 | W1 | Network logging for a device owner: what's logged, batches, Android's notice | Confirmed, with limits | AOSP; Docs; Emulator pending (Phase 3 CI) |
-| W6 | `dpm force-network-logs` closes a batch now, from the shell | Confirmed: throttled to 10 s, refused while logging is off | AOSP; Emulator pending (Phase 3 CI) |
-| W7 | What a DNS event says: the hostname as the app asked, the uid's name, reverse lookups | Confirmed | AOSP (DnsResolver) |
-| W8 | Another user or profile pauses logging; any of the last 5 batches can be taken by token | Confirmed | AOSP |
+| W6 | `dpm force-network-logs` closes a batch now, from the shell | Confirmed: throttled to 10 s, refused while logging is off | AOSP; Docs; Emulator pending (Phase 3 CI) |
+| W7 | What a DNS event says: the hostname as the app asked, the uid's name, reverse lookups | Confirmed | AOSP (DnsResolver, libcore); Docs |
+| W8 | Another user or profile pauses logging; any of the last 5 batches can be taken by token | Confirmed | AOSP; Docs |
 | W9 | `onNetworkLogsAvailable` is an explicit foreground broadcast to the admin receiver | Confirmed | AOSP |
 | I2 | A device owner's PackageInstaller session installs with nobody confirming; no downgrades | Confirmed | AOSP; Docs; Emulator pending (Phase 6 CI) |
 | I3 | Developer verification has no device-owner bypass | Confirmed in AOSP; Google's wording doesn't settle Belay's case | AOSP; Docs (drafts) |
@@ -879,8 +879,9 @@ entry is ever lost. Play's limit on `USE_EXACT_ALARM` doesn't apply: Belay isn't
 ### Network logging (Phase 3's last part)
 
 Read in AOSP `android-17.0.0_r1` on 2026-11-17 while building network logging
-(`platform/frameworks/base` unless named; `platform/packages/modules/DnsResolver` for W7). W1
-moved here from [the drafts](design/platform-notes-drafts.md), checked again with the source. The
+(`platform/frameworks/base` unless named; `platform/packages/modules/DnsResolver` and
+`platform/libcore` for W7), with developer.android.com's network logging guide (W1). W1 moved
+here from [the drafts](design/platform-notes-drafts.md), checked again with the source. The
 emulator checks are `NetworkLogInstrumentedTest` and `ci-emulator-test.sh`'s network logging
 block; the Pixel's in [phase3-checklist.md](phase3-checklist.md) §7.
 
@@ -912,6 +913,14 @@ block; the Pixel's in [phase3-checklist.md](phase3-checklist.md) §7.
 - `isNetworkLoggingEnabled(admin)` reads the admin's flag, which `adb shell dumpsys device_policy`
   prints as `isNetworkLoggingEnabled=<bool>` (`ActiveAdmin.dump`). The client caches it
   (`IpcDataCache`); `saveSettingsLocked`, after every change, invalidates the cache.
+- developer.android.com, [Network activity logging](https://developer.android.com/work/dpc/logging)
+  (last updated 2026-11-15, read 2026-11-17), agrees: DNS lookups and TCP connections from the
+  system's networking calls ("UDP transfers aren't recorded"), and not "Communicating directly
+  with a DNS name server", "Calling a Java DNS library to make DNS queries" or "connecting to a
+  fixed IP address". Event ids restart "whenever a DPC enables logging or when the device
+  restarts"; "When an IT admin turns off network logging, the system deletes any collected and
+  unreported logs." The kid sees a section in Quick Settings' device management dialog, and a
+  dismissible notification "while the user is new to network logging".
 
 Belay's consequence: `network/NetworkLogStep.kt` sets logging on exactly while the policy's
 `network_log` is (a parent's choice), and says so in the report; "What your parent can see" lists
@@ -920,8 +929,8 @@ their own DNS aren't logged: the parent page says it's a record, not a filter.
 
 ### W6. `dpm force-network-logs`
 
-**Confirmed.** Verified on: AOSP; Emulator pending (Phase 3 CI). For CI, which can't wait 90
-minutes.
+**Confirmed.** Verified on: AOSP; Docs; Emulator pending (Phase 3 CI). For CI, which can't wait
+90 minutes.
 
 - `cmds/dpm/dpm.sh` is `cmd device_policy "$@"`. `DevicePolicyManagerServiceShellCommand` has
   `force-network-logs` ("Makes all network logs available to the DPC and triggers
@@ -929,9 +938,13 @@ minutes.
   returns 0, sleeping as long as it's told, then prints "Success".
 - `DevicePolicyManagerService.forceNetworkLogs`: only the shell or root (`isAdb`), or a holder of
   `FORCE_DEVICE_POLICY_MANAGER_LOGS`; while logging is off it throws `IllegalStateException`
-  ("logging is not available"), which the shell prints. `NetworkLoggingHandler.forceBatchFinalization`
-  closes a batch at most once every 10 seconds (it returns how long to wait), and only one with
-  events in it, and tells Belay only while logging isn't paused.
+  ("logging is not available"), which the shell prints.
+  `NetworkLoggingHandler.forceBatchFinalization` closes a batch at most once every 10 seconds (it
+  returns how long to wait), and only one with events in it, and tells Belay only while logging
+  isn't paused.
+- The guide (W1) gives the command for testing: "The system limits how frequently you can use the
+  tool and reports any intentional slowing in the terminal output. If there aren't any logs to
+  retrieve, your DPC doesn't receive a callback."
 
 Belay's consequence: `ci-emulator-test.sh` has the fixture app look a name up, waits a few seconds
 (Android hears of a lookup after answering it, W7), then forces a batch, and tries again if nothing
@@ -939,7 +952,8 @@ came; with logging off, "logging is not available" shows Android's is off too.
 
 ### W7. What a DNS event says
 
-**Confirmed.** Verified on: AOSP (DnsResolver, `services/devicepolicy`, `services/core/.../pm`).
+**Confirmed.** Verified on: AOSP (DnsResolver, `services/devicepolicy`, `services/core/.../pm`,
+libcore); Docs.
 
 - `NetworkLogger`'s netd callback makes a `DnsEvent` of every DNS event of every uid (for a device
   owner on the system user, every user's), named by `PackageManagerInternal.getNameForUid`
@@ -953,15 +967,22 @@ came; with logging off, "logging is not available" shows Android's is off too.
   the name it found, or "null", with no addresses.
 - The event's time is `System.currentTimeMillis()` in system_server when it came
   (`NetdEventListenerService.onDnsEvent`).
+- `platform/libcore`: `InetAddress.getAllByName` is not the guide's "Java DNS library" (one that
+  sends its own queries): it calls `getaddrinfo` (`Inet6AddressImpl.lookupHostByName` →
+  `Libcore.os.android_getaddrinfo`), after a cache of its own (`AddressCache`: 16 names for 2
+  seconds), so a name the same app asks for again within 2 seconds isn't looked up, or logged,
+  again. Without `INTERNET` the lookup fails before the resolver (libcore turns `EACCES` or
+  `EPERM` into "missing INTERNET permission?").
 
 Belay's consequence: core's `NetworkDigest` reads only `DnsEvent`s, keeps a lookup only for a plain
 package name (never a shared user id, where Belay can't tell which app it was), and reduces the
 name itself: lowercase, Punycode, a trailing dot dropped, checked like a hostname, IP addresses,
-`arpa` names (reverse lookups) and "null" dropped (`network/Domains.kt`).
+`arpa` names (reverse lookups) and "null" dropped (`network/Domains.kt`). The fixture app asks for
+`INTERNET` and looks up a new name each try, so CI's lookups reach Android's log.
 
 ### W8. Another user or profile pauses logging; batches by token
 
-**Confirmed.** Verified on: AOSP.
+**Confirmed.** Verified on: AOSP; Docs.
 
 - `DevicePolicyManagerService.maybePauseDeviceWideLoggingLocked` (at `ACTION_USER_ADDED`, and
   when logging is turned on): with a device owner, while `areAllUsersAffiliatedWithDevice()` fails
@@ -975,6 +996,10 @@ name itself: lowercase, Punycode, a trailing dot dropped, checked like a hostnam
 - `NetworkLoggingHandler.retrieveFullLogBatch(token)` finds any batch still kept by its token (they
   count up from 1, and Belay is told the newest), "without interfering with the admin's ability to
   collect logs out-of-order"; one discarded or never made is null.
+- The guide (W1) says the same, and names who can't be affiliated, so pauses logging while there:
+  guest users, clone profiles and private space profiles. "Fully managed devices block managed,
+  clone, and private space profiles by default"; "Full buffers discard logs while paused, and
+  removing an unaffiliated user or profile clears buffered logs before logging resumes."
 
 Belay's consequence: the report says `paused` while the phone counts another user or profile
 (`getSecondaryUsers`, V2) or Android refused the last batch, and the parent page says Belay notes
