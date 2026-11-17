@@ -94,6 +94,18 @@ describe("network activity over MCP", () => {
     expect(off.text).not.toContain("example.com");
   });
 
+  it("names the apps only with the Apps category too, as get_screen_time does: without it, the package names the phone sent", async () => {
+    const { t, ctx, sam, phone, call, send } = await family();
+    updateSettings(t.deps.db, { aiScopes: { network: true, apps: false } });
+    setNetworkLog(ctx(), phone.deviceId, true, sam);
+    await send(day(TODAY, [{ package: "com.example.chat", domain: "example.com", lookups: 4 }]));
+    const { json, text, isError } = await call("get_network_activity", { device: "CI phone" });
+    expect(isError).toBe(false);
+    expect(json.app_names).toBe("Hidden: a parent turned off AI access to apps, so each app is the package name the phone sent.");
+    expect(json.days[0].apps).toEqual([{ lookups: 4, untrusted: { package: "com.example.chat" }, domains: [{ lookups: 4, untrusted: { domain: "example.com" } }] }]);
+    expect(text).not.toContain("Chatter");
+  });
+
   it("lists each day's apps and the domains they looked up, with the names under untrusted, and logs the read", async () => {
     const { t, ctx, sam, phone, call, send } = await family();
     updateSettings(t.deps.db, { aiScopes: { network: true } });
@@ -109,6 +121,7 @@ describe("network activity over MCP", () => {
     const { json, isError } = await call("get_network_activity", { device: "CI phone" });
     expect(isError).toBe(false);
     expect(json).toMatchObject({ phone: "CI phone", from: "2026-11-10", to: TODAY, network_logging: "on", kept_for: "30 days", days_follow: "the phone's own time zone (America/New_York)" });
+    expect(json).not.toHaveProperty("app_names");
     expect(json.days).toHaveLength(7);
     expect(json.days[0]).toEqual({
       day: TODAY,

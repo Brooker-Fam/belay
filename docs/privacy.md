@@ -275,7 +275,8 @@ sends outside the family's server, and the parent page says so where you choose 
   are private is never shown to an AI app, only how many. **Network activity** (Phase 3) is off
   for every family too, until a parent turns the "Network" category on: which websites and
   services apps look up says much about a kid. With it on, an AI app reads each day's apps and the
-  names they looked up (as untrusted text), never more than the server keeps.
+  names they looked up (as untrusted text), never more than the server keeps; the apps' own names
+  only with the Apps category on too (without it, their package names, as the phone sent them).
 
 ## What the kid sees (Phase 2)
 

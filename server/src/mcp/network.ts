@@ -2,9 +2,10 @@
  * Phase 3's network logging over MCP (docs/design/phase3-screen-time.md, "MCP"): get_network_activity,
  * which websites and online services each app on a phone looked up, by name, per day, under the
  * `network` scope, which is off for every family until a parent turns it on. Domains and app names
- * are their developers' words: they sit under `untrusted`. No tool turns network logging on or
- * off, and none proposes it: collecting is a parent's choice alone. Every read is in the activity
- * log.
+ * are their developers' words: they sit under `untrusted`. The apps' names come from the phone's
+ * app list, so they need the Apps scope too, as in get_screen_time: without it, each app is the
+ * package name the phone sent. No tool turns network logging on or off, and none proposes it:
+ * collecting is a parent's choice alone. Every read is in the activity log.
  */
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -61,7 +62,7 @@ export function registerNetworkTools(server: McpServer, deps: Deps, caller: Call
     {
       title: "Network activity",
       description:
-        "Which websites and online services each app on one phone looked up, by name (like example.com), and how many times, day by day in the phone's own days: never the pages, messages, searches or anything typed, never what the phone app, texting app and the other apps that always work looked up, and never 988's websites. Only while a parent has network logging on for the phone. The last 7 days by default, at most 31. Needs the Network category, which is off until a parent turns it on.",
+        "Which websites and online services each app on one phone looked up, by name (like example.com), and how many times, day by day in the phone's own days: never the pages, messages, searches or anything typed, never what the phone app, texting app and the other apps that always work looked up, and never 988's websites. Only while a parent has network logging on for the phone. The last 7 days by default, at most 31. Needs the Network category, which is off until a parent turns it on; the apps' names need the Apps category too (without it, their package names).",
       inputSchema: {
         device: deviceParam,
         from: day.optional().describe("The first day, like 2026-11-10. Default: 6 days before `to`."),
@@ -85,6 +86,8 @@ export function registerNetworkTools(server: McpServer, deps: Deps, caller: Call
       audit(db, now, ai, "ai.read", { deviceId: row.id, detail: { what: `network activity from ${first} to ${last}` } });
       const s = networkSettings(db, row.id);
       const report = facts?.enforcement?.network_log ?? null;
+      // The apps' names come from the phone's app list: with the Apps category off, only the package names the phone sent.
+      const named = getSettings(db).aiScopes.apps;
       const label = phoneLabels(db, row.id);
       const sent = new Map(networkDays(db, row.id, { from: first, to: last }).map((d) => [d.day, d]));
       const days: unknown[] = [];
@@ -112,7 +115,7 @@ export function registerNetworkTools(server: McpServer, deps: Deps, caller: Call
             const restDomains = a.domains.slice(MAX_DOMAINS);
             return {
               lookups: a.lookups,
-              untrusted: { label: label(a.package), package: a.package },
+              untrusted: { ...(named ? { label: label(a.package) } : {}), package: a.package },
               domains: a.domains.slice(0, MAX_DOMAINS).map((x) => ({ lookups: x.lookups, untrusted: { domain: x.domain } })),
               ...(restDomains.length ? { other_domains: { count: restDomains.length, lookups: restDomains.reduce((sum, x) => sum + x.lookups, 0) } } : {}),
             };
@@ -132,6 +135,7 @@ export function registerNetworkTools(server: McpServer, deps: Deps, caller: Call
             ? "on, but Android paused it: another user or profile is on the phone, so the phone notes nothing until it's gone."
             : "on",
         kept_for: `${getSettings(db).networkDays} days`,
+        ...(named ? {} : { app_names: "Hidden: a parent turned off AI access to apps, so each app is the package name the phone sent." }),
         days,
         reminder: NETWORK_REMINDER,
       });
