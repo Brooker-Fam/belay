@@ -233,6 +233,11 @@ the kid. Report it plainly, don't guess why, and don't moralize."
   reason, and suggests how the parent might answer (approve, decline or let's talk, with a
   note). If the parent wants to approve, it offers a proposal; the parent still decides.
 
+The prompts follow the categories a parent allows, as the tools do: with Apps off,
+`review_app` and `review_request` say nothing about the phone's apps (not even whether the
+app is on it) and tell the AI app it's off; with Requests off, `review_request` says so too.
+Each use of `review_app` and `review_request` is in the activity log, like a tool's read.
+
 ## Things to ask
 
 - "Is Sam's phone OK? When did it last check in?"
