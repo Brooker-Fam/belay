@@ -70,9 +70,9 @@ import {
   validHostname,
   type PolicyContext,
 } from "../family/policy.js";
-import { approveProposal, listProposals, outdatedBecause, pendingProposalCount, rejectProposal } from "../family/proposals.js";
+import { approveProposal, listProposals, outdatedBecause, pendingProposalCount, rejectProposal, screenTimeWords } from "../family/proposals.js";
 import { listAppRequests, pendingRequestCount, recentAppRequests, recentRequests } from "../family/requests.js";
-import { phoneRules as screenRules } from "../family/screentime/rules.js";
+import { phoneLabels, phoneRules as screenRules } from "../family/screentime/rules.js";
 import { clientAddress, type Bindings } from "../http.js";
 import { createPersonalToken, getGrant, listGrants, revokeAllGrants, revokeGrant } from "../oauth/store.js";
 import { serverHealth } from "../ops/health.js";
@@ -780,9 +780,13 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
         return why ? [[p.id, why] as const] : [];
       }),
     );
+    // Phase 3: a screen-time proposal's every change, with the apps' names on its phone.
+    const details = new Map(
+      proposals.flatMap((p) => (p.change.kind === "screen_time" && p.status === "pending" ? [[p.id, screenTimeWords(p.change, phoneLabels(db, p.deviceId))] as const] : [])),
+    );
     return render(
       c,
-      <ProposalsPage view={view(c)} proposals={proposals} stale={stale} message={extra.message ?? SAVED[c.req.query("saved") ?? ""]} error={extra.error} />,
+      <ProposalsPage view={view(c)} proposals={proposals} stale={stale} details={details} message={extra.message ?? SAVED[c.req.query("saved") ?? ""]} error={extra.error} />,
       status,
     );
   };

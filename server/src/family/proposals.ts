@@ -26,9 +26,18 @@ import {
   setWeb,
   type PolicyContext,
 } from "./policy.js";
+import { moveToStage, setPhoneRules } from "./screentime/changes.js";
+import { classifyScreenTimeChange, type RuleChange } from "./screentime/classify.js";
+import { type RulesPatch, applyPatch, emptyPatch, patchSides } from "./screentime/patch.js";
+import { canonical, getStage, phoneLabels, phoneRules } from "./screentime/rules.js";
+import { type Labels, changeSentence, packageNames } from "./screentime/words.js";
 
+/** Proposals waiting for a parent, per phone, before an AI app must wait for the parent to look. */
+export const MAX_PENDING_PROPOSALS = 20;
+
+/** What propose_change takes. Screen time's proposals come from change_screen_time instead. */
 export const PROPOSAL_KINDS = ["allow_app", "resume", "lift_restriction", "web_filter_off", "new_apps_allow"] as const;
-export type ProposalKind = (typeof PROPOSAL_KINDS)[number];
+export type ProposalKind = (typeof PROPOSAL_KINDS)[number] | "screen_time" | "move_stage";
 
 /** The locks an AI app may propose lifting: never factory reset or debugging. */
 export const LIFTABLE = [...SAFE_RESTRICTIONS, ...LOCK_RESTRICTIONS] as const;
@@ -39,19 +48,25 @@ export type ProposalChange =
   | { kind: "resume" }
   | { kind: "lift_restriction"; restriction: Liftable }
   | { kind: "web_filter_off" }
-  | { kind: "new_apps_allow" };
+  | { kind: "new_apps_allow" }
+  /** Phase 3: a change to a phone's screen-time rules that doesn't only tighten. */
+  | { kind: "screen_time"; patch: RulesPatch }
+  /** Phase 3: moving a phone to another stage, which is always a parent's. */
+  | { kind: "move_stage"; stageId: string; stageName: string };
 
 /** "outdated": a parent tried to approve it, but what it was about had changed since, so nothing was applied. */
 export type ProposalStatus = "pending" | "approved" | "rejected" | "outdated";
 
 /**
  * What a proposal was about when it was made, to tell when a parent approves it whether that
- * changed since: the app's latest decision, the pause in force, the web filter.
+ * changed since: the app's latest decision, the pause in force, the web filter, the phone's stage.
+ * A screen-time change keeps what each part was in its patch.
  */
 type Context =
   | { kind: "allow_app"; decision: number }
   | { kind: "resume"; until: number | null; note: string | null; set_at: number | null }
-  | { kind: "web_filter_off"; private_dns: string | null };
+  | { kind: "web_filter_off"; private_dns: string | null }
+  | { kind: "move_stage"; stage_id: string | null; since: number | null };
 
 export interface Proposal {
   id: string;
@@ -81,6 +96,7 @@ interface ProposalRow {
   kind: ProposalKind;
   package: string | null;
   restriction: string | null;
+  payload: string | null;
   label: string | null;
   reason: string;
   client_name: string;
@@ -104,15 +120,50 @@ function parseContext(json: string | null): Context | null {
 
 const isLiftable = (value: string | null): value is Liftable => (LIFTABLE as readonly (string | null)[]).includes(value);
 
-function changeOf(r: Pick<ProposalRow, "kind" | "package" | "restriction">): ProposalChange {
+function payloadOf(json: string | null): Record<string, unknown> {
+  try {
+    const value = json ? (JSON.parse(json) as unknown) : null;
+    return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function changeOf(r: Pick<ProposalRow, "kind" | "package" | "restriction" | "payload">): ProposalChange {
   switch (r.kind) {
     case "allow_app":
       return { kind: "allow_app", package: r.package ?? "" };
     case "lift_restriction":
       return { kind: "lift_restriction", restriction: isLiftable(r.restriction) ? r.restriction : "safe_boot" };
+    case "screen_time": {
+      const patch = payloadOf(r.payload).patch as RulesPatch | undefined;
+      return { kind: "screen_time", patch: patch && Array.isArray(patch.limits) && Array.isArray(patch.schedules) ? patch : { limits: [], schedules: [] } };
+    }
+    case "move_stage": {
+      const p = payloadOf(r.payload);
+      return { kind: "move_stage", stageId: typeof p.stage_id === "string" ? p.stage_id : "", stageName: typeof p.stage_name === "string" ? p.stage_name : "" };
+    }
     default:
       return { kind: r.kind };
   }
+}
+
+/** What the change stores in its row besides its kind. */
+function payloadFor(change: ProposalChange): string | null {
+  if (change.kind === "screen_time") return canonical({ patch: change.patch });
+  if (change.kind === "move_stage") return canonical({ stage_id: change.stageId, stage_name: change.stageName });
+  return null;
+}
+
+/** A screen-time proposal's changes, as classifyScreenTimeChange finds them in its parts. */
+export function screenTimeChanges(change: Extract<ProposalChange, { kind: "screen_time" }>): RuleChange[] {
+  const { before, after } = patchSides(change.patch);
+  return classifyScreenTimeChange(before, after).changes;
+}
+
+/** A screen-time proposal's changes in the parents' words, with their effect. */
+export function screenTimeWords(change: Extract<ProposalChange, { kind: "screen_time" }>, labels: Labels = packageNames): { effect: RuleChange["effect"]; words: string }[] {
+  return screenTimeChanges(change).map((c) => ({ effect: c.effect, words: changeSentence(c, { for: "parent", label: labels }) }));
 }
 
 function toProposal(r: ProposalRow): Proposal {
@@ -134,16 +185,26 @@ function toProposal(r: ProposalRow): Proposal {
   };
 }
 
-const SELECT = `SELECT x.id, x.device_id, d.name AS device_name, x.kind, x.package, x.restriction,
+const SELECT = `SELECT x.id, x.device_id, d.name AS device_name, x.kind, x.package, x.restriction, x.payload,
     COALESCE((SELECT a.label FROM apps a WHERE a.device_id = x.device_id AND a.package = x.package),
-             (SELECT r.label FROM requests r WHERE r.device_id = x.device_id AND r.package = x.package ORDER BY r.received_at DESC LIMIT 1)) AS label,
+             (SELECT r.label FROM requests r WHERE r.device_id = x.device_id AND r.package = x.package AND r.kind = 'app' ORDER BY r.received_at DESC LIMIT 1)) AS label,
     x.reason, x.client_name, p.name AS parent_name, x.created_at, x.status, q.name AS decided_by_name, x.decided_at, x.outdated_why, x.context
   FROM proposals x JOIN devices d ON d.id = x.device_id
   LEFT JOIN parents p ON p.id = x.parent_id LEFT JOIN parents q ON q.id = x.decided_by`;
 
 /** "Allow "Chatter Box"", and "allowing "Chatter Box"" for a sentence. */
-export function changeWords(change: ProposalChange, label: string | null): { title: string; gerund: string } {
+export function changeWords(change: ProposalChange, label: string | null, labels: Labels = packageNames): { title: string; gerund: string } {
   switch (change.kind) {
+    case "screen_time": {
+      const words = screenTimeWords(change, labels).map((c) => c.words);
+      const first = oneLine(words[0] ?? "a change", 120);
+      const more = words.length > 1 ? ` (and ${words.length - 1} more change${words.length === 2 ? "" : "s"})` : "";
+      return { title: `Change screen time: ${first}${more}`, gerund: `changing screen time: ${first}${more}` };
+    }
+    case "move_stage": {
+      const name = `"${oneLine(change.stageName, 60)}"`;
+      return { title: `Move to the stage ${name}`, gerund: `moving the phone to the stage ${name}` };
+    }
     case "allow_app": {
       const name = label ? `"${oneLine(label, 60)}"` : change.package;
       return { title: `Allow ${name}`, gerund: `allowing ${name}` };
@@ -178,6 +239,15 @@ export function nothingToLoosen(db: DB, deviceId: string, change: ProposalChange
       return rules.privateDns ? null : "There's no web filter to turn off.";
     case "new_apps_allow":
       return rules.newApps === "ask" ? null : "New apps already run without asking.";
+    case "screen_time": {
+      if (emptyPatch(change.patch)) return "It changes nothing.";
+      const applied = applyPatch(phoneRules(db, deviceId).rules, change.patch);
+      return "rules" in applied && canonical(applied.rules) === canonical(phoneRules(db, deviceId).rules) ? "The phone's screen time is already like that." : null;
+    }
+    case "move_stage": {
+      if (!getStage(db, change.stageId)) return "That stage was deleted.";
+      return phoneRules(db, deviceId).stage?.stage.id === change.stageId ? "The phone is already on that stage." : null;
+    }
   }
 }
 
@@ -197,6 +267,10 @@ function contextOf(db: DB, deviceId: string, change: ProposalChange, now: number
     }
     case "web_filter_off":
       return { kind: "web_filter_off", private_dns: getRules(db, deviceId).privateDns };
+    case "move_stage": {
+      const stage = phoneRules(db, deviceId).stage;
+      return { kind: "move_stage", stage_id: stage?.stage.id ?? null, since: stage?.since ?? null };
+    }
     default:
       return null;
   }
@@ -230,6 +304,15 @@ export function outdatedBecause(db: DB, proposal: Proposal, now: number): string
   if (then?.kind === "web_filter_off" && change.kind === "web_filter_off" && getRules(db, proposal.deviceId).privateDns !== then.private_dns) {
     return "The web filter changed after this was proposed.";
   }
+  // Screen time: each part it changes must still be as it was; the rest may have changed.
+  if (change.kind === "screen_time") {
+    const applied = applyPatch(phoneRules(db, proposal.deviceId).rules, change.patch);
+    if ("outdated" in applied) return applied.outdated;
+  }
+  if (then?.kind === "move_stage" && change.kind === "move_stage") {
+    const stage = phoneRules(db, proposal.deviceId).stage;
+    if ((stage?.stage.id ?? null) !== then.stage_id || (stage?.since ?? null) !== then.since) return "The phone's stage changed after this was proposed.";
+  }
   return null;
 }
 
@@ -248,25 +331,26 @@ export function createProposal(
   return db.transaction(() => {
     const pkg = change.kind === "allow_app" ? change.package : null;
     const restriction = change.kind === "lift_restriction" ? change.restriction : null;
+    const payload = payloadFor(change);
     const same = db
-      .prepare<[string, string, string | null, string | null], { id: string }>(
-        "SELECT id FROM proposals WHERE device_id = ? AND kind = ? AND package IS ? AND restriction IS ? AND status = 'pending'",
+      .prepare<[string, string, string | null, string | null, string | null], { id: string }>(
+        "SELECT id FROM proposals WHERE device_id = ? AND kind = ? AND package IS ? AND restriction IS ? AND payload IS ? AND status = 'pending'",
       )
-      .get(deviceId, change.kind, pkg, restriction);
+      .get(deviceId, change.kind, pkg, restriction, payload);
     const id = same?.id ?? newId();
     if (!same) {
       const context = contextOf(db, deviceId, change, now);
       db.prepare(
-        `INSERT INTO proposals (id, device_id, kind, package, restriction, reason, client_name, parent_id, created_at, context)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).run(id, deviceId, change.kind, pkg, restriction, reason.trim().slice(0, 1000), by.clientName, by.parentId, now, context ? JSON.stringify(context) : null);
+        `INSERT INTO proposals (id, device_id, kind, package, restriction, payload, reason, client_name, parent_id, created_at, context)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(id, deviceId, change.kind, pkg, restriction, payload, reason.trim().slice(0, 1000), by.clientName, by.parentId, now, context ? JSON.stringify(context) : null);
     }
     const proposal = getProposal(db, id);
     if (!proposal) throw new Error("proposal vanished");
     if (!same) {
       audit(db, now, { kind: "ai", parentId: by.parentId, clientName: by.clientName }, "proposal.created", {
         deviceId,
-        detail: { change: changeWords(change, proposal.label).title, package: pkg ?? undefined },
+        detail: { change: changeWords(change, proposal.label, phoneLabels(db, deviceId)).title, package: pkg ?? undefined },
       });
     }
     return { proposal, duplicate: !!same };
@@ -341,6 +425,17 @@ export function approveProposal(ctx: PolicyContext, id: string, parentId: string
         break;
       case "new_apps_allow":
         setNewApps(ctx, proposal.deviceId, "allow", parent);
+        break;
+      case "screen_time": {
+        const current = phoneRules(db, proposal.deviceId);
+        const applied = applyPatch(current.rules, change.patch);
+        // outdatedBecause checked it; this keeps it true.
+        if ("outdated" in applied) throw new Error(applied.outdated);
+        setPhoneRules(ctx, proposal.deviceId, applied.rules, parent, { proposalId: proposal.id });
+        break;
+      }
+      case "move_stage":
+        moveToStage(ctx, proposal.deviceId, change.stageId, parent, { proposalId: proposal.id });
         break;
     }
     db.prepare("UPDATE proposals SET status = 'approved', decided_by = ?, decided_at = ? WHERE id = ?").run(parentId, now, id);

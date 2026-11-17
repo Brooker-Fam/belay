@@ -73,27 +73,32 @@ describe("the MCP server", () => {
     expect(client.getServerVersion()?.name).toBe("belay");
   });
 
-  it("annotates its tools: reads are read-only, blocking and pausing change the phone, the rest only record", async () => {
+  it("annotates its tools: reads are read-only, blocking, pausing, locking and screen-time changes change the phone, the rest only record", async () => {
     const { client } = await family();
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "block_app",
+      "change_screen_time",
       "get_app_changes",
       "get_device_status",
       "get_installed_apps",
       "get_policy",
+      "get_rules",
+      "get_screen_time",
       "get_server_health",
       "list_devices",
       "list_requests",
       "list_unreviewed_apps",
+      "lock_phone",
       "mark_apps_reviewed",
       "pause_phone",
       "propose_change",
     ]);
-    const writes = ["mark_apps_reviewed", "block_app", "pause_phone", "propose_change"];
+    const changes = ["block_app", "pause_phone", "lock_phone", "change_screen_time"];
+    const writes = ["mark_apps_reviewed", "propose_change", ...changes];
     for (const tool of tools) {
       expect(tool.annotations?.readOnlyHint).toBe(!writes.includes(tool.name));
-      expect(tool.annotations?.destructiveHint).toBe(tool.name === "block_app" || tool.name === "pause_phone");
+      expect(tool.annotations?.destructiveHint).toBe(changes.includes(tool.name));
       expect(tool.annotations?.openWorldHint).toBe(false);
     }
   });
@@ -190,10 +195,10 @@ describe("the MCP server", () => {
     expect(res.isError).toBe(true);
   });
 
-  it("offers the weekly_review, review_app and review_request prompts", async () => {
+  it("offers the weekly_review, review_app, review_request and family_check_in prompts", async () => {
     const { client } = await family();
     const { prompts } = await client.listPrompts();
-    expect(prompts.map((p) => p.name).sort()).toEqual(["review_app", "review_request", "weekly_review"]);
+    expect(prompts.map((p) => p.name).sort()).toEqual(["family_check_in", "review_app", "review_request", "weekly_review"]);
     const weekly = await client.getPrompt({ name: "weekly_review" });
     const text = (weekly.messages[0]?.content as { text: string }).text;
     expect(text).toContain("get_app_changes");
@@ -201,6 +206,11 @@ describe("the MCP server", () => {
     expect(text).toContain("conversation starter");
     expect(text).toContain("Never say you approved, allowed or unblocked anything");
     expect(text).toContain("Only the parent answers");
+    // Phase 3: a screen-time section.
+    expect(text).toContain("get_screen_time for the last 14 days");
+    expect(text).toContain("totals against the limits");
+    expect(text).toContain("anything Belay couldn't count");
+    expect(text).toContain("Screen time is a number, not a verdict about the kid");
     const one = await client.getPrompt({ name: "review_app", arguments: { device: "Sam's phone", package: "com.example.chat" } });
     expect((one.messages[0]?.content as { text: string }).text).toContain('"package":"com.example.chat"');
     const asked = await client.getPrompt({ name: "review_request", arguments: { device: "Sam's phone", package: "com.example.game" } });

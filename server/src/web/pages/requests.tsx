@@ -221,14 +221,18 @@ export const RequestsPage: FC<{
 
 const PROPOSAL_STATUS = { pending: "Waiting for you", approved: "Approved", rejected: "Rejected", outdated: "Out of date" } as const;
 
+const EFFECT_CHIP = { tightens: "chip allowed", loosens: "chip blocked", neither: "chip" } as const;
+
 export const ProposalsPage: FC<{
   view: View;
   proposals: Proposal[];
   /** For pending proposals that are out of date now: what changed since (family/proposals.ts, outdatedBecause). */
   stale: ReadonlyMap<string, string>;
+  /** For screen-time proposals: each change in words, and whether it tightens or loosens. */
+  details?: ReadonlyMap<string, { effect: "tightens" | "loosens" | "neither"; words: string }[]>;
   message?: string;
   error?: string;
-}> = ({ view, proposals, stale, message, error }) => {
+}> = ({ view, proposals, stale, details, message, error }) => {
   const pending = proposals.filter((p) => p.status === "pending");
   const decided = proposals.filter((p) => p.status !== "pending");
   return (
@@ -256,6 +260,15 @@ export const ProposalsPage: FC<{
             {p.parentName && <>, through {p.parentName}'s connection</>}, <Time ms={p.createdAt} tz={view.tz} />. Its reason, in its words:
           </p>
           <blockquote class="ai">{p.reason}</blockquote>
+          {details?.get(p.id) && (
+            <ul class="small">
+              {details.get(p.id)?.map((c) => (
+                <li>
+                  {c.words} <span class={EFFECT_CHIP[c.effect]}>{c.effect === "neither" ? "neither" : c.effect}</span>
+                </li>
+              ))}
+            </ul>
+          )}
           {stale.has(p.id) && (
             <Notice kind="warn">
               This is out of date: {stale.get(p.id)} Approving it changes nothing; if you still want it, make the change on the phone's page.
