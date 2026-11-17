@@ -1,9 +1,14 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 /** Settings that come from the environment (docs/server.md lists them). */
 export interface Config {
   /** The server's public origin, e.g. https://belay.example.org. Phones, QR codes and OAuth use it. */
   publicUrl: string;
   /** Where the SQLite database lives. */
   dataDir: string;
+  /** Phase 6: where the versions of Belay a parent may offer the phones are kept, as <sha256>.apk (in the data directory). */
+  agentsDir: string;
   host: string;
   port: number;
   /** Behind one reverse proxy (Caddy): take the client address from the last X-Forwarded-For entry. */
@@ -74,9 +79,11 @@ function parsePort(value: string | undefined): number {
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const publicUrl = parsePublicUrl(env.BELAY_PUBLIC_URL);
+  const dataDir = env.BELAY_DATA_DIR?.trim() || "./data";
   return {
     publicUrl,
-    dataDir: env.BELAY_DATA_DIR?.trim() || "./data",
+    dataDir,
+    agentsDir: join(dataDir, "agents"),
     host: env.BELAY_HOST?.trim() || "127.0.0.1",
     port: parsePort(env.BELAY_PORT),
     trustProxy: env.BELAY_TRUST_PROXY === "1" || env.BELAY_TRUST_PROXY === "true",
@@ -85,11 +92,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   };
 }
 
-/** A config for tests and tools. */
+/** A config for tests and tools. Tests that store APKs pass an `agentsDir` of their own. */
 export function testConfig(overrides: Partial<Config> = {}): Config {
   return {
     publicUrl: "https://belay.example.org",
     dataDir: ":memory:",
+    agentsDir: join(tmpdir(), `belay-test-agents-${process.pid}`),
     host: "127.0.0.1",
     port: 8080,
     trustProxy: true,

@@ -63,6 +63,7 @@ async function main(): Promise<number> {
       err,
       readSecret,
       interactive: process.stdin.isTTY,
+      stdin: process.stdin,
     });
   } finally {
     db.close();

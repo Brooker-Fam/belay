@@ -22,7 +22,7 @@ no monthly fee and no company that can change or disappear. A parent mostly mana
 asking Claude (or any MCP client) things like "what did they install this week, and is it
 OK?", with a web page as the fallback.
 
-## What exists today (Phases 1 and 2, and part of 6)
+## What exists today (Phases 1 and 2, and parts of 6 and 10)
 
 - **`android/`: the device-owner agent.** Provisioned over adb, it becomes device owner and
   blocks its own uninstall. It always shows "This phone is managed by your parent", and its
@@ -59,6 +59,13 @@ OK?", with a web page as the fallback.
   (disk space, a fast-growing database, failing backups, its clock, a database it can't
   open) on the parent page, over MCP and on `/healthz`, pushes the urgent ones to the
   parents, and sends an opt-in daily summary with counts only.
+- **Phases 6 and 10 on the server: updates, the recovery key, other users.** A parent offers
+  a phone a newer Belay (added to the server with `agent-add`), and its page shows how the
+  update goes, with a notice if it fails and a flag if the phone goes quiet after it; the
+  server pins Belay's signing certificate. Each phone gets a recovery key, shown once, that
+  lifts the factory reset and debugging locks offline if the server is ever lost. When
+  another user or profile appears (Android's own Parental Controls make one), the phone's
+  page says so and a parent can remove it. AI clients can only read these.
 - **CI:** Android build, unit tests and lint, an Android 17 emulator job that provisions
   the agent and checks it end to end, and the server's tests and Docker image.
 - **Docs:** [running the server](docs/server.md), [connecting Claude](docs/mcp.md),

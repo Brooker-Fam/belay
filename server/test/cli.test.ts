@@ -4,7 +4,7 @@ import { listAudit } from "../src/audit.js";
 import { Policy } from "../src/device/schemas.js";
 import { buildPolicy, currentDecision } from "../src/family/policy.js";
 import { updateSettings } from "../src/settings.js";
-import { device, deviceCall, enrollPhone, pkg, snapshot, testServer, T0, type TestServer } from "./helpers.js";
+import { device, deviceCall, enrollPhone, event, pkg, snapshot, testServer, T0, type TestServer } from "./helpers.js";
 
 async function family() {
   const t = testServer();
@@ -123,5 +123,51 @@ describe("the CLI's policy commands", () => {
     expect(res.status).toBe(200);
     expect(Date.now() - started).toBeLessThan(3000);
     expect(((await res.json()) as { policy: Policy }).policy.apps.decisions).toEqual([{ package: "com.example.maps", state: "blocked" }]);
+  });
+});
+
+describe("new apps asking again, from the CLI", () => {
+  const MIN = 60_000;
+  /** Ask, a game that waits, allow, a drawing app that runs: then the second ask. */
+  async function askedThenAllowed() {
+    const { t, phone } = await family();
+    expect((await cli(t, "policy", "CI phone", "--new-apps", "ask")).out).toBe("CI phone: new apps wait for a parent's approval (rules version 1). 1 app already on the phone allowed.");
+    const install = (name: string) => deviceCall(t, phone.token, "events", { events: [event("installed", name, { to: { code: 1 }, happened_at: t.now() - 1000, detected_at: t.now() })] });
+    t.advance(MIN);
+    await install("com.example.game");
+    t.advance(MIN);
+    expect((await cli(t, "policy", "CI phone", "--new-apps", "allow")).out).toBe("CI phone: new apps run without asking (rules version 2).");
+    t.advance(MIN);
+    await install("com.example.drawing");
+    t.advance(MIN);
+    const decisions = () => Object.fromEntries(policy(t, phone.deviceId).apps.decisions.map((d) => [d.package, d.state]));
+    return { t, decisions };
+  }
+
+  it("by default allows the apps installed while new apps were allowed, and leaves the ones waiting before", async () => {
+    const { t, decisions } = await askedThenAllowed();
+    expect((await cli(t, "policy", "CI phone", "--new-apps", "ask")).out).toBe(
+      "CI phone: new apps wait for a parent's approval (rules version 3). Of the apps without a decision, 1 is allowed and 1 waits for a parent.",
+    );
+    expect(decisions()).toEqual({ "com.example.maps": "allowed", "com.example.drawing": "allowed" });
+  });
+
+  it("--allow-waiting also allows the ones waiting before; --hold-new keeps the new ones waiting", async () => {
+    let f = await askedThenAllowed();
+    expect((await cli(f.t, "policy", "CI phone", "--new-apps", "ask", "--allow-waiting")).out).toContain("2 are allowed and 0 wait for a parent.");
+    expect(f.decisions()).toMatchObject({ "com.example.game": "allowed", "com.example.drawing": "allowed" });
+    f = await askedThenAllowed();
+    expect((await cli(f.t, "policy", "CI phone", "--new-apps", "ask", "--hold-new")).out).toContain("0 are allowed and 2 wait for a parent.");
+    expect(f.decisions()).toEqual({ "com.example.maps": "allowed" });
+    f = await askedThenAllowed();
+    expect((await cli(f.t, "policy", "CI phone", "--new-apps", "ask", "--hold-new", "--allow-waiting")).out).toContain("1 is allowed and 1 waits for a parent.");
+    expect(f.decisions()).toEqual({ "com.example.maps": "allowed", "com.example.game": "allowed" });
+  });
+
+  it("protect after protection was off says what it allowed", async () => {
+    const { t } = await askedThenAllowed();
+    expect((await cli(t, "protect", "CI phone")).out).toBe(
+      "CI phone: protection is on (rules version 3). Of the apps without a decision, 1 is allowed and 1 waits for a parent.",
+    );
   });
 });

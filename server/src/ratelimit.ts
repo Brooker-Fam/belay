@@ -22,20 +22,22 @@ export class RateLimiter {
     return list;
   }
 
-  /** Whether another hit would be allowed, without counting one. */
-  check(key: string): Verdict {
+  /** Whether `n` more hits would be allowed, without counting them. */
+  check(key: string, n = 1): Verdict {
     const list = this.recent(key);
-    if (list.length < this.limit) return { ok: true };
-    const oldest = list[list.length - this.limit] ?? this.now();
+    if (list.length + n <= this.limit) return { ok: true };
+    // More than the limit at once never fits: wait a whole window, then it still won't.
+    if (n > this.limit) return { ok: false, retryAfterSeconds: Math.ceil(this.windowMs / 1000) };
+    const oldest = list[list.length + n - this.limit - 1] ?? this.now();
     return { ok: false, retryAfterSeconds: Math.max(1, Math.ceil((oldest + this.windowMs - this.now()) / 1000)) };
   }
 
-  /** Counts a hit, and says whether it was within the limit. A refused hit isn't counted. */
-  hit(key: string): Verdict {
-    const verdict = this.check(key);
+  /** Counts a hit (or `n` at once), and says whether they were within the limit. Refused hits aren't counted. */
+  hit(key: string, n = 1): Verdict {
+    const verdict = this.check(key, n);
     if (!verdict.ok) return verdict;
     const list = this.hits.get(key) ?? [];
-    list.push(this.now());
+    for (let i = 0; i < n; i++) list.push(this.now());
     this.hits.delete(key);
     this.hits.set(key, list);
     if (this.hits.size > this.maxKeys) {
@@ -76,6 +78,8 @@ export interface Limiters {
   policyPerPhone: RateLimiter;
   /** Notices to the parents' browsers about one phone (its requests, AI apps' proposals for it). */
   noticesPerPhone: RateLimiter;
+  /** Phase 6: downloads of the offered update, per phone, counted apart: each resumed range is one. */
+  agentPerPhone: RateLimiter;
 }
 
 export function createLimiters(now: () => number): Limiters {
@@ -91,5 +95,6 @@ export function createLimiters(now: () => number): Limiters {
     devicePerPhone: new RateLimiter(120, MIN, now),
     policyPerPhone: new RateLimiter(30, MIN, now),
     noticesPerPhone: new RateLimiter(6, 60 * MIN, now),
+    agentPerPhone: new RateLimiter(30, 60 * MIN, now),
   };
 }

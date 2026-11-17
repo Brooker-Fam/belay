@@ -110,8 +110,9 @@ sends outside the family's server, and the parent page says so where you choose 
 - **Parents,** on the parent page, with their own accounts.
 - **AI apps a parent connects** (like Claude), through MCP, and only the categories the
   parents allow in Settings: apps, device status, and (from Phase 2) requests, the kid's own
-  words, all on by default. The server's own health (its backups, disk and clock) is open
-  to them too; it holds no family data. What an AI app reads goes to its provider under that
+  words, all on by default (a category added in an upgrade starts off for a family that had
+  turned one off, and Settings marks it new). The server's own health (its backups, disk and
+  clock) is open to them too; it holds no family data. What an AI app reads goes to its provider under that
   provider's terms. [mcp.md](mcp.md#what-reaches-the-ai-provider) lists exactly what that
   is. Every read is in the activity log.
 

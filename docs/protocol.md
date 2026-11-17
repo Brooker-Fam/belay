@@ -156,6 +156,11 @@ pending. When a new app is suspended, Belay makes its request at once (without a
 so the parent sees it even if the kid never opens Belay. The answers come back in the
 policy's `requests`, which Belay shows the kid.
 
+A new request (a new `id`) for an app that has one waiting takes its place, as when the app
+is installed again: the old one leaves the policy's `requests`, and the kid's earlier reason
+stays with the new one until they write another. At most 200 apps can have a request
+waiting per phone; past that, new ones are answered `429`.
+
 Phase 3 makes Request a union on `kind`: `app`, `more_time` (more minutes for a limit
 today) and `agreement` (the kid's answer to the family agreement). Only a parent answers;
 an approved `more_time` answer carries the `minutes` given, and the policy's
@@ -254,7 +259,10 @@ server decides whether a change tightens or loosens.
   suspended the moment Belay sees it install, and stays suspended until the policy says
   `allowed`. There's no pre-install hook, so an app can run for a moment before that.
   When a parent first turns `ask` on, the server records every user app already on the
-  phone as `allowed`, so nothing the kid already has stops working by surprise.
+  phone as `allowed`, so nothing the kid already has stops working by surprise. Only the
+  first time: turning `ask` on again after `allow`, the parent chooses which apps without a
+  decision are allowed (by default, the ones installed while new apps were allowed), and the
+  ones that were waiting before wait again unless the parent allows them.
 - **Blocked** apps are hidden and suspended (`setApplicationHidden`: suspended apps that
   have run before can keep working in the background). System apps can be blocked too.
 - **Paused**: every launchable app but the never-blocked ones is suspended until
@@ -268,7 +276,8 @@ server decides whether a change tightens or loosens.
 - **Offline**, the phone keeps enforcing the last policy it got. Belay stores it.
 - **Versions:** the phone applies any version that differs from the one it has, lower ones
   too (a server restored from a backup), and checks in within seconds of applying one. A
-  policy can be larger than other answers: the phone accepts up to 1 MB.
+  policy can be larger than other answers: the phone accepts up to 1 MB, and the server never
+  makes one larger than 256 KB (it refuses the change that would).
 - **`web.private_dns: null`** leaves the phone's setting alone, except that if the phone
   still has the host Belay set, Belay puts it back to Android's default (Automatic).
 - **Requests can't be withdrawn yet:** an app removed while it waits leaves its request
@@ -277,8 +286,12 @@ server decides whether a change tightens or loosens.
   the phone). Anything that loosens (approve, unblock, resume, lift a restriction) is
   only a proposal until a parent approves it on the parent page.
 - **The phone reports what it never blocks** (`enforcement.never_blocked`), as it resolves
-  the roles on that phone; the server refuses to block those packages, and names a few
-  well-known ones itself before the first report.
+  the roles on that phone. The server refuses to block those packages, for parents and AI
+  clients alike, and also refuses well-known ones on any phone, before its first report too:
+  Belay, `android`, the telephony and telecom services, the common dialers, texting apps,
+  keyboards and home screens (Google's, AOSP's and Samsung's), emergency, safety and
+  emergency-alert apps, System UI and Settings (`NEVER_BLOCKED` in
+  `server/src/family/policy.ts`).
 - **Updates** (Phase 6, `agent_update`): before installing, the phone checks that the
   download's SHA-256 and size match, and that the APK (`getPackageArchiveInfo` with
   signing certificates) is Belay's own package, has exactly the offered version code,

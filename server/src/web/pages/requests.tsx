@@ -120,9 +120,16 @@ export const RequestsPage: FC<{
   );
 };
 
-const PROPOSAL_STATUS = { pending: "Waiting for you", approved: "Approved", rejected: "Rejected" } as const;
+const PROPOSAL_STATUS = { pending: "Waiting for you", approved: "Approved", rejected: "Rejected", outdated: "Out of date" } as const;
 
-export const ProposalsPage: FC<{ view: View; proposals: Proposal[]; message?: string; error?: string }> = ({ view, proposals, message, error }) => {
+export const ProposalsPage: FC<{
+  view: View;
+  proposals: Proposal[];
+  /** For pending proposals that are out of date now: what changed since (family/proposals.ts, outdatedBecause). */
+  stale: ReadonlyMap<string, string>;
+  message?: string;
+  error?: string;
+}> = ({ view, proposals, stale, message, error }) => {
   const pending = proposals.filter((p) => p.status === "pending");
   const decided = proposals.filter((p) => p.status !== "pending");
   return (
@@ -150,6 +157,11 @@ export const ProposalsPage: FC<{ view: View; proposals: Proposal[]; message?: st
             {p.parentName && <>, through {p.parentName}'s connection</>}, <Time ms={p.createdAt} tz={view.tz} />. Its reason, in its words:
           </p>
           <blockquote class="ai">{p.reason}</blockquote>
+          {stale.has(p.id) && (
+            <Notice kind="warn">
+              This is out of date: {stale.get(p.id)} Approving it changes nothing; if you still want it, make the change on the phone's page.
+            </Notice>
+          )}
           <form class="stack" method="post" action={`/proposals/${p.id}/approve`}>
             <Csrf view={view} />
             {p.change.kind === "allow_app" && (
@@ -180,8 +192,9 @@ export const ProposalsPage: FC<{ view: View; proposals: Proposal[]; message?: st
                   {changeWords(p.change, p.label).title} <span class="small muted">{p.deviceName}</span>
                   <div class="small muted">
                     proposed by {p.clientName}
-                    {p.decidedBy && `; ${p.status} by ${p.decidedBy}`}
+                    {p.decidedBy && (p.status === "outdated" ? `; not applied when ${p.decidedBy} approved it` : `; ${p.status} by ${p.decidedBy}`)}
                   </div>
+                  {p.status === "outdated" && p.outdatedWhy && <div class="small">{p.outdatedWhy}</div>}
                 </div>
               </div>
             ))}

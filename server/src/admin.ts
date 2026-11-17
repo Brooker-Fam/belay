@@ -10,10 +10,16 @@
  *   restore-drill                                 the steps of a restore drill, for the newest backup
  *   status [--json]                               each phone's status, apps, rules, requests and latest changes
  *   protect "<phone>"                             turns protection on, as the parent page does
- *   policy "<phone>" --new-apps ask|allow         whether new apps wait for a parent
+ *   policy "<phone>" --new-apps ask|allow [--allow-waiting] [--hold-new]
+ *                                                 whether new apps wait for a parent (the flags: see docs/server.md)
  *   decide "<phone>" <package> allow|block|undecided
  *   pause "<phone>" [--minutes N] [--note text]   until a parent resumes it, without --minutes
  *   resume "<phone>"
+ *   agent-add <apk> --version-code <n> [--version-name <name>]
+ *                                                 stores a version of Belay; prints only its SHA-256
+ *   agent-offer "<phone>" <sha256>                offers that version to the phone, as a parent would
+ *   recovery-key "<phone>"                        a new recovery key for the phone; prints only the key, grouped
+ *   remove-other-users "<phone>"                  asks the phone to remove every other user and profile (Phase 10)
  *
  * Changes are logged as the server's (the activity log's "The server"). A running server sees
  * them within a second or two and passes them to the phone's long-poll. Hardening (factory
@@ -24,10 +30,13 @@ import { audit } from "./audit.js";
 import type { Config } from "./config.js";
 import type { DB } from "./db.js";
 import { createEnrollmentCode } from "./device/enroll.js";
-import { packageName } from "./device/schemas.js";
+import { packageName, sha256Hex } from "./device/schemas.js";
+import { AgentFileError, type Offer, addAgentFile, currentOffer, offerAgent, versionWords } from "./family/agent.js";
+import { type RecoveryState, makePhoneRecoveryKey, recoveryState, usableKey } from "./family/recovery.js";
+import { issueCommand, listCommands } from "./family/commands.js";
 import { appCounts, listChanges } from "./family/apps.js";
 import { type DeviceRow, findDeviceByName, listDevices, nameTaken } from "./family/devices.js";
-import { LIMITS, decideApp, neverBlocked, pausePhone, protect, resumePhone, setNewApps, type PolicyContext } from "./family/policy.js";
+import { LIMITS, RuleRefused, askAgainSummary, decideApp, pausePhone, protect, resumePhone, setNewApps, type PolicyContext } from "./family/policy.js";
 import { recentRequests } from "./family/requests.js";
 import { runOpsCommand } from "./ops/cli.js";
 import { getSettings } from "./settings.js";
@@ -43,9 +52,40 @@ export interface CliIO {
   readSecret: (prompt: string) => Promise<string>;
   /** Whether stdin is a terminal (reset-password asks twice there). */
   interactive: boolean;
+  /** For agent-add -: the APK, piped in. */
+  stdin?: NodeJS.ReadableStream;
 }
 
 class CliError extends Error {}
+
+/** status --json's agent_update: the offer, and what the phone last said about it. */
+function updateStatus(offer: Offer | null, iso: (ms: number | null) => string | null) {
+  if (!offer) return null;
+  return {
+    sha256: offer.file.sha256,
+    version_code: offer.file.versionCode,
+    version_name: offer.file.versionName,
+    size: offer.file.size,
+    offered_at: iso(offer.offeredAt),
+    /** Whether the policy offers it now: false once the phone runs it or a newer version. */
+    sent: offer.sent,
+    phone: offer.state === null ? null : { state: offer.state, problem: offer.problem, at: iso(offer.stateAt) },
+    done_at: iso(offer.doneAt),
+  };
+}
+
+/** status --json's recovery: never the key or its check. */
+function recoveryStatus(state: RecoveryState, iso: (ms: number | null) => string | null) {
+  return {
+    version: usableKey(state) ? (state.current?.version ?? null) : null,
+    last_used: state.lastUse ? { version: state.lastUse.version, used_at: iso(state.lastUse.usedAt), until: iso(state.lastUse.until) } : null,
+  };
+}
+
+/** "Of the apps without a decision, 1 is allowed and 2 wait for a parent." */
+function askAgainWords(r: { grandfathered: number; stillWaiting: number }): string {
+  return `Of the apps without a decision, ${r.grandfathered} ${r.grandfathered === 1 ? "is" : "are"} allowed and ${r.stillWaiting} ${r.stillWaiting === 1 ? "waits" : "wait"} for a parent.`;
+}
 
 const USAGE = `Commands:
   setup-link
@@ -57,10 +97,14 @@ const USAGE = `Commands:
   restore-drill
   status [--json]
   protect "<phone>"
-  policy "<phone>" --new-apps ask|allow
+  policy "<phone>" --new-apps ask|allow [--allow-waiting] [--hold-new]
   decide "<phone>" <package> allow|block|undecided
   pause "<phone>" [--minutes N] [--note text]
-  resume "<phone>"`;
+  resume "<phone>"
+  agent-add <apk> --version-code <n> [--version-name <name>]
+  agent-offer "<phone>" <sha256>
+  recovery-key "<phone>"
+  remove-other-users "<phone>"`;
 
 /** Positional arguments, and --name value (or --name=value, or a bare --name) flags. */
 function parseArgs(args: string[]): { positional: string[]; flags: Map<string, string | true> } {
@@ -91,7 +135,8 @@ export async function runCommand(argv: string[], io: CliIO): Promise<number> {
     await run(argv, io);
     return 0;
   } catch (error) {
-    if (error instanceof CliError) {
+    // A change the server refuses (rules too large, an app the phone never blocks…) says why.
+    if (error instanceof CliError || error instanceof RuleRefused) {
       io.err(error.message);
       return 1;
     }
@@ -165,6 +210,24 @@ async function run(argv: string[], io: CliIO): Promise<void> {
           policy_version: d.policyVersion,
           /** What the phone last said it enforces (docs/protocol.md, "Enforcement"), or null. */
           enforcement: d.enforcement,
+          /** Phase 6: the version of Belay the phone runs, and the SHA-256 of the certificate it's signed with, as it reported them. */
+          agent_version_code: d.facts?.agent_version_code ?? null,
+          agent_signing_sha256: d.facts?.agent_signing_sha256 ?? null,
+          /** Phase 6: the update offered to the phone, if any, and how it's going. */
+          agent_update: updateStatus(currentOffer(db, d.id), iso),
+          /** Phase 6: the version of the recovery key the policy carries (null: none, or it was used), and its last use. */
+          recovery: recoveryStatus(recoveryState(db, d.id), iso),
+          /** Phase 10: the commands sent to the phone lately, newest first, with what the phone reported. */
+          commands: listCommands(db, d.id, now).map((c) => ({
+            id: c.id,
+            kind: c.kind,
+            issued_at: iso(c.issuedAt),
+            expires_at: iso(c.expiresAt),
+            state: c.state,
+            result: c.result,
+            at: iso(c.resultAt),
+            problem: c.problem,
+          })),
           /** The kid's requests: waiting ones, and the last 30 days'. */
           requests: recentRequests(db, now, { deviceId: d.id }).map((r) => ({ package: r.package, status: r.status, reason: r.reason })),
           recent_changes: listChanges(db, { deviceId: d.id, includeSystem: true, limit: 20 }).map((c) => ({
@@ -192,21 +255,31 @@ async function run(argv: string[], io: CliIO): Promise<void> {
     case "protect": {
       const row = phone();
       const done = protect(ctx, row.id, server);
+      const n = done.result.grandfathered;
       io.out(
         done.result.alreadyOn && !done.changed
           ? `${row.name}: protection was already on (rules version ${done.version}).`
-          : `${row.name}: protection is on (rules version ${done.version}). ${done.result.grandfathered} app${done.result.grandfathered === 1 ? "" : "s"} already on the phone ${done.result.grandfathered === 1 ? "is" : "are"} allowed.`,
+          : `${row.name}: protection is on (rules version ${done.version}). ` +
+              (done.result.firstTime || !done.result.stillWaiting
+                ? `${n} app${n === 1 ? "" : "s"} already on the phone ${n === 1 ? "is" : "are"} allowed.`
+                : askAgainWords(done.result)),
       );
       return;
     }
     case "policy": {
       const row = phone();
       const mode = flags.get("new-apps");
-      if (mode !== "ask" && mode !== "allow") throw new CliError(`Usage: policy "<phone>" --new-apps ask|allow`);
-      const done = setNewApps(ctx, row.id, mode, server);
+      if (mode !== "ask" && mode !== "allow") throw new CliError(`Usage: policy "<phone>" --new-apps ask|allow [--allow-waiting] [--hold-new]`);
+      // Back to ask after allow: by default the apps installed meanwhile are allowed and the ones waiting before still wait.
+      const again = mode === "ask" ? askAgainSummary(db, row.id) : null;
+      const allow = again
+        ? [...(flags.has("hold-new") ? [] : again.installedMeanwhile), ...(flags.has("allow-waiting") ? again.waitingBefore : [])].map((a) => a.package)
+        : undefined;
+      const done = setNewApps(ctx, row.id, mode, server, { allow });
+      const n = done.result.grandfathered;
       io.out(
         `${row.name}: new apps ${mode === "ask" ? "wait for a parent's approval" : "run without asking"} (rules version ${done.version}).` +
-          (done.result.grandfathered ? ` ${done.result.grandfathered} app${done.result.grandfathered === 1 ? "" : "s"} already on the phone allowed.` : ""),
+          (done.result.firstTime && n ? ` ${n} app${n === 1 ? "" : "s"} already on the phone allowed.` : again && done.changed ? ` ${askAgainWords(done.result)}` : ""),
       );
       return;
     }
@@ -216,7 +289,6 @@ async function run(argv: string[], io: CliIO): Promise<void> {
       if (!packageName.safeParse(pkg).success || (state !== "allow" && state !== "block" && state !== "undecided")) {
         throw new CliError(`Usage: decide "<phone>" <package> allow|block|undecided`);
       }
-      if (state === "block" && neverBlocked(pkg)) throw new CliError(`Belay never blocks ${pkg}: 911 and 988 must always work.`);
       const done = decideApp(ctx, row.id, pkg, state === "allow" ? "allowed" : state === "block" ? "blocked" : "undecided", server);
       const words = state === "allow" ? "allowed" : state === "block" ? "blocked" : "without a decision";
       io.out(`${row.name}: ${pkg} is ${words} (rules version ${done.version}).`);
@@ -238,6 +310,69 @@ async function run(argv: string[], io: CliIO): Promise<void> {
       const row = phone();
       const done = resumePhone(ctx, row.id, server);
       io.out(done.result.wasPaused ? `${row.name}: resumed (rules version ${done.version}).` : `${row.name} wasn't paused.`);
+      return;
+    }
+    case "agent-add": {
+      // Its only line on stdout is the SHA-256, for scripts: agent-offer takes it.
+      const [path] = positional;
+      const code = Number(flags.get("version-code"));
+      const name = flags.get("version-name");
+      if (!path || !flags.has("version-code") || name === true) throw new CliError("Usage: agent-add <apk, or - for stdin> --version-code <n> [--version-name <name>]");
+      const source = path === "-" ? io.stdin : path;
+      if (!source) throw new CliError("There's no stdin to read the APK from here. Give the file's path instead.");
+      let added: Awaited<ReturnType<typeof addAgentFile>>;
+      try {
+        added = await addAgentFile(db, config.agentsDir, now, source, { code, name: name ?? null }, { parentId: null });
+      } catch (error) {
+        if (error instanceof AgentFileError) throw new CliError(error.message);
+        throw error;
+      }
+      const { file, existed } = added;
+      if (!existed) audit(db, now, server, "agent.added", { detail: { version_code: file.versionCode, version_name: file.versionName ?? undefined, sha256: file.sha256, size: file.size } });
+      io.out(file.sha256);
+      io.err(`${existed ? "Already on the server" : "Added"}: Belay ${versionWords(file)}, ${file.size} bytes. To offer it to a phone: agent-offer "<phone>" ${file.sha256}`);
+      return;
+    }
+    case "remove-other-users": {
+      const row = phone();
+      if (row.revoked_at !== null) throw new CliError(`${row.name} is disconnected, so it wouldn't get that.`);
+      const done = issueCommand(ctx, row.id, "remove_other_users", server);
+      const until = iso(done.result.command.expiresAt) ?? "";
+      io.out(
+        done.result.already
+          ? `${row.name}: already asked to remove other users and profiles; waiting for the phone, until ${until}.`
+          : `${row.name}: the phone removes every other user and profile when it gets its rules (rules version ${done.version}), if that's by ${until}.`,
+      );
+      return;
+    }
+    case "recovery-key": {
+      // Its only line on stdout is the key, grouped, for scripts; the rest goes to stderr.
+      const row = phone();
+      if (row.revoked_at !== null) throw new CliError(`${row.name} is disconnected, so a new key wouldn't reach it.`);
+      const done = makePhoneRecoveryKey(ctx, row.id, server);
+      io.out(done.result.grouped);
+      io.err(
+        `Recovery key version ${done.result.version} for ${row.name} (rules version ${done.version}). It's shown only now: print it, or keep it in a password manager.` +
+          (done.result.replaced ? " The earlier key stops working once the phone has this one." : ""),
+      );
+      return;
+    }
+    case "agent-offer": {
+      const row = phone();
+      const sha = positional[1] ?? "";
+      if (!sha256Hex.safeParse(sha).success) throw new CliError(`Usage: agent-offer "<phone>" <sha256>, the SHA-256 that agent-add printed`);
+      if (row.revoked_at !== null) throw new CliError(`${row.name} is disconnected, so it can't be updated.`);
+      let done: ReturnType<typeof offerAgent>;
+      try {
+        done = offerAgent(ctx, row.id, sha, server);
+      } catch (error) {
+        if (error instanceof AgentFileError) throw new CliError(error.message);
+        throw error;
+      }
+      io.out(`${row.name}: Belay ${versionWords(done.result.file)} is offered (rules version ${done.version}).`);
+      if (done.result.notNewerThan !== null) {
+        io.err(`The phone runs version ${done.result.notNewerThan}, which isn't older: Android won't install this one over it, so the phone won't get it.`);
+      }
       return;
     }
     default:

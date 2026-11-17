@@ -94,7 +94,7 @@ describe("the phone's Rules section", () => {
     expect(policy().apps.decisions).toEqual([{ package: "com.example.chat", state: "allowed" }]);
     const belay = await send(at("/decide"), { block: "family.brooker.belay" });
     expect(belay.status).toBe(400);
-    expect(await belay.text()).toContain("Belay never blocks that app");
+    expect(await belay.text()).toContain("Belay never blocks itself.");
     expect((await send(at("/decide"), { block: "not a package" })).status).toBe(400);
     expect((await send(at("/decide"), { allow: "com.example.chat", block: "com.example.maps" })).status).toBe(400);
   });
@@ -393,5 +393,37 @@ describe("the activity log", () => {
     expect(html).toContain("blocked Chatter Box (Sam&#39;s phone), noting: &quot;Strangers&quot;");
     expect(html).toContain("asked for Block Party");
     expect(html).toContain("approved the request for Block Party (Sam&#39;s phone)");
+  });
+});
+
+describe("new apps asking again", () => {
+  it("lists the apps installed while new apps were allowed and the ones waiting before, and the parent chooses", async () => {
+    const { t, phone, page, send, policy, at } = await family();
+    await send(at("/new-apps"), { mode: "ask" });
+    expect(await page()).toContain("Switching back to Ask, you choose which apps installed in between keep working.");
+    t.advance(60_000);
+    await newApp(t, phone.token, "com.example.game", "Block Party", "Everyone plays it");
+    t.advance(60_000);
+    await send(at("/new-apps"), { mode: "allow" });
+    t.advance(60_000);
+    await deviceCall(t, phone.token, "events", { events: [event("installed", "com.example.draw", { label: "Sketch <b>Pad</b>", to: { code: 1 }, happened_at: t.now(), detected_at: t.now() })] });
+    t.advance(60_000);
+    const html = await page();
+    expect(html).toContain("New apps wait for your approval again. The 1 app installed while new apps were allowed is allowed, and the 1 that was waiting for you before still waits");
+
+    const confirm = await send(at("/new-apps"), { mode: "ask" });
+    expect(confirm.status).toBe(200);
+    const asked = await confirm.text();
+    expect(asked).toContain("<h1>Ask about new apps again?</h1>");
+    expect(asked).toContain('<input type="checkbox" name="allow" value="com.example.draw" checked=""/> Sketch &lt;b&gt;Pad&lt;/b&gt;');
+    expect(asked).toContain('<input type="checkbox" name="allow" value="com.example.game"/> Block Party');
+    expect(policy().apps.new_apps).toBe("allow");
+
+    const done = await send(at("/new-apps"), { mode: "ask", confirm: "1", allow: ["com.example.game"] });
+    expect(done.headers.get("location")).toBe(`${at("")}?saved=new_apps_ask_again#new-apps`);
+    const decisions = Object.fromEntries(policy().apps.decisions.map((d) => [d.package, d.state]));
+    expect(decisions).toEqual({ "com.example.chat": "allowed", "com.example.maps": "allowed", "com.example.game": "allowed" });
+    expect(policy().apps.new_apps).toBe("ask");
+    expect(policy().requests).toMatchObject([{ id: "request-0001", status: "approved" }]);
   });
 });

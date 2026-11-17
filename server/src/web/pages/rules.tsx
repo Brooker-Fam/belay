@@ -9,12 +9,13 @@ import {
   SAFE_RESTRICTIONS,
   activeMaintenance,
   activePause,
+  type AskAgain,
   type Decision,
   type Rules,
 } from "../../family/policy.js";
 import type { RequestView } from "../../family/requests.js";
 import { formatAgo } from "../../time.js";
-import { Csrf, Notice, PostButton, Time, type View } from "../ui.js";
+import { Csrf, Layout, Notice, PostButton, Time, type View } from "../ui.js";
 
 const PAUSE_CHOICES = [
   ["15", "15 minutes"],
@@ -49,17 +50,37 @@ export const RulesStatus: FC<{ view: View; device: DeviceView }> = ({ view, devi
   );
 };
 
-export const ProtectionCard: FC<{ view: View; device: DeviceView; rules: Rules; undecidedApps: number }> = ({ view, device, rules, undecidedApps }) =>
+export const ProtectionCard: FC<{ view: View; device: DeviceView; rules: Rules; undecidedApps: number; askAgain: AskAgain | null }> = ({
+  view,
+  device,
+  rules,
+  undecidedApps,
+  askAgain,
+}) =>
   rules.protectedAt === null ? (
     <div class="card">
       <p>
         <strong>Protection is off.</strong> Turning it on, in one step:
       </p>
       <ul>
-        <li>
-          New apps wait for your approval. The {undecidedApps} app{undecidedApps === 1 ? "" : "s"} already on the phone{" "}
-          {undecidedApps === 1 ? "is" : "are"} allowed, so nothing stops working by surprise.
-        </li>
+        {askAgain ? (
+          <li>
+            New apps wait for your approval again. The {askAgain.installedMeanwhile.length} app{askAgain.installedMeanwhile.length === 1 ? "" : "s"} installed
+            while new apps were allowed {askAgain.installedMeanwhile.length === 1 ? "is" : "are"} allowed
+            {askAgain.waitingBefore.length > 0 && (
+              <>
+                , and the {askAgain.waitingBefore.length} that {askAgain.waitingBefore.length === 1 ? "was" : "were"} waiting for you before still{" "}
+                {askAgain.waitingBefore.length === 1 ? "waits" : "wait"}
+              </>
+            )}
+            . To choose app by app, switch new apps to Ask first.
+          </li>
+        ) : (
+          <li>
+            New apps wait for your approval. The {undecidedApps} app{undecidedApps === 1 ? "" : "s"} already on the phone{" "}
+            {undecidedApps === 1 ? "is" : "are"} allowed, so nothing stops working by surprise.
+          </li>
+        )}
         <li>Locks safe mode, adding users, installing apps from outside the Play Store, VPN and Private DNS settings, date and time, and default apps.</li>
         <li>{rules.privateDns ? "Keeps the web filter you chose." : `Filters the web with ${DNS_FILTERS.cleanbrowsing.name}, for every app.`}</li>
         <li>
@@ -151,7 +172,10 @@ export const NewAppsCard: FC<{ view: View; device: DeviceView; rules: Rules }> =
     </label>
     <p class="muted small">
       With Ask, the phone suspends a new app the moment it installs, and the kid can ask you for it from Belay's screen. Android has no way to stop an
-      install itself, so an app can run for a moment first. Switching to Ask allows the apps already on the phone.
+      install itself, so an app can run for a moment first.{" "}
+      {rules.askFirstAt === null
+        ? "The first time you switch to Ask, the apps already on the phone are allowed."
+        : "Switching back to Ask, you choose which apps installed in between keep working."}
     </p>
     <div>
       <button type="submit" class="quiet">
@@ -402,6 +426,61 @@ export const HardeningCard: FC<{ view: View; device: DeviceView; rules: Rules }>
       </div>
     </form>
   </div>
+);
+
+/**
+ * Switching new apps back to Ask: the apps installed while new apps were allowed (ticked: they've
+ * been running) and the ones that were waiting before (not ticked), for the parent to choose.
+ */
+export const AskAgainPage: FC<{ view: View; device: DeviceView; again: AskAgain }> = ({ view, device, again }) => (
+  <Layout view={view} title={`New apps on ${device.name}`}>
+    <p class="small">
+      <a href={`/devices/${device.id}#new-apps`}>← {device.name}</a>
+    </p>
+    <h1>Ask about new apps again?</h1>
+    <p>From now on, each new app waits for your approval. Choose which of the apps without a decision keep working; the others wait for you.</p>
+    <form class="stack card" method="post" action={`/devices/${device.id}/new-apps`}>
+      <Csrf view={view} />
+      <input type="hidden" name="mode" value="ask" />
+      <input type="hidden" name="confirm" value="1" />
+      {again.installedMeanwhile.length > 0 && (
+        <fieldset>
+          <legend>
+            <strong>Installed while new apps were allowed</strong>
+            {again.since !== null && (
+              <>
+                {" "}
+                (since <Time ms={again.since} tz={view.tz} />)
+              </>
+            )}
+          </legend>
+          <p class="muted small">They've been running. The ticked ones are allowed.</p>
+          {again.installedMeanwhile.map((a) => (
+            <label class="check">
+              <input type="checkbox" name="allow" value={a.package} checked /> {a.label} <span class="pkg">{a.package}</span>
+            </label>
+          ))}
+        </fieldset>
+      )}
+      {again.waitingBefore.length > 0 && (
+        <fieldset>
+          <legend>
+            <strong>Waiting for you from before</strong>
+          </legend>
+          <p class="muted small">These were waiting for your approval before new apps were allowed. They wait again unless you tick them.</p>
+          {again.waitingBefore.map((a) => (
+            <label class="check">
+              <input type="checkbox" name="allow" value={a.package} /> {a.label} <span class="pkg">{a.package}</span>
+            </label>
+          ))}
+        </fieldset>
+      )}
+      <div class="row">
+        <button type="submit">Switch to Ask</button>
+        <a href={`/devices/${device.id}#new-apps`}>Cancel</a>
+      </div>
+    </form>
+  </Layout>
 );
 
 /** Who made an app's decision, in words. */

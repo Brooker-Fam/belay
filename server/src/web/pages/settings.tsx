@@ -104,9 +104,18 @@ export const SettingsPage: FC<{
             <strong>What AI apps may read</strong>
           </legend>
           <p class="muted small">Connected AI apps (like Claude) send what they read to their provider. Turn off what they shouldn't see.</p>
+          {settings.newAiScopes.length > 0 && (
+            <p class="small">
+              <span class="chip new">new</span> marks what Belay added since you last saved these.{" "}
+              {settings.newAiScopes.some((s) => settings.aiScopes[s])
+                ? "It's on, like the others you left on: save to keep it, or untick it."
+                : "Because you turned something off before, it starts off: tick it to let AI apps read it."}
+            </p>
+          )}
           {Object.entries(AI_SCOPES).map(([key, label]) => (
             <label class="check">
               <input type="checkbox" name="ai_scope" value={key} checked={settings.aiScopes[key as keyof typeof AI_SCOPES]} /> {label}
+              {settings.newAiScopes.includes(key as keyof typeof AI_SCOPES) && <span class="chip new">new</span>}
             </label>
           ))}
         </fieldset>

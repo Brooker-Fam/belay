@@ -36,20 +36,27 @@ import type { Deps } from "../deps.js";
 import { cancelCode, createEnrollmentCode, pendingCodes } from "../device/enroll.js";
 import { packageName } from "../device/schemas.js";
 import { type App, getApp, listApps, listChanges, markReviewed, reviewHistory, appCounts } from "../family/apps.js";
+import { getAgentFile, listAgentFiles, offerAgent, withdrawOffer } from "../family/agent.js";
+import { makePhoneRecoveryKey, recoveryState, usableKey } from "../family/recovery.js";
+import { issueCommand, listCommands } from "../family/commands.js";
 import { type DeviceView, deleteDevice, getDevice, listDevices, nameTaken, renameDevice, revokeDevice } from "../family/devices.js";
 import {
   type ChromeSettings,
   DNS_FILTERS,
   LIMITS,
   LOCK_RESTRICTIONS,
+  RuleRefused,
   SAFE_RESTRICTIONS,
   answerRequest,
+  askAgainSummary,
+  clearPreDecisions,
   currentDecisions,
   decideApp,
   decisionHistory,
   getRules,
-  neverBlocked,
+  neverBlockedOn,
   pausePhone,
+  preDecisions,
   protect,
   resumePhone,
   setHardening,
@@ -62,7 +69,7 @@ import {
   validHostname,
   type PolicyContext,
 } from "../family/policy.js";
-import { approveProposal, listProposals, pendingProposalCount, rejectProposal } from "../family/proposals.js";
+import { approveProposal, listProposals, outdatedBecause, pendingProposalCount, rejectProposal } from "../family/proposals.js";
 import { listRequests, pendingRequestCount, recentRequests } from "../family/requests.js";
 import { clientAddress, type Bindings } from "../http.js";
 import { createPersonalToken, getGrant, listGrants, revokeAllGrants, revokeGrant } from "../oauth/store.js";
@@ -76,9 +83,10 @@ import type { Assets } from "./assets.js";
 import { ActivityPage } from "./pages/activity.js";
 import { AddPage, CodePage } from "./pages/add.js";
 import { InvitePage, LoginPage, MessagePage, SetupPage } from "./pages/auth.js";
+import { RecoveryKeyPage } from "./pages/belay.js";
 import { type AppRule, AppPage, DevicePage, DevicesPage, type PhoneRules } from "./pages/devices.js";
 import { ProposalsPage, RequestsPage } from "./pages/requests.js";
-import { MAINTENANCE_HOURS, PAUSE_MINUTES } from "./pages/rules.js";
+import { AskAgainPage, MAINTENANCE_HOURS, PAUSE_MINUTES } from "./pages/rules.js";
 import { DigestCard, ServerCard } from "./pages/server.js";
 import { SettingsPage, ShownOncePage } from "./pages/settings.js";
 import { TimelinePage } from "./pages/timeline.js";
@@ -104,9 +112,16 @@ const SAVED: Record<string, string> = {
   protected: "Protection is on. The phone gets the new rules within seconds if it's online.",
   unprotected: "Protection is off. The phone gets the change within seconds if it's online.",
   new_apps_ask: "New apps now wait for your approval. The apps already on the phone are allowed.",
+  new_apps_ask_again: "New apps wait for your approval again. The apps you chose are allowed; the others wait for you below.",
   new_apps_allow: "New apps now run without asking.",
   allowed: "Allowed.",
   blocked: "Blocked. The phone hides it within seconds if it's online.",
+  cleared: "Cleared: those apps have no decision now.",
+  update_offered: "Offered. The phone gets it with its next rules, within seconds if it's online.",
+  update_not_newer: "Offered, but the phone runs that version or a newer one already, so it won't install it.",
+  update_withdrawn: "The update isn't offered any more.",
+  command_sent: "Sent. The phone removes them when it gets this, within seconds if it's online.",
+  command_waiting: "That's already waiting for the phone.",
   paused: "Paused. The phone gets it within seconds if it's online.",
   resumed: "Resumed.",
   rules: "Saved. The phone gets it within seconds if it's online.",
@@ -390,12 +405,14 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
   const phoneRules = (deviceId: string): PhoneRules => {
     const rules = getRules(db, deviceId);
     const decisions = currentDecisions(db, deviceId);
+    const never = neverBlockedOn(db, deviceId);
     const ruleOf = (app: Pick<App, "package" | "system">): AppRule => {
       const decision = decisions.get(app.package) ?? null;
-      const canBlock = !neverBlocked(app.package);
-      if (decision) return { state: decision.state, decision, canBlock };
-      if (app.system || !canBlock) return { state: "runs", decision: null, canBlock };
-      return { state: rules.newApps === "ask" ? "waiting" : "runs", decision: null, canBlock };
+      const neverWhy = never(app.package);
+      const canBlock = neverWhy === null;
+      if (decision) return { state: decision.state, decision, canBlock, neverWhy };
+      if (app.system || !canBlock) return { state: "runs", decision: null, canBlock, neverWhy };
+      return { state: rules.newApps === "ask" ? "waiting" : "runs", decision: null, canBlock, neverWhy };
     };
     const present = new Set(
       db
@@ -416,6 +433,11 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
       ruleOf,
       openRequests,
       requestsForUnknownApps: openRequests.filter((r) => !present.has(r.package)),
+      beforeInstall: preDecisions(db, deviceId),
+      askAgain: askAgainSummary(db, deviceId),
+      agentFiles: listAgentFiles(db),
+      recovery: recoveryState(db, deviceId),
+      commands: listCommands(db, deviceId, deps.now(), { kind: "remove_other_users" }),
     };
   };
 
@@ -490,10 +512,57 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
   app.post("/devices/:id/new-apps", async (c) => {
     const device = deviceOr404(c);
     if (!device) return noPhone(c);
-    const mode = first(await form(c), "mode");
+    const body = await form(c);
+    const mode = first(body, "mode");
     if (mode !== "ask" && mode !== "allow") return showDevice(c, device, { error: "Choose Ask or Allow for new apps." }, 400);
-    setNewApps(policyContext(), device.id, mode, asParent(c));
-    return backTo(c, device, `new_apps_${mode}`, "new-apps");
+    // Back to Ask after Allow: the parent chooses which of the apps without a decision keep working.
+    const confirmed = first(body, "confirm") === "1";
+    if (mode === "ask" && !confirmed) {
+      const again = askAgainSummary(db, device.id);
+      if (again && (again.installedMeanwhile.length || again.waitingBefore.length)) return render(c, <AskAgainPage view={view(c)} device={device} again={again} />);
+    }
+    const done = setNewApps(policyContext(), device.id, mode, asParent(c), confirmed ? { allow: all(body, "allow") } : {});
+    return backTo(c, device, mode === "allow" ? "new_apps_allow" : done.result.firstTime || !done.changed ? "new_apps_ask" : "new_apps_ask_again", "new-apps");
+  });
+
+  // ── Updating Belay (Phase 6): a parent's action only ────────────────
+
+  app.post("/devices/:id/update", async (c) => {
+    const device = deviceOr404(c);
+    if (!device) return noPhone(c);
+    if (device.revokedAt !== null) return showDevice(c, device, { error: "This phone is disconnected, so it can't be updated." }, 400);
+    const sha256 = first(await form(c), "sha256");
+    if (!getAgentFile(db, sha256)) return showDevice(c, device, { error: "Choose a version of Belay that's on the server." }, 400);
+    const done = offerAgent(policyContext(), device.id, sha256, asParent(c));
+    return backTo(c, device, done.result.notNewerThan === null ? "update_offered" : "update_not_newer", "update");
+  });
+
+  app.post("/devices/:id/update/withdraw", (c) => {
+    const device = deviceOr404(c);
+    if (!device) return noPhone(c);
+    withdrawOffer(policyContext(), device.id, asParent(c));
+    return backTo(c, device, "update_withdrawn", "update");
+  });
+
+  // ── Phase 10: removing other users and profiles, a parent's action only ─
+
+  app.post("/devices/:id/remove-other-users", (c) => {
+    const device = deviceOr404(c);
+    if (!device) return noPhone(c);
+    if (device.revokedAt !== null) return showDevice(c, device, { error: "This phone is disconnected, so it wouldn't get that." }, 400);
+    const done = issueCommand(policyContext(), device.id, "remove_other_users", asParent(c));
+    return backTo(c, device, done.result.already ? "command_waiting" : "command_sent", "users");
+  });
+
+  app.post("/devices/:id/before-install/clear", async (c) => {
+    const device = deviceOr404(c);
+    if (!device) return noPhone(c);
+    const body = await form(c);
+    const pkg = first(body, "package");
+    const byAi = first(body, "ai") === "1";
+    if (!byAi && !packageName.safeParse(pkg).success) return showDevice(c, device, { error: "Choose an app to clear." }, 400);
+    clearPreDecisions(policyContext(), device.id, byAi ? { byAi: true } : { package: pkg }, asParent(c));
+    return backTo(c, device, "cleared", "before-install");
   });
 
   app.post("/devices/:id/decide", async (c) => {
@@ -505,9 +574,6 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
     const pkg = allow || block;
     if (!pkg || (allow && block) || !packageName.safeParse(pkg).success) return showDevice(c, device, { error: "Choose Allow or Block on one app." }, 400);
     const state = allow ? "allowed" : "blocked";
-    if (state === "blocked" && neverBlocked(pkg)) {
-      return showDevice(c, device, { error: "Belay never blocks that app: the phone app, texting, Settings and Belay itself always work, so 911 and 988 do too." }, 400);
-    }
     const note = first(body, "note");
     if (note.length > LIMITS.decisionNote) return showDevice(c, device, { error: `Keep the note under ${LIMITS.decisionNote} characters.` }, 400);
     decideApp(policyContext(), device.id, pkg, state, asParent(c), { note: note || null });
@@ -567,8 +633,22 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
     if (tightens && first(body, "confirm").toLowerCase() !== device.name.trim().toLowerCase()) {
       return showDevice(c, device, { error: `These can lock the phone for good. To turn them on, type the phone's name, ${device.name}, in the box.` }, 400);
     }
-    setHardening(policyContext(), device.id, { factoryReset, debugging, frpAccounts: accounts.ids }, asParent(c));
+    // Phase 6: turning on a lock that can strand the phone makes its recovery key, in the same request, if it has none to use.
+    const locking = (factoryReset && !rules.restrictions.factory_reset) || (debugging && !rules.restrictions.debugging);
+    const made = db.transaction(() => {
+      setHardening(policyContext(), device.id, { factoryReset, debugging, frpAccounts: accounts.ids }, asParent(c));
+      return locking && !usableKey(recoveryState(db, device.id)) ? makePhoneRecoveryKey(policyContext(), device.id, asParent(c)).result : null;
+    })();
+    if (made) return render(c, <RecoveryKeyPage view={view(c)} device={device} grouped={made.grouped} replaced={made.replaced} because="hardening" />);
     return backTo(c, device, "rules", "hardening");
+  });
+
+  app.post("/devices/:id/recovery-key", (c) => {
+    const device = deviceOr404(c);
+    if (!device) return noPhone(c);
+    if (device.revokedAt !== null) return showDevice(c, device, { error: "This phone is disconnected, so a new key wouldn't reach it." }, 400);
+    const made = makePhoneRecoveryKey(policyContext(), device.id, asParent(c)).result;
+    return render(c, <RecoveryKeyPage view={view(c)} device={device} grouped={made.grouped} replaced={made.replaced} because="asked" />);
   });
 
   app.post("/devices/:id/maintenance", async (c) => {
@@ -663,15 +743,35 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
     );
   });
 
-  const proposalsPage = (c: WebContext, extra: { message?: string; error?: string } = {}, status: ContentfulStatusCode = 200) =>
-    render(c, <ProposalsPage view={view(c)} proposals={listProposals(db, { limit: 200 })} message={extra.message ?? SAVED[c.req.query("saved") ?? ""]} error={extra.error} />, status);
+  const proposalsPage = (c: WebContext, extra: { message?: string; error?: string } = {}, status: ContentfulStatusCode = 200) => {
+    const now = deps.now();
+    const proposals = listProposals(db, { limit: 200 });
+    const stale = new Map(
+      proposals.flatMap((p) => {
+        const why = p.status === "pending" ? outdatedBecause(db, p, now) : null;
+        return why ? [[p.id, why] as const] : [];
+      }),
+    );
+    return render(
+      c,
+      <ProposalsPage view={view(c)} proposals={proposals} stale={stale} message={extra.message ?? SAVED[c.req.query("saved") ?? ""]} error={extra.error} />,
+      status,
+    );
+  };
 
   app.get("/proposals", (c) => proposalsPage(c));
 
   app.post("/proposals/:id/approve", async (c) => {
     const note = first(await form(c), "note");
     if (note.length > LIMITS.answerNote) return proposalsPage(c, { error: `Keep the note under ${LIMITS.answerNote} characters.` }, 400);
-    const done = approveProposal(policyContext(), c.req.param("id"), me(c).parent.id, note || null);
+    let done: ReturnType<typeof approveProposal>;
+    try {
+      done = approveProposal(policyContext(), c.req.param("id"), me(c).parent.id, note || null);
+    } catch (error) {
+      if (error instanceof RuleRefused) return proposalsPage(c, { error: `Nothing changed. ${error.message}` }, 400);
+      throw error;
+    }
+    if (!done.ok && done.outdated) return proposalsPage(c, { error: `Nothing changed: that proposal was out of date. ${done.reason}` }, 409);
     if (!done.ok) return proposalsPage(c, { error: done.reason }, 400);
     return c.redirect("/proposals?saved=proposal_approved");
   });
@@ -938,6 +1038,16 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
     const entries = listAudit(db, { before: Number.isInteger(before) && before > 0 ? before : undefined, limit: limit + 1, includeReads });
     const next = entries.length > limit ? (entries[limit - 1]?.id ?? null) : null;
     return render(c, <ActivityPage view={view(c)} entries={entries.slice(0, limit)} includeReads={includeReads} next={next} />);
+  });
+
+  // A change the server refuses (rules too large to send, an app the phone never blocks…) is
+  // shown with its reason, on the phone's page when it was one; nothing of it was saved.
+  app.onError((err, c) => {
+    if (!(err instanceof RuleRefused)) throw err;
+    const id = /^\/devices\/([^/]+)\//.exec(c.req.path)?.[1];
+    const device = id ? getDevice(db, decodeURIComponent(id), getSettings(db), deps.now()) : null;
+    if (device) return showDevice(c, device, { error: err.message }, 400);
+    return message(c, "That wasn't saved", err.message, 400);
   });
 
   return app;
