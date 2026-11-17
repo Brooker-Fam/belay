@@ -71,7 +71,8 @@ import {
   type PolicyContext,
 } from "../family/policy.js";
 import { approveProposal, listProposals, outdatedBecause, pendingProposalCount, rejectProposal, screenTimeWords } from "../family/proposals.js";
-import { listAppRequests, pendingRequestCount, recentAppRequests, recentRequests } from "../family/requests.js";
+import { listAppRequests, pendingRequestCount, recentAppRequests, recentRequests, unseenHelp } from "../family/requests.js";
+import { phoneHelp } from "../family/kidside.js";
 import { changeFamilySettings } from "../family/kidside-changes.js";
 import { phoneLabels, phoneRules as screenRules } from "../family/screentime/rules.js";
 import { clientAddress, type Bindings } from "../http.js";
@@ -80,9 +81,10 @@ import { serverHealth } from "../ops/health.js";
 import { getDigest } from "../ops/notify.js";
 import { opsWebRoutes } from "../ops/web.js";
 import { browserName, listSubscriptions, removeSubscription, saveSubscription, sendNotice, subscriptionProblem, vapidKeys } from "../push.js";
-import { AI_SCOPES, type AiScope, USAGE_MONTHS, getSettings, updateSettings } from "../settings.js";
+import { AI_SCOPES, type AiScope, LOCATION_DAYS, type LocationRetention, MAP_SITES, type MapSite, USAGE_MONTHS, getSettings, updateSettings } from "../settings.js";
 import { isValidTimeZone } from "../time.js";
 import type { Assets } from "./assets.js";
+import { locationWebRoutes, whereFor } from "./location.js";
 import { screenTimeWebRoutes } from "./screentime.js";
 import { ActivityPage } from "./pages/activity.js";
 import { AddPage, CodePage } from "./pages/add.js";
@@ -92,6 +94,7 @@ import { type AppRule, AppPage, DevicePage, DevicesPage, type PhoneRules } from 
 import { ProposalsPage, RequestsPage } from "./pages/requests.js";
 import { AskAgainPage, MAINTENANCE_HOURS, PAUSE_MINUTES } from "./pages/rules.js";
 import { DigestCard, ServerCard } from "./pages/server.js";
+import { HelpBanner } from "./pages/help.js";
 import { SettingsPage, ShownOncePage } from "./pages/settings.js";
 import { TimelinePage } from "./pages/timeline.js";
 import type { View } from "./ui.js";
@@ -141,6 +144,8 @@ const SAVED: Record<string, string> = {
   proposal_approved: "Approved. The change is on its way to the phone.",
   proposal_rejected: "Rejected. Nothing changed.",
   digest: "Daily summary saved.",
+  seen: "Marked seen. The kid's phone shows that you saw it.",
+  parent_numbers: "Saved. Each phone that uses the family's numbers gets them within seconds if it's online.",
 };
 
 /** Google account ids for reset protection: long numbers, one per line ("people/" before one is fine). */
@@ -404,7 +409,16 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
     }));
     const pending = pendingCodes(db, now).filter((p) => !p.deviceId);
     if (devices.length === 0 && pending.length === 0) return c.redirect("/add");
-    return render(c, <DevicesPage view={view(c)} devices={devices} pending={pending} server={<ServerCard view={view(c)} health={serverHealth(deps)} />} />);
+    return render(
+      c,
+      <DevicesPage
+        view={view(c)}
+        devices={devices}
+        pending={pending}
+        help={<HelpBanner requests={unseenHelp(db)} showDevice={true} />}
+        server={<ServerCard view={view(c)} health={serverHealth(deps)} />}
+      />,
+    );
   });
 
   const deviceOr404 = (c: WebContext) => getDevice(db, c.req.param("id") ?? "", getSettings(db), deps.now());
@@ -457,7 +471,20 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
     const requested = new Set(phone.openRequests.map((r) => r.package));
     const rank = (a: App) => (requested.has(a.package) ? 0 : phone.ruleOf(a).state === "waiting" ? 1 : a.unreviewed ? 2 : 3);
     apps.sort((a, b) => rank(a) - rank(b));
-    return render(c, <DevicePage view={view(c)} device={device} apps={apps} phone={phone} filter={filter} message={extra.message} error={extra.error} />, status);
+    return render(
+      c,
+      <DevicePage
+        view={view(c)}
+        device={device}
+        apps={apps}
+        phone={phone}
+        filter={filter}
+        help={<HelpBanner requests={unseenHelp(db, device.id)} showDevice={false} />}
+        message={extra.message}
+        error={extra.error}
+      />,
+      status,
+    );
   };
 
   app.get("/devices/:id", (c) => {
@@ -768,6 +795,8 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
         phones={phones}
         known={known}
         limitName={limitName}
+        kidNumber={(deviceId) => phoneHelp(db, deviceId).kidNumber}
+        where={whereFor(deps)}
         message={SAVED[c.req.query("saved") ?? ""]}
       />,
     );
@@ -940,11 +969,42 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
     if (usageMonths !== undefined && (!Number.isInteger(usageMonths) || usageMonths < USAGE_MONTHS.min || usageMonths > USAGE_MONTHS.max)) {
       return settingsPage(c, { error: `Keep screen time ${USAGE_MONTHS.min} to ${USAGE_MONTHS.max} months.` }, 400);
     }
+    // Phase 4: how long where the phone was is kept, and where "Open in a map" goes (left out: as they are).
+    const locationDays: Partial<LocationRetention> = {};
+    for (const [key, range] of Object.entries(LOCATION_DAYS) as [keyof LocationRetention, (typeof LOCATION_DAYS)[keyof LocationRetention]][]) {
+      const text = first(body, `days_${key}`);
+      if (text === "") continue;
+      const n = Number(text);
+      if (!Number.isInteger(n) || n < range.min || n > range.max) return settingsPage(c, { error: `Keep each kind of location ${range.min} to ${range.max} days.` }, 400);
+      locationDays[key] = n;
+    }
+    const site = first(body, "map_site");
+    if (site !== "" && !(site in MAP_SITES)) return settingsPage(c, { error: "Choose OpenStreetMap or Google Maps for map links." }, 400);
     const chosen = new Set(all(body, "ai_scope"));
     const aiScopes = Object.fromEntries(Object.keys(AI_SCOPES).map((k) => [k, chosen.has(k)])) as Record<AiScope, boolean>;
     // What AI apps may read is the policy's ai_reads, for the kid's screen: each phone's policy follows.
-    changeFamilySettings(policyContext(), { timezone, silentHours, aiScopes, ...(usageMonths !== undefined ? { usageMonths } : {}) }, asParent(c));
+    changeFamilySettings(
+      policyContext(),
+      { timezone, silentHours, aiScopes, locationDays, ...(usageMonths !== undefined ? { usageMonths } : {}), ...(site !== "" ? { mapSite: site as MapSite } : {}) },
+      asParent(c),
+    );
     return c.redirect("/settings?saved=settings");
+  });
+
+  /** Phase 7: the family's numbers for the emergency card, on every phone that doesn't have its own. */
+  app.post("/settings/parent-numbers", async (c) => {
+    const body = await form(c);
+    const names = all(body, "name");
+    const numbers = all(body, "number");
+    const list = names.map((name, i) => ({ name: name.trim(), number: (numbers[i] ?? "").trim() })).filter((p) => p.name || p.number);
+    if (list.some((p) => !p.name || !p.number)) return settingsPage(c, { error: "Give each number a name, and each name a number." }, 400);
+    try {
+      changeFamilySettings(policyContext(), { parentNumbers: list }, asParent(c));
+    } catch (error) {
+      if (error instanceof RuleRefused) return settingsPage(c, { error: error.message }, 400);
+      throw error;
+    }
+    return c.redirect("/settings?saved=parent_numbers#numbers");
   });
 
   app.post("/settings/password", async (c) => {
@@ -1071,6 +1131,8 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
   app.route("/", opsWebRoutes(deps));
   // Phase 3: screen time, its rules, stages and the family agreement (web/screentime.tsx).
   app.route("/", screenTimeWebRoutes(deps, { view, message }));
+  // Phases 4 and 7: a phone's Location and help tab, and marking a help request seen (web/location.tsx).
+  app.route("/", locationWebRoutes(deps, { view, message }));
 
   app.get("/activity", (c) => {
     const includeReads = c.req.query("reads") === "1";
