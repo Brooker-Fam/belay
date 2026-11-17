@@ -82,6 +82,8 @@ describe("the MCP server", () => {
       "get_app_changes",
       "get_device_status",
       "get_installed_apps",
+      "get_location",
+      "get_place_events",
       "get_policy",
       "get_rules",
       "get_screen_time",
@@ -89,13 +91,15 @@ describe("the MCP server", () => {
       "list_devices",
       "list_requests",
       "list_unreviewed_apps",
+      "locate_now",
       "lock_phone",
       "mark_apps_reviewed",
       "pause_phone",
       "propose_change",
     ]);
     const changes = ["block_app", "pause_phone", "lock_phone", "change_screen_time"];
-    const writes = ["mark_apps_reviewed", "propose_change", ...changes];
+    // locate_now sends the phone a check (the kid sees a notice), and changes no rule.
+    const writes = ["mark_apps_reviewed", "propose_change", "locate_now", ...changes];
     for (const tool of tools) {
       expect(tool.annotations?.readOnlyHint).toBe(!writes.includes(tool.name));
       expect(tool.annotations?.destructiveHint).toBe(changes.includes(tool.name));
