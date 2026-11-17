@@ -234,8 +234,9 @@ locks are lifted, so adb and Settings' reset work.
   AI client's.
 - **Commands** (`commands`): each runs once per `id`, even if the policy still lists it;
   the result goes in `enforcement.commands`, and the server drops a command from the
-  policy once it's reported. A `kind` this Belay doesn't know is reported as failed, not
-  run. `remove_other_users` (Phase 10) removes every user or profile `getSecondaryUsers`
+  policy once it's reported. One that reaches the phone after its `expires_at` is
+  reported `expired` and not run. A `kind` this Belay doesn't know is reported as
+  `failed`, not run. `remove_other_users` (Phase 10) removes every user or profile `getSecondaryUsers`
   lists, such as the one Android's own Parental Controls make; only a parent issues it.
 
 ## Objects
@@ -285,7 +286,7 @@ locks are lifted, so adb and Settings' reset work.
 | `requests` | `[{id, status: "pending"\|"approved"\|"declined"\|"talk", note?, answered_at?, answered_by?}]` | the kid's requests of the last 30 days |
 | `agent_update` | `{version_code, version_name?, sha256, size}`? | Phase 6: the version of Belay a parent approved for this phone |
 | `recovery` | `{version, salt, hash}`? | Phase 6: the recovery key's check (above); `salt` is 16 bytes, hex |
-| `commands` | `[{id, kind: "remove_other_users", issued_at}]` | one-shot commands not yet reported done |
+| `commands` | `[{id, kind: "remove_other_users", issued_at, expires_at?}]` | one-shot commands not yet reported; after `expires_at` the phone doesn't run one |
 
 **Request** (phone → server)
 
@@ -308,7 +309,7 @@ locks are lifted, so adb and Settings' reset work.
 | `problems` | string[] | Belay's own words for what it couldn't do, at most 20 of 200 characters |
 | `agent_update` | `{version_code, state: "downloading"\|"checking"\|"installing"\|"failed"\|"done", problem?, at}`? | Phase 6: the offered update; `done` once Belay runs that version or a newer one |
 | `recovery` | `{version, used_at, until}`? | Phase 6: the last use of the recovery key; repair access is open until `until` |
-| `commands` | `[{id, done_at, ok, problem?}]` | the last 20 commands' results, newest first |
+| `commands` | `[{id, result: "done"\|"failed"\|"expired", at, problem?}]` | the last 20 commands' results, newest first |
 | `never_blocked` | string[] | the packages this phone never blocks, at most 100 |
 
 **Device** (facts and the agent's own health; nothing about the kid's content)

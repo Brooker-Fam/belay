@@ -186,10 +186,20 @@ data class WireRecoveryUse(
 )
 
 @Serializable
+enum class WireCommandOutcome {
+    @SerialName("done") DONE,
+    @SerialName("failed") FAILED,
+
+    /** It reached the phone after its expires_at, so it didn't run. */
+    @SerialName("expired") EXPIRED,
+}
+
+@Serializable
 data class WireCommandResult(
     val id: String,
-    @SerialName("done_at") val doneAt: Long,
-    val ok: Boolean,
+    val result: WireCommandOutcome,
+    val at: Long,
+    /** Belay's own words, or Android's, when it failed. */
     val problem: String? = null,
 )
 
@@ -346,6 +356,8 @@ data class WireCommand(
     /** [WireCommand.REMOVE_OTHER_USERS]; a kind this Belay doesn't know is reported as failed, not run. */
     val kind: String,
     @SerialName("issued_at") val issuedAt: Long,
+    /** After this the phone doesn't run it and reports it expired; null: no limit. */
+    @SerialName("expires_at") val expiresAt: Long? = null,
 ) {
     companion object {
         /** Phase 10: remove every other user or profile (Android's own Parental Controls make one). */
