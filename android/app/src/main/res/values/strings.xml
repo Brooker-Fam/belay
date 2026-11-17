@@ -466,6 +466,7 @@
     <string name="request_agreement_talk">Your family agreement: I want to talk about it</string>
     <string name="request_help">I need help</string>
     <string name="request_talk">Talk to my parent</string>
+    <string name="request_contact">To add a contact</string>
     <string name="request_asked">You asked %1$s.</string>
     <string name="request_words">You wrote: “%1$s”</string>
     <string name="request_withdrawn">You took this back %1$s.</string>
