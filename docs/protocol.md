@@ -285,7 +285,12 @@ for the fix that names it in `command_id`; a fix that fails is reported in
   takes one every `every_minutes` (15 to 120) within `hours`, and computes place events.
 - **Places** (`periodic` only): arrival when two fixes in a row are inside
   `radius_m − accuracy`, departure when two are outside `radius_m + accuracy`; a fix less
-  accurate than the radius decides nothing; a mock fix (`isMock()`) never counts.
+  accurate than the radius decides nothing; a mock fix (`isMock()`) never counts. A place
+  event's `at` is the first of the two fixes (when the phone was first seen on that side) and
+  its `fix_id` the second, which decided; the phone sends that fix first. The first decision
+  for a new or moved place is made quietly, with no event: a phone already at school when the
+  place is added didn't just arrive.
+- **Location off:** the phone drops the fixes and place events it hasn't sent yet.
 - **The kid sees every check:** each `locate_now` and lost-mode fix posts Belay's own
   notice, and Belay's screen lists them from the phone's own record.
 - **`keep_on`:** Belay keeps location on and sets `DISALLOW_CONFIG_LOCATION`.
@@ -301,7 +306,9 @@ for the fix that names it in `command_id`; a fix that fails is reported in
   at the top of the parent page until a parent marks it seen (`help_seen`, which the kid's
   phone shows). The kid may add words and may share where the phone is, once
   (`location`, a Fix with `reason: help`), even if location is off. Belay's screen always
-  says to call 911 in danger, with buttons for 911 and 988.
+  says to call 911 in danger, with buttons for 911 and 988. The phone sends the request at
+  once, then again (the same `id`) with the words or the fix when the kid adds them, so the
+  server takes a `location` on a pending help request sent again, as it takes a new `reason`.
 - **`talk`:** the kid's words ("I'd like to talk about…"); it changes no rule.
 - **Withdrawing:** a pending request sent again with `withdrawn_at` is withdrawn; it leaves
   the policy's `requests`. An answered one can't be withdrawn.

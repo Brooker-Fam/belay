@@ -18,6 +18,8 @@ import family.brooker.belay.core.screentime.NoticeSlot
 import family.brooker.belay.screentime.UsageAccess
 import family.brooker.belay.ui.KidWords
 import family.brooker.belay.ui.MainActivity
+import family.brooker.belay.ui.Screen
+import family.brooker.belay.ui.Screens
 
 /**
  * Phase 3: screen time's notifications, as core's Notices plans them: a warning before a limit
@@ -107,6 +109,19 @@ object ScreenTimeNotice {
                 ),
             )
             else -> {}
+        }
+        // Phase 7: "I need help" from time's up and a schedule starting (bedtime): Belay is never blocked.
+        if (notice.slot is NoticeSlot.TimesUp || notice.slot is NoticeSlot.Schedule) {
+            builder.addAction(
+                0,
+                context.getString(R.string.help_button),
+                PendingIntent.getActivity(
+                    context,
+                    code + 2,
+                    Screens.open(context, Screen.HELP),
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+                ),
+            )
         }
         try {
             NotificationManagerCompat.from(context).notify(tag, NOTIFICATION_ID, builder.build())

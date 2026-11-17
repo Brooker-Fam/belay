@@ -6,12 +6,14 @@ import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
 
 /**
- * What the outbox holds: app events, inventory snapshots, the kid's requests (Phase 2), and
- * usage days (Phase 3). Usage goes in a lane of its own ([OutboxPolicy.lane]): each day replaces
- * the server's, so it needs no order, and a server without `POST /usage` yet must not hold back
- * anything else.
+ * What the outbox holds: app events, inventory snapshots, the kid's requests (Phase 2), usage
+ * days (Phase 3), and fixes and place events (Phase 4). Usage goes in a lane of its own
+ * ([OutboxPolicy.lane]): each day replaces the server's, so it needs no order, and a server
+ * without `POST /usage` yet must not hold back anything else. Fixes and place events share a third
+ * lane, for the same reason (`POST /locations`, idempotent by each item's id); a place event goes
+ * after the fix it names.
  */
-enum class OutboxType { EVENT, SNAPSHOT, REQUEST, USAGE }
+enum class OutboxType { EVENT, SNAPSHOT, REQUEST, USAGE, FIX, PLACE_EVENT }
 
 /**
  * One item waiting to be sent. [id]s grow in the order the agent made the items, and
@@ -69,11 +71,33 @@ object OutboxPolicy {
     /** Unsent usage days kept: one per day, the newest; older ones give way. */
     const val MAX_PENDING_USAGE = 31
 
+    /** Phase 4: well under the server's 64 KB limit for `POST /api/v1/locations`. */
+    const val MAX_LOCATIONS_BODY_BYTES = 48 * 1024
+
+    /** `{"fixes":[`, `],"place_events":[` and `]}` around the two comma-separated lists. */
+    const val LOCATIONS_WRAPPER_BYTES = 31
+
+    /** The server takes at most 200 fixes and 200 place events in one request: 200 in all is always within both. */
+    const val MAX_LOCATIONS_PER_REQUEST = 200
+
     /**
-     * The two lanes the outbox is sent in: everything in order, then usage on its own (Phase 3).
-     * A failure in one holds back only the rest of that lane.
+     * Unsent fixes and place events kept, the newest; older ones give way. Lost mode makes one
+     * every 5 minutes: a week offline is about 2000.
      */
-    fun lane(type: OutboxType): Int = if (type == OutboxType.USAGE) 1 else 0
+    const val MAX_PENDING_LOCATIONS = 2000
+
+    /**
+     * The lanes the outbox is sent in: everything in order, then usage on its own (Phase 3), then
+     * fixes and place events (Phase 4). A failure in one holds back only the rest of that lane.
+     */
+    fun lane(type: OutboxType): Int = when (type) {
+        OutboxType.USAGE -> 1
+        OutboxType.FIX, OutboxType.PLACE_EVENT -> 2
+        else -> 0
+    }
+
+    /** Fixes and place events go in the same request; every other type in requests of its own. */
+    private fun batchKind(type: OutboxType): OutboxType = if (type == OutboxType.PLACE_EVENT) OutboxType.FIX else type
 
     const val BACKOFF_FIRST_MS = 30_000L
     const val BACKOFF_MAX_MS = 60L * 60 * 1000
@@ -147,33 +171,36 @@ object OutboxPolicy {
 
     /**
      * How many items from [from] go in one request. A snapshot goes alone. Events go
-     * together up to the server's count limit and [maxBytes], and so do requests and usage
-     * days (with their own limits); a batch never mixes kinds or passes a snapshot: always at
-     * least one item.
+     * together up to the server's count limit and [maxBytes], and so do requests, usage
+     * days, and fixes with place events (each with their own limits); a batch never mixes kinds
+     * (fixes and place events count as one) or passes a snapshot: always at least one item.
      */
     fun batchSize(queue: List<OutboxItem>, from: Int = 0, maxBytes: Int? = null): Int {
         require(from in queue.indices) { "nothing to send" }
-        val type = queue[from].type
+        val type = batchKind(queue[from].type)
         if (type == OutboxType.SNAPSHOT) return 1
         val maxCount = when (type) {
             OutboxType.EVENT -> WireLimits.MAX_EVENTS_PER_REQUEST
             OutboxType.USAGE -> MAX_USAGE_DAYS_PER_REQUEST
+            OutboxType.FIX -> MAX_LOCATIONS_PER_REQUEST
             else -> WireLimits.MAX_REQUESTS_PER_REQUEST
         }
         val byteLimit = maxBytes ?: when (type) {
             OutboxType.EVENT -> MAX_EVENTS_BODY_BYTES
             OutboxType.USAGE -> MAX_USAGE_BODY_BYTES
+            OutboxType.FIX -> MAX_LOCATIONS_BODY_BYTES
             else -> MAX_REQUESTS_BODY_BYTES
         }
         var count = 0
         var bytes = when (type) {
             OutboxType.EVENT -> EVENTS_WRAPPER_BYTES
             OutboxType.USAGE -> USAGE_WRAPPER_BYTES
+            OutboxType.FIX -> LOCATIONS_WRAPPER_BYTES
             else -> REQUESTS_WRAPPER_BYTES
         }.toLong()
         while (from + count < queue.size && count < maxCount) {
             val item = queue[from + count]
-            if (item.type != type) break
+            if (batchKind(item.type) != type) break
             val next = bytes + item.bytes + (if (count > 0) 1 else 0)
             if (count > 0 && next > byteLimit) break
             bytes = next

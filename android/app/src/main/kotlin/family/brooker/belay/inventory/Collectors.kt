@@ -3,6 +3,7 @@ package family.brooker.belay.inventory
 import family.brooker.belay.core.DataCategories
 import family.brooker.belay.core.DataCategory
 import family.brooker.belay.core.WirePolicy
+import family.brooker.belay.core.location.LocationRules
 
 /**
  * The collectors that run on this phone, and the data category each one fills. The
@@ -29,9 +30,19 @@ import family.brooker.belay.core.WirePolicy
  *   sends the usage days (only while `measure` is on: [DataCategories.SCREEN_TIME]) and puts
  *   where each limit stands in the enforcement report (with `measure` off, without the
  *   minutes: [DataCategories.SCREEN_TIME_LIMITS]).
+ * - Phase 4, only while the policy's location is on (a mode, or lost mode):
+ *   [family.brooker.belay.location.LocationCollector] takes single fixes, and
+ *   [family.brooker.belay.location.LocationStep] sends them with the place events and puts
+ *   location's status in the enforcement report: [DataCategories.location]. Phase 7's help fix,
+ *   which the kid chooses to share even with location off, is in [DataCategories.REQUESTS]
+ *   ([family.brooker.belay.Agent.askHelp], [family.brooker.belay.Agent.shareWhereThePhoneIs]).
  */
 object Collectors {
-    fun categories(policy: WirePolicy?): List<DataCategory> =
+    /** [clock] shows a policy's "HH:MM" as the kid's phone shows times. */
+    fun categories(policy: WirePolicy?, clock: (String) -> String = { it }): List<DataCategory> =
         listOf(DataCategories.APPS, DataCategories.DEVICE_STATUS, DataCategories.REQUESTS) +
-            listOfNotNull(policy?.screenTime?.let { DataCategories.screenTime(it.measure) })
+            listOfNotNull(
+                policy?.screenTime?.let { DataCategories.screenTime(it.measure) },
+                policy?.location?.takeIf { LocationRules.collecting(it) }?.let { DataCategories.location(it, clock) },
+            )
 }

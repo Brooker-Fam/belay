@@ -1,5 +1,7 @@
 package family.brooker.belay.core
 
+import family.brooker.belay.core.location.LocationRules
+import family.brooker.belay.core.location.WireLocationStatus
 import family.brooker.belay.core.screentime.WireScreenTimeStatus
 import kotlinx.serialization.Serializable
 
@@ -34,6 +36,12 @@ enum class Lock(val minSdkFull: Int = 0) {
 
     /** Can lock a phone for good: only on release builds, and lifted during maintenance. */
     DEBUGGING,
+
+    /**
+     * Phase 4: DISALLOW_CONFIG_LOCATION, while the policy's location has `keep_on` (and a mode on)
+     * or lost mode: the kid can't turn location off; Belay still can (platform notes L2).
+     */
+    CONFIG_LOCATION,
 }
 
 /** Why Belay never suspends or hides a package, in words for the parent's problem list. */
@@ -403,7 +411,9 @@ object Enforcement {
 
         val maintenanceUntil = policy.maintenanceUntil?.takeIf { it > now }
         val recoveryUntil = input.recoveryUntil?.takeIf { it > now }
-        val locks = locks(policy.restrictions, input.debugBuild, maintenanceUntil != null, recoveryUntil != null, input.sdkFull, problems)
+        // Phase 4: keep_on (with a mode on) and lost mode keep location on: the kid can't turn it off.
+        val locks = locks(policy.restrictions, input.debugBuild, maintenanceUntil != null, recoveryUntil != null, input.sdkFull, problems) +
+            listOfNotNull(Lock.CONFIG_LOCATION.takeIf { LocationRules.keepOn(policy.location) })
 
         val privateDns = policy.web.privateDns?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }?.let { host ->
             if (Hostnames.valid(host)) host else null.also { problems += "Private DNS: \"$host\" isn't a host name." }
@@ -489,6 +499,7 @@ object Enforcement {
     private fun lockWords(lock: Lock): String = when (lock) {
         Lock.CONFIG_DEFAULT_APPS -> "default apps"
         Lock.SIM -> "adding eSIMs"
+        Lock.CONFIG_LOCATION -> "location on"
         else -> lock.name.lowercase().replace('_', ' ')
     }
 
@@ -577,6 +588,7 @@ object Enforcement {
         agentUpdate: WireAgentUpdateState? = null,
         recovery: WireRecoveryUse? = null,
         commands: List<WireCommandResult> = emptyList(),
+        location: WireLocationStatus? = null,
     ): WireEnforcement? {
         val version = applied.policyVersion ?: return null
         return WireEnforcement(
@@ -589,6 +601,8 @@ object Enforcement {
             commands = commands.take(WireLimits.MAX_COMMAND_RESULTS),
             neverBlocked = applied.neverBlocked.take(WireLimits.MAX_NEVER_BLOCKED),
             screenTime = applied.screenTime,
+            // Phase 4: whether Belay can take a fix; null while location is off.
+            location = location,
         )
     }
 }

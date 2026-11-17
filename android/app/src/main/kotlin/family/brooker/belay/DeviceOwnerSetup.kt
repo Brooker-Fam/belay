@@ -7,8 +7,10 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.content.pm.PermissionInfo
 import android.util.Log
+import family.brooker.belay.core.CategoryPermissions
 import family.brooker.belay.enroll.CameraGate
 import family.brooker.belay.inventory.packageInfoCompat
+import family.brooker.belay.store.AgentStore
 
 /**
  * What Belay does to the phone once it is device owner. Phase 0 and Phase 1 restrict
@@ -19,7 +21,7 @@ object DeviceOwnerSetup {
      * Runtime permissions Belay never grants itself. CAMERA is only for scanning the
      * enrollment QR code, and only if the person scanning allows it (see [CameraGate]).
      */
-    val NEVER_GRANTED: Set<String> = setOf(Manifest.permission.CAMERA)
+    val NEVER_GRANTED: Set<String> = CategoryPermissions.NEVER_GRANTED
 
     fun admin(context: Context) = ComponentName(context, AdminReceiver::class.java)
 
@@ -35,8 +37,15 @@ object DeviceOwnerSetup {
      * - Belay can't be uninstalled (setUninstallBlocked on itself).
      * - Belay's runtime permissions are granted by policy, so they can't be revoked in
      *   Settings: POST_NOTIFICATIONS keeps the managed notice visible.
+     * - Phase 4: except those tied to a data category (location), granted only while the
+     *   policy turns that category on (core's CategoryPermissions), and denied by policy
+     *   otherwise, so Settings shows Belay without them and the kid can't grant them.
      * - Except CAMERA: denied by policy whenever the enrollment screen isn't scanning, so
      *   Belay can't use the camera, and Settings shows that.
+     *
+     * Denying a permission Belay holds makes Android stop and restart Belay's processes
+     * (platform notes R5 and L7), so a tied permission still granted is left to [revokeUnwanted],
+     * which the agent step calls once its own work is stored.
      */
     fun ensure(context: Context): List<String> {
         val dpm = dpm(context)
@@ -49,15 +58,57 @@ object DeviceOwnerSetup {
         } catch (e: RuntimeException) {
             problems += "uninstall block: ${e.message}"
         }
-        for (permission in runtimePermissions(context)) {
+        val plan = permissionPlan(context)
+        for (permission in plan.grant) {
             setGrantState(dpm, admin, pkg, permission, DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED, problems)
         }
-        if (!CameraGate.inUse) {
-            setGrantState(dpm, admin, pkg, Manifest.permission.CAMERA, DevicePolicyManager.PERMISSION_GRANT_STATE_DENIED, problems)
+        for (permission in plan.deny) {
+            if (CategoryPermissions.tied(permission) && granted(context, permission)) continue
+            setGrantState(dpm, admin, pkg, permission, DevicePolicyManager.PERMISSION_GRANT_STATE_DENIED, problems)
         }
         if (problems.isNotEmpty()) Log.w(Agent.TAG, "device-owner setup: $problems")
         return problems
     }
+
+    /**
+     * The permissions Belay should hold now: the stored policy's categories (the test policy on a
+     * debug build), and the one fix a kid is sharing with a help request (core's LocationState.help).
+     */
+    fun permissionPlan(context: Context): CategoryPermissions.Plan {
+        val store = AgentStore.get(context)
+        val policy = DebugTools.policyOverride ?: store.policy()
+        val sharing = store.locationState()?.help != null
+        return CategoryPermissions.plan(declaredRuntimePermissions(context), CategoryPermissions.categoriesOn(policy, sharing), CameraGate.inUse)
+    }
+
+    /**
+     * Tied permissions Belay still holds but shouldn't with the categories [on] (location turned off,
+     * lost mode or a help fix ended).
+     */
+    fun unwanted(context: Context, on: Set<String>): List<String> =
+        declaredRuntimePermissions(context).filter { CategoryPermissions.tied(it) && CategoryPermissions.CATEGORY[it] !in on && granted(context, it) }
+
+    /**
+     * Denies them now, as device owner. Android then stops Belay's processes and starts them again
+     * (its service and DeviceAdminService come back by themselves; platform notes L7): the agent
+     * step calls this last, after storing what it did. Returns problems, if any.
+     */
+    fun revokeUnwanted(context: Context): List<String> {
+        val dpm = dpm(context)
+        if (!dpm.isDeviceOwnerApp(context.packageName)) return emptyList()
+        val problems = mutableListOf<String>()
+        // Background location first: it only works with a foreground one (core's CategoryPermissions.plan).
+        val unwanted = permissionPlan(context).deny.filter { CategoryPermissions.tied(it) && granted(context, it) }
+        if (unwanted.isEmpty()) return problems
+        Log.i(Agent.TAG, "location: denying ${unwanted.map { it.substringAfterLast('.') }} by policy; Android restarts Belay")
+        for (permission in unwanted) {
+            setGrantState(dpm, admin(context), context.packageName, permission, DevicePolicyManager.PERMISSION_GRANT_STATE_DENIED, problems)
+        }
+        return problems
+    }
+
+    private fun granted(context: Context, permission: String): Boolean =
+        context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
 
     private fun setGrantState(
         dpm: DevicePolicyManager,
@@ -78,8 +129,16 @@ object DeviceOwnerSetup {
         }
     }
 
-    /** The runtime ("dangerous") permissions Belay declares in its manifest. */
-    fun declaredRuntimePermissions(context: Context): List<String> {
+    /**
+     * The runtime ("dangerous") permissions Belay declares in its manifest. Read once per process:
+     * they only change with an update, which starts a new process.
+     */
+    fun declaredRuntimePermissions(context: Context): List<String> = declared ?: readDeclared(context).also { declared = it }
+
+    @Volatile
+    private var declared: List<String>? = null
+
+    private fun readDeclared(context: Context): List<String> {
         val pm = context.packageManager
         val requested = pm.packageInfoCompat(context.packageName, PackageManager.GET_PERMISSIONS)
             .requestedPermissions.orEmpty()
@@ -92,7 +151,6 @@ object DeviceOwnerSetup {
         }
     }
 
-    /** The ones Belay grants itself by policy: all it declares, except [NEVER_GRANTED]. */
-    fun runtimePermissions(context: Context): List<String> =
-        declaredRuntimePermissions(context).filterNot { it in NEVER_GRANTED }
+    /** Whether Belay holds fine location now (granted by policy while location is on). */
+    fun hasLocation(context: Context): Boolean = granted(context, Manifest.permission.ACCESS_FINE_LOCATION)
 }

@@ -6,6 +6,7 @@ import android.provider.Settings
 import android.util.Log
 import family.brooker.belay.core.AppChange
 import family.brooker.belay.core.Heartbeat
+import family.brooker.belay.core.KidRequest
 import family.brooker.belay.core.PackageRecord
 import family.brooker.belay.core.RecoveryClock
 import family.brooker.belay.core.RecoveryOutcome
@@ -15,6 +16,12 @@ import family.brooker.belay.core.Requests
 import family.brooker.belay.core.UpdateRecord
 import family.brooker.belay.core.WireDevice
 import family.brooker.belay.core.WireRequestKind
+import family.brooker.belay.core.kid.Told
+import family.brooker.belay.core.location.FixWant
+import family.brooker.belay.core.location.HelpShare
+import family.brooker.belay.core.location.LocationState
+import family.brooker.belay.core.location.ToldEntry
+import family.brooker.belay.core.location.WireFixReason
 import family.brooker.belay.core.screentime.Rules
 import family.brooker.belay.core.screentime.Upkeep
 import family.brooker.belay.core.screentime.WireAgreementAnswer
@@ -101,6 +108,18 @@ enum class Trigger(val label: String, val heartbeat: Boolean, val checkin: Boole
 
     /** Phase 3: the kid took self-serve minutes. */
     SELF_SERVE("extra minutes taken", false, setup = false),
+
+    /** Phase 4: the location collector finished an attempt (a fix, or none). */
+    LOCATION_FIX("a location fix came", false, setup = false),
+
+    /** Phase 4: a periodic or lost-mode fix is due (LocationTimer). */
+    LOCATION_DUE("a location check is due", false, setup = false),
+
+    /** Phase 7: the kid asked for help, or chose to share where the phone is with it. */
+    HELP("help asked for", false, setup = false),
+
+    /** Phase 7: Belay's screens closed while a help fix's grant waited for that. */
+    SCREENS_CLOSED("Belay's screens closed", false, setup = false),
 }
 
 /** Everything the main screen shows from the agent's last step. */
@@ -118,6 +137,8 @@ data class AgentView(
     val update: UpdateRecord? = null,
     /** Phase 6: the recovery key's tries and last use, for the Recovery screen. */
     val recovery: RecoveryState = RecoveryState(),
+    /** Phase 7: "What Belay told your parent", the newest first (the last 30 days). */
+    val told: List<ToldEntry> = emptyList(),
 )
 
 object Agent {
@@ -128,6 +149,24 @@ object Agent {
     private val executor = Executors.newSingleThreadExecutor { r -> Thread(r, "belay-agent") }
     private val _view = MutableStateFlow<AgentView?>(null)
     val view: StateFlow<AgentView?> = _view.asStateFlow()
+
+    /**
+     * Phase 7: one of Belay's screens is showing (MainActivity between onStart and onStop). A help
+     * fix's location grant waits until they're closed: Android restarts Belay when it loses a
+     * permission, which would close the help screen.
+     */
+    @Volatile
+    var screensVisible: Boolean = false
+        private set
+
+    /** Phase 7: a help fix's grant waits for the screens to close (as the last step saw it). */
+    @Volatile
+    private var sharing: Boolean = false
+
+    fun screens(context: Context, visible: Boolean) {
+        screensVisible = visible
+        if (!visible && sharing) handle(context, Trigger.SCREENS_CLOSED)
+    }
 
     /**
      * Runs the agent's steps on its own thread:
@@ -197,6 +236,11 @@ object Agent {
             AgentUpdater.offered(app, enforcement.view.policy?.agentUpdate)
             // Phase 3: screen time is read every minute the screen is on, while the policy has it.
             ScreenWatcher.want(app, enforcement.view.policy?.screenTime != null)
+            sharing = store.locationState()?.help != null
+            // Phase 4: last of all, a location permission Belay no longer should hold is denied.
+            // Android then stops Belay's processes and starts them again (platform notes L7);
+            // everything above is stored, and the sync after the restart sends what waits.
+            if (enforcement.revoke) DeviceOwnerSetup.revokeUnwanted(app)
         } catch (t: Throwable) {
             Log.e(TAG, "agent step failed (${trigger.label})", t)
         } finally {
@@ -359,6 +403,123 @@ object Agent {
         }
     }
 
+    /**
+     * Phase 7: "I need help", sent at once with no words needed; the kid's [reason] goes with it if
+     * they wrote some. With [share], the kid chose to share where the phone is, once (see
+     * [shareWhereThePhoneIs]). [done] gets the request's id (null if something went wrong), on the
+     * agent thread.
+     */
+    fun askHelp(context: Context, reason: String?, share: Boolean, done: ((String?) -> Unit)? = null) {
+        val app = context.applicationContext
+        executor.execute {
+            val id = try {
+                val store = AgentStore.get(app)
+                val now = System.currentTimeMillis()
+                val request = Requests.help(reason, sharing = share, now) { UUID.randomUUID().toString() }
+                store.commitEnforcement(null, listOf(request), now)
+                Log.i(TAG, "asked for help (request ${request.id}${if (share) ", sharing where the phone is" else ""})")
+                if (share) wantHelpFix(store, request.id, now)
+                showRequests(store)
+                Sync.request(app)
+                request.id
+            } catch (t: Throwable) {
+                Log.e(TAG, "asking for help failed", t)
+                null
+            }
+            if (id != null && share) step(app, Trigger.HELP, emptySet())
+            done?.invoke(id)
+        }
+    }
+
+    /**
+     * Phase 7: the kid chose to share where the phone is with help request [requestId], once, even
+     * if the family has location off: Belay grants itself location by policy for that one fix (and
+     * turns location on for it if it's off), adds the fix to the request, and then puts both back
+     * once Belay's screens are closed (platform notes L1, L7). Nothing if it's shared already.
+     */
+    fun shareWhereThePhoneIs(context: Context, requestId: String, done: (() -> Unit)? = null) {
+        val app = context.applicationContext
+        executor.execute {
+            val started = try {
+                val store = AgentStore.get(app)
+                val help = store.requests().firstOrNull { it.id == requestId && it.kind == WireRequestKind.HELP }
+                if (help == null || help.location != null || help.sharing || help.withdrawnAt != null) {
+                    false
+                } else {
+                    val now = System.currentTimeMillis()
+                    store.commitEnforcement(null, listOf(help.copy(sharing = true, shareFailed = false)), now)
+                    wantHelpFix(store, requestId, now)
+                    Log.i(TAG, "help request $requestId: sharing where the phone is")
+                    showRequests(store)
+                    true
+                }
+            } catch (t: Throwable) {
+                Log.e(TAG, "sharing where the phone is failed", t)
+                false
+            }
+            if (started) step(app, Trigger.HELP, emptySet())
+            done?.invoke()
+        }
+    }
+
+    /** The help fix wanted, with the grant it needs (on the agent thread, between steps). */
+    private fun wantHelpFix(store: AgentStore, requestId: String, now: Long) {
+        val state = store.locationState() ?: LocationState()
+        val want = FixWant(WireFixReason.HELP, now, requestId = requestId)
+        store.saveLocationState(
+            state.copy(wants = state.wants.filter { it.key != want.key } + want, help = HelpShare(requestId, now)),
+            now,
+        )
+        sharing = true
+    }
+
+    /** Phase 7: "Talk to my parent", with the kid's words. [done] gets whether it was sent. */
+    fun talk(context: Context, reason: String, done: ((Boolean) -> Unit)? = null) {
+        kidRequest(context, "talking to a parent", done) { _, now ->
+            Requests.talk(reason, now) { UUID.randomUUID().toString() }
+        }
+    }
+
+    /** Phase 7: the kid changes the words of the open request [id]. */
+    fun editRequest(context: Context, id: String, reason: String, done: ((Boolean) -> Unit)? = null) {
+        kidRequest(context, "changing request $id", done) { store, _ ->
+            Requests.edit(Requests.answered(store.requests(), DebugTools.policyOverride ?: store.policy()), id, reason)
+        }
+    }
+
+    /** Phase 7: the kid takes back the open request [id] (sent again with withdrawn_at). */
+    fun withdraw(context: Context, id: String, done: ((Boolean) -> Unit)? = null) {
+        kidRequest(context, "taking back request $id", done) { store, now ->
+            Requests.withdraw(Requests.answered(store.requests(), DebugTools.policyOverride ?: store.policy()), id, now)
+        }
+    }
+
+    /** One request the kid made or changed, on the agent thread: stored, queued and sent right away. */
+    private fun kidRequest(context: Context, what: String, done: ((Boolean) -> Unit)?, make: (AgentStore, Long) -> KidRequest?) {
+        val app = context.applicationContext
+        executor.execute {
+            val sent = try {
+                val store = AgentStore.get(app)
+                val now = System.currentTimeMillis()
+                val request = make(store, now)
+                if (request == null) {
+                    Log.w(TAG, "$what: nothing to send")
+                    false
+                } else {
+                    store.commitEnforcement(null, listOf(request), now)
+                    Log.i(TAG, "$what (request ${request.id}, send ${request.revision})")
+                    showRequests(store)
+                    Sync.request(app)
+                    true
+                }
+            } catch (t: Throwable) {
+                Log.e(TAG, "$what failed", t)
+                false
+            }
+            done?.invoke(sent)
+        }
+    }
+
     /** The kid's screens show a new request at once, without waiting for a step. */
     private fun showRequests(store: AgentStore) {
         _view.value?.let { view ->
@@ -376,6 +537,7 @@ object Agent {
             kid = kid,
             update = store.agentUpdate(),
             recovery = store.recovery(),
+            told = Told.list(store.told(), System.currentTimeMillis()),
         )
     }
 
