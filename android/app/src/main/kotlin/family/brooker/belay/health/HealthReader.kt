@@ -9,13 +9,18 @@ import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.Bundle
 import android.os.PowerManager
 import android.os.Process
 import android.os.SystemClock
+import android.os.UserManager
 import android.provider.Settings
+import android.util.Log
+import family.brooker.belay.Agent
 import family.brooker.belay.BuildConfig
 import family.brooker.belay.DeviceOwnerSetup
 import family.brooker.belay.core.DataCategories
+import family.brooker.belay.core.OtherUsers
 import family.brooker.belay.service.BelayService
 import family.brooker.belay.service.ManagedNotice
 
@@ -49,6 +54,10 @@ data class Health(
     val lastBootAt: Long,
     val phone: PhoneFacts,
     val agentVersion: String,
+    /** Phase 10: users and profiles besides the kid's own (getSecondaryUsers); null when Belay isn't device owner. */
+    val otherUsers: Int? = null,
+    /** Phase 10: user restrictions in force that Belay didn't set, like Android's own Parental Controls' (core's OtherUsers). */
+    val foreignRestrictions: List<String> = emptyList(),
 )
 
 class HealthReader(context: Context) {
@@ -94,7 +103,35 @@ class HealthReader(context: Context) {
                 securityPatch = Build.VERSION.SECURITY_PATCH,
             ),
             agentVersion = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+            otherUsers = if (owner) readOrNull("other users") { dpm.getSecondaryUsers(admin).size } else null,
+            foreignRestrictions = foreignRestrictions(owner, dpm),
         )
+    }
+
+    /**
+     * The user restrictions in force (UserManager.getUserRestrictions: the base ones and every
+     * admin's, Android's own supervision included) less the ones Belay set
+     * (DevicePolicyManager.getUserRestrictions for Belay's admin: its own, local and global, from
+     * the policy engine; AOSP 17 sets no default restrictions for a device owner). When Belay
+     * can't read its own, it reports none rather than call its own foreign.
+     */
+    private fun foreignRestrictions(owner: Boolean, dpm: DevicePolicyManager): List<String> {
+        val inForce = readOrNull("user restrictions") { trueKeys(app.getSystemService(UserManager::class.java).userRestrictions) } ?: return emptyList()
+        val mine = if (owner) {
+            readOrNull("Belay's user restrictions") { trueKeys(dpm.getUserRestrictions(DeviceOwnerSetup.admin(app))) } ?: return emptyList()
+        } else {
+            emptySet()
+        }
+        return OtherUsers.foreignRestrictions(inForce, mine)
+    }
+
+    private fun trueKeys(bundle: Bundle): Set<String> = bundle.keySet().filterTo(HashSet()) { bundle.getBoolean(it) }
+
+    private fun <T> readOrNull(what: String, block: () -> T): T? = try {
+        block()
+    } catch (e: RuntimeException) {
+        Log.w(Agent.TAG, "couldn't read $what", e)
+        null
     }
 
     private fun sdkString(): String {

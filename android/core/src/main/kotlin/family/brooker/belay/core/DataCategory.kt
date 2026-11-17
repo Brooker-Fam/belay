@@ -32,15 +32,19 @@ object DataCategories {
         id = "device_status",
         title = "How Belay and the phone are doing",
         details = listOf(
-            "The phone's model, Android version and security update date, and Belay's version",
+            "The phone's model, Android version and security update date, and Belay's version " +
+                "and which key it's signed with",
             "Whether Belay is still set up and has the permissions it needs",
             "When the phone last restarted, and how many times it has started",
             "The battery level and whether it's charging, and how much storage is free",
             "The phone's time zone, and its clock, to check that the time is right",
             "Which of your parent's rules Belay is using, how many apps it's holding back, " +
-                "and anything it couldn't do",
-            "Whether the SIM card was changed, and whether there's another user or profile " +
-                "on the phone (not the phone number, and nothing about what's on them)",
+                "which apps it never blocks (like the phone and texting apps), and anything it couldn't do",
+            "Whether the SIM card was changed, how many other users or profiles are on the phone, " +
+                "and which settings something other than Belay has locked (not the phone number, " +
+                "and nothing about what's on them)",
+            "How an update of Belay that your parent chose is going, when the recovery key was " +
+                "last used, and whether Belay did what your parent asked, like removing another user",
         ),
     )
 

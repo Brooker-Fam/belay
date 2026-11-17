@@ -242,6 +242,11 @@ private fun ChecksCard(health: Health, onAllowBattery: () -> Unit) {
         )
         Fact("Standby bucket", HealthReader.bucketName(health.standbyBucket))
         Fact("Background restricted", if (health.backgroundRestricted) "yes" else "no")
+        Fact(stringResource(R.string.check_other_users), health.otherUsers?.toString() ?: stringResource(R.string.unknown))
+        Fact(
+            stringResource(R.string.check_foreign_restrictions),
+            health.foreignRestrictions.joinToString(", ").ifEmpty { stringResource(R.string.none) },
+        )
     }
 }
 

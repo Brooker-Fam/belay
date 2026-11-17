@@ -7,19 +7,22 @@ import android.os.Environment
 import android.os.StatFs
 import family.brooker.belay.BuildConfig
 import family.brooker.belay.core.DataCategories
-import family.brooker.belay.core.Enforcement
 import family.brooker.belay.core.WireDevice
 import family.brooker.belay.core.WireHealth
 import family.brooker.belay.core.WirePermission
+import family.brooker.belay.enforce.EnforcementReport
 import family.brooker.belay.store.AgentStore
+import family.brooker.belay.update.Apks
 import java.util.TimeZone
 
 /**
  * The device-status collector (data category [DataCategories.DEVICE_STATUS]): what
  * [HealthReader] reads, plus the battery, the storage of /data, the time zone and the
  * clock, and (Phase 2) the enforcement report: the policy version applied, how many apps
- * Belay holds back, and what it couldn't do. The phone's facts and Belay's own health only:
- * no location, no content.
+ * Belay holds back, and what it couldn't do; Phases 6 and 10 add how an update is going, the
+ * recovery key's last use, the commands' results, the packages never blocked, how many other
+ * users there are, the restrictions Belay didn't set, and the SHA-256 of Belay's signing
+ * certificate. The phone's facts and Belay's own health only: no location, no content.
  */
 object DeviceStatus {
     fun read(context: Context, health: Health): WireDevice {
@@ -60,9 +63,13 @@ object DeviceStatus {
                 backgroundRestricted = health.backgroundRestricted,
                 serviceRunning = health.serviceRunningSince != null,
                 testOnly = health.testOnly,
+                otherUsers = health.otherUsers,
+                foreignRestrictions = health.foreignRestrictions,
             ),
             // Phase 2: which policy Belay enforces, and what it couldn't; null before the first.
-            enforcement = Enforcement.report(AgentStore.get(context).applied()),
+            // Phases 6 and 10 add the update, the recovery key's use and the commands' results.
+            enforcement = EnforcementReport.of(AgentStore.get(context)),
+            agentSigningSha256 = Apks.signingSha256(context),
         )
     }
 }

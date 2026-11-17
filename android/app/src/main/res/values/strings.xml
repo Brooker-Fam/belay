@@ -191,6 +191,8 @@
     <string name="check_usage_access">Usage access</string>
     <string name="check_service">Background service running</string>
     <string name="check_permission">Permission %1$s</string>
+    <string name="check_other_users">Other users or profiles</string>
+    <string name="check_foreign_restrictions">Settings locked by something else</string>
     <string name="fix_battery">Allow</string>
     <string name="section_background">Background checks</string>
     <string name="section_phone">Phone</string>
@@ -202,6 +204,7 @@
     <string name="phone_storage_value">%1$s free of %2$s</string>
     <string name="phone_time_zone">Time zone</string>
     <string name="unknown">unknown</string>
+    <string name="none">none</string>
 
     <!-- Debug builds only. -->
     <string name="release_button">Release this phone (debug build)</string>
