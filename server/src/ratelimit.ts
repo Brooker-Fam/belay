@@ -87,6 +87,11 @@ export interface Limiters {
   helpNoticesPerPhone: RateLimiter;
   /** Phase 4: arrival and departure notices, per phone, place and direction: at most one each 10 minutes. */
   placeNotices: RateLimiter;
+  /**
+   * Phase 5: call records, per phone, counted apart from its other calls, so a phone sending a
+   * backlog of records never holds back its check-ins or requests.
+   */
+  callsPerPhone: RateLimiter;
 }
 
 export function createLimiters(now: () => number): Limiters {
@@ -105,5 +110,6 @@ export function createLimiters(now: () => number): Limiters {
     agentPerPhone: new RateLimiter(30, 60 * MIN, now),
     helpNoticesPerPhone: new RateLimiter(20, 60 * MIN, now),
     placeNotices: new RateLimiter(1, 10 * MIN, now),
+    callsPerPhone: new RateLimiter(30, MIN, now),
   };
 }

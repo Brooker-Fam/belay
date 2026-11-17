@@ -3,9 +3,10 @@
  * how the parent pages and MCP list it. Parents answer in family/policy.ts (answerRequest),
  * since an answer is part of the policy the phone gets.
  *
- * Five kinds: an app (a new one waiting, or a blocked one), more time for a limit today
+ * Six kinds: an app (a new one waiting, or a blocked one), more time for a limit today
  * (Phase 3), the kid's answer to the family agreement (Phase 3), "I need help" (Phase 7: urgent,
- * maybe with where the phone was, if the kid chose to share it) and "Talk to my parent" (Phase 7).
+ * maybe with where the phone was, if the kid chose to share it), "Talk to my parent" (Phase 7) and
+ * "Please add this contact" (Phase 5: a name and a number, the kid's words, untrusted).
  * A help request isn't answered: a parent marks it seen (family/kidside-changes.ts), and until then
  * it stays at the top. Any pending request can be withdrawn by the kid (sent again with
  * `withdrawn_at`); an answered one can't. The reason is the kid's own words and the label is the
@@ -14,7 +15,7 @@
  */
 import type { DB } from "../db.js";
 import type { Request } from "../device/schemas.js";
-import { cleanText } from "../text.js";
+import { cleanText, oneLine } from "../text.js";
 import { type FixView, FIX_COLUMNS, type FixRow, insertFix, toFix } from "./location/store.js";
 import { REQUEST_WINDOW_MS } from "./policy.js";
 
@@ -64,7 +65,16 @@ export type HelpView = RequestBase & {
   fix: FixView | null;
 };
 export type TalkView = RequestBase & { kind: "talk" };
-export type RequestView = AppRequestView | MoreTimeView | AgreementAnswerView | HelpView | TalkView;
+export type ContactRequestView = RequestBase & {
+  kind: "contact";
+  /** The name the kid gave: untrusted. */
+  contactName: string;
+  /** E.164. */
+  contactNumber: string;
+  /** Once approved: the contact it added, or the one that had the number already. */
+  contactId: string | null;
+};
+export type RequestView = AppRequestView | MoreTimeView | AgreementAnswerView | HelpView | TalkView | ContactRequestView;
 
 interface RequestRow {
   device_id: string;
@@ -80,6 +90,9 @@ interface RequestRow {
   given_minutes: number | null;
   agreement_version: number | null;
   agreement_answer: "agree" | "talk" | null;
+  contact_name: string | null;
+  contact_number: string | null;
+  contact_id: string | null;
   asked_at: number;
   received_at: number;
   updated_at: number;
@@ -116,6 +129,8 @@ function toView(db: DB, r: RequestRow): RequestView {
       return { ...base, kind: "help", seenAt: r.seen_at, seenBy: r.seen_by_name, fix: helpFix(db, r.device_id, r.id) };
     case "talk":
       return { ...base, kind: "talk" };
+    case "contact":
+      return { ...base, kind: "contact", contactName: r.contact_name ?? "", contactNumber: r.contact_number ?? "", contactId: r.contact_id };
     case "app":
       return { ...base, kind: "app", package: r.package ?? "", label: r.label ?? r.package ?? "" };
   }
@@ -157,6 +172,9 @@ export interface SavedRequests {
     withdrawn?: boolean;
     /** help: whether the kid shared where the phone was. */
     shared?: boolean;
+    /** contact: the name the kid gave (untrusted, cleaned), and the number. */
+    contactName?: string;
+    contactNumber?: string;
   }[];
   /** Pending requests the kid withdrew in this call. */
   withdrawn: { id: string; kind: RequestKind }[];
@@ -175,6 +193,11 @@ export const MAX_PENDING_MORE_TIME = 60;
 /** Nor more than this many help requests that no parent has seen, or talk requests waiting: each is its own. */
 export const MAX_UNSEEN_HELP = 100;
 export const MAX_PENDING_TALK = 60;
+/** Phase 5: nor more than this many contact requests waiting, one per number. */
+export const MAX_PENDING_CONTACT = 60;
+
+/** The name the kid gave a contact, made safe to keep: on one line, at most 60 characters. */
+const contactNameOf = (name: string): string => oneLine(name, 60);
 
 /**
  * Saves the kid's requests. Idempotent by id: sending one again updates its reason while it's
@@ -203,6 +226,7 @@ export function saveRequests(db: DB, deviceId: string, requests: Request[], now:
       agreement: pendingOf.get(deviceId, "agreement")?.n ?? 0,
       help: unseenHelp.get(deviceId)?.n ?? 0,
       talk: pendingOf.get(deviceId, "talk")?.n ?? 0,
+      contact: pendingOf.get(deviceId, "contact")?.n ?? 0,
     };
     const cap: Record<RequestKind, number> = {
       app: MAX_PENDING_REQUESTS,
@@ -210,6 +234,7 @@ export function saveRequests(db: DB, deviceId: string, requests: Request[], now:
       agreement: MAX_PENDING_REQUESTS,
       help: MAX_UNSEEN_HELP,
       talk: MAX_PENDING_TALK,
+      contact: MAX_PENDING_CONTACT,
     };
     const find = db.prepare<[string, string], { status: StoredRequestStatus; reason: string | null; kind: RequestKind; seen_at: number | null }>(
       "SELECT status, reason, kind, seen_at FROM requests WHERE device_id = ? AND id = ?",
@@ -223,6 +248,9 @@ export function saveRequests(db: DB, deviceId: string, requests: Request[], now:
       ),
       agreement: db.prepare<[string], { id: string; reason: string | null }>(
         "SELECT id, reason FROM requests WHERE device_id = ? AND kind = 'agreement' AND status = 'pending' ORDER BY received_at DESC, rowid DESC",
+      ),
+      contact: db.prepare<[string, string], { id: string; reason: string | null }>(
+        "SELECT id, reason FROM requests WHERE device_id = ? AND kind = 'contact' AND contact_number = ? AND status = 'pending' ORDER BY received_at DESC, rowid DESC",
       ),
     };
     const supersede = db.prepare("UPDATE requests SET status = 'superseded', superseded_by = ? WHERE device_id = ? AND id = ?");
@@ -267,7 +295,17 @@ export function saveRequests(db: DB, deviceId: string, requests: Request[], now:
         // Made and withdrawn before it reached the server: kept, as withdrawn, so the parents can see it; it takes no one's place.
         insertNew(db, deviceId, r, reason, now, { status: "withdrawn", withdrawnAt: r.withdrawn_at });
         const shared = shareFix(r.id, r);
-        created.push({ id: r.id, kind: r.kind, package: "package" in r ? (r.package ?? null) : null, label: r.kind === "app" ? cleanText(r.label, 200) || r.package : null, again: false, reason, withdrawn: true, shared });
+        created.push({
+          id: r.id,
+          kind: r.kind,
+          package: "package" in r ? (r.package ?? null) : null,
+          label: r.kind === "app" ? cleanText(r.label, 200) || r.package : null,
+          again: false,
+          reason,
+          withdrawn: true,
+          shared,
+          ...(r.kind === "contact" ? { contactName: contactNameOf(r.contact_name), contactNumber: r.contact_number } : {}),
+        });
         continue;
       }
       const older =
@@ -277,7 +315,9 @@ export function saveRequests(db: DB, deviceId: string, requests: Request[], now:
             ? waiting.more_time.all(deviceId, r.limit_id)
             : r.kind === "agreement"
               ? waiting.agreement.all(deviceId)
-              : [];
+              : r.kind === "contact"
+                ? waiting.contact.all(deviceId, r.contact_number)
+                : [];
       // "I agree" isn't waiting for anyone, so it never counts toward the cap.
       const waits = !(r.kind === "agreement" && r.answer === "agree");
       if (waits && !older.length && pending[r.kind] >= cap[r.kind]) {
@@ -298,6 +338,8 @@ export function saveRequests(db: DB, deviceId: string, requests: Request[], now:
         agreement.push({ version: r.version, answer: r.answer, at });
       } else if (r.kind === "help") {
         created.push({ id: r.id, kind: "help", package: null, label: null, again: false, reason: words, shared: shareFix(r.id, r) });
+      } else if (r.kind === "contact") {
+        created.push({ id: r.id, kind: "contact", package: null, label: null, again: older.length > 0, reason: words, contactName: contactNameOf(r.contact_name), contactNumber: r.contact_number });
       } else {
         created.push({ id: r.id, kind: "talk", package: null, label: null, again: false, reason: words });
       }
@@ -320,6 +362,8 @@ function insertNew(db: DB, deviceId: string, r: Request, reason: string | null, 
     minutes: r.kind === "more_time" ? r.minutes : null,
     agreement_version: r.kind === "agreement" ? r.version : null,
     agreement_answer: r.kind === "agreement" ? r.answer : null,
+    contact_name: r.kind === "contact" ? contactNameOf(r.contact_name) || r.contact_number : null,
+    contact_number: r.kind === "contact" ? r.contact_number : null,
     asked_at: r.asked_at,
     now,
     status: opts.status,
@@ -327,14 +371,14 @@ function insertNew(db: DB, deviceId: string, r: Request, reason: string | null, 
     withdrawn_at: opts.withdrawnAt ?? null,
   };
   db.prepare(
-    `INSERT INTO requests (device_id, id, kind, package, label, reason, limit_id, minutes, agreement_version, agreement_answer, asked_at, received_at, updated_at, status, answered_at, withdrawn_at)
-     VALUES (@device_id, @id, @kind, @package, @label, @reason, @limit_id, @minutes, @agreement_version, @agreement_answer, @asked_at, @now, @now, @status, @answered_at, @withdrawn_at)`,
+    `INSERT INTO requests (device_id, id, kind, package, label, reason, limit_id, minutes, agreement_version, agreement_answer, contact_name, contact_number, asked_at, received_at, updated_at, status, answered_at, withdrawn_at)
+     VALUES (@device_id, @id, @kind, @package, @label, @reason, @limit_id, @minutes, @agreement_version, @agreement_answer, @contact_name, @contact_number, @asked_at, @now, @now, @status, @answered_at, @withdrawn_at)`,
   ).run(row);
 }
 
 const SELECT = `SELECT r.device_id, d.name AS device_name, r.id, r.kind, r.package, r.label,
     COALESCE(r.label, (SELECT a.label FROM apps a WHERE a.device_id = r.device_id AND a.package = r.package)) AS app_label,
-    r.reason, r.limit_id, r.minutes, r.given_minutes, r.agreement_version, r.agreement_answer, r.asked_at, r.received_at, r.updated_at,
+    r.reason, r.limit_id, r.minutes, r.given_minutes, r.agreement_version, r.agreement_answer, r.contact_name, r.contact_number, r.contact_id, r.asked_at, r.received_at, r.updated_at,
     r.status, r.note, p.name AS answered_by_name, r.answered_at, r.withdrawn_at, r.seen_at, s.name AS seen_by_name
   FROM requests r JOIN devices d ON d.id = r.device_id LEFT JOIN parents p ON p.id = r.answered_by LEFT JOIN parents s ON s.id = r.seen_by`;
 
