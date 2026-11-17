@@ -59,7 +59,7 @@ export const ruleId = z
   .min(1)
   .max(64)
   .regex(/^[A-Za-z0-9_-]+$/, "use letters, digits, '-' and '_'");
-/** A limit's id, or "*" for every limit (extra time, self-serve, "more time"). */
+/** A limit's id, or "*" for every limit: extra time only (self-serve takes and more-time requests name a real limit). */
 const limitRef = ruleId.or(z.literal("*"));
 /** "HH:MM", 00:00 to 23:59. */
 const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "not HH:MM");
