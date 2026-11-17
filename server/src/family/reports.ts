@@ -50,15 +50,21 @@ function noteCommands(ctx: PolicyContext, deviceId: string, device: Device, log:
 }
 
 /**
- * The recovery key was used on the phone (enforcement.recovery): the use is recorded once, the
- * key's check leaves the policy if it was the phone's newest key, and the parents hear about it.
- * A version the server never made is ignored.
+ * The phone reports the recovery key was used (enforcement.recovery): the server takes it for the
+ * key the policy carries now, the phone's newest, and only once. Then the key's check leaves the
+ * policy and the parents hear, in words that say it's the phone's report: nothing but the phone
+ * says so, and a phone token could send it. A report about an earlier key, one already used, or a
+ * version the server never made changes nothing.
  */
 function noteRecovery(ctx: PolicyContext, deviceId: string, device: Device, log: Log, tell: Tell[]): void {
   const use = device.enforcement?.recovery;
   if (!use) return;
   const { db, now } = ctx;
-  const key = db.prepare<[string, number], { used_at: number | null }>("SELECT used_at FROM recovery_keys WHERE device_id = ? AND version = ?").get(deviceId, use.version);
+  const key = db
+    .prepare<[string, number, string], { used_at: number | null }>(
+      "SELECT used_at FROM recovery_keys WHERE device_id = ? AND version = ? AND version = (SELECT MAX(version) FROM recovery_keys WHERE device_id = ?)",
+    )
+    .get(deviceId, use.version, deviceId);
   if (!key || key.used_at !== null) return;
   db.prepare("UPDATE recovery_keys SET used_at = ?, open_until = ?, use_reported_at = ? WHERE device_id = ? AND version = ?").run(use.used_at, use.until, now, deviceId, use.version);
   log("recovery.used", { key_version: use.version, used_at: use.used_at, until: use.until });

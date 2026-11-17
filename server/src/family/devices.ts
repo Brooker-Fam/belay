@@ -267,7 +267,7 @@ export function problemsOf(row: DeviceRow, facts: Device | null, settings: Setti
   }
   // Phase 6: the recovery key works once; after a use, the phone needs a new one.
   if (row.recovery_used_at !== null) {
-    problems.push({ code: "recovery_used", text: `The recovery key was used on the phone ${formatAgo(row.recovery_used_at, now)}, so it won't work again: make a new one on the phone's page` });
+    problems.push({ code: "recovery_used", text: `The phone reports the recovery key was used on it ${formatAgo(row.recovery_used_at, now)}, so it won't work again: make a new one on the phone's page` });
   }
   const tampering: Problem[] = [];
   // Phase 10: Belay counts the users and profiles besides the kid's own; it can't see what kind they are.

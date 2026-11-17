@@ -142,8 +142,9 @@ export const RecoveryCard: FC<{ view: View; device: DeviceView; rules: Rules; re
       </p>
       {used && recovery.lastUse && recovery.lastUse.version === recovery.current?.version ? (
         <Notice kind="warn">
-          The recovery key was used on the phone, <Time ms={recovery.lastUse.usedAt} tz={view.tz} /> by its clock, opening repair access until{" "}
-          <Time ms={recovery.lastUse.until} tz={view.tz} />. It won't work again: make a new one.
+          The phone reports the recovery key was used on it, <Time ms={recovery.lastUse.usedAt} tz={view.tz} /> by its clock, opening repair access until{" "}
+          <Time ms={recovery.lastUse.until} tz={view.tz} />. It won't work again: make a new one. If no one in the family used it, the phone may not be in
+          the family's hands.
         </Notice>
       ) : usableKey(recovery) && recovery.current ? (
         <p class="small">
@@ -157,7 +158,7 @@ export const RecoveryCard: FC<{ view: View; device: DeviceView; rules: Rules; re
       )}
       {recovery.lastUse && recovery.lastUse.version !== recovery.current?.version && (
         <p class="muted small">
-          An earlier key was used <Time ms={recovery.lastUse.usedAt} tz={view.tz} />.
+          The phone reported an earlier key used <Time ms={recovery.lastUse.usedAt} tz={view.tz} />.
         </p>
       )}
       <PostButton

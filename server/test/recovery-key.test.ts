@@ -110,7 +110,7 @@ describe("the recovery key", () => {
     expect(pushService).toHaveBeenCalledTimes(1);
     expect(JSON.parse(decryptPush(pushService.mock.calls[0]?.[1]?.body as Uint8Array, browser, auth))).toEqual({
       title: "Belay",
-      body: "The recovery key was used on CI phone. Make a new one on the phone's page.",
+      body: "CI phone reports the recovery key was used on it. Make a new one on the phone's page.",
       url: `/devices/${phone.deviceId}`,
     });
     expect(listAudit(t.deps.db, { limit: 10, includeReads: false }).filter((e) => e.action === "recovery.used")).toEqual([
@@ -118,7 +118,8 @@ describe("the recovery key", () => {
     ]);
     const view = getDevice(t.deps.db, phone.deviceId, getSettings(t.deps.db), t.now());
     expect(view?.problems.map((p) => p.code)).toEqual(["recovery_used"]);
-    expect(view?.problems[0]?.text).toBe("The recovery key was used on the phone 1 minute ago, so it won't work again: make a new one on the phone's page");
+    expect(view?.problems[0]?.text).toBe("The phone reports the recovery key was used on it 1 minute ago, so it won't work again: make a new one on the phone's page");
+    expect(await page()).toContain("The phone reports the recovery key was used on it");
     expect(await page()).toContain("It won&#39;t work again: make a new one.");
     // A version the server never made is ignored.
     await report({ ...use, version: 99 });
@@ -127,6 +128,42 @@ describe("the recovery key", () => {
     makePhoneRecoveryKey({ db: t.deps.db, now: t.now() }, phone.deviceId, { kind: "parent", parentId: sam.parent.id });
     expect(policy().recovery?.version).toBe(2);
     expect(getDevice(t.deps.db, phone.deviceId, getSettings(t.deps.db), t.now())?.problems).toEqual([]);
+  });
+
+  it("is taken as used only for the key the policy carries now, once: a report about an earlier key changes nothing", async () => {
+    const pushService = vi.fn((_url: string | URL | Request, _init?: RequestInit) => Promise.resolve(new Response(null, { status: 201 })));
+    const { t, sam, phone, policy } = await family({ fetch: pushService as unknown as typeof fetch });
+    const browser = createECDH("prime256v1");
+    browser.generateKeys();
+    saveSubscription(t.deps.db, t.now(), sam.parent.id, { endpoint: "https://fcm.googleapis.com/fcm/send/made-up", p256dh: browser.getPublicKey().toString("base64url"), auth: randomBytes(16).toString("base64url") }, "Chrome");
+    const who = { kind: "parent", parentId: sam.parent.id } as const;
+    makePhoneRecoveryKey({ db: t.deps.db, now: t.now() }, phone.deviceId, who);
+    makePhoneRecoveryKey({ db: t.deps.db, now: t.now() }, phone.deviceId, who);
+    const report = (version: number) =>
+      deviceCall(t, phone.token, "checkin", {
+        status: device({ device_time: t.now(), enforcement: { policy_version: policy().version, applied_at: t.now(), recovery: { version, used_at: t.now(), until: t.now() + 86_400_000 } } }),
+      });
+    // Version 1 isn't the key the phone has now: nothing is recorded, nobody is told, the check stays.
+    await report(1);
+    const usedAt = () => t.deps.db.prepare<[string], { version: number; used_at: number | null }>("SELECT version, used_at FROM recovery_keys WHERE device_id = ? ORDER BY version").all(phone.deviceId);
+    expect(usedAt()).toEqual([
+      { version: 1, used_at: null },
+      { version: 2, used_at: null },
+    ]);
+    expect(policy().recovery?.version).toBe(2);
+    expect(getDevice(t.deps.db, phone.deviceId, getSettings(t.deps.db), t.now())?.problems).toEqual([]);
+    // Version 2, the current one: once, however often it's reported.
+    await report(2);
+    t.advance(60_000);
+    await report(2);
+    expect(usedAt()[1]?.used_at).toBe(t.now() - 60_000);
+    expect(policy().recovery).toBeNull();
+    await vi.waitFor(() => {
+      expect(pushService).toHaveBeenCalledTimes(1);
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(pushService).toHaveBeenCalledTimes(1);
+    expect(listAudit(t.deps.db, { limit: 20, includeReads: false }).filter((e) => e.action === "recovery.used")).toHaveLength(1);
   });
 
   it("from the CLI: prints only the grouped key, with or without the locks, and the phone gets its check", async () => {

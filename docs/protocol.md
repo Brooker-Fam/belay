@@ -263,8 +263,10 @@ locks are lifted, so adb and Settings' reset work.
   then a wait of a minute that doubles with each further wrong try, kept across restarts.
 - A key's `version` works once on the phone: after it's used, the phone refuses it
   even if the policy still has it. The phone reports the use in `enforcement.recovery`
-  when it can; the server then drops that check from the policy and asks a parent to
-  make a new key.
+  when it can. The server takes a report only for the key the policy carries now (the
+  phone's newest), and once: it then drops that check from the policy and tells the parents
+  the phone reports the key was used, asking for a new one. A report about an earlier key,
+  or one already taken, changes nothing.
 
 ## `POST /api/v1/locations`
 

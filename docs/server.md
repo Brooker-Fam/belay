@@ -296,8 +296,10 @@ be repaired or reset from Settings. It works once.
   the new check), and so does `recovery-key`, with or without the locks on.
 - The policy carries only a check of the key (a salted SHA-256, `recovery` in
   docs/protocol.md); the server keeps only that check too, never the key.
-- When the phone reports a use, the server records it, the parents get a notice ("The recovery
-  key was used on Sam's phone"), and the phone's page asks for a new key.
+- When the phone reports a use of its current key, the server records it, once, the parents
+  get a notice ("Sam's phone reports the recovery key was used on it"), and the phone's page
+  asks for a new key. It's the phone's word: if no one in the family used the key, the phone
+  may be out of the family's hands. A report about an earlier key changes nothing.
 - AI apps see only whether a phone has a key, and when one was last used.
 
 ## Other users and profiles (Phase 10)
