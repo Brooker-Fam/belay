@@ -4,14 +4,14 @@ import kotlinx.serialization.Serializable
 
 /** Where an app came from, in the words a parent would use. */
 @Serializable
-enum class InstallSource(val description: String) {
-    PLAY_STORE("Play Store"),
-    OTHER_STORE("another app store"),
-    OTHER_APP("installed by another app"),
-    SIDELOADED("sideloaded (an APK file)"),
-    ADB("installed from a computer (adb)"),
-    PREINSTALLED("preinstalled"),
-    UNKNOWN("unknown"),
+enum class InstallSource(val description: String, val wire: String) {
+    PLAY_STORE("Play Store", "play_store"),
+    OTHER_STORE("another app store", "other_store"),
+    OTHER_APP("installed by another app", "other_app"),
+    SIDELOADED("sideloaded (an APK file)", "sideloaded"),
+    ADB("installed from a computer (adb)", "adb"),
+    PREINSTALLED("preinstalled", "preinstalled"),
+    UNKNOWN("unknown", "unknown"),
 }
 
 object InstallSources {

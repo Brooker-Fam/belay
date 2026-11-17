@@ -28,6 +28,8 @@ data class PackageRecord(
     /** ApplicationInfo.category, -1 when the developer set none. */
     val category: Int = -1,
     val installer: InstallerInfo = InstallerInfo(),
+    /** The [SensitivePermissions] categories it holds right now. */
+    val permissions: List<String> = emptyList(),
 ) {
     val source: InstallSource get() = InstallSources.classify(system, installer)
     val version: VersionRef get() = VersionRef(versionName, versionCode)
