@@ -76,6 +76,12 @@
             android:exported="false"
             android:parentActivityName=".ui.MainActivity" />
 
+        <!-- Phase 6: the recovery key, for a parent whose Belay server is gone. Only Belay opens it. -->
+        <activity
+            android:name=".ui.RecoveryActivity"
+            android:exported="false"
+            android:parentActivityName=".ui.MainActivity" />
+
         <!-- provision.sh enrolls the phone through this receiver. Exported, but only senders
              holding WRITE_SECURE_SETTINGS (the adb shell; ordinary apps can't) can reach it. -->
         <receiver

@@ -168,6 +168,8 @@
     <string name="rule_debugging_why">With them, a computer could change this phone\'s settings around these rules.</string>
     <string name="rule_repair">Repair mode is on until %1$s.</string>
     <string name="rule_repair_why">Until then, the phone can be connected to a computer to fix something.</string>
+    <string name="rule_recovery">Repair mode is on until %1$s, from your parent\'s recovery key.</string>
+    <string name="rule_recovery_why">Until then, Belay doesn\'t lock connecting a computer or resetting the phone, so your parent can fix it.</string>
     <string name="rule_no_browsers">Web browsers are turned off.</string>
     <string name="rule_no_browsers_why">Your parent turned off apps for browsing the web.</string>
     <string name="rule_chrome">In Chrome:</string>
@@ -203,7 +205,45 @@
     <string name="fix_battery">Allow</string>
     <string name="section_background">Background checks</string>
     <string name="section_phone">Phone</string>
-    <string name="section_self">Belay itself</string>
+    <string name="section_self">About Belay</string>
+    <!-- Phase 6: an update a parent chose, while the policy offers it. -->
+    <string name="about_update_downloading">Your parent chose a new version of Belay. Belay is downloading it.</string>
+    <string name="about_update_checking">Belay is checking the new version your parent chose.</string>
+    <string name="about_update_installing">Belay is installing the new version your parent chose.</string>
+    <string name="about_update_failed">Belay couldn\'t install the new version your parent chose. Your parent can see why on their Belay server.</string>
+    <string name="recovery_button">Recovery</string>
+    <string name="recovery_button_hint">For your parent, if Belay\'s server is gone.</string>
+
+    <!-- Phase 6: the Recovery screen, for a parent. Never shows or repeats the key. -->
+    <string name="recovery_title">Recovery</string>
+    <string name="recovery_intro">For your parent, if Belay\'s server is gone. It opens repair access for 24 hours.</string>
+    <string name="recovery_detail">With repair access, Belay doesn\'t lock USB debugging or resetting the phone from Settings. Your parent\'s Belay server showed the recovery key once, when it made it. Each key works only once on this phone.</string>
+    <string name="recovery_key_label">Recovery key</string>
+    <string name="recovery_key_hint">26 letters and numbers</string>
+    <string name="recovery_open_button">Open repair access</string>
+    <string name="recovery_checking">Checking…</string>
+    <string name="recovery_open_until">Repair access is open until %1$s.</string>
+    <string name="recovery_opened">That\'s the key. Repair access is open until %1$s.</string>
+    <string name="recovery_wrong">That isn\'t this phone\'s recovery key.</string>
+    <plurals name="recovery_wrong_free">
+        <item quantity="one">You have %d more try before Belay makes you wait.</item>
+        <item quantity="other">You have %d more tries before Belay makes you wait.</item>
+    </plurals>
+    <string name="recovery_wrong_wait">Wait %1$s before the next try.</string>
+    <string name="recovery_wait">There were too many wrong tries. Wait %1$s, then try again.</string>
+    <string name="recovery_not_a_key">A recovery key has 26 letters and numbers, in groups of five.</string>
+    <string name="recovery_no_key">There\'s no recovery key for this phone yet. Your parent makes one on their Belay server.</string>
+    <string name="recovery_used">This recovery key was already used on this phone. Your parent can make a new one on their Belay server.</string>
+    <string name="recovery_error">Something went wrong on this phone. Try again.</string>
+    <string name="recovery_last_used">A recovery key was last used on this phone %1$s.</string>
+    <plurals name="minutes">
+        <item quantity="one">%d minute</item>
+        <item quantity="other">%d minutes</item>
+    </plurals>
+    <plurals name="hours">
+        <item quantity="one">%d hour</item>
+        <item quantity="other">%d hours</item>
+    </plurals>
     <string name="phone_battery">Battery</string>
     <string name="phone_battery_value">%1$d%%</string>
     <string name="phone_battery_charging">%1$d%%, charging</string>

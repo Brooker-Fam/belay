@@ -39,6 +39,7 @@ class MainActivity : ComponentActivity() {
                     onConnect = { startActivity(Intent(this, EnrollActivity::class.java)) },
                     onAllowBattery = ::requestBatteryExemption,
                     onRelease = if (DebugTools.CAN_RELEASE) ::releasePhone else null,
+                    onRecovery = { startActivity(Intent(this, RecoveryActivity::class.java)) },
                 )
             }
         }
