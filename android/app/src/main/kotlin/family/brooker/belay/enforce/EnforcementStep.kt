@@ -22,9 +22,11 @@ import family.brooker.belay.core.PolicyTooLarge
 import family.brooker.belay.core.RecoveryRules
 import family.brooker.belay.core.Requests
 import family.brooker.belay.core.SimRules
+import family.brooker.belay.core.WireCommand
 import family.brooker.belay.core.WireEnforcement
 import family.brooker.belay.core.WirePolicy
 import family.brooker.belay.core.WireRequestKind
+import family.brooker.belay.core.location.WireLocationStatus
 import family.brooker.belay.core.screentime.Decision
 import family.brooker.belay.core.screentime.KidArg
 import family.brooker.belay.core.screentime.Notices
@@ -33,7 +35,9 @@ import family.brooker.belay.core.screentime.ScreenTimeState
 import family.brooker.belay.core.screentime.Stages
 import family.brooker.belay.core.screentime.UsageLog
 import family.brooker.belay.core.screentime.WireScreenTime
+import family.brooker.belay.location.LocationStep
 import family.brooker.belay.screentime.ScreenTimeStep
+import family.brooker.belay.service.PauseNotice
 import family.brooker.belay.service.ScreenTimeNotice
 import family.brooker.belay.service.WaitingNotice
 import family.brooker.belay.store.AgentStore
@@ -46,7 +50,7 @@ data class KidView(
     val policy: WirePolicy?,
     val plan: EnforcementPlan?,
     val applied: Applied,
-    /** Newest first, with the parent's answers: every kind (app, more time, the agreement). */
+    /** Newest first, with the parent's answers: every kind (app, more time, the agreement, help, talk). */
     val requests: List<AnsweredRequest>,
     /** The Private DNS host Belay has set, if any. */
     val privateDns: String?,
@@ -54,6 +58,8 @@ data class KidView(
     val labels: Map<String, String>,
     /** Phase 3: screen time today; null while the policy has none. */
     val screenTime: ScreenTimeView? = null,
+    /** Phase 4: location as the last step left it (`enforcement.location`); null while location is off. */
+    val location: WireLocationStatus? = null,
 ) {
     val rules: List<KidRules.Rule> get() = KidRules.of(policy, plan, applied, privateDns)
 }
@@ -80,8 +86,12 @@ data class ScreenTimeView(
 class EnforcementStep(context: Context, private val store: AgentStore) {
     private val app = context.applicationContext
 
-    /** [reportChanged]: the enforcement report the server sees has changed (a check-in tells it). */
-    data class Result(val view: KidView, val reportChanged: Boolean)
+    /**
+     * [reportChanged]: the enforcement report the server sees has changed (a check-in tells it).
+     * [revoke]: Phase 4, Belay holds a location permission it no longer should; the agent step
+     * denies it last (Android then restarts Belay).
+     */
+    data class Result(val view: KidView, val reportChanged: Boolean, val revoke: Boolean = false)
 
     /**
      * [inventory] is everything installed, hidden apps included. Every step checks that what
@@ -168,6 +178,15 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
         // starts, now that the rest is applied; then the notices, and the usage to send. Nothing
         // here may stop what was applied from being recorded below.
         val lockResults = runner.lockNow(commandPlan, owner)
+        // Phase 4: location's part: the fixes the collector took, locate_now, the periodic and lost
+        // mode fixes due, keep_on and lost mode. If it fails, the rest is still recorded.
+        val locationStep = LocationStep(app, store)
+        val located = try {
+            locationStep.run(policy, commandPlan.run.filter { it.kind == WireCommand.LOCATE_NOW }, owner, requests, now)
+        } catch (e: RuntimeException) {
+            Log.e(Agent.TAG, "location's part of the step failed", e)
+            null
+        }
         val done = read?.let {
             try {
                 screenTimeStep?.after(it)
@@ -199,21 +218,24 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
         val made = Requests.toMake(plan.waiting, requests) { inventory[it]?.firstInstallTime }.mapNotNull { name ->
             inventory[name]?.let { KidRequest(UUID.randomUUID().toString(), name, it.label, null, now) }
         }
-        val ran = results + lockResults
+        val ran = results + lockResults + located?.results.orEmpty()
         val screenTimeWrite = when {
             done != null && screenTimeState != null -> AgentStore.ScreenTimeWrite.Save(done.ledger, screenTimeState)
             // Screen time failed this step: its record stays as it was.
             policy.screenTime != null -> null
             else -> stopScreenTime()
         }
+        // Phase 7: a help request's shared fix goes in the request, sent again.
+        val sentAgain = located?.requests.orEmpty()
         store.commitEnforcement(
             applied = next,
-            requests = made,
+            requests = made + sentAgain,
             at = now,
             commands = log.record(ran).takeIf { ran.isNotEmpty() },
             screenTime = screenTimeWrite,
             usage = done?.usage.orEmpty(),
             dropUsage = policy.screenTime?.measure == false && store.pendingUsageCount() > 0,
+            location = located?.write,
         )
         PolicyTimer.schedule(app, plan.nextChangeAt)
         log(plan, changes, made)
@@ -227,16 +249,24 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
                 Log.w(Agent.TAG, "screen time's notices not shown", e)
             }
         }
+        try {
+            located?.let(locationStep::after)
+            PauseNotice.apply(app, plan.pause, plan.pause?.until?.let { words(inventory).until(it, now) }, now)
+        } catch (e: RuntimeException) {
+            Log.w(Agent.TAG, "location's or the pause's notices not shown", e)
+        }
 
-        val all = made + requests
+        val sent = sentAgain.associateBy { it.id }
+        val all = made + requests.map { sent[it.id] ?: it }
         val screenTime = read?.let { ScreenTimeView(it.policy, it.decision, it.update.usage, it.decision.days.startOf(it.decision.day)) }
-        val view = KidView(policy, plan, next, Requests.answered(all, policy), dnsRow?.setHost, labels(inventory, all, plan, policy), screenTime)
+        val locationStatus = located?.report ?: store.locationState()?.report
+        val view = KidView(policy, plan, next, Requests.answered(all, policy), dnsRow?.setHost, labels(inventory, all, plan, policy), screenTime, locationStatus)
         // Anything in the report may have changed, here or on another thread since the last step
         // (the update, the recovery key): compare all of it but the count of apps held back, and
         // screen time's minutes, which change every minute the phone is used.
         val report = EnforcementReport.of(store, next)
         lastReport = report
-        return Result(view, reportChanged = comparable(report) != comparable(reportBefore))
+        return Result(view, reportChanged = comparable(report) != comparable(reportBefore), revoke = located?.revoke == true)
     }
 
     /**
@@ -323,10 +353,14 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
         @Volatile
         var lastReport: WireEnforcement? = null
 
-        /** The report without what changes by itself: the count of apps held back, and screen time's minutes. */
+        /**
+         * The report without what changes by itself: the count of apps held back, screen time's
+         * minutes, and (Phase 4) the last fix's time: the fix itself goes in `POST /locations`.
+         */
         fun comparable(report: WireEnforcement?): WireEnforcement? = report?.copy(
             suspendedCount = 0,
             screenTime = report.screenTime?.let { st -> st.copy(usedMinutes = null, limits = st.limits.map { it.copy(used = null, left = null) }) },
+            location = report.location?.copy(lastFixAt = null),
         )
     }
 }

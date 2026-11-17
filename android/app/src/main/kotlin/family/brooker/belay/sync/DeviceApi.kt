@@ -14,6 +14,7 @@ import family.brooker.belay.core.PolicyTooLarge
 import family.brooker.belay.core.RequestsResponse
 import family.brooker.belay.core.Wire
 import family.brooker.belay.core.WireError
+import family.brooker.belay.core.location.LocationsResponse
 import family.brooker.belay.core.screentime.UsageResponse
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerializationException
@@ -76,6 +77,15 @@ class DeviceApi(private val origin: String, private val client: OkHttpClient = H
     /** Phase 3. [days] are WireUsageDays as queued, oldest first. */
     fun usage(token: String, days: List<String>): Answer<UsageResponse> =
         post("usage", token, days.joinToString(",", prefix = "{\"days\":[", postfix = "]}"), UsageResponse.serializer())
+
+    /** Phase 4. [fixes] are WireFixes and [placeEvents] WirePlaceEvents as queued, oldest first. */
+    fun locations(token: String, fixes: List<String>, placeEvents: List<String>): Answer<LocationsResponse> =
+        post(
+            "locations",
+            token,
+            fixes.joinToString(",", prefix = "{\"fixes\":[", postfix = "],") + placeEvents.joinToString(",", prefix = "\"place_events\":[", postfix = "]}"),
+            LocationsResponse.serializer(),
+        )
 
     /**
      * Phase 2, the long-poll: `GET /api/v1/policy?have=&wait=`. The server answers at once

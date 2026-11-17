@@ -246,9 +246,10 @@ private class SyncRun(private val app: Context) {
 
     /**
      * Sends what waits, strictly in order (OutboxDrain): the server applies events and
-     * inventories as they arrive. Usage days (Phase 3) go in a lane of their own after it, so a
-     * server without `POST /usage` yet (it answers 404, which waits and tries again) holds back
-     * nothing else. Returns false if the server disconnected the phone.
+     * inventories as they arrive. Usage days (Phase 3) go in a lane of their own after it, and
+     * fixes and place events (Phase 4) in a third, so a server without `POST /usage` or
+     * `POST /locations` yet (it answers 404, which waits and tries again) holds back nothing
+     * else. Returns false if the server disconnected the phone.
      */
     private fun drain(api: DeviceApi, token: String): Boolean {
         val queue = store.queue()
@@ -259,7 +260,7 @@ private class SyncRun(private val app: Context) {
         // The soonest wake any lane asks for; one wake covers both (a newer wake replaces the last).
         var wakeIn: Long? = null
         for ((lane, items) in lanes) {
-            when (val outcome = drainLane(api, token, items, usage = lane == OutboxPolicy.lane(OutboxType.USAGE))) {
+            when (val outcome = drainLane(api, token, items, side = lane != OutboxPolicy.lane(OutboxType.EVENT))) {
                 LaneOutcome.Disconnected -> return false
                 is LaneOutcome.Wait -> wakeIn = minOf(wakeIn ?: outcome.ms, outcome.ms)
                 LaneOutcome.Done -> {}
@@ -277,8 +278,11 @@ private class SyncRun(private val app: Context) {
         data object Disconnected : LaneOutcome
     }
 
-    /** One lane, oldest first; its head waits out a backoff, and everything behind it with it. */
-    private fun drainLane(api: DeviceApi, token: String, lane: List<Pair<OutboxItem, Long>>, usage: Boolean): LaneOutcome {
+    /**
+     * One lane, oldest first; its head waits out a backoff, and everything behind it with it.
+     * [side]: the usage or the location lane, whose failures aren't a connection problem.
+     */
+    private fun drainLane(api: DeviceApi, token: String, lane: List<Pair<OutboxItem, Long>>, side: Boolean): LaneOutcome {
         val wait = OutboxPolicy.waitMs(lane.first().second, System.currentTimeMillis())
         if (wait != null) return LaneOutcome.Wait(wait)
         val result = OutboxDrain.run(lane.map { it.first }) { batch -> send(api, token, batch) }
@@ -287,16 +291,21 @@ private class SyncRun(private val app: Context) {
             Log.w(Agent.TAG, "outbox: dropped item ${it.id}: ${it.reason}")
             store.markDropped(it.id, it.reason, finishedAt)
         }
-        if (result.sent.isNotEmpty()) Log.i(Agent.TAG, "sent ${result.sent.size} ${if (usage) "usage days" else "items"} in ${result.requests} requests")
+        val what = when (lane.first().first.type) {
+            OutboxType.USAGE -> "usage days"
+            OutboxType.FIX, OutboxType.PLACE_EVENT -> "fixes and place events"
+            else -> "items"
+        }
+        if (result.sent.isNotEmpty()) Log.i(Agent.TAG, "sent ${result.sent.size} $what in ${result.requests} requests")
         return when (val stop = result.stop) {
             null -> LaneOutcome.Done
             is OutboxDrain.Stop.Retry -> {
                 val attempts = store.attempts(stop.ids) + 1
                 val wait = OutboxPolicy.retryWaitMs(attempts, stop.afterMs, Random.nextDouble())
                 store.markFailed(stop.ids, stop.reason, finishedAt + wait)
-                // A server that doesn't take usage yet isn't a connection problem for the kid's screen.
-                if (!usage) ConnectionStore.failed(app, finishedAt, stop.reason)
-                Log.w(Agent.TAG, "outbox${if (usage) " (usage)" else ""}: ${stop.reason}; trying again in ${wait / 1000} s (attempt $attempts)")
+                // A server that doesn't take usage or locations yet isn't a connection problem for the kid's screen.
+                if (!side) ConnectionStore.failed(app, finishedAt, stop.reason)
+                Log.w(Agent.TAG, "outbox${if (side) " ($what)" else ""}: ${stop.reason}; trying again in ${wait / 1000} s (attempt $attempts)")
                 LaneOutcome.Wait(wait)
             }
             is OutboxDrain.Stop.Disconnect -> {
@@ -314,6 +323,8 @@ private class SyncRun(private val app: Context) {
         OutboxRow.TYPE_SNAPSHOT -> OutboxType.SNAPSHOT
         OutboxRow.TYPE_REQUEST -> OutboxType.REQUEST
         OutboxRow.TYPE_USAGE -> OutboxType.USAGE
+        OutboxRow.TYPE_FIX -> OutboxType.FIX
+        OutboxRow.TYPE_PLACE_EVENT -> OutboxType.PLACE_EVENT
         else -> OutboxType.EVENT
     }
 
@@ -342,6 +353,12 @@ private class SyncRun(private val app: Context) {
                 val payloads = store.usagePayloads(ids)
                 if (payloads.isEmpty()) return Verdict.Sent
                 api.usage(token, payloads)
+            }
+            OutboxType.FIX, OutboxType.PLACE_EVENT -> {
+                // Gone when location went off meanwhile.
+                val (fixes, placeEvents) = store.locationPayloads(ids)
+                if (fixes.isEmpty() && placeEvents.isEmpty()) return Verdict.Sent
+                api.locations(token, fixes, placeEvents)
             }
         }
         return when (answer) {

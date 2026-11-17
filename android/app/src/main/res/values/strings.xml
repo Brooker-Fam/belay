@@ -379,8 +379,169 @@
 
     <!-- Phase 3: screen time's notifications. -->
     <string name="screen_time_channel_name">Screen time</string>
-    <string name="screen_time_channel_description">Tells you when time is almost up or up, when a schedule starts, and when Belay can\'t count.</string>
+    <string name="screen_time_channel_description">Tells you when time is almost up or up, when a schedule starts, when your parent pauses the phone, and when Belay can\'t count.</string>
     <string name="screen_time_notice_title">Screen time</string>
+
+    <!-- Phase 7: Home, the kid's screens, help and the emergency card. Plain and respectful, for a
+         12-year-old, and never more than the code does. The family's words (names, notes, numbers)
+         and app names are shown as they are. -->
+    <string name="kid_home_normal">Everything\'s normal</string>
+    <string name="kid_home_lost">This phone is in lost mode</string>
+    <string name="kid_home_paused_until">Paused by your parent until %1$s</string>
+    <string name="kid_home_paused">Paused by your parent</string>
+    <string name="kid_home_bedtime_until">Bedtime until %1$s</string>
+    <string name="kid_home_total_up">Your screen time for today is used up</string>
+    <string name="kid_home_limit_up">Time\'s up for %1$s today</string>
+    <plurals name="kid_home_limits_up">
+        <item quantity="one">Time\'s up for %d of your time limits today</item>
+        <item quantity="other">Time\'s up for %d of your time limits today</item>
+    </plurals>
+    <string name="kid_home_unmeasured">Belay can\'t count screen time right now</string>
+    <string name="kid_works_calls_texts">Calls and texts work, and so do Belay, Settings and the clock.</string>
+    <plurals name="kid_works_also">
+        <item quantity="one">This works too: %1$s</item>
+        <item quantity="other">These work too: %1$s</item>
+    </plurals>
+    <string name="kid_works_other_apps">Your other apps work.</string>
+    <string name="kid_works_apps">Your apps work.</string>
+    <string name="kid_works_lost_message">Your parent\'s message is on the lock screen.</string>
+    <string name="kid_works_emergency">You can always call or text 911 and 988.</string>
+    <string name="moment_on_day">%1$s, %2$s</string>
+
+    <string name="home_now">Right now</string>
+    <string name="home_more">More in Belay</string>
+    <string name="screen_requests">My requests</string>
+    <string name="screen_stage">My stage</string>
+    <string name="screen_rules">This phone\'s rules</string>
+    <string name="screen_can_see">What your parent can see</string>
+    <string name="screen_told">What Belay told your parent</string>
+    <string name="screen_help">Help</string>
+    <string name="screen_about">About Belay</string>
+    <string name="back">Back</string>
+
+    <!-- "I need help": sent with one tap, no words needed. -->
+    <string name="help_button">I need help</string>
+    <string name="help_intro">Tap the button and Belay tells your parents right away. You don\'t have to write anything.</string>
+    <string name="help_sent">Your parents will get this right away.</string>
+    <string name="help_waiting_to_send">Belay will send it as soon as it can reach your parent\'s Belay server.</string>
+    <string name="help_seen">Your parent saw this at %1$s.</string>
+    <string name="help_not_seen">Your parent hasn\'t seen it yet.</string>
+    <string name="help_danger">If you\'re in danger right now, call 911.</string>
+    <string name="help_988">988: call or text for crisis support, any time. It\'s free and private.</string>
+    <string name="help_not_911">Belay can\'t send help to where you are. Only 911 can.</string>
+    <string name="help_words">Add a few words (optional)</string>
+    <string name="help_words_send">Send</string>
+    <string name="help_words_sent">Sent. You can change it and send it again.</string>
+    <string name="help_share">Share where this phone is, this once</string>
+    <string name="help_share_detail_off">Only this once, even though location is off. Afterwards, Belay turns its location access off again.</string>
+    <string name="help_share_detail_on">It goes to your parent with your message.</string>
+    <string name="help_sharing">Belay is finding where this phone is. It can take up to a minute.</string>
+    <string name="help_shared">Belay sent where this phone is to your parent.</string>
+    <string name="help_share_failed">Belay couldn\'t find where this phone is. Your parent still got your message.</string>
+
+    <!-- The emergency card: always reachable, also while the phone is paused. -->
+    <string name="emergency_title">In an emergency</string>
+    <string name="emergency_call_911">Call 911</string>
+    <string name="emergency_text_911">Text 911</string>
+    <string name="emergency_text_911_note">Text 911 only works in some places. Call if you can.</string>
+    <string name="emergency_call_988">Call 988</string>
+    <string name="emergency_text_988">Text 988</string>
+    <string name="emergency_call">Call %1$s</string>
+    <string name="emergency_text">Text %1$s</string>
+    <string name="emergency_info">Medical information and emergency contacts</string>
+    <string name="emergency_info_detail">This opens Android\'s own emergency information. It\'s also on the lock screen.</string>
+    <string name="emergency_no_app">This phone can\'t open that. Use the phone app instead.</string>
+
+    <!-- "Talk to my parent". -->
+    <string name="talk_title">Talk to my parent</string>
+    <string name="talk_intro">It doesn\'t change any rule. It tells your parent you\'d like to talk.</string>
+    <string name="talk_label">What would you like to talk about?</string>
+    <string name="talk_send">Send to my parent</string>
+    <string name="talk_sent">Sent. Your parent will see it.</string>
+
+    <!-- My requests. -->
+    <string name="requests_empty">No requests yet. When you ask your parent for something in Belay, it shows up here.</string>
+    <string name="request_app">An app: %1$s</string>
+    <string name="request_more_time">More time: %1$s for %2$s</string>
+    <string name="request_agreement_agree">Your family agreement: I agree</string>
+    <string name="request_agreement_talk">Your family agreement: I want to talk about it</string>
+    <string name="request_help">I need help</string>
+    <string name="request_talk">Talk to my parent</string>
+    <string name="request_asked">You asked %1$s.</string>
+    <string name="request_words">You wrote: “%1$s”</string>
+    <string name="request_withdrawn">You took this back %1$s.</string>
+    <string name="request_shared_location">You shared where this phone was.</string>
+    <string name="request_change">Change what I wrote</string>
+    <string name="request_change_label">What you want to say</string>
+    <string name="request_change_send">Send the change</string>
+    <string name="request_withdraw">Take it back</string>
+    <string name="request_withdraw_title">Take this request back?</string>
+    <string name="request_withdraw_text">Your parent won\'t need to answer it. You can always ask again.</string>
+    <string name="request_withdraw_yes">Take it back</string>
+
+    <!-- What your parent can see. -->
+    <string name="can_see_ai">Your parent\'s AI app can read this.</string>
+    <string name="can_see_ai_agreement">Your parent\'s AI app can also read your stage and your family agreement, and your answers to it.</string>
+    <string name="can_see_ai_other">Your parent\'s AI app can also read: %1$s</string>
+    <string name="can_see_ai_none">Your parent hasn\'t let their AI app read any of this.</string>
+
+    <!-- Phase 4: location, for the kid. -->
+    <string name="section_location">Where this phone is</string>
+    <string name="location_on_demand">Your parent can check where this phone is. You get a notification every time they do.</string>
+    <plurals name="location_periodic">
+        <item quantity="one">Belay shares where this phone is every %1$d minute.</item>
+        <item quantity="other">Belay shares where this phone is every %1$d minutes.</item>
+    </plurals>
+    <plurals name="location_periodic_hours">
+        <item quantity="one">Belay shares where this phone is every %1$d minute, between %2$s and %3$s.</item>
+        <item quantity="other">Belay shares where this phone is every %1$d minutes, between %2$s and %3$s.</item>
+    </plurals>
+    <string name="location_periodic_checks">Your parent can also check where it is. You get a notification every time they do.</string>
+    <string name="location_places">Your parent named these places: %1$s. Belay tells your parent when you arrive or leave.</string>
+    <string name="location_lost">This phone is in lost mode. Your parent can see where it is every 5 minutes until they turn lost mode off.</string>
+    <string name="location_locked_on">Location is locked on. Your parent decides this.</string>
+    <string name="location_turned_off">Location is turned off on this phone, so Belay can\'t find where it is.</string>
+    <string name="location_android_says">When Android says \"your organization allows Belay to access your location\", it means your parent, through Belay.</string>
+    <plurals name="location_checks">
+        <item quantity="one">Your parent checked %d time in the last 30 days.</item>
+        <item quantity="other">Your parent checked %d times in the last 30 days.</item>
+    </plurals>
+    <string name="location_checks_none">Your parent hasn\'t checked in the last 30 days.</string>
+    <string name="location_channel_name">Where this phone is</string>
+    <string name="location_channel_description">Tells you every time your parent checks where this phone is, and when it\'s in lost mode.</string>
+    <string name="location_notice_title">Where this phone is</string>
+    <string name="location_checked">Your parent checked where this phone is (%1$s).</string>
+    <string name="location_checked_via">Your parent checked where this phone is (%1$s), using %2$s.</string>
+    <string name="location_lost_notice">This phone is in lost mode. Your parent can see where it is every 5 minutes until they turn lost mode off.</string>
+    <string name="location_lost_last_check">Last check: %1$s.</string>
+    <plurals name="notice_location_every">
+        <item quantity="one">Shares where this phone is every %1$d minute.</item>
+        <item quantity="other">Shares where this phone is every %1$d minutes.</item>
+    </plurals>
+    <plurals name="notice_location_hours">
+        <item quantity="one">Shares where this phone is every %1$d minute, %2$s to %3$s.</item>
+        <item quantity="other">Shares where this phone is every %1$d minutes, %2$s to %3$s.</item>
+    </plurals>
+    <string name="rule_location">Location is locked on.</string>
+    <string name="rule_location_why">Your parent decides this, so Belay can find where this phone is.</string>
+
+    <!-- What Belay told your parent: from the phone's own record. -->
+    <string name="told_intro">Every time Belay told your parent where this phone is, in the last 30 days. Belay keeps this list itself, so nothing is left out.</string>
+    <string name="told_empty">Nothing yet. When your parent checks where this phone is, it shows up here.</string>
+    <string name="told_check">Your parent checked where this phone is.</string>
+    <string name="told_check_via">Your parent checked where this phone is, using %1$s.</string>
+    <string name="told_check_not_sent">Your parent asked where this phone is. Belay didn\'t send it.</string>
+    <plurals name="told_lost">
+        <item quantity="one">Lost mode: Belay sent where this phone is %1$d time, the last at %2$s.</item>
+        <item quantity="other">Lost mode: Belay sent where this phone is %1$d times, the last at %2$s.</item>
+    </plurals>
+    <string name="told_help">You shared where this phone is with \"I need help\".</string>
+    <string name="told_help_not_sent">You chose to share where this phone is with \"I need help\", but Belay couldn\'t find it.</string>
+
+    <!-- Phase 7: a quiet notice while the phone is paused, with "I need help". -->
+    <string name="pause_notice_title">Paused by your parent</string>
+    <string name="pause_notice_until">Your parent paused this phone until %1$s. Calls and texts still work, and so do 911 and 988.</string>
+    <string name="pause_notice">Your parent paused this phone. Calls and texts still work, and so do 911 and 988.</string>
     <string name="phone_battery">Battery</string>
     <string name="phone_battery_value">%1$d%%</string>
     <string name="phone_battery_charging">%1$d%%, charging</string>
