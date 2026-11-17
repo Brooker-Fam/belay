@@ -45,6 +45,7 @@ import {
   RuleRefused,
   SAFE_RESTRICTIONS,
   answerRequest,
+  askAgainSummary,
   clearPreDecisions,
   currentDecisions,
   decideApp,
@@ -78,7 +79,7 @@ import { AddPage, CodePage } from "./pages/add.js";
 import { InvitePage, LoginPage, MessagePage, SetupPage } from "./pages/auth.js";
 import { type AppRule, AppPage, DevicePage, DevicesPage, type PhoneRules } from "./pages/devices.js";
 import { ProposalsPage, RequestsPage } from "./pages/requests.js";
-import { MAINTENANCE_HOURS, PAUSE_MINUTES } from "./pages/rules.js";
+import { AskAgainPage, MAINTENANCE_HOURS, PAUSE_MINUTES } from "./pages/rules.js";
 import { SettingsPage, ShownOncePage } from "./pages/settings.js";
 import { TimelinePage } from "./pages/timeline.js";
 import type { View } from "./ui.js";
@@ -103,6 +104,7 @@ const SAVED: Record<string, string> = {
   protected: "Protection is on. The phone gets the new rules within seconds if it's online.",
   unprotected: "Protection is off. The phone gets the change within seconds if it's online.",
   new_apps_ask: "New apps now wait for your approval. The apps already on the phone are allowed.",
+  new_apps_ask_again: "New apps wait for your approval again. The apps you chose are allowed; the others wait for you below.",
   new_apps_allow: "New apps now run without asking.",
   allowed: "Allowed.",
   blocked: "Blocked. The phone hides it within seconds if it's online.",
@@ -418,6 +420,7 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
       openRequests,
       requestsForUnknownApps: openRequests.filter((r) => !present.has(r.package)),
       beforeInstall: preDecisions(db, deviceId),
+      askAgain: askAgainSummary(db, deviceId),
     };
   };
 
@@ -492,10 +495,17 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
   app.post("/devices/:id/new-apps", async (c) => {
     const device = deviceOr404(c);
     if (!device) return noPhone(c);
-    const mode = first(await form(c), "mode");
+    const body = await form(c);
+    const mode = first(body, "mode");
     if (mode !== "ask" && mode !== "allow") return showDevice(c, device, { error: "Choose Ask or Allow for new apps." }, 400);
-    setNewApps(policyContext(), device.id, mode, asParent(c));
-    return backTo(c, device, `new_apps_${mode}`, "new-apps");
+    // Back to Ask after Allow: the parent chooses which of the apps without a decision keep working.
+    const confirmed = first(body, "confirm") === "1";
+    if (mode === "ask" && !confirmed) {
+      const again = askAgainSummary(db, device.id);
+      if (again && (again.installedMeanwhile.length || again.waitingBefore.length)) return render(c, <AskAgainPage view={view(c)} device={device} again={again} />);
+    }
+    const done = setNewApps(policyContext(), device.id, mode, asParent(c), confirmed ? { allow: all(body, "allow") } : {});
+    return backTo(c, device, mode === "allow" ? "new_apps_allow" : done.result.firstTime || !done.changed ? "new_apps_ask" : "new_apps_ask_again", "new-apps");
   });
 
   app.post("/devices/:id/before-install/clear", async (c) => {

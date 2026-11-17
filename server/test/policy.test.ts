@@ -3,6 +3,7 @@ import { createParent } from "../src/auth/parents.js";
 import { listAudit } from "../src/audit.js";
 import { Policy } from "../src/device/schemas.js";
 import {
+  askAgainSummary,
   DNS_FILTERS,
   SAFE_CHROME,
   answerRequest,
@@ -24,6 +25,7 @@ import {
   unprotect,
   type PolicyContext,
 } from "../src/family/policy.js";
+import { approveProposal, createProposal } from "../src/family/proposals.js";
 import { getRequest, saveRequests } from "../src/family/requests.js";
 import { deviceCall, enrollPhone, event, pkg, snapshot, testServer, T0 } from "./helpers.js";
 
@@ -157,15 +159,80 @@ describe("turning protection on", () => {
 });
 
 describe("new apps", () => {
-  it("turning ask on grandfathers every user app without a decision, each time", async () => {
-    const { phone, ctx, sam, decisions, install } = await setup();
-    setNewApps(ctx(), phone.deviceId, "ask", sam);
+  it("turning ask on allows the apps already on the phone only the first time", async () => {
+    const { t, phone, ctx, sam, decisions, install } = await setup();
+    expect(setNewApps(ctx(), phone.deviceId, "ask", sam).result).toEqual({ firstTime: true, grandfathered: 2, stillWaiting: 0 });
+    t.advance(MIN);
     await install("com.example.game");
     expect(decisions()["com.example.game"]).toBeUndefined();
+    t.advance(MIN);
     setNewApps(ctx(), phone.deviceId, "allow", sam);
+    t.advance(MIN);
     await install("com.example.drawing");
-    expect(setNewApps(ctx(), phone.deviceId, "ask", sam).result.grandfathered).toBe(2);
-    expect(decisions()).toMatchObject({ "com.example.game": "allowed", "com.example.drawing": "allowed" });
+    t.advance(MIN);
+    // Back to ask: the app installed while new apps were allowed keeps working; the one waiting before still waits.
+    expect(setNewApps(ctx(), phone.deviceId, "ask", sam).result).toEqual({ firstTime: false, grandfathered: 1, stillWaiting: 1 });
+    expect(decisions()["com.example.drawing"]).toBe("allowed");
+    expect(decisions()["com.example.game"]).toBeUndefined();
+    expect(currentDecision(t.deps.db, phone.deviceId, "com.example.drawing")).toMatchObject({ decidedBy: "grandfathered" });
+  });
+
+  it("switching back to ask, a parent chooses which apps keep working", async () => {
+    const { t, phone, ctx, sam, decisions, install, ask } = await setup();
+    setNewApps(ctx(), phone.deviceId, "ask", sam);
+    t.advance(MIN);
+    await install("com.example.game");
+    ask("request-0001", "com.example.game", "Everyone plays it");
+    t.advance(MIN);
+    setNewApps(ctx(), phone.deviceId, "allow", sam);
+    t.advance(MIN);
+    await install("com.example.drawing");
+    expect(askAgainSummary(t.deps.db, phone.deviceId)).toMatchObject({
+      since: t.now() - MIN,
+      installedMeanwhile: [{ package: "com.example.drawing" }],
+      waitingBefore: [{ package: "com.example.game" }],
+    });
+    // Only apps on those two lists can be chosen.
+    const done = setNewApps(ctx(), phone.deviceId, "ask", sam, { allow: ["com.example.game", "com.example.elsewhere"] });
+    expect(done.result).toEqual({ firstTime: false, grandfathered: 1, stillWaiting: 1 });
+    expect(decisions()).toMatchObject({ "com.example.game": "allowed" });
+    expect(decisions()["com.example.drawing"]).toBeUndefined();
+    expect(decisions()["com.example.elsewhere"]).toBeUndefined();
+    expect(currentDecision(t.deps.db, phone.deviceId, "com.example.game")).toMatchObject({ decidedBy: "parent", parentName: "Sam" });
+    expect(getRequest(t.deps.db, phone.deviceId, "request-0001")).toMatchObject({ status: "approved", answeredBy: "Sam" });
+    expect(askAgainSummary(t.deps.db, phone.deviceId)).toBeNull();
+  });
+
+  it("protection turned off and on again follows the same rule", async () => {
+    const { t, phone, ctx, sam, decisions, install } = await setup();
+    protect(ctx(), phone.deviceId, sam);
+    t.advance(MIN);
+    await install("com.example.game");
+    t.advance(MIN);
+    unprotect(ctx(), phone.deviceId, sam);
+    expect(getRules(t.deps.db, phone.deviceId)).toMatchObject({ newApps: "allow", askFirstAt: T0 });
+    t.advance(MIN);
+    await install("com.example.drawing");
+    t.advance(MIN);
+    expect(protect(ctx(), phone.deviceId, sam).result).toMatchObject({ firstTime: false, grandfathered: 1, stillWaiting: 1 });
+    expect(decisions()["com.example.drawing"]).toBe("allowed");
+    expect(decisions()["com.example.game"]).toBeUndefined();
+  });
+
+  it("after allow and ask again, an app that was waiting isn't allowed by surprise, nor its request answered", async () => {
+    const { t, parent, phone, ctx, sam, install, ask } = await setup();
+    protect(ctx(), phone.deviceId, sam);
+    t.advance(MIN);
+    await install("com.example.newchat");
+    ask("request-chat-0001", "com.example.newchat");
+    t.advance(MIN);
+    // A weekend trip: an AI app proposes letting new apps run, and a parent approves.
+    const trip = createProposal(t.deps.db, t.now(), phone.deviceId, { kind: "new_apps_allow" }, "Weekend trip, lots of new apps", { parentId: parent.id, clientName: "Claude" });
+    expect(approveProposal(ctx(), trip.proposal.id, parent.id).ok).toBe(true);
+    t.advance(2 * DAY);
+    setNewApps(ctx(), phone.deviceId, "ask", sam); // Monday: back to ask
+    expect(currentDecision(t.deps.db, phone.deviceId, "com.example.newchat")).toBeNull();
+    expect(getRequest(t.deps.db, phone.deviceId, "request-chat-0001")?.status).toBe("pending");
   });
 
   it("keeps every decision, so the history says why", async () => {

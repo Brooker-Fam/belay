@@ -254,7 +254,10 @@ server decides whether a change tightens or loosens.
   suspended the moment Belay sees it install, and stays suspended until the policy says
   `allowed`. There's no pre-install hook, so an app can run for a moment before that.
   When a parent first turns `ask` on, the server records every user app already on the
-  phone as `allowed`, so nothing the kid already has stops working by surprise.
+  phone as `allowed`, so nothing the kid already has stops working by surprise. Only the
+  first time: turning `ask` on again after `allow`, the parent chooses which apps without a
+  decision are allowed (by default, the ones installed while new apps were allowed), and the
+  ones that were waiting before wait again unless the parent allows them.
 - **Blocked** apps are hidden and suspended (`setApplicationHidden`: suspended apps that
   have run before can keep working in the background). System apps can be blocked too.
 - **Paused**: every launchable app but the never-blocked ones is suspended until

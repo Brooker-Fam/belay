@@ -140,6 +140,12 @@ docker compose exec belay node dist/cli.js pause "Sam's phone" --minutes 30     
 docker compose exec belay node dist/cli.js resume "Sam's phone"
 ```
 
+The first time `--new-apps ask` (or `protect`) turns asking on, every user app already on the
+phone is allowed. Later, after new apps were allowed for a while, it allows the apps
+installed meanwhile and leaves the ones that were waiting before waiting, as the parent page
+does by default. `--allow-waiting` allows those too; `--hold-new` keeps the apps installed
+meanwhile waiting as well.
+
 They're logged as the server's ("The server" on the Activity page), and a running server
 passes them to the phone within a second or two. `status --json` gives each phone's
 `policy_version` (the server's), `enforcement` (what the phone last said it applied, or

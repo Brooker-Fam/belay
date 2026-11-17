@@ -2,7 +2,7 @@ import type { FC } from "hono/jsx";
 import type { PendingCode } from "../../device/enroll.js";
 import { type App, type Change, type Review, PERMISSION_NAMES, SOURCE_NAMES, playStoreUrl, versionText } from "../../family/apps.js";
 import { type DeviceView, patchAgeDays } from "../../family/devices.js";
-import { type Decision, LIMITS, type Rules } from "../../family/policy.js";
+import { type AskAgain, type Decision, LIMITS, type Rules } from "../../family/policy.js";
 import type { RequestView } from "../../family/requests.js";
 import { formatAgo, formatDate, formatDuration } from "../../time.js";
 import { Csrf, Layout, Notice, PermissionChips, PostButton, Problems, StatusBadge, Time, type View } from "../ui.js";
@@ -51,6 +51,8 @@ export interface PhoneRules {
   requestsForUnknownApps: RequestView[];
   /** Decisions about apps the phone has never reported: blocked (or allowed) before install. */
   beforeInstall: (Decision & { state: "allowed" | "blocked" })[];
+  /** When new apps run without asking now, but asked before: what switching back leaves to choose. */
+  askAgain: AskAgain | null;
 }
 
 /** Apps decided before the phone ever had them: each one clearable, and the AI apps' all at once. */
@@ -309,7 +311,7 @@ export const DevicePage: FC<{
 
       <h2 id="rules">Rules</h2>
       <RulesStatus view={view} device={device} />
-      <ProtectionCard view={view} device={device} rules={phone.rules} undecidedApps={phone.undecidedApps} />
+      <ProtectionCard view={view} device={device} rules={phone.rules} undecidedApps={phone.undecidedApps} askAgain={phone.askAgain} />
       <h3 id="pause">Pause</h3>
       <PauseCard view={view} device={device} rules={phone.rules} />
       <h3 id="new-apps">New apps</h3>

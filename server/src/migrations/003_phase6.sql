@@ -29,3 +29,18 @@ CREATE INDEX proposals_status ON proposals(status, created_at);
 -- When the pause in force was set or last changed, so a proposal to resume knows which pause
 -- it meant. NULL for a pause from before this version.
 ALTER TABLE policies ADD COLUMN pause_set_at INTEGER;
+
+-- Only the first time new apps wait for a parent are the apps already on the phone allowed
+-- ("grandfathered"); later, the parent chooses among those installed while new apps were
+-- allowed. From the activity log for phones that had rules before this version.
+ALTER TABLE policies ADD COLUMN ask_first_at INTEGER;  -- when new apps first waited for a parent
+ALTER TABLE policies ADD COLUMN new_apps_at INTEGER;   -- when new_apps last changed
+UPDATE policies SET ask_first_at = (
+  SELECT MIN(a.at) FROM audit_log a WHERE a.device_id = policies.device_id
+    AND (a.action = 'policy.protected' OR (a.action = 'policy.new_apps' AND json_extract(a.detail, '$.mode') = 'ask')));
+UPDATE policies SET ask_first_at = changed_at WHERE ask_first_at IS NULL
+  AND (new_apps = 'ask' OR EXISTS (SELECT 1 FROM app_decisions d WHERE d.device_id = policies.device_id AND d.decided_by = 'grandfathered'));
+UPDATE policies SET new_apps_at = (
+  SELECT MAX(a.at) FROM audit_log a WHERE a.device_id = policies.device_id
+    AND a.action IN ('policy.new_apps', 'policy.protected', 'policy.unprotected'));
+UPDATE policies SET new_apps_at = changed_at WHERE new_apps_at IS NULL AND ask_first_at IS NOT NULL;

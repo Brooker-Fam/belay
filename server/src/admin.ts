@@ -7,7 +7,8 @@
  *   backup <file>                                 a consistent copy of the database, while it runs
  *   status [--json]                               each phone's status, apps, rules, requests and latest changes
  *   protect "<phone>"                             turns protection on, as the parent page does
- *   policy "<phone>" --new-apps ask|allow         whether new apps wait for a parent
+ *   policy "<phone>" --new-apps ask|allow [--allow-waiting] [--hold-new]
+ *                                                 whether new apps wait for a parent (the flags: see docs/server.md)
  *   decide "<phone>" <package> allow|block|undecided
  *   pause "<phone>" [--minutes N] [--note text]   until a parent resumes it, without --minutes
  *   resume "<phone>"
@@ -25,7 +26,7 @@ import { createEnrollmentCode } from "./device/enroll.js";
 import { packageName } from "./device/schemas.js";
 import { appCounts, listChanges } from "./family/apps.js";
 import { type DeviceRow, findDeviceByName, listDevices, nameTaken } from "./family/devices.js";
-import { LIMITS, RuleRefused, decideApp, pausePhone, protect, resumePhone, setNewApps, type PolicyContext } from "./family/policy.js";
+import { LIMITS, RuleRefused, askAgainSummary, decideApp, pausePhone, protect, resumePhone, setNewApps, type PolicyContext } from "./family/policy.js";
 import { recentRequests } from "./family/requests.js";
 import { getSettings } from "./settings.js";
 import { formatAgo, isoInZone } from "./time.js";
@@ -44,6 +45,11 @@ export interface CliIO {
 
 class CliError extends Error {}
 
+/** "Of the apps without a decision, 1 is allowed and 2 wait for a parent." */
+function askAgainWords(r: { grandfathered: number; stillWaiting: number }): string {
+  return `Of the apps without a decision, ${r.grandfathered} ${r.grandfathered === 1 ? "is" : "are"} allowed and ${r.stillWaiting} ${r.stillWaiting === 1 ? "waits" : "wait"} for a parent.`;
+}
+
 const USAGE = `Commands:
   setup-link
   create-code <phone name>
@@ -51,7 +57,7 @@ const USAGE = `Commands:
   backup <file>
   status [--json]
   protect "<phone>"
-  policy "<phone>" --new-apps ask|allow
+  policy "<phone>" --new-apps ask|allow [--allow-waiting] [--hold-new]
   decide "<phone>" <package> allow|block|undecided
   pause "<phone>" [--minutes N] [--note text]
   resume "<phone>"`;
@@ -192,21 +198,31 @@ async function run(argv: string[], io: CliIO): Promise<void> {
     case "protect": {
       const row = phone();
       const done = protect(ctx, row.id, server);
+      const n = done.result.grandfathered;
       io.out(
         done.result.alreadyOn && !done.changed
           ? `${row.name}: protection was already on (rules version ${done.version}).`
-          : `${row.name}: protection is on (rules version ${done.version}). ${done.result.grandfathered} app${done.result.grandfathered === 1 ? "" : "s"} already on the phone ${done.result.grandfathered === 1 ? "is" : "are"} allowed.`,
+          : `${row.name}: protection is on (rules version ${done.version}). ` +
+              (done.result.firstTime || !done.result.stillWaiting
+                ? `${n} app${n === 1 ? "" : "s"} already on the phone ${n === 1 ? "is" : "are"} allowed.`
+                : askAgainWords(done.result)),
       );
       return;
     }
     case "policy": {
       const row = phone();
       const mode = flags.get("new-apps");
-      if (mode !== "ask" && mode !== "allow") throw new CliError(`Usage: policy "<phone>" --new-apps ask|allow`);
-      const done = setNewApps(ctx, row.id, mode, server);
+      if (mode !== "ask" && mode !== "allow") throw new CliError(`Usage: policy "<phone>" --new-apps ask|allow [--allow-waiting] [--hold-new]`);
+      // Back to ask after allow: by default the apps installed meanwhile are allowed and the ones waiting before still wait.
+      const again = mode === "ask" ? askAgainSummary(db, row.id) : null;
+      const allow = again
+        ? [...(flags.has("hold-new") ? [] : again.installedMeanwhile), ...(flags.has("allow-waiting") ? again.waitingBefore : [])].map((a) => a.package)
+        : undefined;
+      const done = setNewApps(ctx, row.id, mode, server, { allow });
+      const n = done.result.grandfathered;
       io.out(
         `${row.name}: new apps ${mode === "ask" ? "wait for a parent's approval" : "run without asking"} (rules version ${done.version}).` +
-          (done.result.grandfathered ? ` ${done.result.grandfathered} app${done.result.grandfathered === 1 ? "" : "s"} already on the phone allowed.` : ""),
+          (done.result.firstTime && n ? ` ${n} app${n === 1 ? "" : "s"} already on the phone allowed.` : again && done.changed ? ` ${askAgainWords(done.result)}` : ""),
       );
       return;
     }

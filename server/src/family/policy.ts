@@ -211,6 +211,10 @@ export interface Rules {
   maintenanceUntil: number | null;
   frpAccounts: string[];
   supportMessage: string | null;
+  /** When new apps first waited for a parent (null: never). Only then is every app already on the phone allowed. */
+  askFirstAt: number | null;
+  /** When `newApps` last changed: since then, under "allow", apps installed ran without asking. */
+  newAppsAt: number | null;
 }
 
 interface PolicyRow {
@@ -230,6 +234,8 @@ interface PolicyRow {
   maintenance_until: number | null;
   frp_accounts: string;
   support_message: string | null;
+  ask_first_at: number | null;
+  new_apps_at: number | null;
 }
 
 function parseJson(text: string | null): unknown {
@@ -260,6 +266,8 @@ export function defaultRules(): Rules {
     maintenanceUntil: null,
     frpAccounts: [],
     supportMessage: null,
+    askFirstAt: null,
+    newAppsAt: null,
   };
 }
 
@@ -286,19 +294,22 @@ export function getRules(db: DB, deviceId: string): Rules {
     maintenanceUntil: row.maintenance_until,
     frpAccounts: Array.isArray(frp) ? frp.filter((a): a is string => typeof a === "string") : [],
     supportMessage: row.support_message,
+    askFirstAt: row.ask_first_at,
+    newAppsAt: row.new_apps_at,
   };
 }
 
 function saveRules(db: DB, deviceId: string, rules: Rules, now: number): void {
   db.prepare(
     `INSERT INTO policies (device_id, version, changed_at, protected_at, new_apps, paused, pause_until, pause_note, pause_set_at, restrictions,
-       private_dns, chrome, hide_browsers, maintenance_until, frp_accounts, support_message)
+       private_dns, chrome, hide_browsers, maintenance_until, frp_accounts, support_message, ask_first_at, new_apps_at)
      VALUES (@device_id, 0, @now, @protected_at, @new_apps, @paused, @pause_until, @pause_note, @pause_set_at, @restrictions,
-       @private_dns, @chrome, @hide_browsers, @maintenance_until, @frp_accounts, @support_message)
+       @private_dns, @chrome, @hide_browsers, @maintenance_until, @frp_accounts, @support_message, @ask_first_at, @new_apps_at)
      ON CONFLICT (device_id) DO UPDATE SET protected_at = excluded.protected_at, new_apps = excluded.new_apps, paused = excluded.paused,
        pause_until = excluded.pause_until, pause_note = excluded.pause_note, pause_set_at = excluded.pause_set_at, restrictions = excluded.restrictions,
        private_dns = excluded.private_dns, chrome = excluded.chrome, hide_browsers = excluded.hide_browsers,
-       maintenance_until = excluded.maintenance_until, frp_accounts = excluded.frp_accounts, support_message = excluded.support_message`,
+       maintenance_until = excluded.maintenance_until, frp_accounts = excluded.frp_accounts, support_message = excluded.support_message,
+       ask_first_at = excluded.ask_first_at, new_apps_at = excluded.new_apps_at`,
   ).run({
     device_id: deviceId,
     now,
@@ -315,6 +326,8 @@ function saveRules(db: DB, deviceId: string, rules: Rules, now: number): void {
     maintenance_until: rules.maintenanceUntil,
     frp_accounts: JSON.stringify(rules.frpAccounts),
     support_message: rules.supportMessage,
+    ask_first_at: rules.askFirstAt,
+    new_apps_at: rules.newAppsAt,
   });
 }
 
@@ -614,18 +627,90 @@ function appLabel(db: DB, deviceId: string, pkg: string): string | null {
   );
 }
 
-/**
- * Records every user app on the phone without a decision as allowed, so turning on "ask"
- * doesn't stop anything the kid already has (docs/protocol.md).
- */
-function grandfather(db: DB, now: number, deviceId: string, who: Changer): number {
+/** User apps on the phone without a decision: what "ask" holds back. */
+function undecidedUserApps(db: DB, deviceId: string): { package: string; label: string; install_seen_at: number }[] {
   const decided = currentDecisions(db, deviceId);
-  const apps = db
-    .prepare<[string], { package: string }>("SELECT package FROM apps WHERE device_id = ? AND present = 1 AND system = 0 ORDER BY package")
+  return db
+    .prepare<[string], { package: string; label: string; install_seen_at: number }>(
+      "SELECT package, label, install_seen_at FROM apps WHERE device_id = ? AND present = 1 AND system = 0 ORDER BY label COLLATE NOCASE, package",
+    )
     .all(deviceId)
     .filter((a) => !decided.has(a.package));
-  for (const a of apps) insertDecision(db, now, { deviceId, pkg: a.package, state: "allowed", by: "grandfathered", parentId: parentOf(who) });
-  return apps.length;
+}
+
+export interface AppRef {
+  package: string;
+  /** From the app's developer: untrusted. */
+  label: string;
+}
+
+/**
+ * What turning "ask" on again leaves for a parent to choose: the apps without a decision that
+ * were installed while new apps were allowed (they've been running), and those from before (they
+ * were waiting for a parent). Null when new apps already ask, or never asked before: the first
+ * time, every app already on the phone is allowed.
+ */
+export interface AskAgain {
+  /** When new apps were allowed. */
+  since: number | null;
+  installedMeanwhile: AppRef[];
+  waitingBefore: AppRef[];
+}
+
+function askAgainOf(db: DB, deviceId: string, rules: Pick<Rules, "newApps" | "askFirstAt" | "newAppsAt">): AskAgain | null {
+  if (rules.newApps === "ask" || rules.askFirstAt === null) return null;
+  const since = rules.newAppsAt;
+  const apps = undecidedUserApps(db, deviceId);
+  const ref = (a: { package: string; label: string }): AppRef => ({ package: a.package, label: a.label });
+  return {
+    since,
+    // One recorded at the very moment of the switch counts as from before: by default it waits.
+    installedMeanwhile: apps.filter((a) => since === null || a.install_seen_at > since).map(ref),
+    waitingBefore: apps.filter((a) => since !== null && a.install_seen_at <= since).map(ref),
+  };
+}
+
+export function askAgainSummary(db: DB, deviceId: string): AskAgain | null {
+  return askAgainOf(db, deviceId, getRules(db, deviceId));
+}
+
+export interface AskTurnedOn {
+  /** The first time new apps ask: every user app already on the phone was allowed. */
+  firstTime: boolean;
+  /** Apps allowed as "ask" turned on: all of them the first time; later, the ones chosen. */
+  grandfathered: number;
+  /** Later times: the apps that wait for a parent now (not chosen, or waiting before). */
+  stillWaiting: number;
+}
+
+/**
+ * Turns "ask" on (the caller sets `rules.newApps`). The first time, every user app already on
+ * the phone is recorded as allowed ("grandfathered"), so nothing the kid has stops working by
+ * surprise. Later, only the apps in `allow` are (by default, those installed while new apps
+ * were allowed); the apps that were waiting before stay waiting unless they're chosen too.
+ */
+function turnAskOn(ctx: PolicyContext, deviceId: string, rules: Rules, who: Person, allow?: readonly string[]): AskTurnedOn {
+  const { db, now } = ctx;
+  const again = askAgainOf(db, deviceId, rules);
+  if (!again) {
+    rules.askFirstAt ??= now;
+    const apps = undecidedUserApps(db, deviceId);
+    for (const a of apps) insertDecision(db, now, { deviceId, pkg: a.package, state: "allowed", by: "grandfathered", parentId: parentOf(who) });
+    return { firstTime: true, grandfathered: apps.length, stillWaiting: 0 };
+  }
+  const chosen = new Set(allow ?? again.installedMeanwhile.map((a) => a.package));
+  let grandfathered = 0;
+  for (const a of again.installedMeanwhile.filter((x) => chosen.has(x.package))) {
+    insertDecision(db, now, { deviceId, pkg: a.package, state: "allowed", by: "grandfathered", parentId: parentOf(who) });
+    grandfathered++;
+  }
+  // A waiting app a parent chooses now is approved like any other, and so is the kid's request for it.
+  for (const a of again.waitingBefore.filter((x) => chosen.has(x.package))) {
+    insertDecision(db, now, { deviceId, pkg: a.package, state: "allowed", by: decidedBy(who), parentId: parentOf(who) });
+    approveOpenRequests(db, now, deviceId, a.package, who, null);
+    grandfathered++;
+  }
+  return { firstTime: false, grandfathered, stillWaiting: again.installedMeanwhile.length + again.waitingBefore.length - grandfathered };
 }
 
 /** Marks the kid's open requests for this app approved: the app runs now, so the answer says so. */
@@ -640,38 +725,44 @@ function approveOpenRequests(db: DB, now: number, deviceId: string, pkg: string,
 
 const clean = (text: string | null | undefined, max: number): string | null => text?.trim().slice(0, max) || null;
 
-export function setNewApps(ctx: PolicyContext, deviceId: string, mode: "allow" | "ask", who: Person): Changed<{ grandfathered: number }> {
+/**
+ * Whether new apps wait for a parent. Turning "ask" on again later allows only the apps in
+ * `allow`, which defaults to the ones installed while new apps were allowed (see turnAskOn).
+ */
+export function setNewApps(ctx: PolicyContext, deviceId: string, mode: "allow" | "ask", who: Person, opts: { allow?: readonly string[] } = {}): Changed<AskTurnedOn> {
   onlyPeople(who);
   return mutate(ctx, deviceId, who, (rules, log) => {
-    if (rules.newApps === mode) return { grandfathered: 0 };
-    const grandfathered = mode === "ask" ? grandfather(ctx.db, ctx.now, deviceId, who) : 0;
+    if (rules.newApps === mode) return { firstTime: false, grandfathered: 0, stillWaiting: 0 };
+    const outcome = mode === "ask" ? turnAskOn(ctx, deviceId, rules, who, opts.allow) : { firstTime: false, grandfathered: 0, stillWaiting: 0 };
     rules.newApps = mode;
-    log("policy.new_apps", { mode, grandfathered });
-    return { grandfathered };
+    rules.newAppsAt = ctx.now;
+    log("policy.new_apps", mode === "ask" ? { mode, grandfathered: outcome.grandfathered, first_time: outcome.firstTime, still_waiting: outcome.stillWaiting } : { mode });
+    return outcome;
   });
 }
 
 /**
- * Turns protection on in one step: new apps ask (and every user app already on the phone is
- * allowed), the safe restrictions, the CleanBrowsing Family filter and Chrome's safe
- * defaults. A filter or Chrome settings the parent already chose are kept. Accounts, the SIM
- * and hardening are separate switches.
+ * Turns protection on in one step: new apps ask (the first time, every user app already on the
+ * phone is allowed; later, the ones installed while new apps were allowed), the safe
+ * restrictions, the CleanBrowsing Family filter and Chrome's safe defaults. A filter or Chrome
+ * settings the parent already chose are kept. Accounts, the SIM and hardening are separate.
  */
-export function protect(ctx: PolicyContext, deviceId: string, who: Person): Changed<{ grandfathered: number; alreadyOn: boolean }> {
+export function protect(ctx: PolicyContext, deviceId: string, who: Person): Changed<AskTurnedOn & { alreadyOn: boolean }> {
   onlyPeople(who);
   return mutate(ctx, deviceId, who, (rules, log) => {
     const alreadyOn = rules.protectedAt !== null;
     rules.protectedAt ??= ctx.now;
-    let grandfathered = 0;
+    let outcome: AskTurnedOn = { firstTime: false, grandfathered: 0, stillWaiting: 0 };
     if (rules.newApps !== "ask") {
-      grandfathered = grandfather(ctx.db, ctx.now, deviceId, who);
+      outcome = turnAskOn(ctx, deviceId, rules, who);
       rules.newApps = "ask";
+      rules.newAppsAt = ctx.now;
     }
     for (const r of SAFE_RESTRICTIONS) rules.restrictions[r] = true;
     rules.privateDns ??= DNS_FILTERS.cleanbrowsing.host;
     rules.chrome ??= { ...SAFE_CHROME };
-    log("policy.protected", { grandfathered });
-    return { grandfathered, alreadyOn };
+    log("policy.protected", { grandfathered: outcome.grandfathered, ...(outcome.stillWaiting ? { still_waiting: outcome.stillWaiting } : {}) });
+    return { ...outcome, alreadyOn };
   });
 }
 
@@ -680,7 +771,9 @@ export function unprotect(ctx: PolicyContext, deviceId: string, who: Person): Ch
   onlyPeople(who);
   return mutate(ctx, deviceId, who, (rules, log) => {
     const blank = defaultRules();
-    Object.assign(rules, { ...blank, version: rules.version, changedAt: rules.changedAt, supportMessage: rules.supportMessage });
+    // New apps run without asking from now; that new apps asked before is remembered.
+    const newAppsAt = rules.newApps === blank.newApps ? rules.newAppsAt : ctx.now;
+    Object.assign(rules, { ...blank, version: rules.version, changedAt: rules.changedAt, supportMessage: rules.supportMessage, askFirstAt: rules.askFirstAt, newAppsAt });
     log("policy.unprotected");
     return null;
   });
