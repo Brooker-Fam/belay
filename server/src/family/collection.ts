@@ -40,7 +40,8 @@ export const COLLECTED_TABLES: Record<Collected, readonly string[]> = {
 
 /**
  * A phone's rows that aren't collected data: its rules and settings, and records of what parents,
- * AI apps and the phone did. Kept until the phone is deleted (the activity log beyond that).
+ * AI apps and the phone did. Kept until the phone is deleted (the activity log beyond that, for
+ * as long as the family keeps it: maintenance.ts).
  */
 export const RECORDS: readonly string[] = [
   "policies",

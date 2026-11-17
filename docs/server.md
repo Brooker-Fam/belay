@@ -74,10 +74,10 @@ home network; see docs/platform-notes.md.)
 | `BELAY_BACKUP_PASSPHRASE` | none | Encrypts the daily backups with this passphrase, at least 15 characters ([Encrypted backups](#encrypted-backups)). Without it they're plain SQLite files. Prefer the `_FILE` form. |
 | `BELAY_BACKUP_PASSPHRASE_FILE` | none | A file that holds the passphrase instead, like a Docker secret (`/run/secrets/belay_backup`); a final new line is ignored. Set one of the two, not both. |
 
-The family's timezone, the silent threshold, what AI apps may read, how long screen time and
-where the phone was are kept, which map site "Open in a map" goes to, the numbers on the
-kid's emergency card, notifications and the daily summary are set on the Settings page, not
-here.
+The family's timezone, the silent threshold, what AI apps may read, how long screen time,
+where the phone was, call records and the activity log are kept (the activity log 400 days by
+default, at least 30), which map site "Open in a map" goes to, the numbers on the kid's
+emergency card, notifications and the daily summary are set on the Settings page, not here.
 
 ## Notifications
 
@@ -779,7 +779,8 @@ records its rules didn't ask for, or more app changes than the server keeps, and
 never keeps (an emergency number, 988 or a private number), without the number, the phone or
 the time of the call, since the phone shouldn't. Never tokens, passwords, passphrases,
 browsers' push addresses, app names, phone numbers or request bodies. The
-activity log on the parent page is where parents see who did what.
+activity log on the parent page is where parents see who did what, for as long as the family
+keeps it (400 days by default; the hourly clean-up deletes older entries).
 
 ## Development
 

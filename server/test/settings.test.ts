@@ -4,8 +4,12 @@
  * scope defaults on after upgrade").
  */
 import { describe, expect, it } from "vitest";
-import { getSettings, updateSettings } from "../src/settings.js";
+import { audit, listAudit } from "../src/audit.js";
+import { cleanUp } from "../src/maintenance.js";
+import { ACTIVITY_DAYS, getSettings, updateSettings } from "../src/settings.js";
 import { get, postForm, signIn, testServer, type TestServer } from "./helpers.js";
+
+const DAY = 86_400_000;
 
 /** What an older server stored when a parent saved the Settings page. */
 const stored = (t: TestServer, scopes: Record<string, boolean>) =>
@@ -86,5 +90,50 @@ describe("AI scopes after an upgrade", () => {
     expect(getSettings(t.deps.db)).toMatchObject({ aiScopes: { apps: false, device_status: true, requests: true }, newAiScopes: [] });
     html = await (await get(t, "/settings", sam.cookie)).text();
     expect(html).not.toContain('<span class="chip new">new</span>');
+  });
+});
+
+describe("the activity log", () => {
+  it(`is kept ${ACTIVITY_DAYS.default} days unless the family chooses ${ACTIVITY_DAYS.min} to ${ACTIVITY_DAYS.max}`, () => {
+    const t = testServer();
+    expect(getSettings(t.deps.db).activityDays).toBe(400);
+    expect(updateSettings(t.deps.db, { activityDays: 90 }).activityDays).toBe(90);
+    // Never less than a month: what a parent did can't vanish before the other parent could see it.
+    expect(() => updateSettings(t.deps.db, { activityDays: 29 })).toThrow();
+    expect(() => updateSettings(t.deps.db, { activityDays: 3651 })).toThrow();
+    expect(() => updateSettings(t.deps.db, { activityDays: 45.5 })).toThrow();
+    t.deps.db.prepare("UPDATE settings SET value = '7' WHERE key = 'activity_days'").run();
+    expect(getSettings(t.deps.db).activityDays).toBe(400);
+  });
+
+  it("the hourly clean-up deletes the entries older than the family keeps it, and keeps the rest", () => {
+    const t = testServer();
+    const server = { kind: "server" } as const;
+    audit(t.deps.db, t.now() - 401 * DAY, server, "backup.verified", { detail: { ok: true, file: "old" } });
+    audit(t.deps.db, t.now() - 399 * DAY, server, "backup.verified", { detail: { ok: true, file: "kept" } });
+    audit(t.deps.db, t.now() - 5 * DAY, server, "backup.verified", { detail: { ok: true, file: "recent" } });
+    const files = () => listAudit(t.deps.db, { limit: 10, includeReads: true }).map((e) => e.detail?.file);
+    cleanUp(t.deps.db, t.now());
+    expect(files()).toEqual(["recent", "kept"]);
+    updateSettings(t.deps.db, { activityDays: 30 });
+    cleanUp(t.deps.db, t.now());
+    expect(files()).toEqual(["recent"]);
+  });
+
+  it("the Settings page shows and saves how long it's kept, and refuses less than a month", async () => {
+    const t = testServer();
+    const sam = await signIn(t);
+    const html = await (await get(t, "/settings", sam.cookie)).text();
+    expect(html).toContain("Keep the activity log for this many days, then delete older entries (30 at least)");
+    expect(html).toContain('name="activity_days" min="30" max="3650" required="" value="400"');
+    const save = (days: string) => postForm(t, "/settings", { _csrf: sam.csrf, timezone: "UTC", silent_hours: "12", activity_days: days, ai_scope: ["apps"] }, { cookie: sam.cookie });
+    expect((await save("731")).status).toBe(302);
+    expect(getSettings(t.deps.db).activityDays).toBe(731);
+    const refused = await save("7");
+    expect(refused.status).toBe(400);
+    expect(await refused.text()).toContain("Keep the activity log 30 to 3650 days.");
+    expect(getSettings(t.deps.db).activityDays).toBe(731);
+    // The change itself is in the log, with what it was before.
+    expect(listAudit(t.deps.db, { limit: 5, includeReads: false }).find((e) => e.action === "settings.changed")?.detail).toMatchObject({ before: { activityDays: 400 }, after: { activityDays: 731 } });
   });
 });

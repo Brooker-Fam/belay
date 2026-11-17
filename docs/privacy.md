@@ -380,7 +380,11 @@ private and blocked numbers and call records, and from Phase 11 its hand-over. O
 time, a parent can also stop collecting it and delete it sooner (below). The server's daily
 backups still hold it until they age out, 14 days
 later, as do any copies the family made. Expired sessions, codes and tokens are deleted
-automatically. The activity log is kept so parents can see what happened. So that no phone can
+automatically. The activity log (who did what: parents, AI apps and what they read, the phones)
+is kept so parents can see what happened, 400 days by default (the family chooses 30 to 3,650 in
+Settings; never less than a month, so what one parent did doesn't vanish before the other could
+see it, and changing it is in the log too); then the hourly clean-up deletes older entries, a
+deleted phone's too. So that no phone can
 fill the server, a phone's app changes are kept up to the newest 20,000, the apps that aren't on
 it any more up to the 2,000 removed last (one a parent decided on or reviewed always stays, with
 its decisions and reviews), and the record of its app lists up to the newest 1,000: years of an

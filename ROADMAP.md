@@ -132,10 +132,10 @@ phone app when a parent turns calls on: approved contacts, who rings, call recor
 emergency numbers and 988 always allowed in code) and Phase 11 (off belay: the last stage,
 stopping collection with deletion, the hand-over) are built and run end to end too, after a
 second security review whose fixes are in; an AI app's checks of where a phone is, and its pauses
-and locks, are limited to a few an hour per connection, and what a phone can make the server keep
-of its apps is capped. **Next:** Phase 5's texts wait for a Pixel test of Google Messages'
-archival hook; network logging (Phase 3); Play's `allowed_accounts`; and activity-log retention,
-the last of the smaller hardening items the second review listed.
+and locks, are limited to a few an hour per connection, what a phone can make the server keep
+of its apps is capped, and the activity log is kept as long as the family chooses (400 days by
+default). **Next:** Phase 5's texts wait for a Pixel test of Google Messages' archival hook;
+network logging (Phase 3); and Play's `allowed_accounts`.
 
 ### Phase 3: screen time, schedules and stages ([design](docs/design/phase3-screen-time.md)) (built)
 

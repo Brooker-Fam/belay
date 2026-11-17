@@ -2,7 +2,7 @@ import type { Child, FC } from "hono/jsx";
 import type { Parent } from "../../auth/parents.js";
 import type { Grant } from "../../oauth/store.js";
 import type { PushSubscription } from "../../push.js";
-import { AI_SCOPES, CALL_DAYS, LOCATION_DAYS, MAP_SITES, MAX_PARENT_NUMBERS, OFF_BY_DEFAULT, type Settings, USAGE_MONTHS } from "../../settings.js";
+import { ACTIVITY_DAYS, AI_SCOPES, CALL_DAYS, LOCATION_DAYS, MAP_SITES, MAX_PARENT_NUMBERS, OFF_BY_DEFAULT, type Settings, USAGE_MONTHS } from "../../settings.js";
 import { formatAgo, timeZones } from "../../time.js";
 import { ChangePasswordForm } from "./auth.js";
 import { Csrf, Layout, Notice, PostButton, Time, type View } from "../ui.js";
@@ -138,6 +138,8 @@ export const SettingsPage: FC<{
         </fieldset>
         <label for="call-days">Keep the record of calls for this many days, then delete it (only for phones that record calls)</label>
         <input id="call-days" type="number" name="call_days" min={CALL_DAYS.min} max={CALL_DAYS.max} required value={String(settings.callDays)} />
+        <label for="activity-days">Keep the activity log for this many days, then delete older entries ({ACTIVITY_DAYS.min} at least)</label>
+        <input id="activity-days" type="number" name="activity_days" min={ACTIVITY_DAYS.min} max={ACTIVITY_DAYS.max} required value={String(settings.activityDays)} />
         <fieldset>
           <legend>
             <strong>What AI apps may read</strong>

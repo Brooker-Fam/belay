@@ -82,7 +82,7 @@ import { serverHealth } from "../ops/health.js";
 import { getDigest } from "../ops/notify.js";
 import { opsWebRoutes } from "../ops/web.js";
 import { browserName, listSubscriptions, removeSubscription, saveSubscription, sendNotice, subscriptionProblem, vapidKeys } from "../push.js";
-import { AI_SCOPES, type AiScope, CALL_DAYS, LOCATION_DAYS, type LocationRetention, MAP_SITES, type MapSite, USAGE_MONTHS, getSettings, updateSettings } from "../settings.js";
+import { ACTIVITY_DAYS, AI_SCOPES, type AiScope, CALL_DAYS, LOCATION_DAYS, type LocationRetention, MAP_SITES, type MapSite, USAGE_MONTHS, getSettings, updateSettings } from "../settings.js";
 import { isValidTimeZone } from "../time.js";
 import type { Assets } from "./assets.js";
 import { callsWebRoutes } from "./calls.js";
@@ -1031,6 +1031,12 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
     if (callDays !== undefined && (!Number.isInteger(callDays) || callDays < CALL_DAYS.min || callDays > CALL_DAYS.max)) {
       return settingsPage(c, { error: `Keep call records ${CALL_DAYS.min} to ${CALL_DAYS.max} days.` }, 400);
     }
+    // How long the activity log is kept (left out: as it is).
+    const activityText = first(body, "activity_days");
+    const activityDays = activityText === "" ? undefined : Number(activityText);
+    if (activityDays !== undefined && (!Number.isInteger(activityDays) || activityDays < ACTIVITY_DAYS.min || activityDays > ACTIVITY_DAYS.max)) {
+      return settingsPage(c, { error: `Keep the activity log ${ACTIVITY_DAYS.min} to ${ACTIVITY_DAYS.max} days.` }, 400);
+    }
     const chosen = new Set(all(body, "ai_scope"));
     const aiScopes = Object.fromEntries(Object.keys(AI_SCOPES).map((k) => [k, chosen.has(k)])) as Record<AiScope, boolean>;
     // What AI apps may read is the policy's ai_reads, for the kid's screen: each phone's policy follows.
@@ -1044,6 +1050,7 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
         ...(usageMonths !== undefined ? { usageMonths } : {}),
         ...(site !== "" ? { mapSite: site as MapSite } : {}),
         ...(callDays !== undefined ? { callDays } : {}),
+        ...(activityDays !== undefined ? { activityDays } : {}),
       },
       asParent(c),
     );

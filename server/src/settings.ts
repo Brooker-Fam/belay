@@ -80,11 +80,19 @@ export interface Settings {
   parentNumbers: ParentNumber[];
   /** Phase 5: how many days of call records the server keeps; older ones are deleted. */
   callDays: number;
+  /** How many days of the activity log the server keeps; older entries are deleted. */
+  activityDays: number;
 }
 
 export const USAGE_MONTHS = { default: 13, min: 1, max: 36 } as const;
 /** Phase 5: call records' retention, in days. */
 export const CALL_DAYS = { default: 90, min: 1, max: 365 } as const;
+/**
+ * The activity log's retention, in days: a year and a month by default, so this time last year is
+ * still there. At least 30, so a parent can't make what they did vanish before the other parent
+ * could see it (changing this is in the log too).
+ */
+export const ACTIVITY_DAYS = { default: 400, min: 30, max: 3650 } as const;
 
 export const DEFAULT_SETTINGS: Settings = {
   timezone: "UTC",
@@ -96,6 +104,7 @@ export const DEFAULT_SETTINGS: Settings = {
   mapSite: "openstreetmap",
   parentNumbers: [],
   callDays: CALL_DAYS.default,
+  activityDays: ACTIVITY_DAYS.default,
 };
 
 const SCOPE_KEYS = Object.keys(AI_SCOPES) as AiScope[];
@@ -119,6 +128,7 @@ function write(db: DB, key: string, value: unknown): void {
 
 const validMonths = (n: unknown): n is number => typeof n === "number" && Number.isInteger(n) && n >= USAGE_MONTHS.min && n <= USAGE_MONTHS.max;
 const validCallDays = (n: unknown): n is number => typeof n === "number" && Number.isInteger(n) && n >= CALL_DAYS.min && n <= CALL_DAYS.max;
+const validActivityDays = (n: unknown): n is number => typeof n === "number" && Number.isInteger(n) && n >= ACTIVITY_DAYS.min && n <= ACTIVITY_DAYS.max;
 const validDays = (key: keyof LocationRetention, n: unknown): n is number =>
   typeof n === "number" && Number.isInteger(n) && n >= LOCATION_DAYS[key].min && n <= LOCATION_DAYS[key].max;
 const RETENTION_KEYS = Object.keys(LOCATION_DAYS) as (keyof LocationRetention)[];
@@ -152,6 +162,7 @@ export function getSettings(db: DB): Settings {
   const locationDays = read(db, "location_days");
   const mapSite = read(db, "map_site");
   const callDays = read(db, "call_days");
+  const activityDays = read(db, "activity_days");
   const days = locationDays && typeof locationDays === "object" ? (locationDays as Partial<Record<keyof LocationRetention, unknown>>) : {};
   const stored = read(db, "ai_scopes");
   const scopes = stored && typeof stored === "object" ? (stored as Partial<Record<AiScope, unknown>>) : undefined;
@@ -177,6 +188,7 @@ export function getSettings(db: DB): Settings {
     mapSite: typeof mapSite === "string" && mapSite in MAP_SITES ? (mapSite as MapSite) : DEFAULT_SETTINGS.mapSite,
     parentNumbers: parentNumbersFrom(read(db, "parent_numbers")),
     callDays: validCallDays(callDays) ? callDays : DEFAULT_SETTINGS.callDays,
+    activityDays: validActivityDays(activityDays) ? activityDays : DEFAULT_SETTINGS.activityDays,
   };
 }
 
@@ -195,6 +207,7 @@ export interface SettingsChange {
   mapSite?: MapSite;
   parentNumbers?: ParentNumber[];
   callDays?: number;
+  activityDays?: number;
 }
 
 export function updateSettings(db: DB, change: SettingsChange): Settings {
@@ -220,6 +233,10 @@ export function updateSettings(db: DB, change: SettingsChange): Settings {
   if (change.callDays !== undefined) {
     if (!validCallDays(change.callDays)) throw new Error(`Keep call records ${CALL_DAYS.min} to ${CALL_DAYS.max} days`);
     write(db, "call_days", change.callDays);
+  }
+  if (change.activityDays !== undefined) {
+    if (!validActivityDays(change.activityDays)) throw new Error(`Keep the activity log ${ACTIVITY_DAYS.min} to ${ACTIVITY_DAYS.max} days`);
+    write(db, "activity_days", change.activityDays);
   }
   if (change.parentNumbers !== undefined) {
     const problem = parentNumbersProblem(change.parentNumbers);
