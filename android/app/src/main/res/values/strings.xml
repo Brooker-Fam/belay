@@ -11,6 +11,9 @@
     <!-- Device admin. -->
     <string name="admin_description">Lets your parent manage this phone with Belay.</string>
     <string name="admin_disable_warning">Belay is how your parent manages this phone. Only your parent can turn it off.</string>
+    <!-- Android shows this under "Blocked by work policy" whenever something is locked or an
+         app is held back, unless the parent wrote their own words. At most 200 characters. -->
+    <string name="support_message_default">Your parent manages this phone with Belay. Open Belay to see this phone\'s rules, or to ask your parent for an app.</string>
 
     <!-- Main screen. Plain, respectful words for a 12-year-old. -->
     <string name="main_title">This phone is managed by your parent.</string>

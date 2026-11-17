@@ -150,6 +150,11 @@
             </intent-filter>
         </receiver>
 
+        <!-- Phase 2: Belay's own alarm for when a pause or repair time ends. -->
+        <receiver
+            android:name=".enforce.PolicyTimerReceiver"
+            android:exported="false" />
+
         <!-- One of the two package broadcasts a manifest receiver still gets. Added,
              replaced and removed go to the runtime receiver (inventory/PackageWatcher.kt). -->
         <receiver
