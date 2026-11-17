@@ -61,12 +61,11 @@ example. One family per server.
 
 ## Phase 2: safe to hand over (built)
 
-Built. CI runs it end to end on the Android 17 emulator against a real server: a new app is
-suspended on install, approved from the server and unsuspended within seconds, then blocked.
-**Still open:** [docs/phase2-checklist.md](docs/phase2-checklist.md) on the Pixel 8: Private
-DNS, Chrome's settings, the hardening locks and reset protection only work on the real phone
-with a release build.
-
+Built, and on `main`. CI runs it end to end on the Android 17 emulator against a real server
+(both images): a new app is suspended on install, approved from the server and unsuspended
+within seconds, then blocked. **Still open:** [docs/phase2-checklist.md](docs/phase2-checklist.md)
+on the Pixel 8: Private DNS, Chrome's settings, the hardening locks and reset protection only
+work on the real phone with a release build.
 
 The contract is in [docs/protocol.md](docs/protocol.md) (Policy, long-poll, requests,
 enforcement rules); the Pixel checklist is [docs/phase2-checklist.md](docs/phase2-checklist.md).
@@ -75,7 +74,7 @@ turns them on, on the parent page, and debug builds never apply them. Parents he
 requests through end-to-end encrypted Web Push.
 
 - **Apps:** each new app is suspended the moment it installs ("Waiting for your parent"),
-  and the kid can say why they want it. The parent is notified (Web Push or ntfy), can ask
+  and the kid can say why they want it. The parent is notified (Web Push), can ask
   the AI for a review, and approves on the parent page. Every request gets an answer the
   kid sees (approved, declined, or "let's talk") with the parent's note. Hard blocks use
   `setApplicationHidden`. There is no pre-install hook, so a short window right after an
@@ -118,6 +117,11 @@ Android 17 allows (checked against AOSP and the docs), the protocol, privacy, th
 changes, tests and the family's decisions. Build order: Phase 2; then Phase 10's detection
 and Phase 6's self-update and recovery key; then Phase 3 with Phase 7's core; Phase 4;
 Phase 5 (calls, then texts); Phases 8, 9 and 11 when they're needed.
+
+**In progress:** Phase 6's self-update, recovery key, backups and health checks, Phase 10's
+removal of another user or profile, and the fixes from a security review of the Phase 2
+server; the contract is in [docs/protocol.md](docs/protocol.md). Phase 3's screen-time engine
+is being written in `:core`.
 
 ### Phase 3: screen time, schedules and stages ([design](docs/design/phase3-screen-time.md))
 
