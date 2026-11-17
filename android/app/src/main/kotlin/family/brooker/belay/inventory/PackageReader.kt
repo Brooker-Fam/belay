@@ -16,16 +16,24 @@ import family.brooker.belay.core.SensitivePermissions
 /**
  * The apps collector (data category [DataCategories.APPS]): reads PackageManager into
  * [PackageRecord]s. Metadata only. Seeing every package relies on QUERY_ALL_PACKAGES.
+ *
+ * Apps Belay hides (blocked apps, Phase 2) are still installed. PackageManager treats a
+ * hidden package as uninstalled unless asked with MATCH_UNINSTALLED_PACKAGES, which also
+ * returns packages uninstalled with their data kept; FLAG_INSTALLED tells the two apart
+ * (AOSP 17 `PackageUserStateUtils.isAvailable`, `PackageInfoUtils`). So a blocked app stays
+ * in the inventory instead of reading as removed, and keeps its launcher icon in the record.
  */
 class PackageReader(context: Context) {
     private val app = context.applicationContext
     private val pm: PackageManager = app.packageManager
 
     fun readAll(): Map<String, PackageRecord> {
-        val launchable = pm.queryActivitiesCompat(launcherIntent())
+        val launchable = pm.queryActivitiesCompat(launcherIntent(), PackageManager.MATCH_UNINSTALLED_PACKAGES)
+            .filter { installed(it.activityInfo?.applicationInfo) }
             .mapNotNullTo(HashSet()) { it.activityInfo?.packageName }
         val access = readSpecialAccess()
-        return pm.installedPackagesCompat(PackageManager.GET_PERMISSIONS)
+        return pm.installedPackagesCompat(PackageManager.GET_PERMISSIONS or PackageManager.MATCH_UNINSTALLED_PACKAGES)
+            .filter { installed(it.applicationInfo) }
             .mapNotNull { toRecord(it, it.packageName in launchable, access) }
             .associateBy { it.packageName }
     }
@@ -35,15 +43,21 @@ class PackageReader(context: Context) {
         val access = readSpecialAccess()
         return names.mapNotNull { name ->
             val info = try {
-                pm.packageInfoCompat(name, PackageManager.GET_PERMISSIONS)
+                pm.packageInfoCompat(name, PackageManager.GET_PERMISSIONS or PackageManager.MATCH_UNINSTALLED_PACKAGES)
             } catch (e: PackageManager.NameNotFoundException) {
                 return@mapNotNull null
             }
-            toRecord(info, pm.queryActivitiesCompat(launcherIntent().setPackage(name)).isNotEmpty(), access)
+            if (!installed(info.applicationInfo)) return@mapNotNull null
+            val launchable = pm.queryActivitiesCompat(launcherIntent().setPackage(name), PackageManager.MATCH_UNINSTALLED_PACKAGES)
+                .any { installed(it.activityInfo?.applicationInfo) }
+            toRecord(info, launchable, access)
         }.associateBy { it.packageName }
     }
 
     private fun launcherIntent() = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+
+    /** Installed for this user, hidden or not (not just data left behind by an uninstall). */
+    private fun installed(info: ApplicationInfo?): Boolean = info != null && info.flags and ApplicationInfo.FLAG_INSTALLED != 0
 
     private fun toRecord(info: PackageInfo, launchable: Boolean, access: SpecialAccess): PackageRecord? {
         val app = info.applicationInfo ?: return null
