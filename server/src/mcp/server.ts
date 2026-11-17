@@ -47,6 +47,7 @@ import {
 } from "../family/policy.js";
 import { LIFTABLE, PROPOSAL_KINDS, changeWords, createProposal, listProposals, nothingToLoosen, type ProposalChange } from "../family/proposals.js";
 import { pendingRequestCount, recentRequests, type RequestStatus } from "../family/requests.js";
+import { registerOpsTools } from "../ops/mcp.js";
 import { notifyParents, proposalNotice } from "../push.js";
 import { type AiScope, AI_SCOPES, getSettings } from "../settings.js";
 import { durations, formatDuration, isoInZone, parseWhen } from "../time.js";
@@ -818,5 +819,6 @@ ${answerSteps}`,
     },
   );
 
+  registerOpsTools(server, deps, caller);
   return server;
 }
