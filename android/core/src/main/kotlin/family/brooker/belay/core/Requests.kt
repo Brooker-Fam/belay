@@ -44,6 +44,8 @@ data class KidRequest(
     val withdrawnAt: Long? = null,
     /** Phase 7, help: the kid asked to share where the phone is, and Belay is finding it. */
     val sharing: Boolean = false,
+    /** Phase 7, help: Belay looked for where the phone is and found nothing (the kid may try again). */
+    val shareFailed: Boolean = false,
 )
 
 /**
@@ -122,12 +124,13 @@ object Requests {
 
     /**
      * Phase 7: the help request [id] with where the phone was ([fix], reason `help`), sent again;
-     * or, with no fix, only marked as no longer finding it. Null when there's no such request.
+     * or, with no fix, only marked as found nothing (nothing new to send). Null when there's no
+     * such request, or it wasn't looking.
      */
     fun withHelpFix(requests: List<KidRequest>, id: String, fix: WireFix?): KidRequest? {
         val help = requests.firstOrNull { it.id == id && it.kind == WireRequestKind.HELP } ?: return null
-        if (fix == null) return help.copy(sharing = false).takeIf { help.sharing }
-        return help.copy(location = fix, sharing = false, revision = help.revision + 1)
+        if (fix == null) return help.copy(sharing = false, shareFailed = true).takeIf { help.sharing }
+        return help.copy(location = fix, sharing = false, shareFailed = false, revision = help.revision + 1)
     }
 
     /** The newest open request for the app [packageName], which sending again updates. */

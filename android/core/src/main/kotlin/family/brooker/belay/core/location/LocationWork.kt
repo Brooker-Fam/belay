@@ -34,6 +34,7 @@ object LocationWork {
     const val PROBLEM_NOT_OWNER = "Belay isn't the device owner, so it can't use location."
     const val PROBLEM_NO_GPS_FIX = "No GPS fix in 60 seconds."
     const val PROBLEM_NO_FIX = "No fix from GPS or Android's combined location in 60 seconds."
+    const val PROBLEM_NO_FUSED_FIX = "No fix from Android's combined location in 60 seconds."
     const val PROBLEM_STOPPED = "Belay stopped before it could finish this check."
 
     /** The `locate_now` commands to run now: each a want, or failed at once with plain words. */

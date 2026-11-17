@@ -47,9 +47,10 @@ class KidRequestsTest {
         assertEquals(1, withFix.revision)
         assertTrue(Requests.itemId(withFix) != Requests.itemId(help))
         assertEquals("\"help\"", wire(withFix)["location"]!!.jsonObject["reason"].toString())
-        // No fix: only no longer finding it, not sent again.
+        // No fix: only marked as found nothing, not sent again.
         val none = Requests.withHelpFix(listOf(help), help.id, null)
-        assertEquals(help.copy(sharing = false), none)
+        assertEquals(help.copy(sharing = false, shareFailed = true), none)
+        assertNull(Requests.withHelpFix(listOf(none!!), help.id, null), "it wasn't looking any more")
         assertNull(Requests.withHelpFix(listOf(chat), chat.id, fix), "only a help request takes a fix")
     }
 
