@@ -6,9 +6,11 @@ import family.brooker.belay.R
 import family.brooker.belay.core.screentime.KidArg
 import family.brooker.belay.core.screentime.KidMessage
 import family.brooker.belay.core.screentime.KidText
+import family.brooker.belay.core.screentime.LocalTimes
 import family.brooker.belay.core.screentime.RelativeDay
 import java.time.DayOfWeek
 import java.time.LocalTime
+import java.time.ZoneId
 import java.time.format.TextStyle
 import java.util.Date
 import java.util.Locale
@@ -78,6 +80,22 @@ class KidWords(private val context: Context, private val label: (String) -> Stri
                 val minutes = a.rawMinutes(0)
                 if (minutes <= 0) res.getString(R.string.kid_warning_none) else res.getString(R.string.kid_warning_changes, duration(minutes))
             }
+            // Phase 7: Home's one line, and what works now.
+            KidMessage.HOME_NORMAL -> res.getString(R.string.kid_home_normal)
+            KidMessage.HOME_LOST -> res.getString(R.string.kid_home_lost)
+            KidMessage.HOME_PAUSED_UNTIL -> res.getString(R.string.kid_home_paused_until, a.until(0))
+            KidMessage.HOME_PAUSED -> res.getString(R.string.kid_home_paused)
+            KidMessage.HOME_BEDTIME_UNTIL -> res.getString(R.string.kid_home_bedtime_until, a.until(0))
+            KidMessage.HOME_TOTAL_UP -> res.getString(R.string.kid_home_total_up)
+            KidMessage.HOME_LIMIT_UP -> res.getString(R.string.kid_home_limit_up, a.words(0))
+            KidMessage.HOME_LIMITS_UP -> res.getQuantityString(R.plurals.kid_home_limits_up, a.count(0), a.count(0))
+            KidMessage.HOME_UNMEASURED -> res.getString(R.string.kid_home_unmeasured)
+            KidMessage.WORKS_CALLS_TEXTS -> res.getString(R.string.kid_works_calls_texts)
+            KidMessage.WORKS_ALSO -> a.appsOnly(R.plurals.kid_works_also)
+            KidMessage.WORKS_OTHER_APPS -> res.getString(R.string.kid_works_other_apps)
+            KidMessage.WORKS_APPS -> res.getString(R.string.kid_works_apps)
+            KidMessage.WORKS_LOST_MESSAGE -> res.getString(R.string.kid_works_lost_message)
+            KidMessage.WORKS_EMERGENCY -> res.getString(R.string.kid_works_emergency)
         }
     }
 
@@ -132,6 +150,21 @@ class KidWords(private val context: Context, private val label: (String) -> Stri
         if (names.size <= MAX_APPS) return list(names)
         val more = names.size - (MAX_APPS - 1)
         return list(names.take(MAX_APPS - 1) + res.getQuantityString(R.plurals.apps_more, more, more))
+    }
+
+    /** A moment ahead, as "until" reads it: "5:30 PM", "tomorrow at 7:00 AM" or "Monday at 7:00 AM". */
+    fun until(at: Long, now: Long): String = moment(KidArg.Moment.of(at, now, ZoneId.systemDefault()), comesBack = false)
+
+    /** A moment that passed, as the kid's lists show it: "8:15 PM" today, else the date and time. */
+    fun at(at: Long, now: Long): String {
+        val zone = ZoneId.systemDefault()
+        val local = LocalTimes.local(at, zone)
+        val time = time(local.toLocalTime())
+        return if (local.toLocalDate() == LocalTimes.local(now, zone).toLocalDate()) {
+            time
+        } else {
+            res.getString(R.string.moment_on_day, android.icu.text.DateFormat.getInstanceForSkeleton("MMMd", locale).format(Date(at)), time)
+        }
     }
 
     /** "a, b and c". */

@@ -42,6 +42,15 @@
 # or the dialer; with measuring on, a little over a minute in the fixture app reaches the
 # server's usage for today (a debug-only receiver has Belay send at once); and lock-now is
 # reported done with the screen off or locked.
+#
+# Phases 4 and 7, with BELAY_E2E_CLI and a server whose status has fixes: location on demand with
+# keep_on grants Belay location by policy and sets no_config_location; with `adb emu geo fix`,
+# locate-now produces a fix on the server answering that command at that point, and the command is
+# done; the location instrumented tests run with that point; a help request (a debug-only receiver
+# taps "I need help", sharing where the phone is) reaches the server as a pending help request, and
+# after help-seen the phone's state shows it seen; location off takes the permission away (Android
+# restarts Belay, which comes back); and with location off, a help request's shared fix still gets
+# in, and the permission is gone again afterwards.
 set -euo pipefail
 # shellcheck source-path=SCRIPTDIR source=lib.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -510,6 +519,125 @@ elif [ -n "$E2E_CLI" ] && [ -n "$FIXTURE_V1" ]; then
   server_status | jq -c '.phones[0] | {screen_time: .enforcement.screen_time, commands: .enforcement.commands}'
 elif [ -n "$E2E_SERVER" ]; then
   echo "BELAY_E2E_CLI or the fixture APKs not given: the Phase 3 end-to-end checks are skipped"
+fi
+
+# Phase 4: "granted=true" or "granted=false" for Belay's fine location, from `dumpsys package`
+# (AOSP 17 Settings.dumpRuntimePermissionsLPr: "<permission>: granted=<bool>, flags=[ … ]"), or
+# "not listed".
+fine_location() {
+  local line
+  line="$(ash dumpsys package "$PKG" | grep -m 1 -o 'android.permission.ACCESS_FINE_LOCATION: granted=[a-z]*' || true)"
+  if [ -n "$line" ]; then printf '%s\n' "${line##*: }"; else echo "not listed"; fi
+}
+# Waits up to $2 seconds until Belay holds fine location ($1 = true) or doesn't ($1 = false).
+wait_location_permission() {
+  local _ now
+  for _ in $(seq 1 "${2:-30}"); do
+    now="$(fine_location)"
+    if [ "$1" = true ] && [ "$now" = "granted=true" ]; then return 0; fi
+    if [ "$1" = false ] && [ "$now" != "granted=true" ]; then return 0; fi
+    sleep 1
+  done
+  echo "--- Belay's fine location: $(fine_location)"
+  return 1
+}
+# The emulator's GNSS answers with this point (`adb emu geo fix <longitude> <latitude>`).
+GEO_LAT=37.42
+GEO_LNG=-122.08
+geo_fix() { adb emu geo fix "$GEO_LNG" "$GEO_LAT" >/dev/null 2>&1 || echo "adb emu geo fix failed"; }
+# Opens Belay, as after the instrumented tests (am instrument force-stops it), and waits for its service.
+open_belay() {
+  ash am start -W -n "$PKG/.ui.MainActivity" >/dev/null
+  for _ in $(seq 1 60); do service_running && break; sleep 1; done
+  service_running || { diagnose; die "BelayService didn't start when Belay was opened"; }
+  ash input keyevent KEYCODE_HOME
+}
+# Taps "I need help" through the debug-only receiver, sharing where the phone is; prints the request's id.
+ask_help() {
+  local out
+  out="$(ash am broadcast -a "$PKG.DEBUG_HELP" -n "$PKG/.DebugHelpReceiver" --es reason "Made-up words from CI" --ez share true)"
+  sed -n 's/^Broadcast completed: result=-1, data="help: \([A-Za-z0-9_-]*\)"$/\1/p' <<<"$out"
+}
+
+if [ -n "$E2E_CLI" ] && ! server_status | jq -e '.phones[0] | has("fixes")' >/dev/null 2>&1; then
+  echo "the server's status has no fixes (its Phase 4 isn't there yet): the Phase 4 and 7 end-to-end checks are skipped"
+elif [ -n "$E2E_CLI" ]; then
+  phone="$(server_status | jq -r '.phones[0].name')"
+
+  step "Phase 4: on demand, with location kept on: Belay holds location by policy, and the kid can't turn it off"
+  [ "$(fine_location)" != "granted=true" ] || { diagnose; die "with location off, Belay holds location"; }
+  server_cli location "$phone" --mode on_demand --keep-on on
+  wait_applied
+  wait_location_permission true 30 || { diagnose; die "Belay wasn't granted location by policy within 30 s of on_demand"; }
+  ash dumpsys package "$PKG" | grep -m 1 'android.permission.ACCESS_FINE_LOCATION: granted=true' | contains 'POLICY_FIXED' ||
+    die "Belay's location isn't fixed by policy" "$(ash dumpsys package "$PKG" | grep -m 1 'ACCESS_FINE_LOCATION: granted=')"
+  ash dumpsys user | contains 'no_config_location' || { diagnose; die "keep_on didn't set no_config_location"; }
+  [ "$(ash settings get secure location_mode)" != 0 ] || { diagnose; die "keep_on didn't turn location on"; }
+  echo "location by policy, $(fine_location); no_config_location set; location mode $(ash settings get secure location_mode)"
+
+  step "Phase 4: locate-now answers with the emulator's GPS fix, and is done"
+  geo_fix
+  sleep 2
+  geo_fix
+  command_id="$(server_cli_out locate-now "$phone")"
+  [[ "$command_id" =~ ^[A-Za-z0-9_-]+$ ]] || die "locate-now should print only the command's id" "$command_id"
+  wait_server "[.fixes[]? | select(.command_id == \"$command_id\")] | length > 0" "a fix answering locate-now $command_id" 45
+  # About 4 decimals: within 0.0002 degrees (about 20 m), without jq's libm functions.
+  fix_ok="def off: if . < 0 then -. else . end; [.fixes[] | select(.command_id == \"$command_id\")][0] | ((.lat - $GEO_LAT) | off) < 0.0002 and ((.lng - ($GEO_LNG)) | off) < 0.0002 and .mock == false"
+  server_status | jq -e ".phones[0] | $fix_ok" >/dev/null ||
+    die "the fix answering $command_id isn't at $GEO_LAT,$GEO_LNG from the GPS" "$(server_status | jq -c "[.phones[0].fixes[] | select(.command_id == \"$command_id\")]")"
+  wait_server "[.enforcement.commands[]? | select(.id == \"$command_id\" and .result == \"done\")] | length > 0" "a done result for locate-now"
+  server_status | jq -c "[.phones[0].fixes[] | select(.command_id == \"$command_id\")][0]"
+
+  step "Phases 4 and 7 on the phone: the location instrumented tests, with the emulator's point"
+  geo_fix
+  out="$(ash am instrument -w -e class "$PKG.LocationInstrumentedTest" -e belayGeoLat "$GEO_LAT" -e belayGeoLng "$GEO_LNG" "$TEST_PKG/androidx.test.runner.AndroidJUnitRunner")"
+  printf '%s\n' "$out"
+  grep -q '^OK (' <<<"$out" || { diagnose; die "the location instrumented tests failed"; }
+  open_belay
+
+  step "Phase 7: a help request reaches the server at once, and a parent seeing it reaches the phone"
+  geo_fix
+  help_id="$(ask_help)"
+  [[ "$help_id" =~ ^[A-Za-z0-9_-]+$ ]] || { diagnose; die "the debug-only help receiver didn't answer with a request id"; }
+  echo "help request $help_id"
+  wait_server "[.requests[]? | select(.id == \"$help_id\" and .kind == \"help\" and .status == \"pending\")] | length > 0" "a pending help request $help_id" 30
+  server_status | jq -c ".phones[0].requests[] | select(.id == \"$help_id\")"
+  server_cli help-seen "$phone" "$help_id"
+  seen=0
+  for _ in $(seq 1 30); do
+    if state | jq -e ".requests[] | select(.id == \"$help_id\") | .seen_at != null" >/dev/null 2>&1; then seen=1; break; fi
+    sleep 1
+  done
+  [ "$seen" = 1 ] || { diagnose; die "the phone never showed help request $help_id as seen"; }
+  state | jq -c ".requests[] | select(.id == \"$help_id\")"
+
+  step "Phase 4: location off takes the permission away; Android restarts Belay, and it comes back"
+  server_cli location "$phone" --mode off
+  wait_location_permission false 60 || { diagnose; die "Belay still held location 60 s after location went off"; }
+  for _ in $(seq 1 90); do service_running && break; sleep 1; done
+  service_running || { diagnose; die "BelayService didn't come back after Belay lost location"; }
+  wait_applied
+  if ash dumpsys user | contains 'no_config_location'; then diagnose; die "no_config_location is still set with location off"; fi
+  echo "location off: $(fine_location), no_config_location cleared, Belay running"
+
+  step "Phase 7: with location off, a kid's shared fix still gets in their help request, once"
+  geo_fix
+  help_id="$(ask_help)"
+  [[ "$help_id" =~ ^[A-Za-z0-9_-]+$ ]] || { diagnose; die "the debug-only help receiver didn't answer with a request id"; }
+  shared=0
+  for _ in $(seq 1 90); do
+    if state 2>/dev/null | jq -e ".requests[] | select(.id == \"$help_id\") | .has_location" >/dev/null 2>&1; then shared=1; break; fi
+    sleep 1
+  done
+  [ "$shared" = 1 ] || { diagnose; die "help request $help_id never got the fix the kid shared"; }
+  wait_location_permission false 60 || { diagnose; die "Belay still held location 60 s after the help fix"; }
+  for _ in $(seq 1 90); do service_running && break; sleep 1; done
+  service_running || { diagnose; die "BelayService didn't come back after the help fix's grant ended"; }
+  wait_server "[.requests[]? | select(.id == \"$help_id\" and .kind == \"help\")] | length > 0" "help request $help_id" 60
+  echo "help request $help_id has the shared fix; $(fine_location) again"
+elif [ -n "$E2E_SERVER" ]; then
+  echo "BELAY_E2E_CLI not given: the Phase 4 and 7 end-to-end checks are skipped"
 fi
 
 adb logcat -c

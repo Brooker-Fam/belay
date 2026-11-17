@@ -24,6 +24,11 @@ import family.brooker.belay.core.Wire
 import family.brooker.belay.core.WireEvent
 import family.brooker.belay.core.WirePolicy
 import family.brooker.belay.core.WireRequest
+import family.brooker.belay.core.kid.Told
+import family.brooker.belay.core.location.LocationState
+import family.brooker.belay.core.location.ToldEntry
+import family.brooker.belay.core.location.WireFix
+import family.brooker.belay.core.location.WirePlaceEvent
 import family.brooker.belay.core.screentime.ScreenTimeState
 import family.brooker.belay.core.screentime.UsageLedger
 import family.brooker.belay.core.screentime.WireUsageDay
@@ -52,6 +57,19 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
         /** The policy has no screen time: the row goes, and so does every unsent usage day. */
         data object Clear : ScreenTimeWrite
     }
+
+    /** Phase 4: what an enforcement step does with location's row and the fixes it took. */
+    data class LocationWrite(
+        /** Null: the row goes (location is off and nothing is being shared). */
+        val state: LocationState?,
+        /** Fixes for `POST /locations`, oldest first, then the place events that name them. */
+        val fixes: List<WireFix> = emptyList(),
+        val placeEvents: List<WirePlaceEvent> = emptyList(),
+        /** Lines of "What Belay told your parent", new or updated by id. */
+        val told: List<ToldEntry> = emptyList(),
+        /** Location went off: unsent fixes and place events aren't sent. */
+        val dropUnsent: Boolean = false,
+    )
 
     private val inventory = db.inventory()
     private val log = db.log()
@@ -174,6 +192,13 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
     /** Phase 3: the usage days' JSON (WireUsageDays), in [ids] order. */
     fun usagePayloads(ids: List<Long>): List<String> = payloads(ids, OutboxRow.TYPE_USAGE)
 
+    /** Phase 4: the fixes' and the place events' JSON (WireFixes, WirePlaceEvents), each in [ids] order. */
+    fun locationPayloads(ids: List<Long>): Pair<List<String>, List<String>> {
+        val rows = ids.chunked(CHUNK).flatMap { outbox.locationPayloads(it) }.sortedBy { it.id }
+        return rows.filter { it.type == OutboxRow.TYPE_FIX }.map { it.payload } to
+            rows.filter { it.type == OutboxRow.TYPE_PLACE_EVENT }.map { it.payload }
+    }
+
     private fun payloads(ids: List<Long>, type: String): List<String> =
         ids.chunked(CHUNK).flatMap { outbox.payloads(it, type) }.sortedBy { it.id }.map { it.payload }
 
@@ -216,6 +241,9 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
 
     /** Phase 3: usage days waiting to be sent. */
     fun pendingUsageCount(): Int = outbox.pendingUsageCount()
+
+    /** Phase 4: fixes and place events waiting to be sent. */
+    fun pendingLocationCount(): Int = outbox.pendingLocationCount()
 
     val pendingCountFlow: Flow<Int> get() = outbox.pendingCountFlow()
 
@@ -261,9 +289,10 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
     /**
      * What one enforcement step did, in one transaction: what Belay now holds, the commands it
      * ran (Phase 10), the requests it made or the kid sent, each queued for the server behind
-     * everything older, and (Phase 3) screen time's ledger and state, with the [usage] days to
-     * send (each replacing an unsent report of the same day). [dropUsage]: the policy stopped
-     * measuring, so unsent usage days aren't sent.
+     * everything older, (Phase 3) screen time's ledger and state, with the [usage] days to
+     * send (each replacing an unsent report of the same day), and (Phase 4) location's state, the
+     * fixes and place events to send, and the lines of "What Belay told your parent". [dropUsage]:
+     * the policy stopped measuring, so unsent usage days aren't sent.
      */
     fun commitEnforcement(
         applied: Applied?,
@@ -273,8 +302,10 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
         screenTime: ScreenTimeWrite? = null,
         usage: List<WireUsageDay> = emptyList(),
         dropUsage: Boolean = false,
+        location: LocationWrite? = null,
     ) {
         db.runInTransaction {
+            if (location != null) writeLocation(location, at)
             if (applied != null) {
                 enforcement.setEnforcement(EnforcementRow(applied = json.encodeToString(Applied.serializer(), applied), updatedAt = at))
             }
@@ -331,6 +362,53 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
             enforcement.pruneRequests(at - Requests.KEEP_MS)
         }
     }
+
+    /** Phase 4, inside commitEnforcement's transaction. */
+    private fun writeLocation(write: LocationWrite, at: Long) {
+        val state = write.state
+        if (state == null) {
+            enforcement.clearLocation()
+        } else {
+            enforcement.setLocation(LocationRow(state = json.encodeToString(LocationState.serializer(), state), updatedAt = at))
+        }
+        if (write.dropUnsent) outbox.deleteAllPendingLocations()
+        val queued = write.fixes.map {
+            OutboxRow(
+                type = OutboxRow.TYPE_FIX,
+                itemId = "fix:${it.id}",
+                packageName = null,
+                payload = Wire.json.encodeToString(WireFix.serializer(), it),
+                createdAt = at,
+            )
+        } + write.placeEvents.map {
+            OutboxRow(
+                type = OutboxRow.TYPE_PLACE_EVENT,
+                itemId = "place_event:${it.id}",
+                packageName = null,
+                payload = Wire.json.encodeToString(WirePlaceEvent.serializer(), it),
+                createdAt = at,
+            )
+        }
+        if (queued.isNotEmpty()) {
+            outbox.insert(queued)
+            outbox.capPendingLocations(OutboxPolicy.MAX_PENDING_LOCATIONS)
+        }
+        if (write.told.isNotEmpty()) {
+            enforcement.upsertTold(write.told.map { ToldRow(it.id, Told.lastAt(it), json.encodeToString(ToldEntry.serializer(), it)) })
+        }
+        enforcement.pruneTold(Told.keepFrom(at))
+    }
+
+    /** Phase 4: location's state; null while location is off and nothing is being shared (no row). */
+    fun locationState(): LocationState? = enforcement.location()?.let { decode(it.state, LocationState.serializer()) }
+
+    /** For the agent thread only, between steps (Phase 7: the kid chose to share where the phone is). */
+    fun saveLocationState(state: LocationState, at: Long) =
+        enforcement.setLocation(LocationRow(state = json.encodeToString(LocationState.serializer(), state), updatedAt = at))
+
+    /** Phase 7: "What Belay told your parent", the newest first, at most [limit] lines. */
+    fun told(limit: Int = TOLD_ON_SCREEN): List<ToldEntry> =
+        enforcement.told(limit).mapNotNull { decode(it.entry, ToldEntry.serializer()) }
 
     /** What the Private DNS thread last did; null before it ever ran. */
     fun privateDns(): PrivateDnsRow? = enforcement.privateDns()
@@ -454,6 +532,9 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
 
         /** Well under SQLite's limit on bound parameters. */
         private const val CHUNK = 500
+
+        /** Lines of "What Belay told your parent" the screen shows (30 days of them, almost always all). */
+        const val TOLD_ON_SCREEN = 500
 
         /** Characters per read of a large payload. */
         private const val PART = 256 * 1024

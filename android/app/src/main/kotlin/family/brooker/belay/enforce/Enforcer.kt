@@ -308,6 +308,8 @@ class Enforcer(context: Context) {
                 Lock.SIM -> UserManager.DISALLOW_SIM_GLOBALLY
                 Lock.FACTORY_RESET -> UserManager.DISALLOW_FACTORY_RESET
                 Lock.DEBUGGING -> UserManager.DISALLOW_DEBUGGING_FEATURES
+                // Phase 4: keep_on and lost mode (platform notes L2).
+                Lock.CONFIG_LOCATION -> UserManager.DISALLOW_CONFIG_LOCATION
             }
         }
 

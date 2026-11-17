@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.getValue
@@ -27,10 +28,22 @@ class MainActivity : ComponentActivity() {
     /** Phase 3: a limit to ask more time for at once, from a time's-up notification. */
     private var askFor by mutableStateOf<String?>(null)
 
+    /** Phase 7: the screen showing; Home unless a notice opened another. Kept across rotations. */
+    private var screen by mutableStateOf(Screen.HOME)
+
+    /** Phase 7: the help request the kid just sent, for the Help screen. */
+    private var helpId by mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        if (savedInstanceState == null) askFor = intent.getStringExtra(EXTRA_ASK_LIMIT)
+        if (savedInstanceState == null) {
+            askFor = intent.getStringExtra(EXTRA_ASK_LIMIT)
+            screen = Screens.of(intent) ?: Screen.HOME
+        } else {
+            screen = Screens.named(savedInstanceState.getString(STATE_SCREEN)) ?: Screen.HOME
+            helpId = savedInstanceState.getString(STATE_HELP)
+        }
         val screenTime = ScreenTimeActions(
             askMoreTime = { limitId, minutes, packageName, reason ->
                 Agent.askMoreTime(applicationContext, limitId, minutes, packageName, reason)
@@ -38,6 +51,17 @@ class MainActivity : ComponentActivity() {
             takeMinutes = { limitId, packageName, id -> Agent.takeMinutes(applicationContext, limitId, packageName, id) },
             answerAgreement = { version, answer, reason -> Agent.answerAgreement(applicationContext, version, answer, reason) },
             openUsageAccess = ::openUsageAccess,
+        )
+        val kid = KidActions(
+            askHelp = { reason, share, done -> Agent.askHelp(applicationContext, reason, share) { id -> runOnUiThread { done(id) } } },
+            shareLocation = { id -> Agent.shareWhereThePhoneIs(applicationContext, id) },
+            talk = { reason -> Agent.talk(applicationContext, reason) },
+            edit = { id, reason -> Agent.editRequest(applicationContext, id, reason) },
+            withdraw = { id -> Agent.withdraw(applicationContext, id) },
+            call = { number -> Emergency.call(this, number) },
+            text = { number -> Emergency.text(this, number) },
+            emergencyInfo = if (Emergency.infoApp(this) != null) ({ Emergency.info(this) }) else null,
+            navigate = { screen = it },
         )
         setContent {
             BelayTheme {
@@ -48,6 +72,7 @@ class MainActivity : ComponentActivity() {
                     .collectAsStateWithLifecycle(initialValue = 0).value
                 val unsent = remember { AgentStore.get(applicationContext).unsentRequestsFlow }
                     .collectAsStateWithLifecycle(initialValue = emptySet()).value
+                BackHandler(enabled = screen != Screen.HOME) { screen = Screen.HOME }
                 MainScreen(
                     view = view,
                     connection = connection,
@@ -55,6 +80,8 @@ class MainActivity : ComponentActivity() {
                     unsentRequests = unsent,
                     onAsk = { packageName, reason -> Agent.ask(applicationContext, packageName, reason) },
                     screenTime = screenTime,
+                    kidActions = kid,
+                    navigation = Navigation(screen, { screen = it }, helpId) { helpId = it },
                     askFor = askFor,
                     onAsked = { askFor = null },
                     onConnect = { startActivity(Intent(this, EnrollActivity::class.java)) },
@@ -68,7 +95,28 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        intent.getStringExtra(EXTRA_ASK_LIMIT)?.let { askFor = it }
+        intent.getStringExtra(EXTRA_ASK_LIMIT)?.let {
+            askFor = it
+            screen = Screen.HOME
+        }
+        Screens.of(intent)?.let { screen = it }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putString(STATE_SCREEN, screen.name)
+        helpId?.let { outState.putString(STATE_HELP, it) }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        Agent.screens(this, visible = true)
+    }
+
+    override fun onStop() {
+        // Phase 7: a help fix's location grant waits for Belay's screens to close.
+        Agent.screens(this, visible = false)
+        super.onStop()
     }
 
     override fun onResume() {
@@ -101,5 +149,7 @@ class MainActivity : ComponentActivity() {
     private companion object {
         /** Phase 3: a time's-up notification's "Ask for more time" (ScreenTimeNotice.askMoreTime). */
         const val EXTRA_ASK_LIMIT = ScreenTimeNotice.EXTRA_ASK_LIMIT
+        const val STATE_SCREEN = "screen"
+        const val STATE_HELP = "help"
     }
 }

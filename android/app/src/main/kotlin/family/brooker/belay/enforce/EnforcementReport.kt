@@ -10,9 +10,10 @@ import family.brooker.belay.store.AgentStore
 /**
  * The enforcement report the server sees (docs/protocol.md, "Enforcement"), from what each part
  * of Belay keeps: what the agent step applied (with the packages never blocked and the
- * policy's offered update), the update thread's record, the recovery key's last use and the
- * commands' last results. DeviceStatus sends it; the agent step compares it with the last one,
- * so any change reaches the parent page within seconds.
+ * policy's offered update), the update thread's record, the recovery key's last use, the
+ * commands' last results and (Phase 4) location's status as the last step saw it. DeviceStatus
+ * sends it; the agent step compares it with the last one, so any change reaches the parent page
+ * within seconds.
  */
 object EnforcementReport {
     /** [running]: the version code this Belay runs. */
@@ -22,5 +23,6 @@ object EnforcementReport {
             agentUpdate = AgentUpdates.report(applied.agentUpdate, store.agentUpdate(), running),
             recovery = store.recovery().lastUse,
             commands = store.commandLog().results,
+            location = store.locationState()?.report,
         )
 }

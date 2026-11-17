@@ -40,12 +40,12 @@ back the designs in this folder, and re-check some Phase 2 facts.
 | V1 | `DISALLOW_ADD_USER` keeps Android's own Parental Controls off the phone **(Phase 2)** | **Contradicted**: Settings creates its profile "even when disallowed" | AOSP; Google blog (moved to platform-notes.md) |
 | V2 | Other users or profiles on a device-owner phone **(Phase 2)** | They break Private DNS changes and network logs; Belay can list and remove them | AOSP; Docs (moved to platform-notes.md) |
 | V3 | Belay could hold the supervision role | **Contradicted**: system-only | AOSP |
-| L1 | Belay can grant itself location, background included | Confirmed; Android tells the kid | AOSP |
-| L2 | `setLocationEnabled` and `DISALLOW_CONFIG_LOCATION` | Confirmed | AOSP; Docs |
-| L3 | "network" and "fused" location without Play services | Partly: no Play services code in Belay, but on a Pixel those providers are (expected to be) Play services | AOSP |
-| L4 | Platform geofencing without Play services | Partly: `addProximityAlert` uses the fused provider | AOSP |
-| L5 | Belay needs a `location` foreground service | Not needed: background location plus its existing service | AOSP; Docs |
-| L6 | The kid sees when location is used | Confirmed for GPS-level requests (status bar icon) | AOSP |
+| L1 | Belay can grant itself location, background included | Moved to platform-notes.md (Phase 4) | |
+| L2 | `setLocationEnabled` and `DISALLOW_CONFIG_LOCATION` | Moved to platform-notes.md (Phase 4) | |
+| L3 | "network" and "fused" location without Play services | Moved to platform-notes.md (Phase 4) | |
+| L4 | Platform geofencing without Play services | Moved to platform-notes.md (Phase 4) | |
+| L5 | Belay needs a `location` foreground service | Moved to platform-notes.md (Phase 4) | |
+| L6 | The kid sees when location is used | Moved to platform-notes.md (Phase 4) | |
 | T1 | Belay as the default dialer (`setDefaultDialerApplication`) | Confirmed: requirements listed | AOSP; Docs |
 | T2 | 911 works when Belay is the dialer | Confirmed: the preloaded dialer takes every emergency call | AOSP; Docs |
 | T3 | Android treats 988 like 911 | **Contradicted**: 988 is an ordinary number to Android | AOSP |
@@ -434,82 +434,8 @@ available to the system supervision role and allowlisted packages". `Supervision
 
 ## Location
 
-### L1. Location, granted by policy
-
-**Confirmed.** Verified on: AOSP.
-
-- `DevicePolicyManagerService.setDeviceOwner`: `if (isAdb(caller)) {
-  activeAdmin.mAdminCanGrantSensorsPermissions = true; … }`. Its `SENSOR_PERMISSIONS` include
-  `ACCESS_FINE_LOCATION`, `ACCESS_COARSE_LOCATION` and `ACCESS_BACKGROUND_LOCATION`.
-- `packages/modules/Permission`, `PermissionControllerServiceImpl.onSetRuntimePermissionGrantStateByDeviceAdmin`
-  fixes and grants it; `AutoGrantPermissionsNotifier` then posts, in Settings' name, "Belay has
-  location access" / "Your organization allows Belay to access your location" (only for the three
-  location permissions).
-- A device owner can't change "Your organization": overriding device-management strings needs
-  `UPDATE_DEVICE_MANAGEMENT_RESOURCES` (`signature|role`).
-- Today `DeviceOwnerSetup.ensure` grants every runtime permission Belay declares except CAMERA. A
-  location permission added to the manifest would be granted at the next agent step, whatever the
-  family decided.
-
-Belay's consequence: grant location only while the policy turns it on, and deny it by policy
-otherwise.
-
-### L2. `setLocationEnabled` and `DISALLOW_CONFIG_LOCATION`
-
-**Confirmed.** Verified on: AOSP; Docs. DPM reference [2026-09-16]: `setLocationEnabled` (API 30)
-"Called by device owners to set the user's global location setting". UserManager:
-`DISALLOW_CONFIG_LOCATION` "disallows the primary user from turning location on or off", and "a
-device owner … can still enable or disable location mode via setLocationEnabled when this
-restriction is on". It differs from `DISALLOW_SHARE_LOCATION`, which keeps apps from location.
-
-### L3. "network" and "fused" without Play services code
-
-**Partly.** Verified on: AOSP.
-
-- `location/LocationManagerService.onSystemThirdPartyAppsCanStart` binds "network" and "fused" to
-  system packages: with `config_enableNetworkLocationOverlay` and `config_enableFusedLocationOverlay`
-  (both true in AOSP's `core/res/res/values/config.xml`), the provider is whichever system package
-  serves `ACTION_NETWORK_PROVIDER` or `ACTION_FUSED_PROVIDER`; AOSP's own fused provider
-  (`com.android.location.fused`) is the fallback. "gps" is the GNSS hardware.
-- On a Pixel, those overlays are expected to be Google Play services (untested: `dumpsys
-  location` names them). Calling the platform API puts no Play services code in Belay (principle
-  5 is about SDKs in the agent), but a "network" or "fused" request is answered by that package,
-  under Google's own location settings.
-- `getCurrentLocation` returns a fix no older than 30 s
-  (`location/provider/LocationProviderManager.MAX_CURRENT_LOCATION_AGE_MS`).
-
-### L4. Platform geofencing
-
-**Partly.** Verified on: AOSP. `location/geofence/GeofenceManager`, behind
-`LocationManager.addProximityAlert`, requests updates from `FUSED_PROVIDER`, at an interval from
-the distance to the nearest fence and an assumed 100 m/s, up to 2 hours, and ignores fixes older
-than 5 minutes. On a Pixel that means the fused provider (L3).
-
-Belay's consequence: compute places itself from its own fixes, in `:core`.
-
-### L5. No `location` foreground service needed
-
-**Confirmed.** Verified on: AOSP; Docs.
-
-- FGS types [2026-11-16]: type `location` needs `FOREGROUND_SERVICE_LOCATION`, location turned on
-  and a location permission; "you cannot create a location foreground service while your app is
-  in the background, unless you've been granted the ACCESS_BACKGROUND_LOCATION runtime permission".
-- Background starts [2026-11-16], exemptions from while-in-use limits: "The service starts by an
-  app that is a device policy controller that runs in device owner mode."
-- With `ACCESS_BACKGROUND_LOCATION` granted by policy Belay may read location at any time.
-  `LocationProviderManager` stretches a background app's interval to the background throttle
-  interval unless the app counts as foreground (`location/injector/SystemAppForegroundHelper`:
-  importance up to foreground service); Belay's `systemExempted` service keeps it foreground.
-
-### L6. What the kid sees while location is used
-
-**Confirmed for GPS-level requests.** Verified on: AOSP.
-`packages/SystemUI/.../statusbar/policy/LocationControllerImpl` shows the status bar location icon
-while any app holds `OP_MONITOR_HIGH_POWER_LOCATION` (a high-power request). Showing every access
-needs the privacy flag `location_indicators_small_enabled` (default false). A low-power request may
-show nothing.
-
-Belay's consequence: its own notice for every check (Phase 4).
+L1 to L6 moved to [docs/platform-notes.md](../platform-notes.md#location-and-the-kids-side-phases-4-and-7),
+with L7 to L10 and G1 to G2.
 
 ## Calls and texts
 

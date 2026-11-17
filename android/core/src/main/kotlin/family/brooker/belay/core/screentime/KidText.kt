@@ -194,4 +194,51 @@ enum class KidMessage {
 
     /** "A warning %1$s before time's up or a schedule starts": [KidArg.Minutes]; 0 means no warning. */
     WARNING_CHANGES,
+
+    // ── Phase 7: Home's one line (core's kid.Home), and what works right now ──
+
+    /** "Everything's normal" */
+    HOME_NORMAL,
+
+    /** "This phone is in lost mode" */
+    HOME_LOST,
+
+    /** "Paused by your parent until %1$s": [KidArg.Moment]. */
+    HOME_PAUSED_UNTIL,
+
+    /** "Paused by your parent" */
+    HOME_PAUSED,
+
+    /** "Bedtime until %1$s": [KidArg.Moment], then [KidArg.Words] the schedule's name. (School and custom schedules use SCHOOL_UNTIL and SCHEDULE_UNTIL.) */
+    HOME_BEDTIME_UNTIL,
+
+    /** "Your screen time for today is used up" */
+    HOME_TOTAL_UP,
+
+    /** "Time's up for %1$s today": [KidArg.Words] the limit. */
+    HOME_LIMIT_UP,
+
+    /** "Time's up for %1$d of your time limits today": [KidArg.Count]. */
+    HOME_LIMITS_UP,
+
+    /** "Belay can't count screen time right now" */
+    HOME_UNMEASURED,
+
+    /** "Calls and texts work, and so do Belay, Settings and the clock." While every other app is paused. */
+    WORKS_CALLS_TEXTS,
+
+    /** "These work too: %1$s": [KidArg.Apps] a schedule allows or the family never pauses. */
+    WORKS_ALSO,
+
+    /** "Your other apps work." Some apps are paused or waiting. */
+    WORKS_OTHER_APPS,
+
+    /** "Your apps work." */
+    WORKS_APPS,
+
+    /** "Your parent's message is on the lock screen." Lost mode. */
+    WORKS_LOST_MESSAGE,
+
+    /** "You can always call or text 911 and 988." */
+    WORKS_EMERGENCY,
 }

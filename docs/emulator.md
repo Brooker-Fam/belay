@@ -105,7 +105,15 @@ server's status has `screen_time`: a 0-minute limit on the fixture app suspends 
 removing it lets it run, a schedule on now (from the emulator's own clock and zone) suspends
 it but not Belay or the dialer, a minute in the fixture app with measuring on reaches the
 server's usage for today (a debug-only receiver has Belay send at once instead of within 15
-minutes), and `lock-now` is reported done with the screen off or locked.
+minutes), and `lock-now` is reported done with the screen off or locked. Then Phases 4 and 7,
+when the server's status has `fixes`: location on demand with `keep_on` grants Belay location
+by policy and sets `no_config_location`; with `adb emu geo fix -122.08 37.42` (the emulator's
+GNSS takes its fixes from the console; from inside the phone only a mock provider could set one,
+platform notes L9), `locate-now` gets a fix on the server at that point, not a mock, and the
+command is done; `LocationInstrumentedTest` runs with that point; a help request from a
+debug-only receiver reaches the server, and `help-seen` comes back to the phone's state; location
+off takes the permission away (Android restarts Belay, which comes back, L7); and with location
+off a kid's shared fix still gets into a help request, once.
 
 The fixture app has one blank launcher screen (`.FixtureActivity`) from Phase 3, so tests can
 open it, count it and see a limit or a schedule pause it. Screen time only counts while the

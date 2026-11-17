@@ -27,13 +27,16 @@ import family.brooker.belay.service.ParentNotice
  *
  * Phase 3, lock_now: [lockNow] locks the screen once per command (ScreenLock), after the step
  * applied the rest, so a pause sent with it has suspended the apps first. [run] leaves them out.
+ *
+ * Phase 4, locate_now: the step's location part runs them (location/LocationStep.kt): a fix takes
+ * up to a minute, so its result comes at a later step. [run] leaves them out too.
  */
 class CommandRunner(context: Context) {
     private val app = context.applicationContext
 
-    /** The results, in the order the commands were handled; lock_now waits for [lockNow]. */
+    /** The results, in the order the commands were handled; lock_now waits for [lockNow], locate_now for LocationStep. */
     fun run(plan: CommandPlan, owner: Boolean, now: Long): List<WireCommandResult> {
-        val ran = plan.run.filter { it.kind != WireCommand.LOCK_NOW }.map { command ->
+        val ran = plan.run.filter { it.kind !in LATER }.map { command ->
             val result = when (command.kind) {
                 WireCommand.REMOVE_OTHER_USERS -> removeOtherUsers(command, owner)
                 // Never: Commands.plan only runs the kinds in RUNS.
@@ -95,6 +98,9 @@ class CommandRunner(context: Context) {
 
     companion object {
         /** The kinds this build of Belay runs. */
-        val RUNS: Set<String> = setOf(WireCommand.REMOVE_OTHER_USERS, WireCommand.LOCK_NOW)
+        val RUNS: Set<String> = setOf(WireCommand.REMOVE_OTHER_USERS, WireCommand.LOCK_NOW, WireCommand.LOCATE_NOW)
+
+        /** Run later in the step: lock_now once the rest is applied, locate_now by the location part. */
+        private val LATER = setOf(WireCommand.LOCK_NOW, WireCommand.LOCATE_NOW)
     }
 }

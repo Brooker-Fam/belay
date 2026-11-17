@@ -48,6 +48,20 @@
         android:name="android.hardware.camera"
         android:required="false" />
 
+    <!-- Phase 4: where the phone is, only while the family has location on (or lost mode, or
+         the one fix a kid shares with "I need help"). Declared, but granted by policy only
+         then, and denied by policy otherwise, so Settings shows Belay without location and the
+         kid can't grant it either (core's CategoryPermissions; docs/platform-notes.md L1).
+         Single fixes from the platform's LocationManager, never Play services code. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <uses-feature
+        android:name="android.hardware.location.gps"
+        android:required="false" />
+    <!-- Phase 4: keeps the phone awake for one fix, at most 75 seconds (LocationCollector). -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
     <application
         android:name=".BelayApp"
         android:allowBackup="false"
@@ -166,6 +180,11 @@
              screen time's next boundary. -->
         <receiver
             android:name=".enforce.PolicyTimerReceiver"
+            android:exported="false" />
+
+        <!-- Phase 4: Belay's own alarm for the next periodic or lost-mode fix. -->
+        <receiver
+            android:name=".location.LocationTimerReceiver"
             android:exported="false" />
 
         <!-- Phase 3: the clock or the time zone changed. Both still reach manifest receivers

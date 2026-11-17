@@ -1,5 +1,10 @@
 package family.brooker.belay.core
 
+import family.brooker.belay.core.location.LocationRules
+import family.brooker.belay.core.location.WireLocation
+import family.brooker.belay.core.location.WireLocationMode
+import family.brooker.belay.core.location.WireLocationProvider
+
 /**
  * A kind of data the agent collects. The kid-facing list "What your parent can see" is
  * built from the categories of the collectors that actually run, so it can't drift from
@@ -48,7 +53,11 @@ object DataCategories {
         ),
     )
 
-    /** Phase 2: what the kid asks a parent for, from Belay's screen; Phase 3 adds more time and the agreement. */
+    /**
+     * Phase 2: what the kid asks a parent for, from Belay's screen; Phase 3 adds more time and the
+     * agreement; Phase 7 "I need help" (with where the phone is, only when the kid shares it),
+     * "Talk to my parent", and changing or taking back a request.
+     */
     val REQUESTS = DataCategory(
         id = "requests",
         title = "What you ask for, and what you write about why",
@@ -59,8 +68,60 @@ object DataCategories {
             "When you ask for more time: how many minutes, for which time limit and app, and " +
                 "what you write about why",
             "Your answer to your family agreement, and what you write with it",
+            "When you tap \"I need help\": that you need help, what you write with it, and where " +
+                "this phone is, only if you choose to share it",
+            "What you write in \"Talk to my parent\"",
+            "When you change what you wrote, or take a request back",
         ),
     )
+
+    /** Phase 4: the location category's id, which is also the server's AI scope. */
+    const val LOCATION_ID = "location"
+
+    /**
+     * Phase 4, while the policy's location is on ([LocationRules.collecting]): where the phone is,
+     * as the mode takes it. [clock] shows a policy's "HH:MM" the way the kid's phone shows times.
+     */
+    fun location(location: WireLocation, clock: (String) -> String): DataCategory {
+        val details = mutableListOf<String>()
+        val checks = "Where this phone is when your parent checks. You get a notification every time."
+        when (location.mode) {
+            WireLocationMode.OFF -> {}
+            WireLocationMode.ON_DEMAND -> details += checks
+            WireLocationMode.PERIODIC -> {
+                val every = LocationRules.everyMinutes(location)
+                val hours = location.hours
+                details += if (hours == null || hours.start == hours.end) {
+                    "Where this phone is, every $every minutes, all day"
+                } else {
+                    "Where this phone is, every $every minutes, between ${clock(hours.start)} and ${clock(hours.end)}"
+                }
+                val names = LocationRules.places(location).map { it.name.trim() }.filter { it.isNotEmpty() }
+                if (names.isNotEmpty()) details += "When you arrive at or leave: ${list(names)}"
+                details += checks
+            }
+        }
+        if (location.lost != null) {
+            details += "Lost mode: where this phone is every 5 minutes, until your parent turns lost mode off"
+        }
+        val source = when {
+            location.provider == WireLocationProvider.FUSED -> "Android's location service"
+            location.fallbackFused -> "the phone's GPS or Android's location service"
+            else -> "the phone's GPS"
+        }
+        details += "How close each check is (like \"within 20 meters\"), that it came from $source, " +
+            "and whether an app was faking the location"
+        details += "Whether location is on, and whether Belay can use it"
+        details += "Where this phone is when you choose to share it with \"I need help\""
+        return DataCategory(LOCATION_ID, "Where this phone is", details)
+    }
+
+    /** "a", "a and b", "a, b and c". */
+    private fun list(parts: List<String>): String = when (parts.size) {
+        0 -> ""
+        1 -> parts.single()
+        else -> parts.dropLast(1).joinToString(", ") + " and " + parts.last()
+    }
 
     /**
      * Phase 3, while the policy's screen_time measures (`measure` on): the usage days Belay

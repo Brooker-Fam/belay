@@ -6,6 +6,7 @@ import family.brooker.belay.core.Reconcile
 import family.brooker.belay.core.UpdateRecord
 import family.brooker.belay.core.WireCommandResult
 import family.brooker.belay.core.WireRecoveryUse
+import family.brooker.belay.core.location.WireLocationStatus
 import family.brooker.belay.core.screentime.WireScreenTimeStatus
 import family.brooker.belay.settings.Connection
 import kotlinx.serialization.json.Json
@@ -19,9 +20,10 @@ import kotlinx.serialization.json.putJsonObject
  * A JSON summary of what the agent keeps: heartbeats and changes (oldest first), the
  * outbox's counts, the connection without the token, (Phase 2) what Belay enforces and which
  * requests it made, without the kid's words, (Phases 6 and 10) the update, the recovery
- * key's tries and use, and the commands' results, and (Phase 3) why each app is held and
- * screen time's count and state. Debug builds write it after every step
- * (DebugTools.afterStep), for android/scripts/ci-emulator-test.sh.
+ * key's tries and use, and the commands' results, (Phase 3) why each app is held and
+ * screen time's count and state, (Phase 4) location's report and what it wants, without where the
+ * phone is, and (Phase 7) whether each request was taken back or seen. Debug builds write it after
+ * every step (DebugTools.afterStep), for android/scripts/ci-emulator-test.sh.
  */
 object StateDump {
     fun json(store: AgentStore, connection: Connection): String = buildJsonObject {
@@ -86,6 +88,8 @@ object StateDump {
             recovery.lastUse?.let { put("last_use", Json.encodeToJsonElement(WireRecoveryUse.serializer(), it)) }
         }
         put("commands", JsonArray(store.commandLog().results.map { Json.encodeToJsonElement(WireCommandResult.serializer(), it) }))
+        // Phase 7: when a parent saw each help request, from the policy's help_seen.
+        val seen = store.policy()?.helpSeen.orEmpty().groupBy { it.requestId }.mapValues { (_, all) -> all.minOf { it.at } }
         put(
             "requests",
             JsonArray(
@@ -96,9 +100,25 @@ object StateDump {
                         put("package", it.packageName)
                         put("revision", it.revision)
                         put("has_reason", it.reason != null)
+                        put("withdrawn_at", it.withdrawnAt)
+                        put("has_location", it.location != null)
+                        put("seen_at", seen[it.id])
                     }
                 },
             ),
         )
+        // Phase 4: location as the last step left it, without where the phone is.
+        val location = store.locationState()
+        putJsonObject("location") {
+            put("mode", store.policy()?.location?.mode?.name?.lowercase() ?: "off")
+            location?.report?.let { put("report", Json.encodeToJsonElement(WireLocationStatus.serializer(), it)) }
+            put("wanted", JsonArray(location?.wants.orEmpty().map { JsonPrimitive(it.key) }))
+            put("last_fix_at", location?.last?.at)
+            put("lost_since", location?.lost?.since)
+            put("sharing_for_help", location?.help?.requestId)
+            put("turned_on_for", JsonArray(location?.turnedOn.orEmpty().map { JsonPrimitive(it.name.lowercase()) }))
+            put("unsent", store.pendingLocationCount())
+            put("told", store.told().size)
+        }
     }.toString()
 }

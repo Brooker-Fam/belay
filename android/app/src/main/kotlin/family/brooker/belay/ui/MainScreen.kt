@@ -40,7 +40,6 @@ import family.brooker.belay.BuildConfig
 import family.brooker.belay.R
 import family.brooker.belay.core.AppChange
 import family.brooker.belay.core.ChangeKind
-import family.brooker.belay.core.DataCategory
 import family.brooker.belay.core.Detection
 import family.brooker.belay.core.Heartbeat
 import family.brooker.belay.core.PackageRecord
@@ -48,17 +47,39 @@ import family.brooker.belay.core.UpdateRecord
 import family.brooker.belay.core.WireAgentUpdate
 import family.brooker.belay.core.WireDevice
 import family.brooker.belay.core.WireUpdateState
+import family.brooker.belay.core.kid.Home
+import family.brooker.belay.core.kid.HomeInput
+import family.brooker.belay.core.kid.HomeState
+import family.brooker.belay.core.screentime.LocalTimes
+import family.brooker.belay.core.screentime.WireIfUnmeasured
+import family.brooker.belay.enforce.KidView
 import family.brooker.belay.health.Health
 import family.brooker.belay.health.HealthReader
 import family.brooker.belay.inventory.Collectors
 import family.brooker.belay.settings.Connection
+import java.time.ZoneId
+
+/** Where a screen is shown (ui/Screens.kt), and what moves between screens. */
+class Navigation(
+    val screen: Screen,
+    val go: (Screen) -> Unit,
+    /** The help request the kid just sent, for the Help screen; null before one. */
+    val helpId: String?,
+    val onHelpSent: (String) -> Unit,
+)
 
 /**
  * [connection] is null while it loads; [waiting] is how many outbox items wait to be sent;
- * [unsentRequests] the requests with a send still waiting. The kid's cards come first: a
- * pause, today's screen time (Phase 3), the apps waiting for a parent, the answers, blocked
- * apps, the rules, and the stage and family agreement (Phase 3). [askFor]: a limit to ask
- * more time for at once (a time's-up notification's "Ask for more time").
+ * [unsentRequests] the requests with a send still waiting. Phase 7 makes the cards screens:
+ * - Home: the phone's state in one line and what works now, "I need help", the emergency card,
+ *   today's screen time (Phase 3), where this phone is (Phase 4), the apps waiting for a parent,
+ *   and the other screens;
+ * - My requests: "Talk to my parent", apps a parent blocked, and every request with its answer;
+ * - My stage: the stage and the family agreement (Phase 3);
+ * - This phone's rules; What your parent can see (with where it goes, and the recent app
+ *   changes); What Belay told your parent; Help; and About Belay, with the setup checks, the phone,
+ *   Belay's version and Recovery, and the background checks.
+ * [askFor]: a limit to ask more time for at once (a time's-up notification's "Ask for more time").
  */
 @Composable
 fun MainScreen(
@@ -68,6 +89,8 @@ fun MainScreen(
     unsentRequests: Set<String>,
     onAsk: Ask,
     screenTime: ScreenTimeActions,
+    kidActions: KidActions,
+    navigation: Navigation,
     askFor: String?,
     onAsked: () -> Unit,
     onConnect: () -> Unit,
@@ -75,45 +98,127 @@ fun MainScreen(
     onRelease: (() -> Unit)?,
     onRecovery: () -> Unit,
 ) {
+    val context = LocalContext.current
     Scaffold { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item { Header() }
+            val screen = navigation.screen
+            item { Header(screen, onBack = { navigation.go(Screen.HOME) }) }
             if (view == null || connection == null) {
                 item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
                 return@LazyColumn
             }
             val kid = view.kid
-            kid.plan?.pause?.let { pause -> item { PausedBanner(pause) } }
-            if (kid.screenTime != null) item { TodayCard(kid, unsentRequests, screenTime, askFor, onAsked) }
-            if (kid.plan?.waiting.orEmpty().isNotEmpty()) item { WaitingCard(kid, unsentRequests, onAsk) }
-            if (kid.requests.any { it.forApp && !it.open }) item { AnswersCard(kid) }
-            if (kid.plan?.blocked.orEmpty().isNotEmpty()) item { BlockedCard(kid, unsentRequests, onAsk) }
-            item { RulesCard(kid) }
-            if (kid.policy?.stage != null) item { StageCard(kid) }
-            if (kid.policy?.agreement != null) item { AgreementCard(kid, unsentRequests, screenTime) }
-            item { StatusCard(view) }
-            item { ConnectionCard(connection, waiting, onConnect) }
-            item { CanSeeCard(Collectors.categories(kid.policy), connection) }
-            item { ChangesCard(view.changes, view.inventory) }
-            item { ChecksCard(view.health, onAllowBattery) }
-            item { PhoneCard(view.health, view.device) }
-            item { SelfCard(view.health, view.inventory[LocalContext.current.packageName], view.update, kid.policy?.agentUpdate, onRecovery) }
-            item { HeartbeatsCard(view.heartbeats) }
-            if (onRelease != null && view.health.deviceOwner) item { ReleaseButton(onRelease) }
+            val words = KidWords(context) { kid.labels[it] ?: it }
+            val helpSent: (String) -> Unit = { id ->
+                navigation.onHelpSent(id)
+                navigation.go(Screen.HELP)
+            }
+            when (screen) {
+                Screen.HOME -> {
+                    item { HomeStateCard(home(kid), words) }
+                    kid.plan?.pause?.let { pause -> item { PausedBanner(pause) } }
+                    item { HelpButton { kidActions.askHelp(null, false) { id -> if (id != null) helpSent(id) } } }
+                    item { EmergencyCard(kid.policy?.parentNumbers.orEmpty(), kidActions) }
+                    if (kid.screenTime != null) item { TodayCard(kid, unsentRequests, screenTime, askFor, onAsked) }
+                    item { LocationCard(kid, view.told, words) { navigation.go(Screen.TOLD) } }
+                    if (kid.plan?.waiting.orEmpty().isNotEmpty()) item { WaitingCard(kid, unsentRequests, onAsk) }
+                    item { Text(stringResource(R.string.home_more), style = MaterialTheme.typography.titleMedium) }
+                    item { NavRow(stringResource(R.string.screen_requests)) { navigation.go(Screen.REQUESTS) } }
+                    if (kid.policy?.stage != null || kid.policy?.agreement != null) {
+                        item { NavRow(stringResource(R.string.screen_stage)) { navigation.go(Screen.STAGE) } }
+                    }
+                    item { NavRow(stringResource(R.string.screen_rules)) { navigation.go(Screen.RULES) } }
+                    item { NavRow(stringResource(R.string.screen_can_see)) { navigation.go(Screen.CAN_SEE) } }
+                    item { NavRow(stringResource(R.string.screen_told)) { navigation.go(Screen.TOLD) } }
+                    item { NavRow(stringResource(R.string.screen_help)) { navigation.go(Screen.HELP) } }
+                    item { NavRow(stringResource(R.string.screen_about)) { navigation.go(Screen.ABOUT) } }
+                }
+                Screen.REQUESTS -> {
+                    item { TalkCard(kidActions) }
+                    if (kid.plan?.waiting.orEmpty().isNotEmpty()) item { WaitingCard(kid, unsentRequests, onAsk) }
+                    if (kid.plan?.blocked.orEmpty().isNotEmpty()) item { BlockedCard(kid, unsentRequests, onAsk) }
+                    item { RequestsCard(kid, unsentRequests, words, kidActions) }
+                }
+                Screen.STAGE -> {
+                    if (kid.policy?.stage != null) item { StageCard(kid) }
+                    if (kid.policy?.agreement != null) item { AgreementCard(kid, unsentRequests, screenTime) }
+                }
+                Screen.RULES -> item { RulesCard(kid) }
+                Screen.CAN_SEE -> {
+                    item {
+                        CanSeeCard(Collectors.categories(kid.policy) { hhmm -> clock(words, hhmm) }, connection, kid.policy?.aiReads.orEmpty())
+                    }
+                    item { ConnectionCard(connection, waiting, onConnect) }
+                    item { ChangesCard(view.changes, view.inventory) }
+                }
+                Screen.TOLD -> {
+                    item { LocationCard(kid, view.told, words) { navigation.go(Screen.TOLD) } }
+                    item { ToldCard(view.told, words) }
+                }
+                Screen.HELP -> item { HelpScreen(kid, unsentRequests, navigation.helpId, words, kidActions, helpSent) }
+                Screen.ABOUT -> {
+                    item { StatusCard(view) }
+                    item { ConnectionCard(connection, waiting, onConnect) }
+                    item { ChecksCard(view.health, onAllowBattery) }
+                    item { PhoneCard(view.health, view.device) }
+                    item { SelfCard(view.health, view.inventory[context.packageName], view.update, kid.policy?.agentUpdate, onRecovery) }
+                    item { HeartbeatsCard(view.heartbeats) }
+                    if (onRelease != null && view.health.deviceOwner) item { ReleaseButton(onRelease) }
+                }
+            }
         }
     }
 }
 
+/** Home's one line and what works now, from the last step (core's kid.Home). */
+private fun home(kid: KidView): HomeState {
+    val decision = kid.screenTime?.decision
+    val screenTime = kid.policy?.screenTime
+    return Home.of(
+        HomeInput(
+            pause = kid.plan?.pause,
+            schedules = decision?.schedules.orEmpty(),
+            limits = decision?.limits.orEmpty(),
+            unmeasured = decision?.measured == false,
+            unmeasuredPauses = screenTime?.ifUnmeasured == WireIfUnmeasured.PAUSE_LIMITED,
+            lost = kid.policy?.location?.lost != null,
+            held = kid.plan?.waiting.orEmpty().size + kid.plan?.blocked.orEmpty().size,
+            exempt = screenTime?.exempt.orEmpty(),
+            now = System.currentTimeMillis(),
+            zone = ZoneId.systemDefault(),
+        ),
+    )
+}
+
+/** A policy's "HH:MM" the way the kid's phone shows times. */
+private fun clock(words: KidWords, hhmm: String): String = LocalTimes.clock(hhmm)?.let(words::time) ?: hhmm
+
 @Composable
-private fun Header() {
+private fun Header(screen: Screen, onBack: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(stringResource(R.string.main_title), style = MaterialTheme.typography.headlineSmall)
-        Text(stringResource(R.string.main_intro), style = MaterialTheme.typography.bodyLarge)
+        if (screen == Screen.HOME) {
+            Text(stringResource(R.string.main_title), style = MaterialTheme.typography.headlineSmall)
+            Text(stringResource(R.string.main_intro), style = MaterialTheme.typography.bodyLarge)
+        } else {
+            TextButton(onClick = onBack) { Text("‹ " + stringResource(R.string.back)) }
+            Text(stringResource(screenTitle(screen)), style = MaterialTheme.typography.headlineSmall)
+        }
     }
+}
+
+private fun screenTitle(screen: Screen): Int = when (screen) {
+    Screen.HOME -> R.string.main_title
+    Screen.REQUESTS -> R.string.screen_requests
+    Screen.STAGE -> R.string.screen_stage
+    Screen.RULES -> R.string.screen_rules
+    Screen.CAN_SEE -> R.string.screen_can_see
+    Screen.TOLD -> R.string.screen_told
+    Screen.HELP -> R.string.screen_help
+    Screen.ABOUT -> R.string.screen_about
 }
 
 @Composable
@@ -189,22 +294,6 @@ private fun ConnectionCard(connection: Connection, waiting: Int, onConnect: () -
             }
         }
         Text(stringResource(R.string.connection_version, BuildConfig.VERSION_NAME), style = MaterialTheme.typography.bodySmall)
-    }
-}
-
-@Composable
-private fun CanSeeCard(categories: List<DataCategory>, connection: Connection) {
-    Section(stringResource(R.string.section_can_see)) {
-        categories.forEach { category ->
-            Text(category.title, style = MaterialTheme.typography.titleSmall)
-            category.details.forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium) }
-        }
-        val whereItGoes = when {
-            connection.connected -> stringResource(R.string.data_sent_to_server, connection.host.orEmpty())
-            connection.enrolled -> stringResource(R.string.data_disconnected)
-            else -> stringResource(R.string.data_stays_here)
-        }
-        Text(whereItGoes, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
     }
 }
 
