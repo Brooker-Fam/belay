@@ -6,6 +6,7 @@
  */
 import type { DB } from "../../db.js";
 import type { Policy } from "../../device/schemas.js";
+import { cleanText, oneLine } from "../../text.js";
 import { type PhoneRules, nextStage, offBelayStage, phoneRules } from "../screentime/rules.js";
 
 /** Off belay's name: Belay's own word, which the kid's phone uses too. */
@@ -33,7 +34,8 @@ export function handoverOf(db: DB, deviceId: string): Handover | null {
 /** The policy's `handover`: when, and the parent's name for the kid's screen. */
 export function handoverFor(db: DB, deviceId: string): Policy["handover"] {
   const handover = handoverOf(db, deviceId);
-  return handover ? { at: handover.at, by: handover.byName?.slice(0, 60) ?? null } : null;
+  // The kid sees the name: on one line, nothing hidden or reordered, like every name in the policy.
+  return handover ? { at: handover.at, by: handover.byName === null ? null : oneLine(handover.byName, 60) || null } : null;
 }
 
 /**
@@ -45,5 +47,5 @@ export function offBelayFor(db: DB, deviceId: string, phone: PhoneRules = phoneR
   if (!stage) return null;
   const current = phone.stage?.stage ?? null;
   const position = current?.id === stage.id ? "on" : current && nextStage(db, current.number)?.id === stage.id ? "next" : "later";
-  return { how: stage.how?.slice(0, 1000) ?? null, position };
+  return { how: stage.how === null ? null : cleanText(stage.how, 1000) || null, position };
 }

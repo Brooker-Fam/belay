@@ -566,7 +566,8 @@ server decides whether a change tightens or loosens.
   works for repairs.
 - **Offline**, the phone keeps enforcing the last policy it got. Belay stores it.
 - **The family's words** in the policy (the names of limits, schedules, stages and places, a
-  pause's note, the support message, a parent's answers and name): the server sends them
+  pause's note, the support message, a parent's answers and name, Off belay's words and the
+  hand-over's parent): the server sends them
   without control characters (new lines aside in notes) or the characters that hide or reorder
   text, and a name on one line. An AI app writes none of them: Belay names a limit or schedule
   it adds or renames, and its pause or lock has no note.

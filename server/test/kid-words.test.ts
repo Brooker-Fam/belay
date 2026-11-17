@@ -16,7 +16,8 @@ import { answerRequest, buildPolicy, pausePhone, setSupportMessage, type PolicyC
 import { approveProposal, listProposals } from "../src/family/proposals.js";
 import { moveToStage, saveStage, setPhoneRules } from "../src/family/screentime/changes.js";
 import { limitName, type AppNames } from "../src/family/screentime/names.js";
-import { NO_RULES, phoneRules } from "../src/family/screentime/rules.js";
+import { NO_RULES, offBelayStage, phoneRules } from "../src/family/screentime/rules.js";
+import { handOver } from "../src/family/offbelay/changes.js";
 import { createPersonalToken } from "../src/oauth/store.js";
 import { updateSettings } from "../src/settings.js";
 import { deviceCall, enrollPhone, pkg, snapshot, testServer, T0, type TestServer } from "./helpers.js";
@@ -174,8 +175,13 @@ describe("every name and note the kid sees", () => {
     });
     answerRequest(ctx(), phone.deviceId, "request-0001", "declined", sam, dirty("Not now"));
     markHelpSeen(ctx(), phone.deviceId, "request-0002", sam, dirty("Calling you"));
+    // Phase 11: Off belay's words, and the parent who hands the phone over.
+    const offBelay = offBelayStage(t.deps.db);
+    if (offBelay) saveStage(ctx(), offBelay.id, { name: offBelay.name, how: dirty("When you turn 16"), rules: NO_RULES }, sam);
+    handOver(ctx(), phone.deviceId, sam);
     // And a name written straight into the database, as an AI app's could have been before.
     t.deps.db.prepare("UPDATE stages SET name = ? WHERE id = ?").run(dirty("Starter"), stage.id);
+    t.deps.db.prepare("UPDATE stages SET how = ? WHERE off_belay = 1").run(dirty("When you turn 16"));
     t.deps.db.prepare("UPDATE parents SET name = ? WHERE id = ?").run(dirty("Sam"), parent.id);
     const p = policy();
     const hidden = strings(p).filter(([, s]) => HIDDEN.test(s));
@@ -187,6 +193,8 @@ describe("every name and note the kid sees", () => {
     expect(p.requests.find((r) => r.id === "request-0001")).toMatchObject({ note: "Not now", answered_by: "Sam" });
     expect(p.help_seen[0]?.by).toBe("Sam");
     expect(p.requests.find((r) => r.id === "request-0002")?.note).toBe("Calling you");
+    expect(p.off_belay?.how).toBe("When you turn 16");
+    expect(p.handover?.by).toBe("Sam");
   });
 
   it("a limit's name kept before Belay tidied names reaches the phone tidied, and the next change saves it so", async () => {
