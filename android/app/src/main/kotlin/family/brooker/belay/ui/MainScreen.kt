@@ -50,13 +50,17 @@ import family.brooker.belay.inventory.Collectors
 import family.brooker.belay.settings.Connection
 
 /**
- * [connection] is null while it loads; [waiting] is how many outbox items wait to be sent.
+ * [connection] is null while it loads; [waiting] is how many outbox items wait to be sent;
+ * [unsentRequests] the requests with a send still waiting. Phase 2's cards come first: a
+ * pause, the apps waiting for a parent, the answers, blocked apps and the rules.
  */
 @Composable
 fun MainScreen(
     view: AgentView?,
     connection: Connection?,
     waiting: Int,
+    unsentRequests: Set<String>,
+    onAsk: Ask,
     onConnect: () -> Unit,
     onAllowBattery: () -> Unit,
     onRelease: (() -> Unit)?,
@@ -72,6 +76,12 @@ fun MainScreen(
                 item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
                 return@LazyColumn
             }
+            val kid = view.kid
+            kid.plan?.pause?.let { pause -> item { PausedBanner(pause) } }
+            if (kid.plan?.waiting.orEmpty().isNotEmpty()) item { WaitingCard(kid, unsentRequests, onAsk) }
+            if (kid.requests.any { !it.open }) item { AnswersCard(kid) }
+            if (kid.plan?.blocked.orEmpty().isNotEmpty()) item { BlockedCard(kid, unsentRequests, onAsk) }
+            item { RulesCard(kid) }
             item { StatusCard(view) }
             item { ConnectionCard(connection, waiting, onConnect) }
             item { CanSeeCard(Collectors.categories, connection) }
@@ -355,7 +365,7 @@ private fun detectionLabel(detection: Detection): String = stringResource(
 )
 
 @Composable
-private fun formatTime(millis: Long): String = DateUtils.formatDateTime(
+internal fun formatTime(millis: Long): String = DateUtils.formatDateTime(
     LocalContext.current,
     millis,
     DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_SHOW_TIME or DateUtils.FORMAT_ABBREV_MONTH,

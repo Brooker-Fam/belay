@@ -279,6 +279,10 @@ interface OutboxDao {
     @Query("SELECT * FROM outbox WHERE type = 'request' AND package_name = :packageName ORDER BY id")
     fun requestsFor(packageName: String): List<OutboxRow>
 
+    /** The kid's screen shows whether each request has reached the server yet. */
+    @Query("SELECT item_id FROM outbox WHERE type = 'request' AND state = 'pending'")
+    fun pendingRequestItemIds(): Flow<List<String>>
+
     /** An unsent earlier send of the same request: the newer one replaces it. */
     @Query("DELETE FROM outbox WHERE type = 'request' AND state = 'pending' AND item_id LIKE :itemIdPrefix || '%'")
     fun deletePendingRequestSends(itemIdPrefix: String)

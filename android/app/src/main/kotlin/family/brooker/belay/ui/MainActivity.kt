@@ -28,10 +28,14 @@ class MainActivity : ComponentActivity() {
                     .collectAsStateWithLifecycle(initialValue = null).value
                 val waiting = remember { AgentStore.get(applicationContext).pendingCountFlow }
                     .collectAsStateWithLifecycle(initialValue = 0).value
+                val unsent = remember { AgentStore.get(applicationContext).unsentRequestsFlow }
+                    .collectAsStateWithLifecycle(initialValue = emptySet()).value
                 MainScreen(
                     view = view,
                     connection = connection,
                     waiting = waiting,
+                    unsentRequests = unsent,
+                    onAsk = { packageName, reason -> Agent.ask(applicationContext, packageName, reason) },
                     onConnect = { startActivity(Intent(this, EnrollActivity::class.java)) },
                     onAllowBattery = ::requestBatteryExemption,
                     onRelease = if (DebugTools.CAN_RELEASE) ::releasePhone else null,

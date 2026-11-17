@@ -201,6 +201,12 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
 
     fun requestsQueuedFor(packageName: String): List<OutboxRow> = outbox.requestsFor(packageName)
 
+    /** The ids of the kid's requests with a send still waiting in the outbox. */
+    val unsentRequestsFlow: Flow<Set<String>>
+        get() = outbox.pendingRequestItemIds().map { ids ->
+            ids.mapNotNullTo(HashSet()) { it.removePrefix("request:").substringBeforeLast(':', "").takeIf(String::isNotEmpty) }
+        }
+
     // Phase 2: the policy, what Belay applied, the kid's requests, Private DNS.
 
     /** The last policy the phone got, or null before the first (or if it can't be read). */
