@@ -30,6 +30,20 @@
  *   screen-time "<phone>" --measure on|off        whether the phone sends how long apps are used (Phase 3)
  *   answer "<phone>" <request id> approve|decline|talk [--minutes <n>] [--note <words>]
  *                                                 answers the kid's request; approving more time needs --minutes
+ *   location "<phone>" --mode off|on_demand|periodic [--every <minutes>] [--hours HH:MM-HH:MM|all] [--provider gps|fused]
+ *            [--keep-on on|off] [--fallback on|off]
+ *                                                 whether and how the phone shares where it is (Phase 4)
+ *   place "<phone>" --name <words> --lat <x> --lng <y> --radius <m> [--notify arrive,leave]
+ *                                                 a place (the same name again changes it); prints only its id
+ *   place "<phone>" --remove <id>                 removes it; prints only its id
+ *   locate-now "<phone>"                          a check of where the phone is now; prints only the command's id, and doesn't wait
+ *   lost "<phone>" --message <words> [--number <n>], or lost "<phone>" --off
+ *                                                 lost mode: the words (and number) on the lock screen
+ *   help-seen "<phone>" <request id> [--note <words>]
+ *                                                 marks the kid's help request seen (Phase 7)
+ *   parent-number "<phone>" --name <name> --number <E.164>, or --remove <name>
+ *                                                 a number on the phone's emergency card
+ *   kid-number "<phone>" <E.164>|--clear          the kid's own number, for "Call" on the parent page
  *
  * Changes are logged as the server's (the activity log's "The server"). A running server sees
  * them within a second or two and passes them to the phone's long-poll. Hardening (factory
@@ -47,7 +61,13 @@ import { issueCommand, listCommands } from "./family/commands.js";
 import { appCounts, listChanges } from "./family/apps.js";
 import { type DeviceRow, findDeviceByName, listDevices, nameTaken } from "./family/devices.js";
 import { LIMITS, RuleRefused, answerRequest, askAgainSummary, decideApp, pausePhone, protect, resumePhone, setNewApps, type PolicyContext } from "./family/policy.js";
-import { recentRequests } from "./family/requests.js";
+import { recentRequests, unseenHelp } from "./family/requests.js";
+import { helpSeenFor, parentNumbersFor } from "./family/kidside.js";
+import { markHelpSeen, putPhoneParentNumber, removePhoneParentNumber, setKidNumber } from "./family/kidside-changes.js";
+import { type LocationChange, locateNow, removePlace, savePlace, setLocation, setLost } from "./family/location/changes.js";
+import { latestFix, listFixes, listPlaceEvents } from "./family/location/fixes.js";
+import { type Notify, listPlaces, locationFor, locationSettings } from "./family/location/store.js";
+import { locationWords } from "./mcp/location.js";
 import { setPhoneRules, setPhoneSettings } from "./family/screentime/changes.js";
 import { WEEKDAYS, type Weekday, clockMinutes } from "./family/screentime/days.js";
 import { newRuleId, phoneLabels, phoneRules, screenTimeFor } from "./family/screentime/rules.js";
@@ -55,7 +75,7 @@ import { usageDays } from "./family/screentime/usage.js";
 import { duration } from "./family/screentime/words.js";
 import { oneLine } from "./text.js";
 import { runOpsCommand } from "./ops/cli.js";
-import { getSettings } from "./settings.js";
+import { aiReads, getSettings } from "./settings.js";
 import { formatAgo, isoInZone } from "./time.js";
 
 export interface CliIO {
@@ -127,7 +147,20 @@ const USAGE = `Commands:
   schedule "<phone>" --remove <id>
   lock-now "<phone>" [--minutes <n>]
   screen-time "<phone>" --measure on|off
-  answer "<phone>" <request id> approve|decline|talk [--minutes <n>] [--note <words>]`;
+  answer "<phone>" <request id> approve|decline|talk [--minutes <n>] [--note <words>]
+  location "<phone>" --mode off|on_demand|periodic [--every <minutes>] [--hours HH:MM-HH:MM|all] [--provider gps|fused] [--keep-on on|off] [--fallback on|off]
+  place "<phone>" --name <words> --lat <x> --lng <y> --radius <m> [--notify arrive,leave]
+  place "<phone>" --remove <id>
+  locate-now "<phone>"
+  lost "<phone>" --message <words> [--number <n>]
+  lost "<phone>" --off
+  help-seen "<phone>" <request id> [--note <words>]
+  parent-number "<phone>" --name <name> --number <E.164>
+  parent-number "<phone>" --remove <name>
+  kid-number "<phone>" <E.164>|--clear`;
+
+/** How many of the newest fixes and place events status --json lists per phone. */
+const STATUS_FIXES = 50;
 
 /** How many of the newest usage days status --json lists per phone. */
 const STATUS_USAGE_DAYS = 31;
@@ -254,7 +287,10 @@ async function run(argv: string[], io: CliIO): Promise<void> {
             at: iso(c.resultAt),
             problem: c.problem,
           })),
-          /** The kid's requests: waiting ones, and the last 30 days'. Phase 3 adds more_time and agreement ones. */
+          /**
+           * The kid's requests: waiting ones (and help no parent has seen), and the last 30 days'. Phase 3 adds more_time and
+           * agreement ones, Phase 7 help and talk ones, and withdrawn_at (as the phone sent it) on any the kid withdrew.
+           */
           requests: recentRequests(db, now, { deviceId: d.id }).map((r) => ({
             id: r.id,
             kind: r.kind,
@@ -263,6 +299,14 @@ async function run(argv: string[], io: CliIO): Promise<void> {
             reason: r.reason,
             ...(r.kind === "more_time" ? { limit_id: r.limitId, minutes: r.minutes, given_minutes: r.givenMinutes } : {}),
             ...(r.kind === "agreement" ? { version: r.version, answer: r.answer } : {}),
+            ...(r.kind === "help"
+              ? {
+                  seen_at: iso(r.seenAt),
+                  seen_by: r.seenAt === null ? null : (r.seenBy ?? "the server"),
+                  location: r.fix ? { id: r.fix.id, at: r.fix.at, lat: r.fix.lat, lng: r.fix.lng, accuracy_m: r.fix.accuracyM, mock: r.fix.mock } : null,
+                }
+              : {}),
+            ...(r.withdrawnAt !== null ? { withdrawn_at: r.withdrawnAt } : {}),
           })),
           recent_changes: listChanges(db, { deviceId: d.id, includeSystem: true, limit: 20 }).map((c) => ({
             kind: c.kind,
@@ -280,6 +324,26 @@ async function run(argv: string[], io: CliIO): Promise<void> {
             screen_minutes: u.screenMinutes,
             apps: u.apps.map((a) => ({ package: a.package, minutes: a.minutes, opens: a.opens })),
           })),
+          /** Phase 4: the policy's location (null until a parent first sets it). */
+          location: locationFor(db, d.id),
+          /** Phase 4: the fixes the server keeps, newest first, at most 50 (times as the phone sent them). */
+          fixes: listFixes(db, d.id, { limit: STATUS_FIXES }).map((f) => ({
+            id: f.id,
+            at: f.at,
+            lat: f.lat,
+            lng: f.lng,
+            accuracy_m: f.accuracyM,
+            provider: f.provider,
+            reason: f.reason,
+            command_id: f.commandId,
+            mock: f.mock,
+          })),
+          /** Phase 4: arrivals and departures, newest first, at most 50 (times as the phone sent them). */
+          place_events: listPlaceEvents(db, d.id, { limit: STATUS_FIXES }).map((e) => ({ id: e.id, place_id: e.placeId, place_name: e.placeName, kind: e.kind, at: e.at, fix_id: e.fixId })),
+          /** Phase 7: the policy's help_seen, parent_numbers and ai_reads. */
+          help_seen: helpSeenFor(db, d.id, now),
+          parent_numbers: parentNumbersFor(db, d.id),
+          ai_reads: aiReads(settings),
         };
       });
       if (flags.has("json")) {
@@ -287,9 +351,13 @@ async function run(argv: string[], io: CliIO): Promise<void> {
         return;
       }
       if (!phones.length) io.out("No phones yet.");
+      const devices = listDevices(db, settings, now);
       for (const p of phones) {
         const waiting = p.requests.filter((r) => r.status === "pending").length;
+        const id = devices.find((d) => d.name === p.name)?.id ?? "";
+        const help = unseenHelp(db, id).length;
         io.out(`${p.name}: ${p.status}${p.problems.length ? ` (${p.problems.join("; ")})` : ""}`);
+        if (help) io.out(`  ${help === 1 ? "a help request hasn't" : `${help} help requests haven't`} been seen: the Requests page has it (help-seen marks it)`);
         io.out(`  last heard from ${p.heard_ago}; ${p.user_apps} apps, ${p.apps_to_review} to review; ${waiting} request${waiting === 1 ? "" : "s"} waiting`);
         io.out(`  rules version ${p.policy_version}; the phone applied ${p.enforcement ? `version ${p.enforcement.policy_version}` : "none yet"}`);
         if (p.screen_time) {
@@ -298,6 +366,11 @@ async function run(argv: string[], io: CliIO): Promise<void> {
             `  screen time: ${p.screen_time.limits.length} limit${p.screen_time.limits.length === 1 ? "" : "s"}, ${p.screen_time.schedules.length} schedule${p.screen_time.schedules.length === 1 ? "" : "s"}, measuring ${p.screen_time.measure ? "on" : "off"}` +
               (today ? `; ${today.day}: ${duration(today.screen_minutes)} so far` : ""),
           );
+        }
+        const s = locationSettings(db, id);
+        if (s) {
+          const last = latestFix(db, id);
+          io.out(`  location: ${locationWords(s)}${last ? `; last fix ${formatAgo(last.at, now)}` : ""}`);
         }
         for (const c of p.recent_changes.slice(0, 5)) io.out(`  ${c.at ?? ""} ${c.kind} ${c.package}`);
       }
@@ -526,6 +599,138 @@ async function run(argv: string[], io: CliIO): Promise<void> {
       if (!done.result) throw new CliError(`${row.name} has no request ${id}.`);
       const given = done.result.minutes !== null ? `: ${done.result.minutes} more minutes for ${done.result.day ?? "today"}` : "";
       io.out(`${row.name}: request ${id} is ${answer === "talk" ? "answered \"let's talk\"" : answer}${given} (rules version ${done.version}).`);
+      return;
+    }
+    case "location": {
+      const row = phone();
+      const usage = `Usage: location "<phone>" --mode off|on_demand|periodic [--every <minutes>] [--hours HH:MM-HH:MM|all] [--provider gps|fused] [--keep-on on|off] [--fallback on|off]`;
+      const change: LocationChange = {};
+      const mode = flags.get("mode");
+      if (mode !== undefined) {
+        if (mode !== "off" && mode !== "on_demand" && mode !== "periodic") throw new CliError(usage);
+        change.mode = mode;
+      }
+      const every = flags.get("every");
+      if (every !== undefined) {
+        const n = Number(every);
+        if (every === true || !Number.isInteger(n) || n < 15 || n > 120) throw new CliError(`${usage}. --every is 15 to 120 minutes.`);
+        change.everyMinutes = n;
+      }
+      const hours = flags.get("hours");
+      if (hours !== undefined) {
+        const match = typeof hours === "string" ? /^(\d{2}:\d{2})-(\d{2}:\d{2})$/.exec(hours) : null;
+        if (hours === "all") change.hours = null;
+        else if (match?.[1] && match[2]) change.hours = { start: match[1], end: match[2] };
+        else throw new CliError(`${usage}. --hours is like 07:00-21:00, in the phone's time, or all.`);
+      }
+      const provider = flags.get("provider");
+      if (provider !== undefined) {
+        if (provider !== "gps" && provider !== "fused") throw new CliError(usage);
+        change.provider = provider;
+      }
+      for (const [flag, key] of [
+        ["keep-on", "keepOn"],
+        ["fallback", "fallbackFused"],
+      ] as const) {
+        const value = flags.get(flag);
+        if (value === undefined) continue;
+        if (value !== "on" && value !== "off") throw new CliError(usage);
+        change[key] = value === "on";
+      }
+      if (!Object.keys(change).length) throw new CliError(usage);
+      const done = setLocation(ctx, row.id, change, server);
+      const s = done.result.settings;
+      io.out(`${row.name}: location is ${locationWords(s)}${s.mode !== "off" && s.keepOn ? ", kept on" : ""}, with ${s.provider === "gps" ? "GPS only" : "Android's combined provider"} (rules version ${done.version}).`);
+      return;
+    }
+    case "place": {
+      // Its only line on stdout is the place's id, for scripts.
+      const row = phone();
+      const remove = flags.get("remove");
+      if (remove !== undefined) {
+        const done = typeof remove === "string" ? removePlace(ctx, row.id, remove, server) : null;
+        if (!done?.result.removed) throw new CliError(`Usage: place "<phone>" --remove <id>, the id place printed. ${row.name} has no place with that id.`);
+        io.out(done.result.removed.id);
+        io.err(`${row.name}: no more ${done.result.removed.name} (rules version ${done.version}).`);
+        return;
+      }
+      const usage = `Usage: place "<phone>" --name <words> --lat <x> --lng <y> --radius <m> [--notify arrive,leave]`;
+      const name = flags.get("name");
+      const lat = Number(flags.get("lat"));
+      const lng = Number(flags.get("lng"));
+      const radius = Number(flags.get("radius"));
+      const notifyFlag = flags.get("notify");
+      if (typeof name !== "string" || !flags.has("lat") || !flags.has("lng") || !flags.has("radius") || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+        throw new CliError(`${usage}. Latitude and longitude are numbers, like 40.1 and -73.2.`);
+      }
+      const notify = notifyFlag === undefined || notifyFlag === "none" ? [] : typeof notifyFlag === "string" ? notifyFlag.split(",").map((n) => n.trim()) : [""];
+      if (notify.some((n) => n !== "arrive" && n !== "leave")) throw new CliError(`${usage}. --notify is arrive, leave, or both: arrive,leave.`);
+      const same = listPlaces(db, row.id).find((p) => p.name.toLowerCase() === name.trim().toLowerCase());
+      const done = savePlace(ctx, row.id, { ...(same ? { id: same.id } : {}), name, lat, lng, radiusM: radius, notify: notify as Notify[] }, server);
+      io.out(done.result.place.id);
+      io.err(`${row.name}: ${done.result.place.name}, ${radius} m around ${done.result.place.lat}, ${done.result.place.lng} (rules version ${done.version}).`);
+      return;
+    }
+    case "locate-now": {
+      // Its only line on stdout is the command's id, for scripts. It doesn't wait for the fix: status --json shows it.
+      const row = phone();
+      if (row.revoked_at !== null) throw new CliError(`${row.name} is disconnected, so it wouldn't get that.`);
+      const done = locateNow(ctx, row.id, server);
+      io.out(done.result.command);
+      io.err(`${row.name}: the phone takes a fix when it gets this (rules version ${done.version}), if that's by ${iso(done.result.expiresAt) ?? ""}. The kid gets a notice.`);
+      return;
+    }
+    case "lost": {
+      const row = phone();
+      if (flags.has("off")) {
+        const done = setLost(ctx, row.id, null, server);
+        io.out(done.result.changed ? `${row.name}: lost mode is off (rules version ${done.version}).` : `${row.name} wasn't in lost mode.`);
+        return;
+      }
+      const message = flags.get("message");
+      const number = flags.get("number");
+      if (typeof message !== "string" || number === true) throw new CliError(`Usage: lost "<phone>" --message <words> [--number <n>], or lost "<phone>" --off`);
+      const done = setLost(ctx, row.id, { message, number: number ?? null }, server);
+      io.out(`${row.name}: lost mode is on; the lock screen says "${locationFor(db, row.id)?.lost?.message ?? message}" (rules version ${done.version}).`);
+      return;
+    }
+    case "help-seen": {
+      const row = phone();
+      const id = positional[1] ?? "";
+      const note = flags.get("note");
+      if (!id || note === true) throw new CliError(`Usage: help-seen "<phone>" <request id> [--note <words>]`);
+      const done = markHelpSeen(ctx, row.id, id, server, note ?? null);
+      if (!done.result) throw new CliError(`${row.name} has no help request ${id}.`);
+      io.out(
+        done.result.already
+          ? `${row.name}: help request ${id} was already seen, at ${iso(done.result.seenAt) ?? ""}.`
+          : `${row.name}: help request ${id} is marked seen; the kid's phone shows it (rules version ${done.version}).`,
+      );
+      return;
+    }
+    case "parent-number": {
+      const row = phone();
+      const remove = flags.get("remove");
+      if (remove !== undefined) {
+        if (typeof remove !== "string") throw new CliError(`Usage: parent-number "<phone>" --remove <name>`);
+        const done = removePhoneParentNumber(ctx, row.id, remove, server);
+        if (!done.result.removed) throw new CliError(`${row.name}'s emergency card has no number called ${remove}.`);
+        io.out(`${row.name}: ${remove} is off the emergency card (rules version ${done.version}).`);
+        return;
+      }
+      const name = flags.get("name");
+      const number = flags.get("number");
+      if (typeof name !== "string" || typeof number !== "string") throw new CliError(`Usage: parent-number "<phone>" --name <name> --number <E.164>, or --remove <name>`);
+      const done = putPhoneParentNumber(ctx, row.id, { name, number }, server);
+      io.out(`${row.name}: the emergency card lists ${done.result.numbers.map((p) => `${p.name} (${p.number})`).join(", ")} (rules version ${done.version}).`);
+      return;
+    }
+    case "kid-number": {
+      const row = phone();
+      const number = flags.has("clear") ? null : (positional[1] ?? "").replace(/[\s().-]/g, "");
+      if (number === "") throw new CliError(`Usage: kid-number "<phone>" <E.164>, like +15555550123, or --clear`);
+      setKidNumber(ctx, row.id, number, server);
+      io.out(number === null ? `${row.name}: no number for "Call".` : `${row.name}: "Call" on a help request dials ${number}.`);
       return;
     }
     case "agent-offer": {
