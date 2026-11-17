@@ -78,3 +78,31 @@ UPDATE requests SET status = 'superseded', superseded_by = (
   WHERE status = 'pending' AND EXISTS (
     SELECT 1 FROM requests n WHERE n.device_id = requests.device_id AND n.package = requests.package AND n.status = 'pending'
       AND (n.received_at > requests.received_at OR (n.received_at = requests.received_at AND n.rowid > requests.rowid)));
+
+-- Phase 6: versions of Belay a person added to the server (the CLI's agent-add), each kept as
+-- agents/<sha256>.apk in the data directory. The server doesn't parse the APK: the phone checks
+-- its package, version and signature before installing.
+CREATE TABLE agent_files (
+  sha256 TEXT PRIMARY KEY,                  -- of the file, lowercase hex
+  size INTEGER NOT NULL,
+  version_code INTEGER NOT NULL,            -- as the person who added it said
+  version_name TEXT,
+  added_at INTEGER NOT NULL,
+  added_by TEXT REFERENCES parents(id) ON DELETE SET NULL  -- NULL: the server's CLI
+) STRICT;
+
+-- The update a parent offered each phone (the policy's agent_update), and how it's going, as
+-- the phone reports it (enforcement.agent_update).
+CREATE TABLE agent_offers (
+  device_id TEXT PRIMARY KEY REFERENCES devices(id) ON DELETE CASCADE,
+  sha256 TEXT NOT NULL REFERENCES agent_files(sha256),
+  offered_at INTEGER NOT NULL,
+  offered_by TEXT REFERENCES parents(id) ON DELETE SET NULL,  -- NULL: the server's CLI
+  state TEXT CHECK (state IN ('downloading', 'checking', 'installing', 'failed', 'done')),
+  problem TEXT,                             -- the phone's words when it failed: untrusted
+  state_at INTEGER,                         -- the phone's clock
+  reported_at INTEGER,                      -- when the server heard
+  installing_at INTEGER,                    -- when the phone first said it was installing
+  done_at INTEGER,                          -- when the phone first ran this version or a newer one
+  failure_told_at INTEGER                   -- when the parents were told it failed
+) STRICT;

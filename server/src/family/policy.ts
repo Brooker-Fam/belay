@@ -506,6 +506,22 @@ function requestAnswers(db: DB, deviceId: string, now: number): Policy["requests
     }));
 }
 
+/**
+ * Phase 6: the version of Belay a parent offered this phone (family/agent.ts), while the phone
+ * runs an older one; Android refuses to install an older version over a newer one anyway.
+ */
+function agentUpdate(db: DB, deviceId: string): Policy["agent_update"] {
+  const offer = db
+    .prepare<[string], { sha256: string; size: number; version_code: number; version_name: string | null }>(
+      "SELECT f.sha256, f.size, f.version_code, f.version_name FROM agent_offers o JOIN agent_files f ON f.sha256 = o.sha256 WHERE o.device_id = ?",
+    )
+    .get(deviceId);
+  if (!offer) return null;
+  const running = deviceFacts(db, deviceId)?.agent_version_code;
+  if (running !== undefined && running >= offer.version_code) return null;
+  return { version_code: offer.version_code, version_name: offer.version_name, sha256: offer.sha256, size: offer.size };
+}
+
 /** The policy for one phone, as the device API sends it. */
 export function buildPolicy(db: DB, deviceId: string, now: number): Policy {
   const rules = getRules(db, deviceId);
@@ -524,8 +540,8 @@ export function buildPolicy(db: DB, deviceId: string, now: number): Policy {
     frp_accounts: [...rules.frpAccounts],
     support_message: rules.supportMessage,
     requests: requestAnswers(db, deviceId, now),
+    agent_update: agentUpdate(db, deviceId),
     // Phase 6 and 10: not built yet.
-    agent_update: null,
     recovery: null,
     commands: [],
   };
@@ -564,9 +580,19 @@ export interface Changed<T> {
   changed: boolean;
 }
 
-type Log = (action: string, detail?: Record<string, unknown>) => void;
+export type Log = (action: string, detail?: Record<string, unknown>) => void;
 
-function mutate<T>(ctx: PolicyContext, deviceId: string, actor: Changer, change: (rules: Rules, log: Log) => T): Changed<T> {
+/**
+ * A change to what one phone gets from the other parts of the family's rules (Phase 6's update
+ * and recovery key, Phase 10's commands, what the phone itself reports), the way the rules here
+ * change: in one transaction, in the activity log, with the version bumped when what the phone
+ * would see changed. A phone's own report is never refused.
+ */
+export function changePolicy<T>(ctx: PolicyContext, deviceId: string, actor: Actor, change: (log: Log) => T): Changed<T> {
+  return mutate(ctx, deviceId, actor, (_rules, log) => change(log));
+}
+
+function mutate<T>(ctx: PolicyContext, deviceId: string, actor: Actor, change: (rules: Rules, log: Log) => T): Changed<T> {
   const { db, now } = ctx;
   const outcome = db.transaction((): Changed<T> => {
     const before = content(db, deviceId, now);
@@ -584,7 +610,7 @@ function mutate<T>(ctx: PolicyContext, deviceId: string, actor: Changer, change:
     if (changed) {
       version += 1;
       // Never more than the phone can take. A change that makes it smaller always goes through.
-      if (policyBytes(after, version, now) > LIMITS.maxPolicyBytes && Buffer.byteLength(after) > Buffer.byteLength(before)) {
+      if (actor.kind !== "phone" && policyBytes(after, version, now) > LIMITS.maxPolicyBytes && Buffer.byteLength(after) > Buffer.byteLength(before)) {
         throw new RuleRefused(TOO_LARGE);
       }
       db.prepare("UPDATE policies SET version = ?, changed_at = ? WHERE device_id = ?").run(version, now, deviceId);

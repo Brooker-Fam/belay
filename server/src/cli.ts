@@ -54,6 +54,7 @@ async function main(): Promise<number> {
       },
       readSecret,
       interactive: process.stdin.isTTY,
+      stdin: process.stdin,
     });
   } finally {
     db.close();

@@ -12,6 +12,9 @@
  *   decide "<phone>" <package> allow|block|undecided
  *   pause "<phone>" [--minutes N] [--note text]   until a parent resumes it, without --minutes
  *   resume "<phone>"
+ *   agent-add <apk> --version-code <n> [--version-name <name>]
+ *                                                 stores a version of Belay; prints only its SHA-256
+ *   agent-offer "<phone>" <sha256>                offers that version to the phone, as a parent would
  *
  * Changes are logged as the server's (the activity log's "The server"). A running server sees
  * them within a second or two and passes them to the phone's long-poll. Hardening (factory
@@ -23,7 +26,8 @@ import { audit } from "./audit.js";
 import type { Config } from "./config.js";
 import type { DB } from "./db.js";
 import { createEnrollmentCode } from "./device/enroll.js";
-import { packageName } from "./device/schemas.js";
+import { packageName, sha256Hex } from "./device/schemas.js";
+import { AgentFileError, type Offer, addAgentFile, currentOffer, offerAgent, versionWords } from "./family/agent.js";
 import { appCounts, listChanges } from "./family/apps.js";
 import { type DeviceRow, findDeviceByName, listDevices, nameTaken } from "./family/devices.js";
 import { LIMITS, RuleRefused, askAgainSummary, decideApp, pausePhone, protect, resumePhone, setNewApps, type PolicyContext } from "./family/policy.js";
@@ -41,9 +45,27 @@ export interface CliIO {
   readSecret: (prompt: string) => Promise<string>;
   /** Whether stdin is a terminal (reset-password asks twice there). */
   interactive: boolean;
+  /** For agent-add -: the APK, piped in. */
+  stdin?: NodeJS.ReadableStream;
 }
 
 class CliError extends Error {}
+
+/** status --json's agent_update: the offer, and what the phone last said about it. */
+function updateStatus(offer: Offer | null, iso: (ms: number | null) => string | null) {
+  if (!offer) return null;
+  return {
+    sha256: offer.file.sha256,
+    version_code: offer.file.versionCode,
+    version_name: offer.file.versionName,
+    size: offer.file.size,
+    offered_at: iso(offer.offeredAt),
+    /** Whether the policy offers it now: false once the phone runs it or a newer version. */
+    sent: offer.sent,
+    phone: offer.state === null ? null : { state: offer.state, problem: offer.problem, at: iso(offer.stateAt) },
+    done_at: iso(offer.doneAt),
+  };
+}
 
 /** "Of the apps without a decision, 1 is allowed and 2 wait for a parent." */
 function askAgainWords(r: { grandfathered: number; stillWaiting: number }): string {
@@ -60,7 +82,9 @@ const USAGE = `Commands:
   policy "<phone>" --new-apps ask|allow [--allow-waiting] [--hold-new]
   decide "<phone>" <package> allow|block|undecided
   pause "<phone>" [--minutes N] [--note text]
-  resume "<phone>"`;
+  resume "<phone>"
+  agent-add <apk> --version-code <n> [--version-name <name>]
+  agent-offer "<phone>" <sha256>`;
 
 /** Positional arguments, and --name value (or --name=value, or a bare --name) flags. */
 function parseArgs(args: string[]): { positional: string[]; flags: Map<string, string | true> } {
@@ -171,6 +195,11 @@ async function run(argv: string[], io: CliIO): Promise<void> {
           policy_version: d.policyVersion,
           /** What the phone last said it enforces (docs/protocol.md, "Enforcement"), or null. */
           enforcement: d.enforcement,
+          /** Phase 6: the version of Belay the phone runs, and the SHA-256 of the certificate it's signed with, as it reported them. */
+          agent_version_code: d.facts?.agent_version_code ?? null,
+          agent_signing_sha256: d.facts?.agent_signing_sha256 ?? null,
+          /** Phase 6: the update offered to the phone, if any, and how it's going. */
+          agent_update: updateStatus(currentOffer(db, d.id), iso),
           /** The kid's requests: waiting ones, and the last 30 days'. */
           requests: recentRequests(db, now, { deviceId: d.id }).map((r) => ({ package: r.package, status: r.status, reason: r.reason })),
           recent_changes: listChanges(db, { deviceId: d.id, includeSystem: true, limit: 20 }).map((c) => ({
@@ -253,6 +282,45 @@ async function run(argv: string[], io: CliIO): Promise<void> {
       const row = phone();
       const done = resumePhone(ctx, row.id, server);
       io.out(done.result.wasPaused ? `${row.name}: resumed (rules version ${done.version}).` : `${row.name} wasn't paused.`);
+      return;
+    }
+    case "agent-add": {
+      // Its only line on stdout is the SHA-256, for scripts: agent-offer takes it.
+      const [path] = positional;
+      const code = Number(flags.get("version-code"));
+      const name = flags.get("version-name");
+      if (!path || !flags.has("version-code") || name === true) throw new CliError("Usage: agent-add <apk, or - for stdin> --version-code <n> [--version-name <name>]");
+      const source = path === "-" ? io.stdin : path;
+      if (!source) throw new CliError("There's no stdin to read the APK from here. Give the file's path instead.");
+      let added: Awaited<ReturnType<typeof addAgentFile>>;
+      try {
+        added = await addAgentFile(db, config.agentsDir, now, source, { code, name: name ?? null }, { parentId: null });
+      } catch (error) {
+        if (error instanceof AgentFileError) throw new CliError(error.message);
+        throw error;
+      }
+      const { file, existed } = added;
+      if (!existed) audit(db, now, server, "agent.added", { detail: { version_code: file.versionCode, version_name: file.versionName ?? undefined, sha256: file.sha256, size: file.size } });
+      io.out(file.sha256);
+      io.err(`${existed ? "Already on the server" : "Added"}: Belay ${versionWords(file)}, ${file.size} bytes. To offer it to a phone: agent-offer "<phone>" ${file.sha256}`);
+      return;
+    }
+    case "agent-offer": {
+      const row = phone();
+      const sha = positional[1] ?? "";
+      if (!sha256Hex.safeParse(sha).success) throw new CliError(`Usage: agent-offer "<phone>" <sha256>, the SHA-256 that agent-add printed`);
+      if (row.revoked_at !== null) throw new CliError(`${row.name} is disconnected, so it can't be updated.`);
+      let done: ReturnType<typeof offerAgent>;
+      try {
+        done = offerAgent(ctx, row.id, sha, server);
+      } catch (error) {
+        if (error instanceof AgentFileError) throw new CliError(error.message);
+        throw error;
+      }
+      io.out(`${row.name}: Belay ${versionWords(done.result.file)} is offered (rules version ${done.version}).`);
+      if (done.result.notNewerThan !== null) {
+        io.err(`The phone runs version ${done.result.notNewerThan}, which isn't older: Android won't install this one over it, so the phone won't get it.`);
+      }
       return;
     }
     default:

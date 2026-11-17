@@ -39,6 +39,25 @@ export async function readJson<S extends z.ZodType>(c: Context, schema: S): Prom
   return { ok: false, description: `${where}: ${what}`.slice(0, 300) };
 }
 
+/**
+ * One byte range of a file of `size` bytes (RFC 9110, section 14): `bytes=N-`, `bytes=N-M` or
+ * `bytes=-N` as [start, end], inclusive; "unsatisfiable" when it's past the end or backwards; null
+ * to send the whole file, for no Range, or one this server doesn't serve (several ranges, other
+ * units, a malformed one), which RFC 9110 lets a server ignore.
+ */
+export function parseRange(header: string | undefined, size: number): { start: number; end: number } | "unsatisfiable" | null {
+  const match = header === undefined ? null : /^bytes=(\d*)-(\d*)$/.exec(header.trim());
+  if (!match || (match[1] === "" && match[2] === "")) return null;
+  const [, from = "", to = ""] = match;
+  if (from === "") {
+    const last = Number(to);
+    return last === 0 || size === 0 ? "unsatisfiable" : { start: Math.max(0, size - last), end: size - 1 };
+  }
+  const start = Number(from);
+  if (start >= size || (to !== "" && Number(to) < start)) return "unsatisfiable";
+  return { start, end: to === "" ? size - 1 : Math.min(Number(to), size - 1) };
+}
+
 export function bearerToken(header: string | undefined): string | null {
   const match = /^Bearer\s+([A-Za-z0-9._~+/-]+=*)\s*$/i.exec(header ?? "");
   return match?.[1] ?? null;
