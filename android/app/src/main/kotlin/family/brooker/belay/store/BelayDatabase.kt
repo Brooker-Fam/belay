@@ -156,10 +156,35 @@ data class ScreenTimeRow(
 )
 
 /**
+ * Phase 4. One row while the policy has location on (or a help fix is being shared), written
+ * only by the agent thread: core's LocationState, as JSON: where each place stands, the last fix,
+ * the fixes Belay still wants, lost mode as applied and the report. No history of fixes: they go
+ * to the server through the outbox, and leave the phone once sent.
+ */
+@Entity(tableName = "location")
+data class LocationRow(
+    @PrimaryKey val id: Int = 0,
+    val state: String,
+    @ColumnInfo(name = "updated_at") val updatedAt: Long,
+)
+
+/**
+ * Phase 7. "What Belay told your parent": each check a parent asked for, each lost mode and each
+ * fix the kid shared (core's ToldEntry, as JSON), written only by the agent thread from what it
+ * ran, kept 30 days. [lastAt] is when it last told the parent something (a lost mode's last fix).
+ */
+@Entity(tableName = "told", indices = [Index(value = ["last_at"])])
+data class ToldRow(
+    @PrimaryKey val id: String,
+    @ColumnInfo(name = "last_at") val lastAt: Long,
+    val entry: String,
+)
+
+/**
  * What waits to be sent, in the order it was made: [id] is AUTOINCREMENT, so it only ever
  * grows. Events are written in the same transaction as the baseline that found them.
  * Sent and dropped rows stay a while (OutboxPolicy.KEEP_FINISHED_MS) for the screen and for
- * tests; a sent snapshot or usage day is deleted at once.
+ * tests; a sent snapshot, usage day, fix or place event is deleted at once.
  */
 @Entity(
     tableName = "outbox",
@@ -167,18 +192,19 @@ data class ScreenTimeRow(
 )
 data class OutboxRow(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    /** [TYPE_EVENT], [TYPE_SNAPSHOT], [TYPE_REQUEST] or [TYPE_USAGE]. */
+    /** [TYPE_EVENT], [TYPE_SNAPSHOT], [TYPE_REQUEST], [TYPE_USAGE], [TYPE_FIX] or [TYPE_PLACE_EVENT]. */
     val type: String,
     /**
      * The event's id or the snapshot's snapshot_id: the server de-duplicates on it. A request
      * is sent again with each new reason, so its item id also counts the sends (core's
      * Requests.itemId); the server de-duplicates on the request's own id. A usage day is
-     * "usage:<day>:<zone>:<queued at>" (AgentStore.usageItemId): a newer one replaces it.
+     * "usage:<day>:<zone>:<queued at>" (AgentStore.usageItemId): a newer one replaces it. A fix
+     * or a place event is "fix:<id>" or "place_event:<id>".
      */
     @ColumnInfo(name = "item_id") val itemId: String,
-    /** The event's or the request's package (null for snapshots and usage days). */
+    /** The event's or the request's package (null for snapshots, usage days, fixes and place events). */
     @ColumnInfo(name = "package_name") val packageName: String?,
-    /** The WireEvent, InventoryRequest, WireRequest or WireUsageDay, as the JSON that is sent. */
+    /** The WireEvent, InventoryRequest, WireRequest, WireUsageDay, WireFix or WirePlaceEvent, as the JSON that is sent. */
     val payload: String,
     @ColumnInfo(name = "created_at") val createdAt: Long,
     val attempts: Int = 0,
@@ -196,6 +222,10 @@ data class OutboxRow(
 
         /** Phase 3: one usage day for `POST /api/v1/usage`. */
         const val TYPE_USAGE = "usage"
+
+        /** Phase 4: one fix, and one place event, for `POST /api/v1/locations`. */
+        const val TYPE_FIX = "fix"
+        const val TYPE_PLACE_EVENT = "place_event"
         const val STATE_PENDING = "pending"
         const val STATE_SENT = "sent"
         const val STATE_DROPPED = "dropped"
@@ -213,6 +243,9 @@ data class QueuedRow(
 )
 
 data class PayloadRow(val id: Long, val payload: String)
+
+/** Phase 4: a fix's or a place event's payload, with which of the two it is. */
+data class TypedPayloadRow(val id: Long, val type: String, val payload: String)
 
 @Dao
 interface InventoryDao {
@@ -275,18 +308,28 @@ interface OutboxDao {
     @Query("SELECT substr(payload, :start, :length) FROM outbox WHERE id = :id")
     fun payloadPart(id: Long, start: Int, length: Int): String?
 
-    /** Events and requests; a sent snapshot or usage day is deleted instead ([deleteSentLarge]). */
-    @Query("UPDATE outbox SET state = 'sent', finished_at = :at, last_error = NULL WHERE id IN (:ids) AND type NOT IN ('snapshot', 'usage')")
+    /** Phase 4: fixes and place events, in [ids] order is up to the caller. */
+    @Query("SELECT id, type, payload FROM outbox WHERE id IN (:ids) AND type IN ('fix', 'place_event') ORDER BY id")
+    fun locationPayloads(ids: List<Long>): List<TypedPayloadRow>
+
+    /** Events and requests; a sent snapshot, usage day, fix or place event is deleted instead ([deleteSentLarge]). */
+    @Query(
+        "UPDATE outbox SET state = 'sent', finished_at = :at, last_error = NULL WHERE id IN (:ids) " +
+            "AND type NOT IN ('snapshot', 'usage', 'fix', 'place_event')",
+    )
     fun markItemsSent(ids: List<Long>, at: Long)
 
-    /** Snapshots and usage days: large, and replaced by newer ones anyway. */
-    @Query("DELETE FROM outbox WHERE id IN (:ids) AND type IN ('snapshot', 'usage')")
+    /**
+     * Snapshots and usage days: large, and replaced by newer ones anyway. Fixes and place events
+     * (Phase 4): where the phone was doesn't stay on the phone once the family's server has it.
+     */
+    @Query("DELETE FROM outbox WHERE id IN (:ids) AND type IN ('snapshot', 'usage', 'fix', 'place_event')")
     fun deleteSentLarge(ids: List<Long>)
 
-    /** A dropped snapshot keeps its row and reason, not its payload. */
+    /** A dropped snapshot keeps its row and reason, not its payload; so do a fix and a place event (Phase 4). */
     @Query(
         "UPDATE outbox SET state = 'dropped', finished_at = :at, last_error = :reason, " +
-            "payload = CASE type WHEN 'snapshot' THEN '' ELSE payload END WHERE id = :id",
+            "payload = CASE WHEN type IN ('snapshot', 'fix', 'place_event') THEN '' ELSE payload END WHERE id = :id",
     )
     fun markDropped(id: Long, reason: String, at: Long)
 
@@ -362,6 +405,20 @@ interface OutboxDao {
 
     @Query("SELECT COUNT(*) FROM outbox WHERE state = 'pending' AND type = 'usage'")
     fun pendingUsageCount(): Int
+
+    /** Phase 4: keeps the newest [keep] unsent fixes and place events. */
+    @Query(
+        "DELETE FROM outbox WHERE id IN " +
+            "(SELECT id FROM outbox WHERE type IN ('fix', 'place_event') AND state = 'pending' ORDER BY id DESC LIMIT -1 OFFSET :keep)",
+    )
+    fun capPendingLocations(keep: Int)
+
+    /** Phase 4: every unsent fix and place event, when location goes off. */
+    @Query("DELETE FROM outbox WHERE type IN ('fix', 'place_event') AND state = 'pending'")
+    fun deleteAllPendingLocations(): Int
+
+    @Query("SELECT COUNT(*) FROM outbox WHERE state = 'pending' AND type IN ('fix', 'place_event')")
+    fun pendingLocationCount(): Int
 
     @Query("SELECT state, COUNT(*) AS count FROM outbox GROUP BY state")
     fun countsByState(): List<StateCount>
@@ -446,6 +503,25 @@ interface EnforcementDao {
 
     @Query("SELECT COUNT(*) FROM screen_time")
     fun screenTimeRows(): Int
+
+    @Query("SELECT * FROM location WHERE id = 0")
+    fun location(): LocationRow?
+
+    @Upsert
+    fun setLocation(row: LocationRow)
+
+    @Query("DELETE FROM location")
+    fun clearLocation(): Int
+
+    /** "What Belay told your parent", the newest first. */
+    @Query("SELECT * FROM told ORDER BY last_at DESC LIMIT :limit")
+    fun told(limit: Int): List<ToldRow>
+
+    @Upsert
+    fun upsertTold(rows: List<ToldRow>)
+
+    @Query("DELETE FROM told WHERE last_at < :before")
+    fun pruneTold(before: Long)
 }
 
 /**
@@ -453,19 +529,24 @@ interface EnforcementDao {
  * outbox gains a third type ("request") without a schema change. Version 3 (Phases 6 and 10)
  * adds agent_update, recovery, commands and policy_fetch, one row each. Version 4 (Phase 3) adds
  * screen_time, one row; the outbox gains "usage" and the requests their new kinds without a
- * schema change. Room migrates each version to the next by itself from the exported schemas in
- * app/schemas/ (new tables only).
+ * schema change. Version 5 (Phases 4 and 7) adds location, one row, and told; the outbox gains
+ * "fix" and "place_event", and the requests help, talk and withdrawals, without a schema change.
+ * Room migrates each version to the next by itself from the exported schemas in app/schemas/
+ * (new tables only).
  */
 @Database(
     entities = [
         PackageRow::class, ScanStateRow::class, ChangeRow::class, HeartbeatRow::class, OutboxRow::class,
         PolicyRow::class, EnforcementRow::class, RequestRow::class, PrivateDnsRow::class,
         AgentUpdateRow::class, RecoveryRow::class, CommandsRow::class, PolicyFetchRow::class,
-        ScreenTimeRow::class,
+        ScreenTimeRow::class, LocationRow::class, ToldRow::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
-    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4)],
+    autoMigrations = [
+        AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4),
+        AutoMigration(from = 4, to = 5),
+    ],
 )
 abstract class BelayDatabase : RoomDatabase() {
     abstract fun inventory(): InventoryDao

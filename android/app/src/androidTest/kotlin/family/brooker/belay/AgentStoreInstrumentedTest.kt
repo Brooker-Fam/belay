@@ -29,7 +29,17 @@ import family.brooker.belay.core.WireNewApps
 import family.brooker.belay.core.WirePolicy
 import family.brooker.belay.core.WireRecoveryUse
 import family.brooker.belay.core.WireRequest
+import family.brooker.belay.core.WireRequestKind
 import family.brooker.belay.core.WireUpdateState
+import family.brooker.belay.core.location.FixWant
+import family.brooker.belay.core.location.LocationState
+import family.brooker.belay.core.location.ToldEntry
+import family.brooker.belay.core.location.ToldKind
+import family.brooker.belay.core.location.WireFix
+import family.brooker.belay.core.location.WireFixReason
+import family.brooker.belay.core.location.WireLocationProvider
+import family.brooker.belay.core.location.WirePlaceEvent
+import family.brooker.belay.core.location.WirePlaceEventKind
 import family.brooker.belay.core.screentime.ScreenTime
 import family.brooker.belay.core.screentime.ScreenTimeState
 import family.brooker.belay.core.screentime.UploadState
@@ -346,6 +356,68 @@ class AgentStoreInstrumentedTest {
         assertEquals(OutboxPolicy.MAX_PENDING_USAGE, store.pendingUsageCount())
         val kept = store.usagePayloads(store.queue().map { it.id }).map { lenient.decodeFromString(WireUsageDay.serializer(), it).day }
         assertEquals("the newest are kept", days.takeLast(OutboxPolicy.MAX_PENDING_USAGE).map { it.day }, kept)
+    }
+
+    // Phase 4 and 7 (schema 5). Made-up coordinates only.
+
+    private fun fix(id: String, at: Long = T0) =
+        WireFix(id, at, 40.0, -75.0, 12, WireLocationProvider.GPS, WireFixReason.PERIODIC)
+
+    @Test
+    fun locationStateFixesAndPlaceEventsGoTogetherAndASentFixLeavesThePhone() {
+        val state = LocationState(wants = listOf(FixWant(WireFixReason.PERIODIC, T0)), problem = "No GPS fix in 60 seconds.")
+        val event = WirePlaceEvent("event-1", "p-school", WirePlaceEventKind.ARRIVED, T0, "fix-2")
+        store.commitEnforcement(
+            null, emptyList(), T0,
+            location = AgentStore.LocationWrite(state, fixes = listOf(fix("fix-1"), fix("fix-2")), placeEvents = listOf(event)),
+        )
+        assertEquals(state, store.locationState())
+        val queue = store.queue()
+        assertEquals(listOf(OutboxRow.TYPE_FIX, OutboxRow.TYPE_FIX, OutboxRow.TYPE_PLACE_EVENT), queue.map { it.type })
+        val (fixes, events) = store.locationPayloads(queue.map { it.id })
+        assertEquals(listOf("fix-1", "fix-2"), fixes.map { lenient.decodeFromString(WireFix.serializer(), it).id })
+        assertEquals(listOf("event-1"), events.map { lenient.decodeFromString(WirePlaceEvent.serializer(), it).id })
+        assertEquals(3, store.pendingLocationCount())
+
+        store.markSent(queue.map { it.id }, T0 + 1)
+        assertEquals("sent fixes and place events are deleted, not kept", 0, store.countsByState().values.sum())
+    }
+
+    @Test
+    fun locationGoingOffDropsUnsentFixesAndTheRow() {
+        store.commitEnforcement(null, emptyList(), T0, location = AgentStore.LocationWrite(LocationState(), fixes = listOf(fix("fix-3"))))
+        store.commitEnforcement(null, emptyList(), T0 + 1, location = AgentStore.LocationWrite(null, dropUnsent = true))
+        assertEquals(null, store.locationState())
+        assertEquals(0, store.pendingLocationCount())
+    }
+
+    @Test
+    fun aDroppedFixKeepsItsReasonButNotWhereThePhoneWas() {
+        store.commitEnforcement(null, emptyList(), T0, location = AgentStore.LocationWrite(LocationState(), fixes = listOf(fix("fix-4"))))
+        val id = store.queue().single().id
+        store.markDropped(id, "HTTP 400 invalid_request", T0 + 1)
+        assertEquals(listOf(""), store.locationPayloads(listOf(id)).first)
+    }
+
+    @Test
+    fun whatBelayToldYourParentKeepsTheNewestLineForEachIdThirtyDays() {
+        val day = 24 * 60 * 60 * 1000L
+        val first = ToldEntry("lost:1", ToldKind.LOST, T0, sent = true, count = 1, lastAt = T0)
+        store.commitEnforcement(null, emptyList(), T0, location = AgentStore.LocationWrite(LocationState(), told = listOf(first)))
+        store.commitEnforcement(null, emptyList(), T0 + 1, location = AgentStore.LocationWrite(LocationState(), told = listOf(first.copy(count = 2, lastAt = T0 + 300_000))))
+        assertEquals(listOf(2), store.told().map { it.count })
+        store.commitEnforcement(null, emptyList(), T0 + 31 * day, location = AgentStore.LocationWrite(LocationState(), told = listOf(ToldEntry("command-1", ToldKind.CHECK, T0 + 31 * day, "Claude", sent = true))))
+        assertEquals("older than 30 days goes", listOf("command-1"), store.told().map { it.id })
+    }
+
+    @Test
+    fun aWithdrawnRequestIsSentAgainWithWithdrawnAt() {
+        val talk = KidRequest("request-talk", "", "", "Can we talk about bedtime?", T0, kind = WireRequestKind.TALK)
+        store.commitEnforcement(null, listOf(talk), T0)
+        store.commitEnforcement(null, listOf(talk.copy(withdrawnAt = T0 + 1, revision = 1)), T0 + 1)
+        val sends = store.requestsQueuedFor("").map { lenient.decodeFromString(WireRequest.serializer(), it.payload) }
+        assertEquals("the unsent first send was replaced", listOf(T0 + 1), sends.map { it.withdrawnAt })
+        assertEquals(T0 + 1, store.requests().single().withdrawnAt)
     }
 
     private companion object {
