@@ -36,7 +36,10 @@ const width = (value: number, max: number) => `w${value <= 0 || max <= 0 ? 0 : M
 
 // ── Tabs ─────────────────────────────────────────────────────────────
 
-export const PhoneTabs: FC<{ view: View; device: DeviceView; current: "apps" | "usage" | "rules" | "agreement" | "location" | "calls" }> = ({ device, current }) => (
+export const PhoneTabs: FC<{ view: View; device: DeviceView; current: "apps" | "usage" | "rules" | "agreement" | "location" | "calls" | "network" }> = ({
+  device,
+  current,
+}) => (
   <nav class="tabs" aria-label="This phone">
     <a href={`/devices/${device.id}`} aria-current={current === "apps" ? "page" : undefined}>
       Apps and rules
@@ -56,6 +59,12 @@ export const PhoneTabs: FC<{ view: View; device: DeviceView; current: "apps" | "
     <a href={`/devices/${device.id}/calls`} aria-current={current === "calls" ? "page" : undefined}>
       Calls
     </a>
+    {/* Phase 3: only while network logging is on (and on its own page). */}
+    {(device.networkLog || current === "network") && (
+      <a href={`/devices/${device.id}/network`} aria-current={current === "network" ? "page" : undefined}>
+        Network
+      </a>
+    )}
   </nav>
 );
 

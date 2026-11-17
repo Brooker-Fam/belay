@@ -313,9 +313,11 @@ export const DevicePage: FC<{
   help?: Child;
   /** Phase 11: what the server keeps about the phone, and handing it over (web/pages/offbelay.tsx). */
   offBelay?: Child;
+  /** Phase 3: the network logging switch (web/pages/network.tsx). */
+  network?: Child;
   message?: string;
   error?: string;
-}> = ({ view, device, apps, phone, filter, help, offBelay, message, error }) => {
+}> = ({ view, device, apps, phone, filter, help, offBelay, network, message, error }) => {
   const unreviewed = apps.filter((a) => a.unreviewed).length;
   const requestFor = new Map(phone.openRequests.map((r) => [r.package, r]));
   const tampering = device.problems.filter((p) => p.code === "tampering");
@@ -417,6 +419,12 @@ export const DevicePage: FC<{
 
       <h2 id="web">Web</h2>
       <WebCard view={view} device={device} rules={phone.rules} />
+      {network && (
+        <>
+          <h3 id="network-logging">Network logging</h3>
+          {network}
+        </>
+      )}
 
       <h2 id="locks">Settings the kid can't change</h2>
       <RestrictionsCard view={view} device={device} rules={phone.rules} />

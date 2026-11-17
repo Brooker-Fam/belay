@@ -82,12 +82,14 @@ import { serverHealth } from "../ops/health.js";
 import { getDigest } from "../ops/notify.js";
 import { opsWebRoutes } from "../ops/web.js";
 import { browserName, listSubscriptions, removeSubscription, saveSubscription, sendNotice, subscriptionProblem, vapidKeys } from "../push.js";
-import { AI_SCOPES, type AiScope, CALL_DAYS, LOCATION_DAYS, type LocationRetention, MAP_SITES, type MapSite, USAGE_MONTHS, getSettings, updateSettings } from "../settings.js";
+import { AI_SCOPES, type AiScope, CALL_DAYS, LOCATION_DAYS, type LocationRetention, MAP_SITES, type MapSite, NETWORK_DAYS, USAGE_MONTHS, getSettings, updateSettings } from "../settings.js";
 import { isValidTimeZone } from "../time.js";
 import type { Assets } from "./assets.js";
 import { callsWebRoutes } from "./calls.js";
 import { locationWebRoutes, whereFor } from "./location.js";
+import { networkCardData, networkWebRoutes } from "./network.js";
 import { offBelayData, offBelayWebRoutes } from "./offbelay.js";
+import { NetworkCard } from "./pages/network.js";
 import { OffBelaySection } from "./pages/offbelay.js";
 import { screenTimeWebRoutes } from "./screentime.js";
 import { ActivityPage } from "./pages/activity.js";
@@ -155,6 +157,8 @@ const SAVED: Record<string, string> = {
   collection_stopped: "Stopped and deleted. The phone gets the change within seconds if it's online.",
   handed_over: "Handed over. The phone shows the kid what happens next within seconds if it's online.",
   handover_cancelled: "The hand-over is taken back. The phone stops showing it within seconds if it's online.",
+  network_on: "Network logging is on. The phone starts noting which websites and services its apps look up when it gets this, within seconds if it's online.",
+  network_off: "Network logging is off. The phone stops noting them when it gets this, within seconds if it's online.",
 };
 
 /** Google account ids for reset protection: long numbers, one per line ("people/" before one is fine). */
@@ -490,6 +494,7 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
         filter={filter}
         help={<HelpBanner requests={unseenHelp(db, device.id)} showDevice={false} />}
         offBelay={<OffBelaySection view={view(c)} data={offBelayData(db, device, deps.now())} />}
+        network={<NetworkCard view={view(c)} data={networkCardData(db, device)} />}
         message={extra.message}
         error={extra.error}
       />,
@@ -1031,6 +1036,12 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
     if (callDays !== undefined && (!Number.isInteger(callDays) || callDays < CALL_DAYS.min || callDays > CALL_DAYS.max)) {
       return settingsPage(c, { error: `Keep call records ${CALL_DAYS.min} to ${CALL_DAYS.max} days.` }, 400);
     }
+    // Phase 3: how long network activity is kept (left out: as it is).
+    const networkDaysText = first(body, "network_days");
+    const networkDays = networkDaysText === "" ? undefined : Number(networkDaysText);
+    if (networkDays !== undefined && (!Number.isInteger(networkDays) || networkDays < NETWORK_DAYS.min || networkDays > NETWORK_DAYS.max)) {
+      return settingsPage(c, { error: `Keep network activity ${NETWORK_DAYS.min} to ${NETWORK_DAYS.max} days.` }, 400);
+    }
     const chosen = new Set(all(body, "ai_scope"));
     const aiScopes = Object.fromEntries(Object.keys(AI_SCOPES).map((k) => [k, chosen.has(k)])) as Record<AiScope, boolean>;
     // What AI apps may read is the policy's ai_reads, for the kid's screen: each phone's policy follows.
@@ -1044,6 +1055,7 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
         ...(usageMonths !== undefined ? { usageMonths } : {}),
         ...(site !== "" ? { mapSite: site as MapSite } : {}),
         ...(callDays !== undefined ? { callDays } : {}),
+        ...(networkDays !== undefined ? { networkDays } : {}),
       },
       asParent(c),
     );
@@ -1196,6 +1208,8 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
   app.route("/", callsWebRoutes(deps, { view, message }));
   // Phase 11: stopping collecting, and handing a phone over (web/offbelay.tsx).
   app.route("/", offBelayWebRoutes(deps, { view, message }));
+  // Phase 3: network logging's switch and a phone's Network tab (web/network.tsx).
+  app.route("/", networkWebRoutes(deps, { view, message }));
 
   app.get("/activity", (c) => {
     const includeReads = c.req.query("reads") === "1";

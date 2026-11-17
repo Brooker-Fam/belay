@@ -144,6 +144,8 @@ export interface DeviceView {
   signing: { pinned: string | null; pinnedAt: number | null; reported: string | null; changed: boolean };
   status: DeviceStatus;
   problems: Problem[];
+  /** Phase 3: whether a parent has network logging on for the phone (its Network tab shows while it is). */
+  networkLog: boolean;
 }
 
 function updateOf(row: DeviceRow): UpdateView | null {
@@ -344,6 +346,7 @@ export function toView(row: DeviceRow, settings: Settings, now: number): DeviceV
     signing: { pinned: row.agent_signing_sha256, pinnedAt: row.agent_signing_at, reported: facts?.agent_signing_sha256 ?? null, changed: signingChanged(row, facts) },
     status: statusOf(problems),
     problems,
+    networkLog: row.net_on === 1,
   };
 }
 
