@@ -72,7 +72,12 @@ export interface SavedRequests {
   accepted: number;
   /** The ones that are new. */
   created: { id: string; package: string; label: string }[];
+  /** New ones not kept, because the phone already has MAX_PENDING_REQUESTS waiting. */
+  refused: number;
 }
+
+/** A phone can't have more than this many requests waiting for a parent: a flood is refused. */
+export const MAX_PENDING_REQUESTS = 200;
 
 /**
  * Saves the kid's requests. Idempotent by id: sending one again updates its reason while it's
@@ -81,11 +86,16 @@ export interface SavedRequests {
 export function saveRequests(db: DB, deviceId: string, requests: Request[], now: number): SavedRequests {
   return db.transaction((): SavedRequests => {
     const created: SavedRequests["created"] = [];
+    let refused = 0;
+    let pending = pendingRequestCount(db, deviceId);
     const find = db.prepare<[string, string], { status: RequestStatus; reason: string | null }>("SELECT status, reason FROM requests WHERE device_id = ? AND id = ?");
     for (const r of requests) {
       const reason = r.reason ? cleanText(r.reason, 500) || null : null;
       const existing = find.get(deviceId, r.id);
-      if (!existing) {
+      if (!existing && pending >= MAX_PENDING_REQUESTS) {
+        refused++;
+      } else if (!existing) {
+        pending++;
         const label = cleanText(r.label, 200) || r.package;
         db.prepare(
           `INSERT INTO requests (device_id, id, kind, package, label, reason, asked_at, received_at, updated_at, status)
@@ -96,7 +106,7 @@ export function saveRequests(db: DB, deviceId: string, requests: Request[], now:
         db.prepare("UPDATE requests SET reason = ?, updated_at = ? WHERE device_id = ? AND id = ?").run(reason, now, deviceId, r.id);
       }
     }
-    return { accepted: requests.length, created };
+    return { accepted: requests.length - refused, created, refused };
   })();
 }
 

@@ -453,6 +453,14 @@ function mutate<T>(ctx: PolicyContext, deviceId: string, actor: Changer, change:
 const decidedBy = (who: Changer): DecidedBy => (who.kind === "server" ? "server" : who.kind);
 const parentOf = (who: Changer): string | null => (who.kind === "server" ? null : who.parentId);
 
+/** The types already say so; this keeps it true at run time too. */
+function onlyPeople(who: Changer): void {
+  if (who.kind === "ai") throw new Error("An AI app can't loosen a rule: that's a proposal for a parent");
+}
+function onlyParents(who: Changer): void {
+  if (who.kind !== "parent") throw new Error("Only a parent, on the parent page, changes hardening or maintenance mode");
+}
+
 function insertDecision(
   db: DB,
   now: number,
@@ -500,6 +508,7 @@ function approveOpenRequests(db: DB, now: number, deviceId: string, pkg: string,
 const clean = (text: string | null | undefined, max: number): string | null => text?.trim().slice(0, max) || null;
 
 export function setNewApps(ctx: PolicyContext, deviceId: string, mode: "allow" | "ask", who: Person): Changed<{ grandfathered: number }> {
+  onlyPeople(who);
   return mutate(ctx, deviceId, who, (rules, log) => {
     if (rules.newApps === mode) return { grandfathered: 0 };
     const grandfathered = mode === "ask" ? grandfather(ctx.db, ctx.now, deviceId, who) : 0;
@@ -516,6 +525,7 @@ export function setNewApps(ctx: PolicyContext, deviceId: string, mode: "allow" |
  * and hardening are separate switches.
  */
 export function protect(ctx: PolicyContext, deviceId: string, who: Person): Changed<{ grandfathered: number; alreadyOn: boolean }> {
+  onlyPeople(who);
   return mutate(ctx, deviceId, who, (rules, log) => {
     const alreadyOn = rules.protectedAt !== null;
     rules.protectedAt ??= ctx.now;
@@ -534,6 +544,7 @@ export function protect(ctx: PolicyContext, deviceId: string, who: Person): Chan
 
 /** Back to monitoring only: nothing locked, filtered or paused. App decisions are kept, so blocked apps stay blocked. */
 export function unprotect(ctx: PolicyContext, deviceId: string, who: Person): Changed<null> {
+  onlyPeople(who);
   return mutate(ctx, deviceId, who, (rules, log) => {
     const blank = defaultRules();
     Object.assign(rules, { ...blank, version: rules.version, changedAt: rules.changedAt, supportMessage: rules.supportMessage });
@@ -612,6 +623,7 @@ export function pausePhone(
 }
 
 export function resumePhone(ctx: PolicyContext, deviceId: string, who: Person): Changed<{ wasPaused: boolean }> {
+  onlyPeople(who);
   return mutate(ctx, deviceId, who, (rules, log) => {
     const wasPaused = activePause(rules, ctx.now) !== null;
     rules.pause = null;
@@ -627,6 +639,7 @@ export function setRestrictions(
   changes: Partial<Record<OrdinaryRestriction, boolean>>,
   who: Person,
 ): Changed<{ on: Restriction[]; off: Restriction[] }> {
+  onlyPeople(who);
   for (const key of Object.keys(changes)) {
     if ((HARDENING as readonly string[]).includes(key) || !(RESTRICTIONS as readonly string[]).includes(key)) throw new Error(`Not an ordinary restriction: ${key}`);
   }
@@ -653,6 +666,7 @@ export function setHardening(
   input: { factoryReset: boolean; debugging: boolean; frpAccounts: string[] },
   who: { kind: "parent"; parentId: string },
 ): Changed<{ on: string[]; off: string[] }> {
+  onlyParents(who);
   return mutate(ctx, deviceId, who, (rules, log) => {
     const on: string[] = [];
     const off: string[] = [];
@@ -675,6 +689,7 @@ export function setHardening(
 
 /** Maintenance mode lifts the debugging lock until then, so adb works for repairs. Null ends it. */
 export function setMaintenance(ctx: PolicyContext, deviceId: string, until: number | null, who: { kind: "parent"; parentId: string }): Changed<null> {
+  onlyParents(who);
   return mutate(ctx, deviceId, who, (rules, log) => {
     const wasOn = activeMaintenance(rules, ctx.now) !== null;
     rules.maintenanceUntil = until;
@@ -690,6 +705,7 @@ export interface WebChange {
 }
 
 export function setWeb(ctx: PolicyContext, deviceId: string, change: WebChange, who: Person): Changed<null> {
+  onlyPeople(who);
   if (change.privateDns != null && !validHostname(change.privateDns)) throw new Error("Not a host name");
   return mutate(ctx, deviceId, who, (rules, log) => {
     const before = JSON.stringify([rules.privateDns, rules.chrome, rules.hideBrowsers]);
@@ -704,6 +720,7 @@ export function setWeb(ctx: PolicyContext, deviceId: string, change: WebChange, 
 }
 
 export function setSupportMessage(ctx: PolicyContext, deviceId: string, message: string | null, who: Person): Changed<null> {
+  onlyPeople(who);
   return mutate(ctx, deviceId, who, (rules, log) => {
     const next = clean(message, LIMITS.supportMessage);
     if (next === rules.supportMessage) return null;
@@ -728,6 +745,7 @@ export function answerRequest(
   who: Person,
   noteText: string | null,
 ): Changed<{ package: string; label: string; status: string } | null> {
+  onlyPeople(who);
   return mutate(ctx, deviceId, who, (_rules, log) => {
     const { db, now } = ctx;
     const row = db

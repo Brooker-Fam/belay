@@ -194,6 +194,22 @@ describe("sending notices", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
+  it("sends at most six notices an hour about one phone", async () => {
+    const { t, sam, phone, fetch } = await family();
+    saveSubscription(t.deps.db, t.now(), sam.parent.id, browser().input, "Chrome on Android");
+    for (let i = 0; i < 8; i++) await ask(t, phone.token, `request-000${i}`);
+    await vi.waitFor(() => {
+      expect(fetch).toHaveBeenCalledTimes(6);
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(fetch).toHaveBeenCalledTimes(6);
+    t.advance(3_600_001);
+    await ask(t, phone.token, "request-0009");
+    await vi.waitFor(() => {
+      expect(fetch).toHaveBeenCalledTimes(7);
+    });
+  });
+
   it("forgets a browser its push service no longer knows (404 or 410)", async () => {
     const answers = new Map<string, number>();
     const fetch = vi.fn((url: string | URL | Request) => Promise.resolve(new Response(null, { status: answers.get(href(url)) ?? 201 })));

@@ -90,7 +90,8 @@ later).
 
 **When:** when a phone sends a new request (one notice for the requests in one call), and
 when an AI app proposes a change. Not again when a request is sent a second time, or the
-same change is proposed again while it waits.
+same change is proposed again while it waits, and at most six notices an hour about one
+phone: past that, requests and proposals still show on the parent page.
 
 **What is sent, and to whom:**
 

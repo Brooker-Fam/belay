@@ -151,7 +151,9 @@ export function deviceRoutes(deps: Deps): Hono<DeviceEnv> {
     for (const r of saved.created) {
       audit(db, now, { kind: "phone", deviceId: phone.id }, "request.made", { detail: { package: r.package, label: r.label } });
     }
-    if (saved.created.length) notifyParents(deps, requestNotice(phone.name, saved.created.map((r) => r.label)));
+    // A few notices an hour per phone at most: a burst of requests still shows on the parent page.
+    if (saved.created.length && limits.noticesPerPhone.hit(phone.id).ok) notifyParents(deps, requestNotice(phone.name, saved.created.map((r) => r.label)));
+    if (saved.refused) return fail(429, "rate_limited", "Too many requests are waiting for a parent already", 3600);
     return c.json({ server_time: now, accepted: saved.accepted });
   });
 

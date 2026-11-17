@@ -411,6 +411,17 @@ describe("rules over MCP", () => {
     expect(pushService.mock.calls[0]?.[0]).toBe(endpoint);
   });
 
+  it("stops proposing once 20 wait for a parent", async () => {
+    const { t, client } = await family();
+    for (let i = 0; i < 20; i++) {
+      expect((await call(client, "propose_change", { device: "Sam's phone", change: { kind: "allow_app", package: `com.example.app${i}` }, reason: "x" })).isError).toBe(false);
+    }
+    const more = await call(client, "propose_change", { device: "Sam's phone", change: { kind: "allow_app", package: "com.example.app20" }, reason: "x" });
+    expect(more.isError).toBe(true);
+    expect(more.text).toContain("20 proposals for Sam's phone are already waiting");
+    expect(listProposals(t.deps.db)).toHaveLength(20);
+  });
+
   it("can't touch a disconnected phone", async () => {
     const { t, client, phone } = await family();
     t.deps.db.prepare("UPDATE devices SET revoked_at = ?, token_hash = NULL WHERE id = ?").run(t.now(), phone.deviceId);

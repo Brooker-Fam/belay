@@ -211,6 +211,27 @@ describe("who may change what", () => {
     expect(pausePhone(ctx(), phone.deviceId, { minutes: 10 }, claude).result.until).toBeNull();
   });
 
+  it("checks who may loosen at run time too, not only in the types", async () => {
+    const { phone, ctx, claude } = await setup();
+    type Parent = { kind: "parent"; parentId: string };
+    const ai = claude as unknown as Parent;
+    for (const change of [
+      () => protect(ctx(), phone.deviceId, ai),
+      () => unprotect(ctx(), phone.deviceId, ai),
+      () => setNewApps(ctx(), phone.deviceId, "allow", ai),
+      () => resumePhone(ctx(), phone.deviceId, ai),
+      () => setRestrictions(ctx(), phone.deviceId, { safe_boot: false }, ai),
+      () => setWeb(ctx(), phone.deviceId, { privateDns: null }, ai),
+      () => setSupportMessage(ctx(), phone.deviceId, "x", ai),
+      () => answerRequest(ctx(), phone.deviceId, "request-0001", "approved", ai, null),
+    ]) {
+      expect(change).toThrow(/AI app can't loosen/);
+    }
+    const server = { kind: "server" } as unknown as Parent;
+    expect(() => setHardening(ctx(), phone.deviceId, { factoryReset: true, debugging: true, frpAccounts: [] }, server)).toThrow(/Only a parent/);
+    expect(() => setMaintenance(ctx(), phone.deviceId, null, ai)).toThrow(/Only a parent/);
+  });
+
   it("general restriction changes can't touch hardening", async () => {
     const { phone, ctx, sam, policy } = await setup();
     expect(() => setRestrictions(ctx(), phone.deviceId, { factory_reset: true } as never, sam)).toThrow(/Not an ordinary restriction/);

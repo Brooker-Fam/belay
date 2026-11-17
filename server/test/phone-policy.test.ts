@@ -204,6 +204,20 @@ describe("POST /api/v1/requests", () => {
     const { t } = await setup();
     expect((await deviceCall(t, "x".repeat(43), "requests", { requests: [request("request-0001")] })).status).toBe(401);
   });
+
+  it("refuses a flood: a phone can't have more than 200 waiting", async () => {
+    const { t, phone } = await setup();
+    const batch = (from: number) => Array.from({ length: 100 }, (_, i) => request(`request-${String(from + i).padStart(4, "0")}`));
+    expect((await deviceCall(t, phone.token, "requests", { requests: batch(0) })).status).toBe(200);
+    expect((await deviceCall(t, phone.token, "requests", { requests: batch(100) })).status).toBe(200);
+    const flood = await deviceCall(t, phone.token, "requests", { requests: [request("request-0200")] });
+    expect(flood.status).toBe(429);
+    expect(await flood.json()).toMatchObject({ error: "rate_limited" });
+    expect(Number(flood.headers.get("retry-after"))).toBe(3600);
+    // Sending one it has again still works, so a reason can still change.
+    expect((await deviceCall(t, phone.token, "requests", { requests: [request("request-0001", { reason: "Please" })] })).status).toBe(200);
+    expect(listRequests(t.deps.db, { limit: 1000 })).toHaveLength(200);
+  });
 });
 
 describe("what the phone enforces", () => {

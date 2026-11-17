@@ -74,6 +74,8 @@ export interface Limiters {
    * calls. A phone asks again after each answer: about once a minute while nothing changes.
    */
   policyPerPhone: RateLimiter;
+  /** Notices to the parents' browsers about one phone (its requests, AI apps' proposals for it). */
+  noticesPerPhone: RateLimiter;
 }
 
 export function createLimiters(now: () => number): Limiters {
@@ -88,5 +90,6 @@ export function createLimiters(now: () => number): Limiters {
     mcpPerGrant: new RateLimiter(300, MIN, now),
     devicePerPhone: new RateLimiter(120, MIN, now),
     policyPerPhone: new RateLimiter(30, MIN, now),
+    noticesPerPhone: new RateLimiter(6, 60 * MIN, now),
   };
 }

@@ -88,6 +88,9 @@ function refusal(message: string): CallToolResult {
 
 const deviceParam = z.string().min(1).max(100).describe("The phone's name, as list_devices shows it");
 
+/** Proposals waiting for a parent, per phone, before an AI app must wait for the parent to look. */
+export const MAX_PENDING_PROPOSALS = 20;
+
 export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
   const { db } = deps;
   const server = new McpServer({ name: "belay", title: "Belay", version: SERVER_VERSION }, { instructions: INSTRUCTIONS });
@@ -687,9 +690,12 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
       const now = deps.now();
       const nothing = nothingToLoosen(db, row.id, proposed, now);
       if (nothing) return refusal(`Nothing to propose: ${nothing}`);
+      if (listProposals(db, { deviceId: row.id, status: "pending", limit: MAX_PENDING_PROPOSALS }).length >= MAX_PENDING_PROPOSALS) {
+        return refusal(`${MAX_PENDING_PROPOSALS} proposals for ${row.name} are already waiting. Ask the parent to look at them on the Proposals page first.`);
+      }
       const made = createProposal(db, now, row.id, proposed, reason, { parentId: caller.parentId, clientName: caller.clientName });
       const words = changeWords(proposed, made.proposal.label);
-      if (!made.duplicate) notifyParents(deps, proposalNotice(row.name, caller.clientName, words.gerund));
+      if (!made.duplicate && deps.limits.noticesPerPhone.hit(row.id).ok) notifyParents(deps, proposalNotice(row.name, caller.clientName, words.gerund));
       return result({
         phone: row.name,
         proposed: words.title,
