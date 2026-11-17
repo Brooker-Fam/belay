@@ -11,7 +11,7 @@ import family.brooker.belay.core.CategoryPermissions
 import family.brooker.belay.inventory.installedPackagesCompat
 
 /**
- * CALL_PHONE for other apps while calls is on (docs/platform-notes.md T2): denied by policy to every
+ * CALL_PHONE for other apps while calls is on (docs/platform-notes.md T14): denied by policy to every
  * app that asks for it but Belay and the apps Belay never blocks (core's NeverBlocked: the preloaded
  * and default dialers, the phone and telecom services, emergency apps, the texting app, Android's
  * own packages), so another dialer can't place a call around Belay's rules. Emergency calling

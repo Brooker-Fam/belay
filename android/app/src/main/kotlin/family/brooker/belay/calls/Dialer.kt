@@ -15,7 +15,7 @@ import family.brooker.belay.Agent
  * calls, so with calls off Belay isn't a dialer at all: not in Settings' list of phone apps, never
  * bound by Telecom, never asked about a call. Disabling them again when calls goes off also makes
  * Android drop Belay from the role when there's no other dialer to give it back to (the role
- * controller removes a holder that no longer qualifies). Changing them never kills Belay
+ * controller removes a holder that no longer qualifies, T10). Changing them never kills Belay
  * (DONT_KILL_APP), and losing the role doesn't either: Belay's call permissions are fixed by policy,
  * which the role can't revoke.
  */

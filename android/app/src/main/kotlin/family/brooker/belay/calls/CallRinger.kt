@@ -17,9 +17,10 @@ import family.brooker.belay.Agent
  * Belay rings for the calls it lets through, itself: its InCallService declares
  * IN_CALL_SERVICE_RINGING, so Telecom plays no ringtone and no vibration for any call while Belay is
  * the dialer (docs/platform-notes.md T5), and a call Belay refuses never rings. The phone's own
- * ringtone, on the ring stream (USAGE_NOTIFICATION_RINGTONE), so the ring volume, silent and vibrate
- * modes and Do Not Disturb's audio rules apply as they would to any call; it vibrates too unless the
- * phone is silent. Main thread only.
+ * ringtone, on the ring stream (USAGE_NOTIFICATION_RINGTONE), so the ring volume and the silent and
+ * vibrate modes apply; Do Not Disturb's verdict on a caller needs READ_CONTACTS, which Belay doesn't
+ * hold (what it does to this sound is on the Pixel checklist). It vibrates too unless the phone is
+ * silent. Main thread only.
  */
 object CallRinger {
     @Volatile

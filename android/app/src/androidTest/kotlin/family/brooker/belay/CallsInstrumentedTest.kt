@@ -23,7 +23,7 @@ import java.util.concurrent.TimeUnit
  * permissions by policy, and Android then stops Belay's processes (platform notes L7), where this
  * instrumentation runs; CI checks that side from the shell (`calls --off`, then `telecom
  * get-default-dialer`). Losing the dialer role doesn't stop Belay (its call permissions are fixed
- * by policy, which the role can't revoke: T1), so the test gives the role away and takes it back.
+ * by policy, which the role can't revoke: T10), so the test gives the role away and takes it back.
  */
 @RunWith(AndroidJUnit4::class)
 class CallsInstrumentedTest {
