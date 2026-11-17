@@ -71,7 +71,12 @@ export class FakePhone implements Phone {
 
   devices(): Promise<DeviceEntry[]> {
     this.calls.push("devices");
-    return Promise.resolve(this.field("devices") ?? []);
+    return Promise.resolve(this.listed());
+  }
+
+  /** The devices adb lists, without logging a call. */
+  listed(): DeviceEntry[] {
+    return this.field("devices") ?? [];
   }
 
   use(_serial: string): Promise<void> {
