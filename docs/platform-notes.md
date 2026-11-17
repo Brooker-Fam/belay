@@ -57,6 +57,12 @@ the record. The Google APIs image differed in three small ways: an account for a
 seconds after boot (P3), which detection layer reported an install first (K2), and
 `BOOT_COMPLETED` arriving later, after the `DeviceAdminService` had already started Belay (P5).
 
+From Phase 1 the same job runs end to end against a real Belay server on the runner
+(docs/emulator.md). Run 14 (2026-11-17) on the Google APIs image: `provision.sh --server
+--code` enrolled the phone, the server had its app list with the phone as OK, the 14
+instrumented tests passed, and the server received the fixture app's install, update and
+removal, each "noticed right away". The ATD image's enrollment failed on timing (E1).
+
 ---
 
 ## Provisioning
@@ -624,6 +630,11 @@ for anything; the phone's own emoji font still renders.
   `Broadcast completed: result=…, data="…"` (`ActivityManagerShellCommand`). Belay answers
   `enrolled: "<name>" on <host>` or `failed: <problem>`, never the token.
 - A background broadcast gets 60 s (`BROADCAST_BG_TIMEOUT`); enrolling allows itself 40.
+- Right after a restart the phone may not be online for a few seconds. In CI run 14, the
+  ATD image's enrollment 2 s after `provision.sh`'s restart failed with
+  `ConnectException: Failed to connect to /10.0.2.2:8080`, while the Google APIs image's,
+  2.5 s after boot, worked. `provision.sh` now tries again every 5 s for a minute while the
+  server can't be reached; the code is only used once the server answers.
 
 ---
 
