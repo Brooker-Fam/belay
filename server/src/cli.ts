@@ -4,7 +4,10 @@
  *   node dist/cli.js setup-link                  a one-time link to create the first parent
  *   node dist/cli.js create-code <phone name>    an enrollment code for a phone
  *   node dist/cli.js reset-password <username>   a new password, read from the terminal
- *   node dist/cli.js backup <file>               a consistent copy of the database, while it runs
+ *   node dist/cli.js backup <file> [--encrypt]   a consistent copy of the database, while it runs
+ *   node dist/cli.js verify-backup <file>        proves a backup restores (ops/cli.ts has these four)
+ *   node dist/cli.js restore [--drill] <file>    a checked backup into a data dir without a database
+ *   node dist/cli.js restore-drill               the steps of a restore drill, for the newest backup
  *   node dist/cli.js status [--json]             each phone's status, apps, rules, requests and latest changes
  *   node dist/cli.js protect "<phone>"           and policy, decide, pause, resume: see admin.ts
  */
@@ -12,6 +15,7 @@ import { createInterface } from "node:readline";
 import { runCommand } from "./admin.js";
 import { ConfigError, loadConfig } from "./config.js";
 import { openDatabase } from "./db.js";
+import { runOfflineCommand } from "./ops/cli.js";
 
 /** Reads one line; with a terminal, without echoing it. */
 function readSecret(prompt: string): Promise<string> {
@@ -30,6 +34,15 @@ function readSecret(prompt: string): Promise<string> {
 }
 
 async function main(): Promise<number> {
+  const out = (line: string) => {
+    console.log(line);
+  };
+  const err = (line: string) => {
+    console.error(line);
+  };
+  // verify-backup and restore read backup files before (and without) opening the live database.
+  const offline = await runOfflineCommand(process.argv.slice(2), { env: process.env, now: Date.now(), out, err, readSecret, interactive: process.stdin.isTTY, stdin: process.stdin });
+  if (offline !== null) return offline;
   let config;
   try {
     config = loadConfig();
@@ -46,12 +59,8 @@ async function main(): Promise<number> {
       db,
       config,
       now: Date.now(),
-      out: (line) => {
-        console.log(line);
-      },
-      err: (line) => {
-        console.error(line);
-      },
+      out,
+      err,
       readSecret,
       interactive: process.stdin.isTTY,
     });

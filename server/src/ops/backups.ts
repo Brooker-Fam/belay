@@ -101,6 +101,50 @@ export function listBackups(db: DB, limit = 20): BackupRecord[] {
   return db.prepare<[number], BackupRow>("SELECT * FROM backups ORDER BY started_at DESC, id DESC LIMIT ?").all(limit).map(toRecord);
 }
 
+/** What proves the backups restore: a verify-backup run, or a restore drill a parent did. */
+export interface CheckRecord {
+  id: number;
+  kind: "verify" | "drill";
+  at: number;
+  /** verify: the backup's file name. */
+  file: string | null;
+  ok: boolean;
+  detail: Record<string, unknown> | null;
+  /** drill: the parent who did it. */
+  parentId: string | null;
+}
+
+interface CheckRow {
+  id: number;
+  kind: "verify" | "drill";
+  at: number;
+  file: string | null;
+  ok: number;
+  detail: string | null;
+  parent_id: string | null;
+}
+
+function parseDetail(json: string | null): Record<string, unknown> | null {
+  if (!json) return null;
+  try {
+    return JSON.parse(json) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+export function recordCheck(db: DB, r: Omit<CheckRecord, "id">): CheckRecord {
+  const { lastInsertRowid } = db
+    .prepare("INSERT INTO backup_checks (kind, at, file, ok, detail, parent_id) VALUES (?, ?, ?, ?, ?, ?)")
+    .run(r.kind, r.at, r.file, r.ok ? 1 : 0, r.detail ? JSON.stringify(r.detail) : null, r.parentId);
+  return { id: Number(lastInsertRowid), ...r };
+}
+
+export function latestCheck(db: DB, kind: CheckRecord["kind"]): CheckRecord | null {
+  const row = db.prepare<[string], CheckRow>("SELECT * FROM backup_checks WHERE kind = ? ORDER BY at DESC, id DESC LIMIT 1").get(kind);
+  return row ? { id: row.id, kind: row.kind, at: row.at, file: row.file, ok: row.ok === 1, detail: parseDetail(row.detail), parentId: row.parent_id } : null;
+}
+
 // ── The passphrase ──────────────────────────────────────────────────────
 
 export const PASSPHRASE_MIN = 15;
