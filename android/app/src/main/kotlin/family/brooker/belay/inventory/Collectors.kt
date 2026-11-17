@@ -42,6 +42,10 @@ import family.brooker.belay.core.location.LocationRules
  *   location's status in the enforcement report: [DataCategories.location]. Phase 7's help fix,
  *   which the kid chooses to share even with location off, is in [DataCategories.REQUESTS]
  *   ([family.brooker.belay.Agent.askHelp], [family.brooker.belay.Agent.shareWhereThePhoneIs]).
+ * - Phase 3, only while the policy's `network_log` is on: Android logs DNS lookups, and
+ *   [family.brooker.belay.network.NetworkLogStep] takes each batch, keeps how many times each app
+ *   looked up each domain each day (never the never-blocked apps, never 988's websites) and sends
+ *   that, and reports whether Android paused it: [DataCategories.NETWORK].
  */
 object Collectors {
     /** [clock] shows a policy's "HH:MM" as the kid's phone shows times. */
@@ -51,5 +55,6 @@ object Collectors {
                 policy?.screenTime?.let { DataCategories.screenTime(it.measure) },
                 policy?.location?.takeIf { LocationRules.collecting(it) }?.let { DataCategories.location(it, clock) },
                 policy?.calls?.takeIf { it.log }?.let { DataCategories.CALLS },
+                policy?.networkLog?.takeIf { it.enabled }?.let { DataCategories.NETWORK },
             )
 }

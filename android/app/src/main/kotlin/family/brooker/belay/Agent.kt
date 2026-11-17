@@ -41,6 +41,7 @@ import family.brooker.belay.health.DeviceStatus
 import family.brooker.belay.health.Health
 import family.brooker.belay.health.HealthReader
 import family.brooker.belay.inventory.Reconciler
+import family.brooker.belay.network.NetworkLogStep
 import family.brooker.belay.screentime.ScreenWatcher
 import family.brooker.belay.service.BelayService
 import family.brooker.belay.settings.ConnectionStore
@@ -136,6 +137,9 @@ enum class Trigger(val label: String, val heartbeat: Boolean, val checkin: Boole
 
     /** Phase 5: the phone's default dialer changed (calls/DialerWatcher.kt). */
     DIALER_CHANGED("the phone's calling app changed", false),
+
+    /** Phase 3: Android has a batch of network logs ready (AdminReceiver.onNetworkLogsAvailable). */
+    NETWORK_LOGS("network logs ready", false, setup = false),
 }
 
 /** Everything the main screen shows from the agent's last step. */
@@ -610,6 +614,28 @@ object Agent {
         }
         // The block list lifts for the window at the next step.
         handle(app, Trigger.CALL)
+    }
+
+    /**
+     * Phase 3: Android has batch [token] of network logs ready (AdminReceiver.onNetworkLogsAvailable).
+     * On the agent thread, at once (Android discards a batch 5 minutes after it's taken): Belay takes
+     * it and any it missed, keeps only counts per app, per domain, per day, and queues the days that
+     * changed; then a step, which sends them and reports whether Android paused logging.
+     */
+    fun networkLogs(context: Context, token: Long, done: (() -> Unit)? = null) {
+        val app = context.applicationContext
+        executor.execute {
+            try {
+                NetworkLogStep(app, AgentStore.get(app)).take(token, System.currentTimeMillis())
+            } catch (t: Throwable) {
+                Log.e(TAG, "taking network logs failed", t)
+            }
+            try {
+                step(app, Trigger.NETWORK_LOGS, emptySet())
+            } finally {
+                done?.invoke()
+            }
+        }
     }
 
     /** The kid's screens show a new request at once, without waiting for a step. */

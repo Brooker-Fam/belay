@@ -42,6 +42,7 @@ import family.brooker.belay.core.screentime.Stages
 import family.brooker.belay.core.screentime.UsageLog
 import family.brooker.belay.core.screentime.WireScreenTime
 import family.brooker.belay.location.LocationStep
+import family.brooker.belay.network.NetworkLogStep
 import family.brooker.belay.screentime.ScreenTimeStep
 import family.brooker.belay.service.PauseNotice
 import family.brooker.belay.service.ScreenTimeNotice
@@ -145,10 +146,11 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
         lost(before, applied, gone)
 
         val roles = PhoneFacts.roles(app)
+        val otherUsers = PhoneFacts.otherUsers(app)
         val phase2 = Enforcement.plan(
             Enforcement.Input(
                 policy, inventory, roles, applied, BuildConfig.DEBUG, Enforcer.sdkFull(), now,
-                otherUsers = PhoneFacts.otherUsers(app),
+                otherUsers = otherUsers,
                 // Phase 6: the recovery key's repair access lifts debugging and factory reset.
                 recoveryUntil = RecoveryRules.openUntil(store.recovery(), now),
             ),
@@ -209,6 +211,14 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
             Log.e(Agent.TAG, "calls' part of the step failed", e)
             null
         }
+        // Phase 3, network logging: Android's on exactly while the policy's is, and its report. If it
+        // fails, the rest is still recorded.
+        val networking = try {
+            NetworkLogStep(app, store).run(policy, owner, otherUsers, now)
+        } catch (e: RuntimeException) {
+            Log.e(Agent.TAG, "network logging's part of the step failed", e)
+            null
+        }
         val done = read?.let {
             try {
                 screenTimeStep?.after(it)
@@ -232,7 +242,7 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
             tooLarge?.let { PolicyTooLarge.problem(it.tooLargeBytes) },
             screenTimeState?.lockProblem,
             screenTimeProblem,
-        ) + calling?.problems.orEmpty()
+        ) + calling?.problems.orEmpty() + networking?.problems.orEmpty()
         next = next.copy(sim = sim, problems = (next.problems + extra).distinct().take(Enforcement.MAX_PROBLEMS))
 
         // Belay asks for each new waiting app at once, so the parent sees it even if the kid
@@ -259,6 +269,7 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
             dropUsage = policy.screenTime?.measure == false && store.pendingUsageCount() > 0,
             location = located?.write,
             calls = calling?.write,
+            network = networking?.write,
         )
         PolicyTimer.schedule(app, listOfNotNull(plan.nextChangeAt, calling?.nextAt).minOrNull())
         log(plan, changes, made)

@@ -33,6 +33,10 @@ import family.brooker.belay.core.location.LocationState
 import family.brooker.belay.core.location.ToldEntry
 import family.brooker.belay.core.location.WireFix
 import family.brooker.belay.core.location.WirePlaceEvent
+import family.brooker.belay.core.network.NetworkDay
+import family.brooker.belay.core.network.NetworkKey
+import family.brooker.belay.core.network.NetworkLogState
+import family.brooker.belay.core.network.WireNetworkDay
 import family.brooker.belay.core.screentime.ScreenTimeState
 import family.brooker.belay.core.screentime.UsageLedger
 import family.brooker.belay.core.screentime.WireUsageDay
@@ -75,6 +79,12 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
         val dropUnsent: Boolean = false,
     )
 
+    /**
+     * Phase 3, network logging: what an enforcement step does with its row. [state] null: the row
+     * goes. [dropDays]: logging is off, so the days Belay was counting, and every unsent day, go too.
+     */
+    data class NetworkWrite(val state: NetworkLogState?, val dropDays: Boolean = false)
+
     /** Phase 5: what an enforcement step does with calls' row and Belay's own call records. */
     data class CallsWrite(
         /** Null: the row goes (calls is off, and nothing of Belay's is left to undo). */
@@ -89,6 +99,7 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
     private val log = db.log()
     private val outbox = db.outbox()
     private val enforcement = db.enforcement()
+    private val network = db.network()
 
     /** What one agent step found, written in one transaction. */
     data class Step(
@@ -217,6 +228,9 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
     fun callPayloads(ids: List<Long>): List<String> =
         ids.chunked(CHUNK).flatMap { outbox.callPayloads(it) }.sortedBy { it.id }.map { it.payload }
 
+    /** Phase 3, network logging: the network days' JSON (WireNetworkDays), in [ids] order. */
+    fun networkPayloads(ids: List<Long>): List<String> = payloads(ids, OutboxRow.TYPE_NETWORK)
+
     private fun payloads(ids: List<Long>, type: String): List<String> =
         ids.chunked(CHUNK).flatMap { outbox.payloads(it, type) }.sortedBy { it.id }.map { it.payload }
 
@@ -265,6 +279,9 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
 
     /** Phase 5: call records waiting to be sent. */
     fun pendingCallCount(): Int = outbox.pendingCallCount()
+
+    /** Phase 3, network logging: network days waiting to be sent. */
+    fun pendingNetworkCount(): Int = outbox.pendingNetworkCount()
 
     val pendingCountFlow: Flow<Int> get() = outbox.pendingCountFlow()
 
@@ -325,10 +342,12 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
         dropUsage: Boolean = false,
         location: LocationWrite? = null,
         calls: CallsWrite? = null,
+        network: NetworkWrite? = null,
     ) {
         db.runInTransaction {
             if (location != null) writeLocation(location, at)
             if (calls != null) writeCalls(calls, at)
+            if (network != null) writeNetwork(network, at)
             if (applied != null) {
                 enforcement.setEnforcement(EnforcementRow(applied = json.encodeToString(Applied.serializer(), applied), updatedAt = at))
             }
@@ -435,6 +454,82 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
             if (dropped > 0) Log.i(Agent.TAG, "calls: $dropped unsent call records dropped (the policy doesn't log calls)")
         }
         if (write.clearRecents) enforcement.clearCalls()
+    }
+
+    /** Phase 3, inside commitEnforcement's transaction. */
+    private fun writeNetwork(write: NetworkWrite, at: Long) {
+        val state = write.state
+        if (state == null) {
+            network.clearState()
+        } else {
+            network.setState(NetworkStateRow(state = json.encodeToString(NetworkLogState.serializer(), state), updatedAt = at))
+        }
+        if (write.dropDays) {
+            val days = network.clearDays()
+            network.clearCounts()
+            val unsent = outbox.deleteAllPendingNetwork()
+            if (days + unsent > 0) Log.i(Agent.TAG, "network logging: off, so $days days counted and $unsent unsent are deleted")
+        }
+    }
+
+    // Phase 3: network logging.
+
+    /** Its state; null while the policy has logging off (no row). */
+    fun networkState(): NetworkLogState? = network.state()?.let { decode(it.state, NetworkLogState.serializer()) }
+
+    /** For the agent thread only, between steps (Android refused a batch). */
+    fun saveNetworkState(state: NetworkLogState, at: Long) =
+        network.setState(NetworkStateRow(state = json.encodeToString(NetworkLogState.serializer(), state), updatedAt = at))
+
+    /** The days in [days] that Belay is counting, each with its counts. */
+    fun networkDays(days: Collection<String>): Map<String, NetworkDay> =
+        days.toList().chunked(CHUNK).flatMap { network.days(it) }.associate { row ->
+            row.day to NetworkDay(
+                day = row.day,
+                zone = row.zone,
+                asOf = row.asOf,
+                counts = network.counts(row.day).associate { NetworkKey(it.packageName, it.domain) to it.lookups },
+                overflow = row.overflow,
+            )
+        }
+
+    /** Every day Belay is counting, oldest first, with how many entries each has (for the debug state: no names). */
+    fun networkDaySizes(): List<Pair<NetworkDayRow, Int>> = network.allDays().map { it to network.countEntries(it.day) }
+
+    /**
+     * Phase 3, the agent thread: a batch of Android's lookups, reduced (core's NetworkDigest): the
+     * [days] it changed, each kept with everything counted so far and queued for the server as its
+     * [wire] report (replacing an unsent report of the same day); the [state] with the batch taken;
+     * and the days before [keepFrom] deleted (their last report is in the outbox already). In one
+     * transaction: a batch counts once or not at all.
+     */
+    fun commitNetwork(days: List<NetworkDay>, wire: List<WireNetworkDay>, state: NetworkLogState, keepFrom: String, at: Long) {
+        db.runInTransaction {
+            if (days.isNotEmpty()) {
+                network.upsertDays(days.map { NetworkDayRow(it.day, it.zone, it.asOf, it.overflow, at) })
+                for (day in days) {
+                    network.upsertCounts(day.counts.map { (key, lookups) -> NetworkCountRow(day.day, key.packageName, key.domain, lookups) })
+                }
+            }
+            network.pruneCounts(keepFrom)
+            network.pruneDays(keepFrom)
+            network.setState(NetworkStateRow(state = json.encodeToString(NetworkLogState.serializer(), state), updatedAt = at))
+            if (wire.isNotEmpty()) {
+                wire.forEach { outbox.deletePendingNetwork(networkPrefix(it.day)) }
+                outbox.insert(
+                    wire.map {
+                        OutboxRow(
+                            type = OutboxRow.TYPE_NETWORK,
+                            itemId = networkPrefix(it.day) + at,
+                            packageName = null,
+                            payload = Wire.json.encodeToString(WireNetworkDay.serializer(), it),
+                            createdAt = at,
+                        )
+                    },
+                )
+                outbox.capPendingNetwork(OutboxPolicy.MAX_PENDING_NETWORK)
+            }
+        }
     }
 
     /** Phase 5: calls' state; null before calls was ever on (or after it went off and was undone). */
@@ -606,6 +701,9 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
 
         /** The start of a usage day's outbox item id: the day and its zone, so a newer report replaces it. */
         fun usagePrefix(day: WireUsageDay): String = "usage:${day.day}:${day.zone}:"
+
+        /** Phase 3: the start of a network day's outbox item id: the day, so a newer report replaces it (the server keeps one per day). */
+        fun networkPrefix(day: String): String = "network:$day:"
 
         /** Well under SQLite's limit on bound parameters. */
         private const val CHUNK = 500

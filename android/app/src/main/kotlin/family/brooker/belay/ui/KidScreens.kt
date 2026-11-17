@@ -323,6 +323,8 @@ internal fun CanSeeCard(categories: List<DataCategory>, connection: Connection, 
         categories.distinctBy { it.id + it.title }.forEach { category ->
             Text(category.title, style = MaterialTheme.typography.titleSmall)
             category.details.forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium) }
+            // Android's own notice says "your organization… may monitor network traffic" (platform notes W1).
+            if (category.id == DataCategories.NETWORK_ID) Text(stringResource(R.string.network_android_says), style = MaterialTheme.typography.bodySmall)
             if (category.id in reads) {
                 Text(stringResource(R.string.can_see_ai), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
             }
@@ -330,8 +332,8 @@ internal fun CanSeeCard(categories: List<DataCategory>, connection: Connection, 
         val shown = categories.map { it.id }.toSet()
         val others = reads - shown
         if (AGREEMENT_SCOPE in others) Text(stringResource(R.string.can_see_ai_agreement), style = MaterialTheme.typography.bodyMedium)
-        // Location and calls are read only while their collectors are on (listed above when they are).
-        val unknown = (others - AGREEMENT_SCOPE - DataCategories.LOCATION_ID - DataCategories.CALLS_ID).sorted()
+        // Location, calls and network activity are read only while their collectors are on (listed above when they are).
+        val unknown = (others - AGREEMENT_SCOPE - DataCategories.LOCATION_ID - DataCategories.CALLS_ID - DataCategories.NETWORK_ID).sorted()
         if (unknown.isNotEmpty()) Text(stringResource(R.string.can_see_ai_other, unknown.joinToString(", ")), style = MaterialTheme.typography.bodyMedium)
         if (reads.isEmpty() && connection.connected) Text(stringResource(R.string.can_see_ai_none), style = MaterialTheme.typography.bodyMedium)
         val whereItGoes = when {

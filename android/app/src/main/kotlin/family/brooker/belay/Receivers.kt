@@ -44,6 +44,16 @@ class AdminReceiver : DeviceAdminReceiver() {
         Agent.handle(context, Trigger.USERS_CHANGED) { pending.finish() }
     }
 
+    /**
+     * Phase 3: a batch of network logs is ready, only while Belay has network logging on (an
+     * explicit broadcast to the device owner's admin component, AOSP 17 DevicePolicyManagerService).
+     * Belay takes it at once, on the agent thread.
+     */
+    override fun onNetworkLogsAvailable(context: Context, intent: Intent, batchToken: Long, networkLogsCount: Int) {
+        val pending = goAsync()
+        Agent.networkLogs(context, batchToken) { pending.finish() }
+    }
+
     override fun onDisabled(context: Context, intent: Intent) {
         Log.w(Agent.TAG, "device admin disabled")
     }

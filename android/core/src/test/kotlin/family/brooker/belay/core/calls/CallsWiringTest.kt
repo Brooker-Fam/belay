@@ -40,7 +40,7 @@ class CallsWiringTest {
     @Test
     fun `call records go in a lane of their own, up to 500 and under 96 KB`() {
         assertEquals(3, OutboxPolicy.lane(OutboxType.CALL))
-        assertEquals(setOf(0, 1, 2), (OutboxType.entries - OutboxType.CALL).map(OutboxPolicy::lane).toSet())
+        assertTrue(3 !in (OutboxType.entries - OutboxType.CALL).map(OutboxPolicy::lane), "no other kind shares it")
         val many = (1L..600L).map { call(it) }
         assertEquals(500, OutboxPolicy.batchSize(many))
         val big = (1L..400L).map { call(it, bytes = 1_000) }

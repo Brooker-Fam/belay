@@ -17,6 +17,7 @@ class OutboxTest {
     private fun snapshot(id: Long) = OutboxItem(id, OutboxType.SNAPSHOT, 200_000)
     private fun request(id: Long, bytes: Int = 300) = OutboxItem(id, OutboxType.REQUEST, bytes)
     private fun usage(id: Long, bytes: Int = 2_000) = OutboxItem(id, OutboxType.USAGE, bytes)
+    private fun network(id: Long, bytes: Int = 4_000) = OutboxItem(id, OutboxType.NETWORK, bytes)
 
     /** A fake server: records each request's ids and answers with [answer]. */
     private class Server(val answer: (List<OutboxItem>) -> Verdict = { Verdict.Sent }) {
@@ -163,6 +164,21 @@ class OutboxTest {
         assertTrue(OutboxPolicy.MAX_USAGE_BODY_BYTES < 256 * 1024)
         assertEquals(1, OutboxPolicy.lane(OutboxType.USAGE))
         assertEquals(setOf(0), listOf(OutboxType.EVENT, OutboxType.SNAPSHOT, OutboxType.REQUEST).map(OutboxPolicy::lane).toSet())
+    }
+
+    @Test
+    fun `network days go together up to 31, under 448 KB, in a lane of their own`() {
+        val days = (1L..40L).map { network(it) }
+        assertEquals(OutboxPolicy.MAX_NETWORK_DAYS_PER_REQUEST, OutboxPolicy.batchSize(days))
+        assertEquals(31, OutboxPolicy.MAX_NETWORK_DAYS_PER_REQUEST)
+        // A full day (NetworkDigest.MAX_DAY_BYTES) always goes, alone if it must, under the server's 512 KB.
+        val full = (1L..3L).map { network(it, bytes = 400 * 1024) }
+        assertEquals(1, OutboxPolicy.batchSize(full))
+        assertTrue(OutboxPolicy.NETWORK_WRAPPER_BYTES + 400 * 1024 <= OutboxPolicy.MAX_NETWORK_BODY_BYTES)
+        assertTrue(OutboxPolicy.MAX_NETWORK_BODY_BYTES < 512 * 1024)
+        assertEquals(1, OutboxPolicy.batchSize(listOf(network(1), usage(2), network(3))), "never with usage days")
+        assertEquals(4, OutboxPolicy.lane(OutboxType.NETWORK))
+        assertEquals(5, OutboxType.entries.map(OutboxPolicy::lane).toSet().size, "each lane apart")
     }
 
     @Test

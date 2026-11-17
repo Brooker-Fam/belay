@@ -16,6 +16,7 @@ import family.brooker.belay.core.Wire
 import family.brooker.belay.core.WireError
 import family.brooker.belay.core.calls.CallsResponse
 import family.brooker.belay.core.location.LocationsResponse
+import family.brooker.belay.core.network.NetworkResponse
 import family.brooker.belay.core.screentime.UsageResponse
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerializationException
@@ -91,6 +92,10 @@ class DeviceApi(private val origin: String, private val client: OkHttpClient = H
     /** Phase 5. [calls] are WireCallRecords as queued, oldest first. */
     fun calls(token: String, calls: List<String>): Answer<CallsResponse> =
         post("calls", token, calls.joinToString(",", prefix = "{\"calls\":[", postfix = "]}"), CallsResponse.serializer())
+
+    /** Phase 3, network logging. [days] are WireNetworkDays as queued, oldest first. */
+    fun network(token: String, days: List<String>): Answer<NetworkResponse> =
+        post("network", token, days.joinToString(",", prefix = "{\"days\":[", postfix = "]}"), NetworkResponse.serializer())
 
     /**
      * Phase 2, the long-poll: `GET /api/v1/policy?have=&wait=`. The server answers at once

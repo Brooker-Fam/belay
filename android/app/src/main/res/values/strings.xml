@@ -507,6 +507,8 @@
     <string name="can_see_ai_agreement">Your parent\'s AI app can also read your stage and your family agreement, and your answers to it.</string>
     <string name="can_see_ai_other">Your parent\'s AI app can also read: %1$s</string>
     <string name="can_see_ai_none">Your parent hasn\'t let their AI app read any of this.</string>
+    <!-- Phase 3: under "Which websites and services apps look up", while network logging is on. -->
+    <string name="network_android_says">When Android says \"your organization manages this device and may monitor network traffic\", it means your parent, through Belay: only the names above, not what\'s on the pages.</string>
 
     <!-- Phase 4: location, for the kid. -->
     <string name="section_location">Where this phone is</string>

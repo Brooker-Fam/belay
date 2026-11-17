@@ -1,6 +1,8 @@
 package family.brooker.belay.store
 
+import android.app.admin.DevicePolicyManager
 import android.content.Context
+import family.brooker.belay.DeviceOwnerSetup
 import family.brooker.belay.calls.CallFlow
 import family.brooker.belay.calls.Dialer
 import family.brooker.belay.core.AppChange
@@ -12,6 +14,7 @@ import family.brooker.belay.core.WireCommandResult
 import family.brooker.belay.core.WireRecoveryUse
 import family.brooker.belay.core.calls.WireCallsStatus
 import family.brooker.belay.core.location.WireLocationStatus
+import family.brooker.belay.core.screentime.WireNetworkLogStatus
 import family.brooker.belay.core.screentime.WireScreenTimeStatus
 import family.brooker.belay.settings.Connection
 import kotlinx.serialization.json.Json
@@ -29,9 +32,10 @@ import kotlinx.serialization.json.putJsonObject
  * key's tries and use, and the commands' results, (Phase 3) why each app is held and
  * screen time's count and state, (Phase 4) location's report and what it wants, without where the
  * phone is, (Phase 7) whether each request was taken back or seen, (Phase 5) the dialer, the
- * block list Belay keeps and how it decided the last calls, without numbers, and (Phase 11) the
+ * block list Belay keeps and how it decided the last calls, without numbers, (Phase 11) the
  * hand-over: when the policy asked for it, what Belay did about reset protection, and whether it
- * still holds any of the hand-over's locks. Debug builds write it after every step
+ * still holds any of the hand-over's locks, and (Phase 3) network logging's switch, batches and
+ * days, as counts, never a name. Debug builds write it after every step
  * (DebugTools.afterStep), for android/scripts/ci-emulator-test.sh.
  */
 object StateDump {
@@ -142,6 +146,34 @@ object StateDump {
         // Phase 5: the dialer and how Belay decided the last calls, without anyone's number but the
         // parent's own blocked list, and never when the kid last called 911 or 988.
         putJsonObject("calls") { callsDump(this, store, context) }
+        // Phase 3: network logging: Android's switch, the batches taken and the days counted, as
+        // counts: never an app's or a domain's name.
+        val network = store.networkState()
+        putJsonObject("network") {
+            put("on", store.policy()?.networkLog?.enabled == true)
+            put("android", runCatching { context.getSystemService(DevicePolicyManager::class.java).isNetworkLoggingEnabled(DeviceOwnerSetup.admin(context)) }.getOrNull())
+            network?.report?.let { put("report", Json.encodeToJsonElement(WireNetworkLogStatus.serializer(), it)) }
+            put("enabled_at", network?.enabledAt)
+            put("last_token", network?.lastToken)
+            put("last_batch_at", network?.lastBatchAt)
+            put("last_batch_lookups", network?.lastBatchLookups)
+            put("refused_at", network?.refusedAt)
+            put(
+                "days",
+                JsonArray(
+                    store.networkDaySizes().map { (day, entries) ->
+                        buildJsonObject {
+                            put("day", day.day)
+                            put("zone", day.zone)
+                            put("as_of", day.asOf)
+                            put("entries", entries)
+                            put("overflow", day.overflow)
+                        }
+                    },
+                ),
+            )
+            put("unsent", store.pendingNetworkCount())
+        }
     }.toString()
 
     private fun callsDump(out: JsonObjectBuilder, store: AgentStore, context: Context) {
