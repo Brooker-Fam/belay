@@ -81,6 +81,18 @@ relying on something new, it goes here first, with a source.
 | V2 | A device owner can list and remove other users and profiles | Confirmed, with one exception | AOSP; Docs; Emulator pending (Phase 10 CI) |
 | V4 | Telling the restrictions Belay set from everyone else's | Confirmed | AOSP; Docs |
 | E2 | `pm create-user` on the CI emulators | Confirmed: up to 4 users on both images | AOSP (goldfish) |
+| L1 | An adb-provisioned device owner grants itself location, background included; Android tells the kid | Confirmed | AOSP; Emulator pending (Phase 4 CI) |
+| L2 | `setLocationEnabled` and `DISALLOW_CONFIG_LOCATION` for a device owner | Confirmed; Android posts its own notice when location goes on | AOSP; Docs; Emulator pending (Phase 4 CI) |
+| L3 | "gps", "network" and "fused" with the platform API only | Partly: on a Pixel, "network" and "fused" are (expected to be) Play services | AOSP |
+| L4 | Platform geofencing | Partly: it uses the fused provider; Belay computes places itself | AOSP |
+| L5 | No `location` foreground service needed | Confirmed | AOSP; Docs |
+| L6 | The kid sees when location is used | Confirmed for GPS-level requests (the status bar icon) | AOSP |
+| L7 | Losing a granted permission stops and restarts the app | Confirmed: every runtime permission but notifications | AOSP; Emulator pending (Phase 4 CI) |
+| L8 | `getCurrentLocation` with a 60-second timeout | **Contradicted**: Android caps one call at 30 s; Belay makes two | AOSP |
+| L9 | A test can set a known GPS point on the emulator | Only with a mock provider; CI sets it with `adb emu geo fix` | AOSP (goldfish) |
+| L10 | `setDeviceOwnerLockScreenInfo` for lost mode | Confirmed | AOSP; Docs |
+| G1 | Calling and texting 911, 988 and a parent while every other app is suspended | Confirmed: ACTION_DIAL and ACTION_SENDTO to the default apps, which Belay never suspends | AOSP; Docs; Emulator pending (Phase 7 CI) |
+| G2 | Android's own emergency information has an intent on Android 17 | Confirmed: `android.telephony.action.EMERGENCY_ASSISTANCE`, the emergency role's activity | AOSP |
 
 "Emulator" entries were seen in CI: `ci-emulator-test.sh` passed end to end on the API 37.0
 Automated Test Device image (`aosp_atd`, required) from run 8, and on the API 37.0 Google
@@ -1212,6 +1224,198 @@ none.
 
 Belay's consequence: `OtherUsersInstrumentedTest` (emulators only) turns Belay's add-user lock off
 in its own test policy, makes a user, and has `remove_other_users` remove it.
+
+---
+
+## Location and the kid's side (Phases 4 and 7)
+
+All read in AOSP `android-17.0.0_r1` on 2026-11-17 (`platform/frameworks/base` unless named; the
+PermissionController is `packages/modules/Permission`), and in the 37.0 `android.jar`. L1 to L6
+moved here from [the drafts](design/platform-notes-drafts.md), checked again where Belay now
+relies on them; the rest are new. The emulator checks run in CI (`LocationInstrumentedTest`,
+`KidSideInstrumentedTest` and `ci-emulator-test.sh`'s Phase 4 and 7 block); the Pixel's in
+[phase4-checklist.md](phase4-checklist.md) and [phase7-checklist.md](phase7-checklist.md).
+
+### L1. Location, granted by policy
+
+**Confirmed.** Verified on: AOSP; Emulator pending (Phase 4 CI).
+
+- `services/devicepolicy/.../DevicePolicyManagerService.setDeviceOwner`: `if (isAdb(caller)) {
+  activeAdmin.mAdminCanGrantSensorsPermissions = true; mPolicyCache.setAdminCanGrantSensorsPermissions(true); … }`.
+  `setPermissionGrantState` refuses to grant a `SENSOR_PERMISSIONS` member without it (by default
+  it answers as if it worked, `callback.sendResult(Bundle.EMPTY)`, unless the change
+  `THROW_SECURITY_EXCEPTION_FOR_SENSOR_PERMISSIONS` is on for the caller).
+- `PermissionController/.../utils/v31/AdminRestrictedPermissionsUtils`: `ACCESS_FINE_LOCATION`,
+  `ACCESS_BACKGROUND_LOCATION` and `ACCESS_COARSE_LOCATION` are admin-restricted sensor
+  permissions, which an admin may grant only with `canAdminGrantSensorsPermissions`.
+- `PermissionControllerServiceImpl.onSetRuntimePermissionGrantStateByDeviceAdmin` expands split
+  permissions, and per permission: GRANTED sets it policy-fixed and grants it (or, when the admin
+  may not grant it, only clears policy-fixed); DENIED sets it policy-fixed and revokes it.
+  `AutoGrantPermissionsNotifier` (only for the three location permissions) then posts, in the
+  PermissionController's own words, "%1$s has location access" and "Your organization allows %1$s
+  to access your location" (`res/values/strings.xml`, `auto_granted_location_permission_notification_title`
+  and `auto_granted_permission_notification_body`). A device owner can't change "Your organization":
+  that needs `UPDATE_DEVICE_MANAGEMENT_RESOURCES` (`signature|role`).
+
+Belay's consequence: location is declared but granted by policy only while the policy has it on (a
+mode, lost mode, or the one fix a kid shares with a help request), and denied by policy otherwise,
+so Settings shows Belay without it and the kid can't grant it (core's `CategoryPermissions`,
+`DeviceOwnerSetup`). A grant that silently didn't happen shows: Belay reads `checkSelfPermission`
+before taking a fix, and reports "Android didn't let Belay use location." The kid's Location card
+explains Android's "your organization" wording.
+
+### L2. `setLocationEnabled` and `DISALLOW_CONFIG_LOCATION`
+
+**Confirmed.** Verified on: AOSP; Docs; Emulator pending (Phase 4 CI).
+
+- `DevicePolicyManagerService.setLocationEnabled`: the default device owner only
+  (`checkCallAuthorization(isDefaultDeviceOwner)`); it calls `LocationManager.setLocationEnabledForUser`,
+  and when it turns location on (it was off) posts Android's own notice, "Apps can access your
+  location" / "Contact your IT admin to learn more" (`core/res` `location_changed_notification_title`
+  and `_text`). On automotive builds turning it off is ignored.
+- `core/java/android/os/UserManager.java`, `DISALLOW_CONFIG_LOCATION` ("no_config_location"):
+  "When it is set by a device owner … it disallows the primary user from turning location on or
+  off", and "a device owner or a profile owner can still enable or disable location mode via
+  DevicePolicyManager#setLocationEnabled when this restriction is on". It differs from
+  `DISALLOW_SHARE_LOCATION`, which keeps apps from location. `dumpsys user` lists it under each
+  user's "Effective restrictions:" (`UserRestrictionsUtils.dumpRestrictions`), which CI reads.
+
+Belay's consequence: `keep_on` (with a mode on) and lost mode are Phase 2's lock `CONFIG_LOCATION`
+plus `setLocationEnabled(true)`. Belay turns location back off only when it turned it on itself
+for lost mode or a help fix; when `keep_on` ends, the kid decides.
+
+### L3. "network" and "fused" without Play services code
+
+**Partly.** Verified on: AOSP (from the drafts, not re-checked).
+`location/LocationManagerService.onSystemThirdPartyAppsCanStart` binds "network" and "fused" to
+the system package that serves `ACTION_NETWORK_PROVIDER` or `ACTION_FUSED_PROVIDER` (AOSP's own
+`com.android.location.fused` is the fallback); "gps" is the GNSS hardware. On a Pixel those are
+expected to be Google Play services, under Google's own location settings (`dumpsys location` names
+them: the Pixel checklist records it).
+
+Belay's consequence: `provider: "gps"` by default; "fused" only when the family chose it or as
+`fallback_fused`. No Play services code in Belay either way.
+
+### L4. Platform geofencing
+
+**Partly.** Verified on: AOSP (from the drafts). `location/geofence/GeofenceManager`, behind
+`addProximityAlert`, asks the fused provider. Belay computes places itself from its own fixes, in
+`:core` (`Places.evaluate`, with two-fix hysteresis).
+
+### L5. No `location` foreground service needed
+
+**Confirmed.** Verified on: AOSP; Docs (from the drafts). A device owner may start a foreground
+service from the background, and with `ACCESS_BACKGROUND_LOCATION` granted by policy Belay may
+read location at any time; Belay's `systemExempted` service keeps it out of the background
+throttle (`location/injector/SystemAppForegroundHelper`).
+
+### L6. What the kid sees while location is used
+
+**Confirmed for GPS-level requests.** Verified on: AOSP (from the drafts). System UI shows the
+status bar's location icon while an app holds `OP_MONITOR_HIGH_POWER_LOCATION`; a low-power
+request may show nothing.
+
+Belay's consequence: its own notice for every check a parent asked for ("Your parent checked where
+this phone is (8:15 PM)", "…, using Claude"), an ongoing one in lost mode, and periodic mode in the
+managed notice ("Shares where this phone is every 30 minutes, 7:00 AM to 9:00 PM").
+
+### L7. Losing a granted permission stops and restarts the app
+
+**Confirmed.** Verified on: AOSP; Emulator pending (Phase 4 CI).
+
+- `services/permission/.../permission/PermissionService.kt`, `onPermissionFlagsChanged`: a runtime
+  permission going from granted to not granted adds the uid to `runtimePermissionRevokedUids`;
+  `onStateMutated` then posts `killUid(uid, KILL_APP_REASON_PERMISSIONS_REVOKED)`
+  (`ActivityManager.killUidForPermissionChange`), unless only `POST_NOTIFICATIONS` was revoked and a
+  backup is running, or the caller asked to skip it (an internal path only). R5 relies on the same.
+- `PermissionControllerServiceImpl.onSetRuntimePermissionGrantStateByDeviceAdmin` persists a
+  DENIED change with `mayKillBecauseOfAppOpsChange` true.
+- Expected, not re-read here: the killed process's services come back by themselves (Belay's
+  foreground service is sticky, and the system keeps its `DeviceAdminService` bound, B7), as R5's
+  camera gate already relies on; a visible activity without saved state goes. CI checks it.
+
+Belay's consequence: turning location off (or lost mode, or a help fix, ending) restarts Belay once.
+The agent step denies the permission last, after storing what it did; the sync after the restart
+sends what waits. A help fix's grant waits until Belay's screens are closed, so the help screen
+with "call 911" never vanishes under the kid; until then Belay holds location but takes no other
+fix. CI turns location off and checks the permission goes and Belay comes back. An instrumented
+test can't deny it: the instrumentation runs in Belay's process.
+
+### L8. `getCurrentLocation` and its timeout
+
+**Contradicted for a 60-second timeout.** Verified on: AOSP; SDK.
+
+- `services/core/.../location/provider/LocationProviderManager.getCurrentLocation`: a request's
+  duration over `MAX_GET_CURRENT_LOCATION_TIMEOUT_MS` (30 s) is cut to 30 s. A registration that
+  never activates (the provider off, location off, no permission) delivers null at once; one that
+  activates delivers a last location no older than `MAX_CURRENT_LOCATION_AGE_MS` (30 s) if there is
+  one, else the next fix, else null at the end.
+- `LocationManager.getCurrentLocation(String, LocationRequest, CancellationSignal, Executor,
+  Consumer<Location>)` (API 31), `Location.isMock()` (API 31) and `LocationManager.FUSED_PROVIDER`
+  (API 31) are public in the 37.0 SDK.
+
+Belay's consequence: a fix is two calls of 30 s (GPS twice, or GPS then "fused" with
+`fallback_fused`; "fused" twice if the family chose it), one at a time, under a 75-second partial
+wake lock (`location/LocationCollector.kt`). A null that comes back within 5 seconds isn't waited
+on again. The failures read "No GPS fix in 60 seconds." and so on, word for word on the parent page.
+
+### L9. A known GPS point on the emulator
+
+**Only with a mock provider.** Verified on: AOSP (`device/generic/goldfish`).
+The emulator's GNSS HAL gets its fixes from the emulator console (`adb emu geo fix <longitude>
+<latitude>`); from inside the phone only a test provider (`LocationManager.addTestProvider`, or the
+shell's `cmd location providers set-test-provider-location`) can set a point, and its fixes are
+mock fixes (`isMock()`), which Belay reports as such and never counts for places.
+
+Belay's consequence: CI sets the point with `adb emu geo fix -122.08 37.42` and passes it to
+`LocationInstrumentedTest` as instrumentation arguments; the server's fix for `locate-now` must
+match it to about 4 decimals and not be a mock.
+
+### L10. `setDeviceOwnerLockScreenInfo`
+
+**Confirmed.** Verified on: AOSP; Docs. `DevicePolicyManagerService.setDeviceOwnerLockScreenInfo`:
+the default device owner (or the profile owner of an organization-owned phone); without the flag
+`lockscreen_info_coexistence` it calls `LockPatternUtils.setDeviceOwnerInfo`, with it the policy
+engine's `LOCKSCREEN_MESSAGE` (permission `MANAGE_DEVICE_POLICY_LOCKSCREEN_MESSAGE`, which a device
+owner holds). Null or empty takes it away.
+
+Belay's consequence: lost mode shows the parent's message (at most 120 characters) on the lock
+screen and takes it away when lost mode ends. The Pixel checklist records where it shows.
+
+### G1. Calls and texts to 911, 988 and a parent while apps are suspended
+
+**Confirmed.** Verified on: AOSP; Docs; Emulator pending (Phase 7 CI, `KidSideInstrumentedTest`).
+
+- `Intent.ACTION_DIAL` with a `tel:` number needs no permission and opens the dialer with the
+  number filled in. The drafts' T2: an emergency call always goes through the preloaded dialer, and
+  an `ACTION_CALL` (which needs `CALL_PHONE`) to 911 from another app is raised to it as ACTION_DIAL.
+- `Intent.ACTION_SENDTO` with `smsto:` opens the texting app (the SMS role holder takes it).
+- `TelecomManager.getDefaultDialerPackage()` and `Telephony.Sms.getDefaultSmsPackage()` need no
+  permission (C10). Belay never suspends the default and preloaded dialers, `com.android.phone`,
+  the default SMS app or the emergency apps (core's `NeverBlocked`), so a pause, a schedule or a
+  limit never closes them.
+
+Belay's consequence: the emergency card's buttons start ACTION_DIAL and ACTION_SENDTO in those
+packages by name (so no chooser, and no other app that may be paused, comes up), falling back to
+Android's choice; the kid taps Call in the dialer. Text 911 says it only works in some places.
+
+### G2. Android's own emergency information
+
+**Confirmed on Android 17.** Verified on: AOSP.
+
+- `telephony/java/android/telephony/TelephonyManager.ACTION_EMERGENCY_ASSISTANCE`,
+  `"android.telephony.action.EMERGENCY_ASSISTANCE"`, is `@SystemApi` (not in the public SDK), but
+  it's the one activity the emergency role requires (`PermissionController/res/xml/roles.xml`,
+  `android.app.role.EMERGENCY`, `systemOnly="true"`).
+- `packages/apps/EmergencyInfo` (`com.android.emergency`): `.view.ViewInfoActivity` takes it,
+  exported, without a permission, `showWhenLocked`. `android.settings.EDIT_EMERGENCY_INFO`
+  (its editor) isn't a public Settings constant.
+- On a Pixel the role holder is expected to be the Personal Safety app (package unverified: the
+  Phase 7 checklist records it).
+
+Belay's consequence: "Medical information and emergency contacts" starts that action in the system
+app that takes it (`ui/Emergency.kt`), and isn't shown when none does. Belay never copies medical
+details. The emergency apps are never suspended.
 
 ---
 
