@@ -55,6 +55,7 @@
  *                                                 a number on Android's block list (never 911, 988 or an emergency number)
  *   private-number "<phone>" <E.164>, or private-number "<phone>" --remove <E.164>
  *                                                 a number Belay never records
+ *   network "<phone>" --on|--off                  whether the phone notes which websites and services its apps look up (Phase 3)
  *   handover "<phone>"                            hands the phone over to the kid (Phase 11); prints one sentence
  *
  * Changes are logged as the server's (the activity log's "The server"). A running server sees
@@ -85,6 +86,8 @@ import { type CallsSettingsChange, blockNumber, putContact, removeContact, setCa
 import { listCallRecords } from "./family/calls/records.js";
 import { callSettings, callsFor, contactsFor, listContacts, numbersOf } from "./family/calls/store.js";
 import { callsSummary } from "./family/calls/words.js";
+import { setNetworkLog } from "./family/network/changes.js";
+import { networkDays, networkKept, networkLogFor, networkSettings } from "./family/network/store.js";
 import { handOver } from "./family/offbelay/changes.js";
 import { handoverOf } from "./family/offbelay/store.js";
 import { setPhoneRules, setPhoneSettings } from "./family/screentime/changes.js";
@@ -191,6 +194,7 @@ const USAGE = `Commands:
   unblock-number "<phone>" <E.164>
   private-number "<phone>" <E.164>
   private-number "<phone>" --remove <E.164>
+  network "<phone>" --on|--off
   handover "<phone>"`;
 
 /** How many of the newest call records status --json lists per phone. */
@@ -201,6 +205,9 @@ const STATUS_FIXES = 50;
 
 /** How many of the newest usage days status --json lists per phone. */
 const STATUS_USAGE_DAYS = 31;
+
+/** How many of the newest network days status --json lists per phone. */
+const STATUS_NETWORK_DAYS = 31;
 
 /** An on|off flag: true, false, left out (undefined), or anything else ("bad"). */
 function onOff(value: string | true | undefined): boolean | undefined | "bad" {
@@ -408,6 +415,15 @@ async function run(argv: string[], io: CliIO): Promise<void> {
           })),
           /** Phase 11: the hand-over, as the policy carries it (at: milliseconds since the epoch), with the rules version that carried it; null: none. */
           handover: handoverStatus(db, d.id),
+          /** Phase 3: the policy's network_log, and the days of network activity the phone sent, newest first (as_of as the phone sent it). */
+          network_log: networkLogFor(db, d.id),
+          network: networkDays(db, d.id, { limit: STATUS_NETWORK_DAYS }).map((n) => ({
+            day: n.day,
+            zone: n.zone,
+            as_of: n.asOf,
+            entries: n.entries.map((e) => ({ package: e.package, domain: e.domain, lookups: e.lookups })),
+            dropped: n.dropped,
+          })),
         };
       });
       if (flags.has("json")) {
@@ -438,8 +454,30 @@ async function run(argv: string[], io: CliIO): Promise<void> {
         }
         const cs = callSettings(db, id);
         if (cs) io.out(`  calls: ${callsSummary(cs)}; ${p.contacts.length} contact${p.contacts.length === 1 ? "" : "s"}, ${p.blocked_numbers.length} blocked`);
+        const ns = networkSettings(db, id);
+        const kept = networkKept(db, id);
+        if (ns || kept.days) io.out(`  network logging: ${ns?.enabled ? "on" : "off"}; ${kept.days} day${kept.days === 1 ? "" : "s"} of network activity kept`);
         for (const c of p.recent_changes.slice(0, 5)) io.out(`  ${c.at ?? ""} ${c.kind} ${c.package}`);
       }
+      return;
+    }
+    case "network": {
+      // Phase 3: what the phone page's network logging switch does: a parent's choice, never an AI app's.
+      const row = phone();
+      const on = flags.get("on");
+      const off = flags.get("off");
+      if ((on === undefined) === (off === undefined) || (on ?? off) !== true || positional.length > 1) throw new CliError(`Usage: network "<phone>" --on|--off`);
+      const turnOn = on === true;
+      const done = setNetworkLog(ctx, row.id, turnOn, server);
+      const what = turnOn ? "on" : "off";
+      io.out(
+        done.result.already
+          ? `${row.name}: network logging was already ${what} (rules version ${done.version}).`
+          : `${row.name}: network logging is ${what} (rules version ${done.version}). ` +
+              (turnOn
+                ? "The phone notes which websites and services its apps look up, by name and how many times a day, and sends that."
+                : `The phone stops noting which websites and services its apps look up. What the server kept stays until it's ${getSettings(db).networkDays} days old; Stop collecting, on the phone's page, deletes it now.`),
+      );
       return;
     }
     case "handover": {

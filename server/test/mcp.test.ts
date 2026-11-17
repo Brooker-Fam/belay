@@ -86,6 +86,7 @@ describe("the MCP server", () => {
       "get_device_status",
       "get_installed_apps",
       "get_location",
+      "get_network_activity",
       "get_place_events",
       "get_policy",
       "get_rules",
