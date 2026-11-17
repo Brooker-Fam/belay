@@ -51,6 +51,13 @@
     <string name="section_background">Background checks</string>
     <string name="section_phone">Phone</string>
     <string name="section_self">Belay itself</string>
+    <string name="phone_battery">Battery</string>
+    <string name="phone_battery_value">%1$d%%</string>
+    <string name="phone_battery_charging">%1$d%%, charging</string>
+    <string name="phone_storage">Storage</string>
+    <string name="phone_storage_value">%1$s free of %2$s</string>
+    <string name="phone_time_zone">Time zone</string>
+    <string name="unknown">unknown</string>
 
     <!-- Debug builds only. -->
     <string name="release_button">Release this phone (debug build)</string>

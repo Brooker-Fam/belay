@@ -2,11 +2,17 @@ package family.brooker.belay
 
 import android.content.Context
 import android.util.Log
-import family.brooker.belay.core.AgentState
+import family.brooker.belay.core.AppChange
+import family.brooker.belay.core.Heartbeat
+import family.brooker.belay.core.PackageRecord
+import family.brooker.belay.core.WireDevice
+import family.brooker.belay.health.DeviceStatus
 import family.brooker.belay.health.Health
 import family.brooker.belay.health.HealthReader
 import family.brooker.belay.inventory.Reconciler
 import family.brooker.belay.service.BelayService
+import family.brooker.belay.store.AgentStore
+import family.brooker.belay.store.StateDump
 import family.brooker.belay.work.WatchdogWorker
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -27,13 +33,21 @@ enum class Trigger(val label: String, val heartbeat: Boolean) {
     APP_OPENED("Belay opened", false),
 }
 
-/** Everything the main screen shows. */
-data class AgentView(val state: AgentState, val health: Health)
+/** Everything the main screen shows from the agent's last step. */
+data class AgentView(
+    val health: Health,
+    val device: WireDevice,
+    val inventory: Map<String, PackageRecord>,
+    /** Newest first. */
+    val changes: List<AppChange>,
+    /** Newest first. */
+    val heartbeats: List<Heartbeat>,
+)
 
 object Agent {
     const val TAG = "Belay"
 
-    // One thread for all agent work, so the stored state has a single writer.
+    // One thread for all agent work, so the baseline and the log have a single writer.
     private val executor = Executors.newSingleThreadExecutor { r -> Thread(r, "belay-agent") }
     private val _view = MutableStateFlow<AgentView?>(null)
     val view: StateFlow<AgentView?> = _view.asStateFlow()
@@ -43,7 +57,8 @@ object Agent {
      * 1. If Belay is device owner, apply its setup again (idempotent) and make sure the
      *    service and the periodic check are running.
      * 2. Reconcile the inventory: getChangedPackages since the last check, or a full scan
-     *    after a boot and once a day.
+     *    after a boot and once a day. What it finds goes into the outbox in the same
+     *    transaction.
      * 3. Publish the result for the main screen.
      *
      * [done] runs afterwards on the agent thread; receivers pass PendingResult.finish.
@@ -59,13 +74,24 @@ object Agent {
             val started = System.nanoTime()
             Log.i(TAG, "step: ${trigger.label}" + if (packages.isEmpty()) "" else " $packages")
             try {
+                val store = AgentStore.get(app)
                 if (trigger != Trigger.PACKAGE_BROADCAST && DeviceOwnerSetup.isDeviceOwner(app)) {
                     DeviceOwnerSetup.ensure(app)
                     BelayService.start(app)
                     WatchdogWorker.schedule(app)
                 }
-                val state = Reconciler(app).run(trigger, packages)
-                _view.value = AgentView(state, HealthReader(app).read())
+                val health = HealthReader(app).read()
+                var device: WireDevice? = null
+                val readDevice = { DeviceStatus.read(app, health).also { device = it } }
+                val outcome = Reconciler(app, store).run(trigger, packages, null, readDevice)
+                _view.value = AgentView(
+                    health = health,
+                    device = device ?: readDevice(),
+                    inventory = outcome.baseline.inventory,
+                    changes = store.recentChanges(SCREEN_CHANGES),
+                    heartbeats = store.recentHeartbeats(SCREEN_HEARTBEATS),
+                )
+                DebugTools.afterStep(app) { StateDump.json(store) }
             } catch (t: Throwable) {
                 Log.e(TAG, "agent step failed (${trigger.label})", t)
             } finally {
@@ -74,4 +100,7 @@ object Agent {
             }
         }
     }
+
+    private const val SCREEN_CHANGES = 30
+    private const val SCREEN_HEARTBEATS = 24
 }

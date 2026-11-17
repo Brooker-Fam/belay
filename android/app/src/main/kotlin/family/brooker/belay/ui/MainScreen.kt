@@ -1,6 +1,7 @@
 package family.brooker.belay.ui
 
 import android.text.format.DateUtils
+import android.text.format.Formatter
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -40,6 +41,7 @@ import family.brooker.belay.core.DataCategory
 import family.brooker.belay.core.Detection
 import family.brooker.belay.core.Heartbeat
 import family.brooker.belay.core.PackageRecord
+import family.brooker.belay.core.WireDevice
 import family.brooker.belay.health.Health
 import family.brooker.belay.health.HealthReader
 import family.brooker.belay.inventory.Collectors
@@ -59,11 +61,11 @@ fun MainScreen(view: AgentView?, onAllowBattery: () -> Unit, onRelease: (() -> U
             }
             item { StatusCard(view) }
             item { CanSeeCard(Collectors.categories) }
-            item { ChangesCard(view.state.changes.asReversed().take(30), view.state.inventory) }
+            item { ChangesCard(view.changes, view.inventory) }
             item { ChecksCard(view.health, onAllowBattery) }
-            item { PhoneCard(view.health) }
-            item { SelfCard(view.health, view.state.inventory[LocalContext.current.packageName]) }
-            item { HeartbeatsCard(view.state.heartbeats.asReversed().take(24)) }
+            item { PhoneCard(view.health, view.device) }
+            item { SelfCard(view.health, view.inventory[LocalContext.current.packageName]) }
+            item { HeartbeatsCard(view.heartbeats) }
             if (onRelease != null && view.health.deviceOwner) item { ReleaseButton(onRelease) }
         }
     }
@@ -89,7 +91,7 @@ private fun Section(title: String, content: @Composable () -> Unit) {
 
 @Composable
 private fun StatusCard(view: AgentView) {
-    val apps = view.state.inventory.values
+    val apps = view.inventory.values
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (view.health.deviceOwner) {
@@ -173,14 +175,35 @@ private fun ChecksCard(health: Health, onAllowBattery: () -> Unit) {
 }
 
 @Composable
-private fun PhoneCard(health: Health) {
+private fun PhoneCard(health: Health, device: WireDevice) {
     Section(stringResource(R.string.section_phone)) {
         val phone = health.phone
+        val context = LocalContext.current
         Fact("Model", "${phone.manufacturer} ${phone.model}")
         Fact("Android", "${phone.androidRelease} (API ${phone.sdk})")
         Fact("Security update", phone.securityPatch)
         Fact("Boot count", health.bootCount?.toString() ?: "unavailable")
         Fact("Last restart", formatTime(health.lastBootAt))
+        val percent = device.batteryPercent
+        Fact(
+            stringResource(R.string.phone_battery),
+            when {
+                percent == null -> stringResource(R.string.unknown)
+                device.charging == true -> stringResource(R.string.phone_battery_charging, percent)
+                else -> stringResource(R.string.phone_battery_value, percent)
+            },
+        )
+        val free = device.storageFreeBytes
+        val total = device.storageTotalBytes
+        Fact(
+            stringResource(R.string.phone_storage),
+            if (free == null || total == null) {
+                stringResource(R.string.unknown)
+            } else {
+                stringResource(R.string.phone_storage_value, Formatter.formatShortFileSize(context, free), Formatter.formatShortFileSize(context, total))
+            },
+        )
+        Fact(stringResource(R.string.phone_time_zone), device.timezone)
     }
 }
 

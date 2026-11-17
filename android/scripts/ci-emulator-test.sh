@@ -32,8 +32,6 @@ step() { printf '\n=== %s\n' "$*"; }
 wait_log() {
   grep -m1 -F -- "$1" < <(timeout "${2:-60}" "$ADB_BIN" -s "$SERIAL" logcat -v brief -s Belay:I)
 }
-# Belay's stored state (debug builds only: run-as). Retries briefly, and shows run-as's
-# own error if it never succeeds.
 # What Belay was doing, for a failed check.
 diagnose() {
   echo "--- Belay's log (last 80 lines):"
@@ -43,10 +41,13 @@ diagnose() {
   echo "--- last heartbeats:"
   state | grep -o '"heartbeats":.*' | cut -c 1-1500 || true
 }
+# A summary of Belay's stored state: heartbeats, changes and outbox counts, which debug
+# builds write after every agent step (DebugTools.afterStep). Read with run-as (debug builds
+# only). Retries briefly, and shows run-as's own error if it never succeeds.
 state() {
   local out _
   for _ in 1 2 3 4 5 6; do
-    out="$(adb shell run-as "$PKG" cat no_backup/agent-state.json 2>&1 | tr -d '\r' || true)"
+    out="$(adb shell run-as "$PKG" cat no_backup/debug-state.json 2>&1 | tr -d '\r' || true)"
     case "$out" in "{"*) printf '%s\n' "$out"; return 0 ;; esac
     sleep 2
   done
