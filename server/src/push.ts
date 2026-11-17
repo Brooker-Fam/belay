@@ -256,11 +256,16 @@ export function browserName(userAgent: string | undefined, endpoint: string): st
 
 // ── Sending ─────────────────────────────────────────────────────────────
 
-/** What the service worker shows: a title, a line, and the parent page to open on a tap. */
+/**
+ * What the service worker shows: a title, a line, and the parent page to open on a tap. An urgent
+ * one (the kid's "I need help") goes with Web Push's high urgency, and stays on the screen until
+ * the parent acts on it.
+ */
 export interface Notice {
   title: string;
   body: string;
-  url: "/" | "/requests" | "/proposals" | "/settings" | `/devices/${string}`;
+  url: "/" | "/requests" | "/requests#help" | "/proposals" | "/settings" | `/devices/${string}`;
+  urgent?: boolean;
 }
 
 export interface SendResult {
@@ -299,7 +304,7 @@ export async function sendNotice(deps: Deps, notice: Notice, opts: { parentId?: 
             "content-type": "application/octet-stream",
             "content-encoding": "aes128gcm",
             ttl: String(TTL_SECONDS),
-            urgency: "normal",
+            urgency: notice.urgent === true ? "high" : "normal",
             authorization: `vapid t=${jwt}, k=${keys.publicKey}`,
           },
           body: new Uint8Array(body),
@@ -341,9 +346,9 @@ export function requestNotice(deviceName: string, labels: string[]): Notice {
   return { title: "Belay", body, url: "/requests" };
 }
 
-/** A request as requestsNotice reads it. */
+/** A request as requestsNotice reads it (help requests have helpNotice). */
 export interface NewRequest {
-  kind: "app" | "more_time" | "agreement";
+  kind: "app" | "more_time" | "agreement" | "talk";
   label: string | null;
   limitId?: string;
   minutes?: number;
@@ -372,7 +377,29 @@ export function requestsNotice(deviceName: string, requests: NewRequest[], limit
     const body = first.answer === "agree" ? `${phone}: the kid agreed to the family agreement` : `${phone}: the kid wants to talk about the family agreement${why(first)}`;
     return { title: "Belay", body, url: "/requests" };
   }
+  if (requests.length === 1 && first?.kind === "talk") return { title: "Belay", body: `${phone}: the kid would like to talk${why(first)}`, url: "/requests" };
   return { title: "Belay", body: `${phone}: ${requests.length} requests are waiting for you`, url: "/requests" };
+}
+
+/**
+ * Phase 7: the kid pressed "I need help" (`Sam's phone needs help: "I'm lost"`), urgent, to every
+ * parent at once. The kid's words go with it, cleaned and capped, end-to-end encrypted like every
+ * notice; where the phone is doesn't, only that it was shared (it's on the Requests page).
+ */
+export function helpNotice(deviceName: string, help: { reason: string | null; shared: boolean; withdrawn?: boolean; update?: boolean }): Notice {
+  const phone = oneLine(deviceName, 60);
+  const words = help.reason ? oneLine(help.reason, 160) : "";
+  const said = words ? `: "${words}"` : "";
+  const where = help.shared ? " They shared where the phone is." : "";
+  const body = `${phone} ${help.withdrawn ? "asked for help, then withdrew it" : "needs help"}${said}.${where}`;
+  return { title: help.update ? "Belay: more about the help request" : "Belay: help", body, url: "/requests#help", urgent: true };
+}
+
+/** Phase 4: `Sam's phone arrived at School` (the family's own name for it), with the time when it's from a while ago. */
+export function placeNotice(phone: { id: string; name: string }, placeName: string, kind: "arrived" | "left", when: string | null): Notice {
+  const place = oneLine(placeName, 40);
+  const body = `${oneLine(phone.name, 60)} ${kind === "arrived" ? "arrived at" : "left"} ${place}${when ? ` at ${when}` : ""}`;
+  return { title: "Belay", body, url: `/devices/${phone.id}/location` };
 }
 
 /** `Sam's phone: Belay couldn't update to 0.4.0 (version 4)`. Never the phone's own words: those wait on the phone's page. */

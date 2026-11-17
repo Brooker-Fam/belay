@@ -82,12 +82,20 @@ function what(e: AuditEntry): string {
       return `turned on notifications on ${str(d.browser) || "a browser"}`;
     case "push.unsubscribed":
       return `turned off notifications on ${str(d.browser) || "a browser"}`;
-    case "request.made":
-      if (d.kind === "more_time") return `asked for ${str(d.minutes)} more minutes for ${str(d.limit) || "a limit"}${d.again === true ? " again" : ""}`;
+    case "request.made": {
+      const withdrawn = d.withdrawn === true ? ", then withdrew it" : "";
+      if (d.kind === "more_time") return `asked for ${str(d.minutes)} more minutes for ${str(d.limit) || "a limit"}${d.again === true ? " again" : ""}${withdrawn}`;
       if (d.kind === "agreement") {
-        return d.answer === "agree" ? `agreed to version ${str(d.agreement_version)} of the family agreement` : `wants to talk about version ${str(d.agreement_version)} of the family agreement`;
+        return d.answer === "agree" ? `agreed to version ${str(d.agreement_version)} of the family agreement` : `wants to talk about version ${str(d.agreement_version)} of the family agreement${withdrawn}`;
       }
-      return `asked for ${str(d.label) || str(d.package) || "an app"}${d.again === true ? " again" : ""}`;
+      if (d.kind === "help") return `asked for help ("I need help")${d.shared_location === true ? ", sharing where the phone is" : ""}${withdrawn}`;
+      if (d.kind === "talk") return `asked to talk ("Talk to my parent")${withdrawn}`;
+      return `asked for ${str(d.label) || str(d.package) || "an app"}${d.again === true ? " again" : ""}${withdrawn}`;
+    }
+    case "request.withdrawn":
+      return d.kind === "help" ? "withdrew a help request" : "withdrew a request while it waited";
+    case "request.seen":
+      return `saw the kid's help request${d.withdrawn === true ? " (the kid had withdrawn it)" : ""}${device}${str(d.note) ? `, noting: "${str(d.note)}"` : ""}`;
     case "request.answered": {
       const note = str(d.note) ? `, noting: "${str(d.note)}"` : "";
       if (d.kind === "more_time") {
@@ -95,6 +103,7 @@ function what(e: AuditEntry): string {
         return `${d.answer === "talk" ? `said "let's talk" about` : "said no to"} more time for ${str(d.limit) || "a limit"}${device}${note}`;
       }
       if (d.kind === "agreement") return `answered the kid about version ${str(d.agreement_version)} of the family agreement${d.answer === "talk" ? `: "let's talk"` : ""}${device}${note}`;
+      if (d.kind === "talk") return `answered the kid's "Talk to my parent"${d.answer === "talk" ? `: "let's talk"` : d.answer === "declined" ? ": not now" : ": got it"}${device}${note}`;
       const answer = { approved: "approved", declined: "declined", talk: `said "let's talk" about` }[str(d.answer)] ?? "answered";
       return `${answer} the request for ${str(d.label) || str(d.package) || "an app"}${device}${note}`;
     }
@@ -176,13 +185,38 @@ function what(e: AuditEntry): string {
     case "recovery.used":
       return "had its recovery key typed in, opening repair access for 24 hours";
     case "command.issued":
+      if (d.kind === "locate_now") return `checked where the phone is${device}`;
       return d.kind === "lock_now" ? `locked the phone's screen${device}` : `asked the phone to remove every other user and profile${device}`;
     case "command.done":
+      if (d.kind === "locate_now") return "sent where it is, for a check";
       return d.kind === "lock_now" ? "locked its screen" : "removed every other user and profile, as a parent asked";
     case "command.failed":
+      if (d.kind === "locate_now") return "couldn't find where it is, for a check";
       return d.kind === "lock_now" ? "couldn't lock its screen" : "couldn't remove the other users and profiles";
     case "command.expired":
+      if (d.kind === "locate_now") return "got a check too late, so didn't send where it is";
       return d.kind === "lock_now" ? "got a request to lock its screen too late, so didn't" : "got a parent's request to remove other users too late, so didn't run it";
+    case "location.changed": {
+      const what =
+        d.mode === "off" ? "off" : d.mode === "on_demand" ? "on demand (only when a parent checks)" : `every ${str(d.every_minutes)} minutes`;
+      return `set where the phone shares its location to ${what}${d.keep_on === true && d.mode !== "off" ? ", kept on" : ""}${d.provider === "fused" ? ", with Android's combined provider" : ""}${device}`;
+    }
+    case "place.added":
+      return `added the place ${str(d.place)}${device}`;
+    case "place.changed":
+      return `changed the place ${str(d.place)}${device}`;
+    case "place.removed":
+      return `removed the place ${str(d.place)}${device}`;
+    case "lost.on":
+      return `put the phone in lost mode${device}`;
+    case "lost.changed":
+      return `changed lost mode's message${device}`;
+    case "lost.off":
+      return `turned lost mode off${device}`;
+    case "help.kid_number":
+      return d.set === true ? `set the kid's number for "Call"${device}` : `cleared the kid's number for "Call"${device}`;
+    case "help.parent_numbers":
+      return d.family === true ? `made the emergency card use the family's numbers${device}` : `changed the numbers on the emergency card${device}`;
     default:
       if (e.action === "ai.read") return `read ${str(d.what) || "data"}${device}`;
       return e.action;

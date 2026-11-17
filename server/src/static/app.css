@@ -204,3 +204,12 @@ input[type=time], input[type=date] { font: inherit; color: inherit; background: 
 .bar > i.w80 { width: 80%; } .bar > i.w81 { width: 81%; } .bar > i.w82 { width: 82%; } .bar > i.w83 { width: 83%; } .bar > i.w84 { width: 84%; } .bar > i.w85 { width: 85%; } .bar > i.w86 { width: 86%; } .bar > i.w87 { width: 87%; } .bar > i.w88 { width: 88%; } .bar > i.w89 { width: 89%; }
 .bar > i.w90 { width: 90%; } .bar > i.w91 { width: 91%; } .bar > i.w92 { width: 92%; } .bar > i.w93 { width: 93%; } .bar > i.w94 { width: 94%; } .bar > i.w95 { width: 95%; } .bar > i.w96 { width: 96%; } .bar > i.w97 { width: 97%; } .bar > i.w98 { width: 98%; } .bar > i.w99 { width: 99%; }
 .bar > i.w100 { width: 100%; }
+/* Phase 7: "I need help" stays at the top, set apart, until a parent has seen it. */
+.card.help { border: 2px solid var(--bad); }
+.card.help strong.title { color: var(--bad); }
+.help-banner { border-left: 4px solid var(--bad); background: var(--card); padding: 10px 14px; border-radius: 6px; margin-bottom: 14px; }
+.help-banner strong { color: var(--bad); }
+a.button.call { background: var(--bad); border-color: var(--bad); color: #ffffff; }
+/* Phase 4: where the phone is, in words and numbers; never a map. */
+.coords { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.875rem; }
+.numbers .row input[type=text] { min-width: 0; flex: 1 1 10rem; }

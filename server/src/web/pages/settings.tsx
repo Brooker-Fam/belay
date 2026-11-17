@@ -2,7 +2,7 @@ import type { Child, FC } from "hono/jsx";
 import type { Parent } from "../../auth/parents.js";
 import type { Grant } from "../../oauth/store.js";
 import type { PushSubscription } from "../../push.js";
-import { AI_SCOPES, type Settings, USAGE_MONTHS } from "../../settings.js";
+import { AI_SCOPES, LOCATION_DAYS, MAP_SITES, MAX_PARENT_NUMBERS, OFF_BY_DEFAULT, type Settings, USAGE_MONTHS } from "../../settings.js";
 import { formatAgo, timeZones } from "../../time.js";
 import { ChangePasswordForm } from "./auth.js";
 import { Csrf, Layout, Notice, PostButton, Time, type View } from "../ui.js";
@@ -103,26 +103,83 @@ export const SettingsPage: FC<{
         <input id="usage-months" type="number" name="usage_months" min={USAGE_MONTHS.min} max={USAGE_MONTHS.max} required value={String(settings.usageMonths)} />
         <fieldset>
           <legend>
+            <strong>How long Belay keeps where the phone was, in days</strong>
+          </legend>
+          <div class="row">
+            <label for="days-periodic">Shared on a schedule</label>
+            <input id="days-periodic" type="number" name="days_periodic" min={LOCATION_DAYS.periodic.min} max={LOCATION_DAYS.periodic.max} required value={String(settings.locationDays.periodic)} />
+            <label for="days-checks">Your checks</label>
+            <input id="days-checks" type="number" name="days_checks" min={LOCATION_DAYS.checks.min} max={LOCATION_DAYS.checks.max} required value={String(settings.locationDays.checks)} />
+          </div>
+          <div class="row">
+            <label for="days-events">Arrivals and departures</label>
+            <input
+              id="days-events"
+              type="number"
+              name="days_placeEvents"
+              min={LOCATION_DAYS.placeEvents.min}
+              max={LOCATION_DAYS.placeEvents.max}
+              required
+              value={String(settings.locationDays.placeEvents)}
+            />
+            <label for="days-lost">Lost mode, after it ends</label>
+            <input id="days-lost" type="number" name="days_lostAfter" min={LOCATION_DAYS.lostAfter.min} max={LOCATION_DAYS.lostAfter.max} required value={String(settings.locationDays.lostAfter)} />
+          </div>
+          <p class="muted small">Where the phone was when the kid asked for help is kept with their request. The hourly clean-up deletes the rest.</p>
+          <label for="map-site">"Open in a map" goes to</label>
+          <select id="map-site" name="map_site">
+            {Object.entries(MAP_SITES).map(([key, name]) => (
+              <option value={key} selected={settings.mapSite === key}>
+                {name}
+              </option>
+            ))}
+          </select>
+          <p class="muted small">Only your browser follows that link, when you click it. Belay's server never asks a map site anything, and shows no map.</p>
+        </fieldset>
+        <fieldset>
+          <legend>
             <strong>What AI apps may read</strong>
           </legend>
-          <p class="muted small">Connected AI apps (like Claude) send what they read to their provider. Turn off what they shouldn't see.</p>
+          <p class="muted small">Connected AI apps (like Claude) send what they read to their provider. Turn off what they shouldn't see. The kid's phone shows which ones are on.</p>
           {settings.newAiScopes.length > 0 && (
             <p class="small">
               <span class="chip new">new</span> marks what Belay added since you last saved these.{" "}
               {settings.newAiScopes.some((s) => settings.aiScopes[s])
                 ? "It's on, like the others you left on: save to keep it, or untick it."
-                : "Because you turned something off before, it starts off: tick it to let AI apps read it."}
+                : settings.newAiScopes.every((s) => OFF_BY_DEFAULT.includes(s))
+                  ? "It starts off for every family: tick it to let AI apps read it."
+                  : "Because you turned something off before, it starts off: tick it to let AI apps read it."}
             </p>
           )}
           {Object.entries(AI_SCOPES).map(([key, label]) => (
             <label class="check">
               <input type="checkbox" name="ai_scope" value={key} checked={settings.aiScopes[key as keyof typeof AI_SCOPES]} /> {label}
+              {OFF_BY_DEFAULT.includes(key as keyof typeof AI_SCOPES) && <span class="small muted"> (off until you turn it on)</span>}
               {settings.newAiScopes.includes(key as keyof typeof AI_SCOPES) && <span class="chip new">new</span>}
             </label>
           ))}
         </fieldset>
         <div>
           <button type="submit">Save</button>
+        </div>
+      </form>
+
+      <h2 id="numbers">The emergency card</h2>
+      <form class="stack card numbers" method="post" action="/settings/parent-numbers">
+        <Csrf view={view} />
+        <p class="small">
+          The kid's emergency card, on Belay's screen even while the phone is paused, always has 911 and 988, call or text. It also lists these
+          numbers, on every phone that doesn't have its own (a phone's Location and help tab can give it its own).
+        </p>
+        {Array.from({ length: MAX_PARENT_NUMBERS }, (_, i) => settings.parentNumbers[i] ?? { name: "", number: "" }).map((p, i) => (
+          <div class="row">
+            <input type="text" name="name" maxlength={40} value={p.name} placeholder={i === 0 ? "Mom" : "Name"} aria-label={`Name ${i + 1}`} />
+            <input type="text" name="number" value={p.number} placeholder="+15555550100" inputmode="tel" aria-label={`Number ${i + 1}`} />
+          </div>
+        ))}
+        <p class="muted small">In international form: + and the country code, like +15555550100.</p>
+        <div>
+          <button type="submit">Save numbers</button>
         </div>
       </form>
 

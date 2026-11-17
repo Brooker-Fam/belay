@@ -270,6 +270,16 @@ Idempotent by each item's `id`. A `locate_now` command waits on the server up to
 for the fix that names it in `command_id`; a fix that fails is reported in
 `enforcement.commands` with its problem.
 
+What the server keeps (it rounds coordinates to 5 decimal places): a `periodic` or `place`
+fix only while the policy's mode is `periodic`, and only within `hours` (in the phone's zone
+from its last check-in, give or take 5 minutes); an `on_demand` fix only while the mode is
+`on_demand` or `periodic`, and only when `command_id` names one of this phone's `locate_now`
+commands (a newer check that replaced it counts as answered by it too); a place event only
+in `periodic` mode, for one of the phone's places as the policy has them now; a `lost` or
+`help` fix always. Everything else is dropped and counted (the phone's Location page says
+how many). `accepted` counts every item in the call, kept, already kept or dropped: none of
+them needs sending again. A fix marked `mock` is kept, and shown as made up.
+
 ## Location rules (Phase 4, both sides)
 
 - **Off by default.** With `location` null or `mode: off`, Belay holds no location
@@ -299,6 +309,13 @@ for the fix that names it in `command_id`; a fix that fails is reported in
 - **Only a parent** turns location on or off, changes places, `keep_on` or lost mode.
   An AI client may read fixes only with the `location` scope on (off by default), and may
   ask for `locate_now` only in `on_demand` or `periodic` mode; the kid's notice names it.
+- **What the server sends:** `location` is null until a parent first sets anything about
+  location on that phone, and then always an object (`mode: off` once turned off).
+  `every_minutes` and `hours` are null, and `places` empty, except in `periodic` mode, the
+  only one that uses them; `keep_on` is false while the mode is `off` (lost mode keeps
+  location on by itself). `lost.message` is the parent's words with the number to show
+  after them, at most 120 characters. A `locate_now` expires 2 minutes after it's issued,
+  and a new one replaces one still waiting, so the phone runs at most one.
 
 ## The kid's side (Phase 7, both sides)
 
@@ -317,6 +334,32 @@ for the fix that names it in `command_id`; a fix that fails is reported in
 - **`ai_reads`** lists the data categories the parents' AI app may read, so the kid's
   "What your parent can see" says so for each.
 - No AI tool answers a request; parents answer on the parent page.
+
+What the server does with them:
+
+- **Help** is never answered: a parent marks it seen. Seeing a pending one answers it at the
+  same time, so the policy's `requests` entry becomes `approved`, with `answered_at` and
+  `answered_by` the same as its `help_seen` entry, and the parent's optional note; show it as
+  seen, not as approved. A help request the kid withdrew before a parent saw it stays at the
+  top of the parent page until one does, and still gets a `help_seen` entry. Each help
+  request is its own (none takes another's place); sending a pending one again takes the kid's
+  new words and a newer shared fix, which takes the place of the one before (it isn't kept),
+  as `reason` does, and the parents hear again; one sent again without either keeps what it
+  has. At most 100 help requests no parent has seen, and 60 waiting `talk` requests, per
+  phone; past that, new ones are answered `429`.
+- **A check the server never issued** (the phone's own test `locate_now`, say): its result in
+  `enforcement.commands` is ignored, and a fix naming it is dropped and counted, answered `200`
+  like any other.
+- **Withdrawing:** a request with `withdrawn_at` is withdrawn only while it's `pending`; the
+  phone gets a new policy version without it. One that arrives already withdrawn (made and
+  withdrawn offline) is kept as withdrawn, takes no other request's place, and isn't
+  announced, except help, which the parents still hear about.
+- **`parent_numbers`** are the family's (from Settings), or the phone's own list when a
+  parent gave it one; changing the family's gives each phone using them a new version.
+  **`ai_reads`** uses the server's AI scope ids, which are the phone's data category ids:
+  `apps`, `device_status`, `requests`, `screen_time`, `agreement` (the stage and agreement,
+  which no phone collector makes) and `location`. A phone ignores one it has no category for.
+  Changing them gives every phone a new version.
 
 ## Screen time rules (Phase 3, both sides)
 
@@ -391,8 +434,9 @@ server decides whether a change tightens or loosens.
   makes one larger than 256 KB (it refuses the change that would).
 - **`web.private_dns: null`** leaves the phone's setting alone, except that if the phone
   still has the host Belay set, Belay puts it back to Android's default (Automatic).
-- **Requests can't be withdrawn yet:** an app removed while it waits leaves its request
-  pending until a parent answers it.
+- **Withdrawing a request** (Phase 7) is the kid's choice, from Belay's screen: an app
+  removed while it waits leaves its request pending until a parent answers it, or the kid
+  withdraws it.
 - **Tightening vs. loosening:** an AI client may tighten directly (block an app, pause
   the phone). Anything that loosens (approve, unblock, resume, lift a restriction) is
   only a proposal until a parent approves it on the parent page.
@@ -465,7 +509,7 @@ server decides whether a change tightens or loosens.
 | `requests` | `[{id, status: "pending"\|"approved"\|"declined"\|"talk", note?, answered_at?, answered_by?}]` | the kid's requests of the last 30 days |
 | `agent_update` | `{version_code, version_name?, sha256, size}`? | Phase 6: the version of Belay a parent approved for this phone |
 | `recovery` | `{version, salt, hash}`? | Phase 6: the recovery key's check (above); `salt` is 16 bytes, hex |
-| `commands` | `[{id, kind: "remove_other_users"\|"lock_now", issued_at, expires_at?, via?}]` | one-shot commands not yet reported; after `expires_at` the phone doesn't run one; `via` names the AI app a parent used to ask, for the kid's notice |
+| `commands` | `[{id, kind: "remove_other_users"\|"lock_now", issued_at, expires_at?, via?}]` | one-shot commands not yet reported; after `expires_at` the phone doesn't run one; `via` names the AI app a parent used to ask, for the kid's notice (the server always sends it: null when a person asked, for any kind) |
 | `screen_time` | ScreenTime? | Phase 3; null measures nothing and limits nothing |
 | `stage` | `{name, number, since, next?: {name, unlocks: string[], how?, screen_time?}}`? | Phase 3, for the kid's screen; `unlocks` and `how` are the family's words |
 | `agreement` | `{version, sections: [{title, text}], kid_agreed_at?, parents_agreed_at?}`? | Phase 3; at most 20 sections of 2000 characters |

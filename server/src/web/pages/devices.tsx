@@ -203,9 +203,10 @@ const Facts: FC<{ device: DeviceView; view: View }> = ({ device, view }) => {
   );
 };
 
-export const DevicesPage: FC<{ view: View; devices: DeviceSummary[]; pending: PendingCode[]; server?: Child }> = ({ view, devices, pending, server }) => (
+export const DevicesPage: FC<{ view: View; devices: DeviceSummary[]; pending: PendingCode[]; server?: Child; help?: Child }> = ({ view, devices, pending, server, help }) => (
   <Layout view={view} title="Phones">
     <h1>Phones</h1>
+    {help}
     {devices.length === 0 && pending.length === 0 && (
       <Notice>
         No phones yet. <a href="/add">Add a phone</a> to start.
@@ -308,9 +309,11 @@ export const DevicePage: FC<{
   apps: App[];
   phone: PhoneRules;
   filter: { q: string; system: boolean; permission: string };
+  /** Phase 7: a help request no parent has seen, above everything. */
+  help?: Child;
   message?: string;
   error?: string;
-}> = ({ view, device, apps, phone, filter, message, error }) => {
+}> = ({ view, device, apps, phone, filter, help, message, error }) => {
   const unreviewed = apps.filter((a) => a.unreviewed).length;
   const requestFor = new Map(phone.openRequests.map((r) => [r.package, r]));
   const tampering = device.problems.filter((p) => p.code === "tampering");
@@ -321,6 +324,7 @@ export const DevicePage: FC<{
         <StatusBadge status={device.status} />
       </div>
       <PhoneTabs view={view} device={device} current="apps" />
+      {help}
       {message && <Notice>{message}</Notice>}
       {error && <Notice kind="error">{error}</Notice>}
       {tampering.length > 0 && (
@@ -492,7 +496,14 @@ const STATE_WORDS: Record<AppRule["state"], string> = {
   runs: "Runs: there's no decision, and new apps run without asking",
 };
 
-const ANSWER_WORDS: Record<RequestView["status"], string> = { pending: "Waiting for you", approved: "Approved", declined: "Declined", talk: "Let's talk", superseded: "Asked again" };
+const ANSWER_WORDS: Record<RequestView["status"], string> = {
+  pending: "Waiting for you",
+  approved: "Approved",
+  declined: "Declined",
+  talk: "Let's talk",
+  superseded: "Asked again",
+  withdrawn: "Withdrawn by the kid",
+};
 
 /** The app's rule, its history, and the kid's requests for it. */
 const AppRuleCard: FC<{ view: View; device: DeviceView; app: App; rule: AppRule; history: Decision[]; requests: RequestView[] }> = ({

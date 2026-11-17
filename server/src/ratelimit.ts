@@ -80,6 +80,13 @@ export interface Limiters {
   noticesPerPhone: RateLimiter;
   /** Phase 6: downloads of the offered update, per phone, counted apart: each resumed range is one. */
   agentPerPhone: RateLimiter;
+  /**
+   * Phase 7: urgent notices of the kid's help requests, per phone, counted apart from the others
+   * so a burst of app requests never holds one back; generous, but a flood still stops.
+   */
+  helpNoticesPerPhone: RateLimiter;
+  /** Phase 4: arrival and departure notices, per phone, place and direction: at most one each 10 minutes. */
+  placeNotices: RateLimiter;
 }
 
 export function createLimiters(now: () => number): Limiters {
@@ -96,5 +103,7 @@ export function createLimiters(now: () => number): Limiters {
     policyPerPhone: new RateLimiter(30, MIN, now),
     noticesPerPhone: new RateLimiter(6, 60 * MIN, now),
     agentPerPhone: new RateLimiter(30, 60 * MIN, now),
+    helpNoticesPerPhone: new RateLimiter(20, 60 * MIN, now),
+    placeNotices: new RateLimiter(1, 10 * MIN, now),
   };
 }

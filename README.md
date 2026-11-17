@@ -83,6 +83,20 @@ OK?", with a web page as the fallback.
   Usage is kept 13 months by default. Over MCP, an AI client reads screen time, locks the
   phone and tightens the rules; the server decides whether a change only tightens, and
   anything else, or a move to another stage, is a proposal.
+- **Phases 4 and 7 on the server: location, and the kid's side.** Location is off until a
+  parent turns it on, on the phone's Location and help page: on demand (a parent's "Check
+  now", which waits for the phone's fix) or every 15 to 120 minutes within set hours, with
+  the family's places, arrivals and departures (pushed to the parents if they ask), keeping
+  location on, the provider (GPS only by default), and lost mode. A fix is described by the
+  family's places ("At School, within 40 m"), worked out on the server, with an "Open in a
+  map" link only the parent's browser follows: no map, tile or address service is ever
+  called. The server keeps only what the rules asked for, for days, not months. "I need
+  help" pushes to every parent at once and stays at the top of the Requests page, with
+  Call and where the phone was if the kid shared it, until a parent marks it seen, which the
+  kid's phone shows; "Talk to my parent" and withdrawing a request too. The policy tells the
+  phone which data the parents' AI app may read, and the numbers for its emergency card.
+  Over MCP, an AI client reads location only if a parent turns that on (it starts off), may
+  check where the phone is (the kid sees every check), and never changes any of it.
 - **Phase 6, so far: backups that are proven to restore, and health monitoring.** The server
   backs itself up every day (the newest 14 kept, encrypted with the family's passphrase if
   they set one); `verify-backup` proves a backup restores, `restore` puts one back, and the

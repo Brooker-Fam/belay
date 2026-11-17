@@ -56,24 +56,29 @@ rules and keeps what the phone reports.
 
 ## The kid and location (Phase 4)
 
-Off by default; on demand, or periodic with places, worked out on the phone, and lost mode.
+Off by default; on demand, or periodic with places, worked out on the phone, and lost mode. The
+phone takes single fixes as the rules say; the server keeps only what the rules asked for, and
+describes them by the family's places itself, with no outside service.
 
 | What they could do | What Belay does |
 |---|---|
-| Turn location off | Blocked while `keep_on` holds (`DISALLOW_CONFIG_LOCATION`; Belay can still turn it on). Without it, the check-in says location is off and a check a parent asks for fails with "Location is turned off in the phone's settings…". |
+| Turn location off | Blocked while `keep_on` holds (`DISALLOW_CONFIG_LOCATION`; Belay can still turn it on). Without it, the check-in says location is off, the parent page flags it, and a check a parent asks for fails with "Location is turned off in the phone's settings…". |
 | Revoke Belay's location permission in Settings | Not possible: it's granted or denied by policy, and fixed. With location off, Belay holds none at all, so Settings shows that too. |
-| Fake the location | Mock locations need developer options (locked by Phase 2's debugging lock); a mock fix is marked `mock` and never counts for places. |
-| Airplane mode, or the phone off | No fixes; the check that couldn't happen fails with Belay's words, and silence is reported as in every phase. |
+| Fake the location | Mock locations need developer options (locked by Phase 2's debugging lock); a mock fix is marked `mock`, shown so on the parent page, and never counts for places or for "Use where the phone is now". |
+| Airplane mode, or the phone off | No fixes; the check that couldn't happen fails with Belay's words (until then the parent page says "No answer yet"), and silence is reported as in every phase. |
 | Leave the phone somewhere | Out of scope: Belay locates the phone, not the kid, and the kid's words say "where this phone is". |
 | Hover at a place's edge to make it flap | Two fixes in a row on the same side, beyond the radius plus or minus the accuracy, decide; a fix near the edge starts the count again. |
+| Send made-up fixes (with the phone's token) | Kept only as the rules ask: a periodic fix only in periodic mode within its hours, a check's fix only for one of this phone's own checks, a place event only for one of its places; at most 200 of each in 64 KB a call, rate limited per phone. Lost-mode and help fixes are always kept, as the kid's own report. |
+| Get the parent's AI to change location | No tool and no proposal changes the mode, the places, keeping location on or lost mode. An AI app may only check where the phone is, with the Location category on, and the kid sees each check. |
 
 ## The kid's side (Phase 7)
 
 | What they could do | What Belay does |
 |---|---|
-| Send help requests to get attention | It's still a message to a parent, and the parents see them all. No penalty, by design. |
-| Write instructions in a request (help, talk, or a changed one) | The kid's words are `untrusted` for AI clients (principle 3), and no AI tool answers a request. |
-| Take back a request the parent should see | Only one that's still waiting; the server records it, and an answered one or "I agree" can't be taken back. |
+| Send help requests to get attention | It's still a message to a parent: each one pushes at once, and the parents see them all on the Requests page. No penalty, by design. A flood is capped (100 a phone no parent has seen; notices at most 20 an hour a phone). |
+| Write instructions in a request (help, talk, or a changed one) | The kid's words are `untrusted` for AI clients (principle 3); no AI tool answers a request or marks help seen. |
+| Take back a request the parent should see | Only one that's still waiting; the server records it (the Requests page marks it withdrawn), and an answered one or "I agree" can't be taken back. |
+| Take back a help request | It leaves the kid's list, but stays at the top of the parent page until a parent sees it: taking it back never hides an emergency. |
 | Use "Share where this phone is" to turn location on | It's one fix, the kid's own choice, in the help request only; Belay turns location access (and location, if it turned it on) back off afterwards. |
 
 ## Other people
@@ -87,7 +92,11 @@ Off by default; on demand, or periodic with places, worked out on the phone, and
 | Whoever gets a phone's token (a stolen or sold phone) | Sending fake data, including text meant for the parent's AI. | The parent disconnects the phone on its page: the token stops at once. Tokens are stored only as hashes. What the phone says reaches an AI client in plain fields only in Android's own formats (a release, a patch date, a declared permission); the rest, the model's name and a failed lock's words included, is in `untrusted` fields. |
 | The same, with screen time (Phase 3) | Made-up usage, or a flood of it. | Usage is the phone's own report, so it can be wrong like any report. The server takes at most 31 days of at most 500 apps in 256 KB a call, rate limited per phone, keeps one day per date and zone (sent again, it replaces the stored one only when it's at least as new), keeps nothing while measuring is off, and never keeps the time of the apps it never blocks. Apps and a zone that isn't a real one reach an AI client only as `untrusted`. |
 | An app developer | Prompt injection through app names, versions or store text. | Untrusted fields, capped lengths, strict package-name format, and instructions that say it's data. |
-| The AI provider | Seeing family data. | Only what the tools return, only the categories the parents allow, every read in the activity log. The server itself never calls an AI. |
+| The AI provider | Seeing family data. | Only what the tools return, only the categories the parents allow, every read in the activity log. The server itself never calls an AI. Where the phone is: nothing while the Location category is off (the default for every family). |
+| Someone with a parent's account (Phase 4) | Tracking the kid in secret. | Not possible in secret: every check is in the activity log and on the kid's phone, with a notice each time, and the kid sees whether location is shared, how often, and the places' names. |
+| A map or address service (Phase 4) | Learning where the kid is. | The server never calls one: fixes are described by the family's own places, by the server. "Open in a map" is a link the parent's browser follows only when clicked, to the site the family picked. |
+| Google, with the combined provider (Phase 4) | Seeing location requests. | With `fused` (Android's combined provider, Google's on a Pixel), Google's location service handles the request, under Google's settings; the parent page says so. With GPS only, the default, only the phone's own receiver is used. |
+| A stalker who sets Belay up on someone's phone (Phase 4) | Following them. | Belay needs adb on a factory-fresh phone, always shows that the phone is managed and what's shared, and Android says the admin may see location. |
 | Someone with the server's disk or a backup | Everything in it. | Tokens, session ids and codes are hashed and passwords are argon2id, but app data is readable in the database and in unencrypted backups. With a backup passphrase (Phase 6), the daily backups are encrypted (AES-256-GCM, a key from the passphrase with scrypt): a copy taken off the machine is useless without the passphrase, and one changed or cut short is refused on restore. The server's own disk still holds the live database, and the passphrase if it's in a file there: keep the server private, and the passphrase in a password manager too ([server.md](server.md#backups)). |
 | Someone who takes over the server (Phase 6) | Pushing their own Belay to the phones. | They can't sign an APK: the signing key never leaves the family's computer ([signing.md](signing.md)). The phone installs only Belay's own package, with exactly the offered version code, higher than the one running, signed with exactly the certificate set the running Belay has; Android refuses a different key and (on a phone's user build) any downgrade. The server also flags a phone that reports a different signing certificate from the one it pinned. |
 | Someone with the server and a parent's password | Offering an update. | Only of an APK the family signed, for the same reasons. Updates, recovery keys and removing other users are a person's actions, never an AI client's, and each is in the activity log. |

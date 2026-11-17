@@ -36,7 +36,7 @@ const width = (value: number, max: number) => `w${value <= 0 || max <= 0 ? 0 : M
 
 // ── Tabs ─────────────────────────────────────────────────────────────
 
-export const PhoneTabs: FC<{ view: View; device: DeviceView; current: "apps" | "usage" | "rules" | "agreement" }> = ({ device, current }) => (
+export const PhoneTabs: FC<{ view: View; device: DeviceView; current: "apps" | "usage" | "rules" | "agreement" | "location" }> = ({ device, current }) => (
   <nav class="tabs" aria-label="This phone">
     <a href={`/devices/${device.id}`} aria-current={current === "apps" ? "page" : undefined}>
       Apps and rules
@@ -49,6 +49,9 @@ export const PhoneTabs: FC<{ view: View; device: DeviceView; current: "apps" | "
     </a>
     <a href={`/devices/${device.id}/agreement`} aria-current={current === "agreement" ? "page" : undefined}>
       Agreement
+    </a>
+    <a href={`/devices/${device.id}/location`} aria-current={current === "location" ? "page" : undefined}>
+      Location and help
     </a>
   </nav>
 );

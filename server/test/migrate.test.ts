@@ -58,6 +58,7 @@ describe("migration 3", () => {
       { id: "request-0005", status: "declined", superseded_by: null, reason: null },
     ]);
     expect(db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'requests' ORDER BY name").all()).toEqual([
+      { name: "requests_kind" },
       { name: "requests_package" },
       { name: "requests_received" },
       { name: "requests_status" },
@@ -104,7 +105,10 @@ describe("migration 5 (screen time)", () => {
     ).run(T, T, T, T + 1);
     db.prepare("INSERT INTO proposals (id, device_id, kind, reason, client_name, parent_id, created_at) VALUES ('p-1', 'phone-1', 'resume', 'x', 'Claude', 'parent-1', ?)").run(T);
     db.prepare("INSERT INTO commands (id, device_id, kind, issued_at, expires_at, issued_by) VALUES ('c-1', 'phone-1', 'remove_other_users', ?, ?, 'parent-1')").run(T, T + 1);
-    migrate(db);
+    migrate(
+      db,
+      loadMigrations().filter((m) => m.version <= 5),
+    );
     expect(db.pragma("user_version", { simple: true })).toBe(5);
     expect(db.prepare("SELECT id, kind, package, label, reason, status, note, answered_by, answered_at, limit_id, minutes FROM requests").all()).toEqual([
       { id: "request-0001", kind: "app", package: "com.example.chat", label: "Chatter Box", reason: "Please", status: "approved", note: "OK", answered_by: "parent-1", answered_at: T + 1, limit_id: null, minutes: null },
@@ -138,5 +142,58 @@ describe("migration 5 (screen time)", () => {
       expect(db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get(), table).toEqual({ n: 0 });
     }
     db.prepare("DELETE FROM stages WHERE id = 'stage-1'").run();
+  });
+});
+
+/** A database as a Phase 3 server left it (schema 5), with a parent and a phone. */
+function phase3(): DB {
+  const db = phase6();
+  migrate(
+    db,
+    loadMigrations().filter((m) => m.version <= 5),
+  );
+  return db;
+}
+
+describe("migration 6 (location and the kid's side)", () => {
+  it("keeps requests and commands, and takes Phase 4's and 7's kinds", () => {
+    const db = phase3();
+    db.prepare(
+      "INSERT INTO requests (device_id, id, kind, limit_id, minutes, given_minutes, extra_id, reason, asked_at, received_at, updated_at, status, answered_by, answered_at) VALUES ('phone-1', 'request-0001', 'more_time', 'l-games', 15, 15, 'x-1', 'Please', ?, ?, ?, 'approved', 'parent-1', ?)",
+    ).run(T, T, T, T + 1);
+    db.prepare("INSERT INTO commands (id, device_id, kind, issued_at, expires_at, issued_by, client_name) VALUES ('c-1', 'phone-1', 'lock_now', ?, ?, 'parent-1', 'Claude')").run(T, T + 1);
+    migrate(db);
+    expect(db.pragma("user_version", { simple: true })).toBe(6);
+    expect(db.prepare("SELECT id, kind, limit_id, given_minutes, extra_id, reason, status, answered_by, withdrawn_at, seen_at FROM requests").all()).toEqual([
+      { id: "request-0001", kind: "more_time", limit_id: "l-games", given_minutes: 15, extra_id: "x-1", reason: "Please", status: "approved", answered_by: "parent-1", withdrawn_at: null, seen_at: null },
+    ]);
+    expect(db.prepare("SELECT id, kind, client_name FROM commands").all()).toEqual([{ id: "c-1", kind: "lock_now", client_name: "Claude" }]);
+
+    const request = db.prepare("INSERT INTO requests (device_id, id, kind, reason, status, withdrawn_at, seen_at, asked_at, received_at, updated_at) VALUES ('phone-1', ?, ?, ?, ?, ?, ?, 0, 0, 0)");
+    request.run("request-0002", "help", null, "pending", null, null);
+    request.run("request-0003", "talk", "My curfew", "withdrawn", 5, null);
+    request.run("request-0004", "help", "Lost", "approved", null, 7);
+    expect(() => request.run("request-0005", "talk", "x", "withdrawn", null, null)).toThrow(/CHECK/);
+    expect(() => request.run("request-0006", "talk", "x", "pending", null, 7)).toThrow(/CHECK/);
+    expect(() => request.run("request-0007", "chat", "x", "pending", null, null)).toThrow(/CHECK/);
+    db.prepare("INSERT INTO commands (id, device_id, kind, issued_at) VALUES ('c-2', 'phone-1', 'locate_now', 0)").run();
+    expect(() => db.prepare("INSERT INTO commands (id, device_id, kind, issued_at) VALUES ('c-3', 'phone-1', 'find', 0)").run()).toThrow(/CHECK/);
+
+    // Everything of Phase 4 and 7 goes with its phone.
+    db.prepare("INSERT INTO location_settings (device_id, mode, changed_at) VALUES ('phone-1', 'periodic', 0)").run();
+    expect(() => db.prepare("UPDATE location_settings SET every_minutes = 5").run()).toThrow(/CHECK/);
+    expect(() => db.prepare("UPDATE location_settings SET hours_start = '07:00'").run()).toThrow(/CHECK/);
+    db.prepare("INSERT INTO places (device_id, id, name, lat, lng, radius_m, created_at, updated_at) VALUES ('phone-1', 'p-1', 'School', 40.1, -73.2, 100, 0, 0)").run();
+    expect(() => db.prepare("UPDATE places SET radius_m = 20").run()).toThrow(/CHECK/);
+    db.prepare("INSERT INTO fixes (device_id, id, at, lat, lng, accuracy_m, provider, reason, mock, received_at) VALUES ('phone-1', 'fix-00001', 0, 40.1, -73.2, 20, 'gps', 'periodic', 0, 0)").run();
+    expect(() =>
+      db.prepare("INSERT INTO fixes (device_id, id, at, lat, lng, accuracy_m, provider, reason, mock, received_at) VALUES ('phone-1', 'fix-00002', 0, 91, 0, 20, 'gps', 'periodic', 0, 0)").run(),
+    ).toThrow(/CHECK/);
+    db.prepare("INSERT INTO place_events (device_id, id, place_id, place_name, kind, at, fix_id, received_at) VALUES ('phone-1', 'event-0001', 'p-1', 'School', 'arrived', 0, 'fix-00001', 0)").run();
+    db.prepare("INSERT INTO phone_help (device_id, kid_number, changed_at) VALUES ('phone-1', '+15555550123', 0)").run();
+    db.prepare("DELETE FROM devices WHERE id = 'phone-1'").run();
+    for (const table of ["requests", "commands", "location_settings", "places", "fixes", "place_events", "phone_help"]) {
+      expect(db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get(), table).toEqual({ n: 0 });
+    }
   });
 });

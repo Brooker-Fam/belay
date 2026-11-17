@@ -25,8 +25,10 @@ self.addEventListener("push", (event) => {
   const title = typeof notice.title === "string" ? notice.title : "Belay";
   const body = typeof notice.body === "string" ? notice.body : "Something is waiting for you.";
   const path = pagePath(notice.url);
+  // An urgent notice (the kid's "I need help") stays on the screen until the parent acts on it.
+  const requireInteraction = notice.urgent === true;
   // Browsers require a visible notification for every push; one per page, replaced by the newest.
-  event.waitUntil(self.registration.showNotification(title, { body, tag: path, renotify: true, data: { path } }));
+  event.waitUntil(self.registration.showNotification(title, { body, tag: path, renotify: true, requireInteraction, data: { path } }));
 });
 
 self.addEventListener("notificationclick", (event) => {

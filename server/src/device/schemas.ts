@@ -56,6 +56,8 @@ const clientId = z
   .min(8)
   .max(64)
   .regex(/^[A-Za-z0-9_-]+$/, "use letters, digits, '-' and '_'");
+/** Phase 7: a phone number in E.164, like +15555550100. */
+export const e164 = z.string().regex(/^\+[1-9]\d{6,14}$/, "not E.164");
 
 export const Version = z.strictObject({ name: text().nullish(), code: versionCode });
 
@@ -277,6 +279,8 @@ export const AppRequest = z.strictObject({
   label: text(LIMITS.maxLabel),
   reason: text(LIMITS.maxReason).nullish(),
   asked_at: time,
+  /** Phase 7: sent again with this, a pending request is withdrawn. */
+  withdrawn_at: time.nullish(),
 });
 /** Phase 3: more minutes for a limit today, from the app the kid was in. */
 export const MoreTimeRequest = z.strictObject({
@@ -287,6 +291,7 @@ export const MoreTimeRequest = z.strictObject({
   package: packageName.nullish(),
   reason: text(LIMITS.maxReason).nullish(),
   asked_at: time,
+  withdrawn_at: time.nullish(),
 });
 /** Phase 3: the kid's answer to a version of the family agreement. */
 export const AgreementRequest = z.strictObject({
@@ -296,8 +301,9 @@ export const AgreementRequest = z.strictObject({
   answer: z.enum(["agree", "talk"]),
   reason: text(LIMITS.maxReason).nullish(),
   asked_at: time,
+  withdrawn_at: time.nullish(),
 });
-// ── Phase 4 and 7 (docs/protocol.md): not accepted by the routes yet ────────
+// ── Phase 4 and 7 (docs/protocol.md) ─────────────────────────────────────
 
 /** Phase 4: one fix, 5 decimal places. */
 export const Fix = z.strictObject({
@@ -343,13 +349,18 @@ export const TalkRequest = z.strictObject({
 
 /**
  * Something the kid asks a parent for: a union on `kind`. Sending the same id again updates a
- * pending request's reason. (Phase 7 adds `help`, `talk` and `withdrawn_at` on every kind.)
+ * pending request's reason (and a help request's shared fix); with `withdrawn_at`, it withdraws
+ * a pending one (Phase 7).
  */
-export const Request = z.discriminatedUnion("kind", [AppRequest, MoreTimeRequest, AgreementRequest]);
+export const Request = z.discriminatedUnion("kind", [AppRequest, MoreTimeRequest, AgreementRequest, HelpRequest, TalkRequest]);
 export type Request = z.infer<typeof Request>;
 export type AppRequest = z.infer<typeof AppRequest>;
 export type MoreTimeRequest = z.infer<typeof MoreTimeRequest>;
 export type AgreementRequest = z.infer<typeof AgreementRequest>;
+export type HelpRequest = z.infer<typeof HelpRequest>;
+export type TalkRequest = z.infer<typeof TalkRequest>;
+export type PlaceEvent = z.infer<typeof PlaceEvent>;
+export type LocationsRequest = z.infer<typeof LocationsRequest>;
 export const RequestsRequest = z.strictObject({ requests: z.array(Request).min(1).max(LIMITS.maxRequests) });
 
 /**
@@ -569,8 +580,8 @@ export const Policy = z.strictObject({
       kind: z.enum(["remove_other_users", "lock_now", "locate_now"]),
       issued_at: time,
       expires_at: time.nullable(),
-      /** The AI app a parent used to ask (its name); null or left out when a parent asked. */
-      via: text(60).nullable().optional(),
+      /** The AI app a parent used to ask (its name), for the kid's notice; null when a person asked. */
+      via: text(60).nullable(),
     }),
   ),
   /** Phase 3: null measures nothing and limits nothing (family/screentime). */
@@ -581,16 +592,13 @@ export const Policy = z.strictObject({
   agreement: Agreement.nullable(),
   /** Phase 3, later: the phone doesn't log yet, so the server always sends off. */
   network_log: z.strictObject({ enabled: z.boolean() }),
-  // Phase 4 and 7: optional until the server builds them; the phone reads a missing one as off.
-  location: Location.nullable().optional(),
-  ai_reads: z.array(text(40)).max(20).optional(),
-  help_seen: z
-    .array(z.strictObject({ request_id: clientId, at: time, by: text(60).nullable() }))
-    .max(200)
-    .optional(),
-  parent_numbers: z
-    .array(z.strictObject({ name: text(40), number: z.string().regex(/^\+[1-9]\d{6,14}$/, "not E.164") }))
-    .max(LIMITS.maxParentNumbers)
-    .optional(),
+  /** Phase 4: null until a parent first sets location on the phone; mode off: no location at all. */
+  location: Location.nullable(),
+  /** Phase 7: the data categories (the AI scopes' ids) the parents' AI app may read, for "What your parent can see". */
+  ai_reads: z.array(text(40)).max(20),
+  /** Phase 7: when a parent saw each help request, the last 30 days, newest first. */
+  help_seen: z.array(z.strictObject({ request_id: clientId, at: time, by: text(60).nullable() })).max(200),
+  /** Phase 7: the numbers on the phone's emergency card. */
+  parent_numbers: z.array(z.strictObject({ name: text(40), number: e164 })).max(LIMITS.maxParentNumbers),
 });
 export type Policy = z.infer<typeof Policy>;

@@ -7,18 +7,21 @@ import { audit } from "../audit.js";
 import { normalizeCode, sha256 } from "../crypto.js";
 import type { Deps } from "../deps.js";
 import { offeredFile } from "../family/agent.js";
-import { buildPolicy, neverBlockedOn, policyVersion } from "../family/policy.js";
+import { markNotified, saveLocations } from "../family/location/fixes.js";
+import { buildPolicy, changePolicy, neverBlockedOn, policyVersion } from "../family/policy.js";
 import { receiveReport } from "../family/reports.js";
-import { saveRequests } from "../family/requests.js";
+import { saveRequests, type SavedRequests } from "../family/requests.js";
 import { recordAgreementAnswers } from "../family/screentime/changes.js";
 import { phoneRow, phoneRules } from "../family/screentime/rules.js";
 import { saveUsage } from "../family/screentime/usage.js";
 import { bearerToken, clientAddress, parseRange, readJson, type Bindings } from "../http.js";
-import { notifyParents, recoveryUsedNotice, requestsNotice, updateFailedNotice } from "../push.js";
+import { helpNotice, notifyParents, placeNotice, recoveryUsedNotice, requestsNotice, updateFailedNotice } from "../push.js";
 import type { Verdict } from "../ratelimit.js";
+import { getSettings } from "../settings.js";
+import { formatDateTime, formatTime } from "../time.js";
 import { applyEvents, applyInventory } from "./apps.js";
 import { enroll } from "./enroll.js";
-import { CheckinRequest, EnrollRequest, EventsRequest, InventoryRequest, LIMITS, PolicyQuery, RequestsRequest, UsageRequest, type Device } from "./schemas.js";
+import { CheckinRequest, EnrollRequest, EventsRequest, InventoryRequest, LIMITS, LocationsRequest, PolicyQuery, RequestsRequest, UsageRequest, type Device } from "./schemas.js";
 
 interface PhoneRow {
   id: string;
@@ -167,8 +170,6 @@ export function deviceRoutes(deps: Deps): Hono<DeviceEnv> {
     const now = deps.now();
     const phone = c.var.phone;
     db.prepare("UPDATE devices SET last_seen_at = ? WHERE id = ?").run(now, phone.id);
-    const saved = saveRequests(db, phone.id, body.value.requests, now);
-    // The kid's answers to the agreement: the policy's kid_agreed_at follows, in a new version.
     const ctx = {
       db,
       now,
@@ -176,22 +177,74 @@ export function deviceRoutes(deps: Deps): Hono<DeviceEnv> {
         deps.waiters.changed(id);
       },
     };
-    recordAgreementAnswers(ctx, phone.id, saved.agreement);
     const limitNames = new Map(phoneRules(db, phone.id).rules.limits.map((l) => [l.id, l.name]));
-    for (const r of saved.created) {
-      const detail =
-        r.kind === "app"
-          ? { package: r.package ?? undefined, label: r.label ?? undefined }
-          : r.kind === "more_time"
-            ? { kind: r.kind, limit: r.limitId === "*" ? "every limit" : (limitNames.get(r.limitId ?? "") ?? "a limit"), minutes: r.minutes, package: r.package ?? undefined }
-            : { kind: r.kind, agreement_version: r.version, answer: r.answer };
-      audit(db, now, { kind: "phone", deviceId: phone.id }, "request.made", { detail: { ...detail, ...(r.again ? { again: true } : {}) } });
+    const detail = (r: SavedRequests["created"][number]): Record<string, unknown> => {
+      switch (r.kind) {
+        case "app":
+          return { package: r.package ?? undefined, label: r.label ?? undefined };
+        case "more_time":
+          return { kind: r.kind, limit: r.limitId === "*" ? "every limit" : (limitNames.get(r.limitId ?? "") ?? "a limit"), minutes: r.minutes, package: r.package ?? undefined };
+        case "agreement":
+          return { kind: r.kind, agreement_version: r.version, answer: r.answer };
+        case "help":
+          return { kind: r.kind, ...(r.shared ? { shared_location: true } : {}) };
+        case "talk":
+          return { kind: r.kind };
+      }
+    };
+    const actor = { kind: "phone", deviceId: phone.id } as const;
+    const save = (log: (action: string, detail?: Record<string, unknown>) => void): SavedRequests => {
+      const s = saveRequests(db, phone.id, body.value.requests, now);
+      for (const r of s.created) log("request.made", { ...detail(r), ...(r.again ? { again: true } : {}), ...(r.withdrawn ? { withdrawn: true } : {}) });
+      for (const w of s.withdrawn) log("request.withdrawn", { kind: w.kind });
+      return s;
+    };
+    // A request the kid withdraws leaves the policy's requests, so the phone gets a new version; a new
+    // request doesn't need one (the phone has it).
+    const saved = body.value.requests.some((r) => r.withdrawn_at != null)
+      ? changePolicy(ctx, phone.id, actor, save).result
+      : save((action, d) => {
+          audit(db, now, actor, action, { detail: d });
+        });
+    // The kid's answers to the agreement: the policy's kid_agreed_at follows, in a new version.
+    recordAgreementAnswers(ctx, phone.id, saved.agreement);
+    // "I need help" is urgent: each one, at once, to every parent, apart from the other notices' limit.
+    for (const h of saved.created.filter((r) => r.kind === "help")) {
+      if (limits.helpNoticesPerPhone.hit(phone.id).ok) notifyParents(deps, helpNotice(phone.name, { reason: h.reason, shared: h.shared === true, withdrawn: h.withdrawn === true }));
+    }
+    for (const h of saved.helpUpdated) {
+      if (limits.helpNoticesPerPhone.hit(phone.id).ok) notifyParents(deps, helpNotice(phone.name, { reason: h.reason, shared: h.shared, update: true }));
     }
     // A few notices an hour per phone at most: a burst of requests still shows on the parent page.
-    // Asking again for what's already waiting isn't news.
-    const fresh = saved.created.filter((r) => !r.again);
+    // Asking again for what's already waiting isn't news, and nor is one withdrawn before it arrived.
+    const fresh = saved.created.flatMap((r) => (r.kind !== "help" && !r.again && !r.withdrawn ? [{ ...r, kind: r.kind }] : []));
     if (fresh.length && limits.noticesPerPhone.hit(phone.id).ok) notifyParents(deps, requestsNotice(phone.name, fresh, (id) => limitNames.get(id) ?? null));
     if (saved.refused) return fail(429, "rate_limited", "Too many requests are waiting for a parent already", 3600);
+    return c.json({ server_time: now, accepted: saved.accepted });
+  });
+
+  /**
+   * Phase 4: fixes and arrivals and departures, kept only as the phone's rules ask (family/location/
+   * fixes.ts); the rest is dropped and still answered as accepted, so the phone stops sending it.
+   * Idempotent by each item's id. A fix answering a check wakes the parent waiting on "Check now".
+   */
+  app.post("/locations", limit(LIMITS.locationsBytes), async (c) => {
+    const body = await readJson(c, LocationsRequest);
+    if (!body.ok) return fail(400, "invalid_request", body.description);
+    const now = deps.now();
+    const phone = c.var.phone;
+    db.prepare("UPDATE devices SET last_seen_at = ? WHERE id = ?").run(now, phone.id);
+    const saved = saveLocations(db, phone.id, body.value, now);
+    if (saved.stored > 0 || saved.answered.length > 0) deps.fixWaiters.arrived(phone.id);
+    if (saved.dropped > 0) deps.log(`A phone sent ${saved.dropped} location item${saved.dropped === 1 ? "" : "s"} its rules didn't ask for: not kept.`);
+    // Arrivals and departures a parent asked to hear about: at most one per place and direction each 10 minutes.
+    const tz = getSettings(db).timezone;
+    for (const e of saved.events) {
+      if (!e.notify || !limits.placeNotices.hit(`${phone.id} ${e.placeId} ${e.kind}`).ok) continue;
+      markNotified(db, phone.id, e.id, now);
+      const late = now - e.at > 10 * 60_000 ? (now - e.at > 12 * 3_600_000 ? formatDateTime(e.at, tz) : formatTime(e.at, tz)) : null;
+      notifyParents(deps, placeNotice(phone, e.placeName, e.kind, late));
+    }
     return c.json({ server_time: now, accepted: saved.accepted });
   });
 

@@ -2,8 +2,9 @@
 import type { FC } from "hono/jsx";
 import { LIMITS, MORE_TIME_CHOICES } from "../../family/policy.js";
 import { changeWords, type Proposal } from "../../family/proposals.js";
-import { STATUS_WORDS, type AgreementAnswerView, type AppRequestView, type MoreTimeView, type RequestView } from "../../family/requests.js";
+import { STATUS_WORDS, type AgreementAnswerView, type AppRequestView, type MoreTimeView, type RequestView, type TalkView, needsHelp } from "../../family/requests.js";
 import { Csrf, Layout, Notice, Time, type View } from "../ui.js";
+import { FixLine, HelpCard, type Where } from "./help.js";
 
 const appLink = (r: { deviceId: string; package: string }) => `/devices/${r.deviceId}/apps/${encodeURIComponent(r.package)}`;
 
@@ -42,8 +43,52 @@ function subject(r: RequestView, limitName: LimitNames): string {
       return r.status === "approved" && r.givenMinutes !== null ? `${moreTimeTitle(r, limitName)}: ${r.givenMinutes} minutes given` : moreTimeTitle(r, limitName);
     case "agreement":
       return r.answer === "agree" ? `Agreed to the family agreement (version ${r.version})` : `Wants to talk about the family agreement (version ${r.version})`;
+    case "help":
+      return r.seenAt !== null ? `Needed help: seen${r.seenBy ? ` by ${r.seenBy}` : ""}` : "Needed help";
+    case "talk":
+      return "Would like to talk";
   }
 }
+
+/** "Talk to my parent": the kid's words, and "Let's talk" or "Got it", with a note. */
+const OpenTalk: FC<{ view: View; request: TalkView; showDevice: boolean }> = ({ view, request, showDevice }) => (
+  <div class="card">
+    <div class="row spread">
+      <strong>Would like to talk</strong>
+      <span class="chip waiting">{STATUS_WORDS[request.status]}</span>
+    </div>
+    <p class="small">
+      {showDevice && <>{request.deviceName} · </>}
+      Asked <Time ms={Math.min(request.askedAt, request.receivedAt)} tz={view.tz} />
+      {request.status === "talk" && " · you said let's talk"}
+    </p>
+    {request.reason ? (
+      <>
+        <p class="small muted">What they'd like to talk about, in their words:</p>
+        <blockquote class="kid">{request.reason}</blockquote>
+      </>
+    ) : (
+      <p class="small muted">They didn't say what about.</p>
+    )}
+    <form class="stack" method="post" action={`/devices/${request.deviceId}/requests/${request.id}/answer`}>
+      <Csrf view={view} />
+      <input type="hidden" name="back" value="requests" />
+      <label for={`note-${request.id}`}>Your answer, shown on the phone (optional)</label>
+      <textarea id={`note-${request.id}`} name="note" maxlength={LIMITS.answerNote}>
+        {request.note ?? ""}
+      </textarea>
+      <div class="row">
+        <button type="submit" name="answer" value="talk">
+          Let's talk
+        </button>
+        <button type="submit" name="answer" value="approved" class="quiet">
+          Got it
+        </button>
+      </div>
+      <p class="muted small">It changes no rule: it's how the kid starts a conversation the app can't have.</p>
+    </form>
+  </div>
+);
 
 /** A "more time" request: 15, 30 or 60 minutes for today, "Let's talk", or "No", with a note. */
 const OpenMoreTime: FC<{ view: View; request: MoreTimeView; showDevice: boolean; limitName: LimitNames }> = ({ view, request, showDevice, limitName }) => (
@@ -157,29 +202,48 @@ export const RequestsPage: FC<{
   /** "deviceId package" for the apps the server knows on each phone. */
   known: ReadonlySet<string>;
   limitName: LimitNames;
+  /** Phase 7: the kid's own number on each phone, for "Call". */
+  kidNumber: (deviceId: string) => string | null;
+  /** Phase 4: where a help request's shared fix was, in words. */
+  where: Where;
   message?: string;
   error?: string;
-}> = ({ view, requests, phones, known, limitName, message, error }) => {
-  const open = requests.filter((r) => r.status === "pending" || r.status === "talk");
-  const answered = requests.filter((r) => r.status === "approved" || r.status === "declined");
+}> = ({ view, requests, phones, known, limitName, kidNumber, where, message, error }) => {
+  const help = requests.filter(needsHelp);
+  const open = requests.filter((r) => r.kind !== "help" && (r.status === "pending" || r.status === "talk"));
+  const answered = requests.filter((r) => !needsHelp(r) && (r.status === "approved" || r.status === "declined" || r.status === "withdrawn"));
+  // A help request a parent saw is "approved" as it's stored; in words, it was seen.
+  const answerWord = (r: RequestView) =>
+    r.kind === "help" ? (r.seenAt !== null ? "Seen" : STATUS_WORDS[r.status]) : r.kind === "agreement" && r.answer === "agree" && r.answeredBy === null ? "Agreed" : STATUS_WORDS[r.status];
+  const answeredAt = (r: RequestView) => (r.status === "withdrawn" ? Math.min(r.withdrawnAt ?? r.updatedAt, r.updatedAt) : r.kind === "help" ? (r.seenAt ?? r.receivedAt) : (r.answeredAt ?? r.receivedAt));
   return (
     <Layout view={view} title="Requests">
       <h1>Requests</h1>
       <p class="muted">
-        What the kid asked for from Belay's screen on their phone: apps, more time, and what they think of the family agreement. They see your answer,
-        and your note, there.
+        What the kid asked for from Belay's screen on their phone: help, a talk, apps, more time, and what they think of the family agreement. They
+        see your answer, and your note, there.
       </p>
       {message && <Notice>{message}</Notice>}
       {error && <Notice kind="error">{error}</Notice>}
-      {open.length === 0 && <p class="muted">Nothing is waiting for you.</p>}
+      {help.length > 0 && (
+        <section id="help">
+          <h2>Help</h2>
+          {help.map((r) => (
+            <HelpCard view={view} request={r} showDevice={true} kidNumber={kidNumber(r.deviceId)} where={where} back="requests" />
+          ))}
+        </section>
+      )}
+      {open.length === 0 && help.length === 0 && <p class="muted">Nothing is waiting for you.</p>}
       {open.map((r) =>
         r.kind === "app" ? (
           <OpenRequest view={view} request={r} showDevice={phones > 1} known={known} />
         ) : r.kind === "more_time" ? (
           <OpenMoreTime view={view} request={r} showDevice={phones > 1} limitName={limitName} />
-        ) : (
+        ) : r.kind === "talk" ? (
+          <OpenTalk view={view} request={r} showDevice={phones > 1} />
+        ) : r.kind === "agreement" ? (
           <OpenAgreement view={view} request={r} showDevice={phones > 1} />
-        ),
+        ) : null,
       )}
       {answered.length > 0 && (
         <>
@@ -187,16 +251,21 @@ export const RequestsPage: FC<{
           <div class="card">
             {answered.map((r) => (
               <div class="change">
-                <Time ms={r.answeredAt ?? r.receivedAt} tz={view.tz}>
-                  {r.kind === "agreement" && r.answer === "agree" && r.answeredBy === null ? "Agreed" : STATUS_WORDS[r.status]}
+                <Time ms={answeredAt(r)} tz={view.tz}>
+                  {answerWord(r)}
                 </Time>
                 <div>
                   {r.kind === "app" ? <AppName request={r} known={known} /> : <span class="name">{subject(r, limitName)}</span>}{" "}
                   <span class="small muted">{r.deviceName}</span>
                   <div class="small muted">
-                    {r.answeredBy ? `by ${r.answeredBy}, ` : ""}
-                    <Time ms={r.answeredAt ?? r.receivedAt} tz={view.tz} />
+                    {r.status === "withdrawn" ? "withdrawn by the kid, " : r.kind === "help" && r.seenBy ? `seen by ${r.seenBy}, ` : r.answeredBy ? `by ${r.answeredBy}, ` : ""}
+                    <Time ms={answeredAt(r)} tz={view.tz} />
                   </div>
+                  {r.kind === "help" && r.fix && (
+                    <div class="small">
+                      Where the phone was: <FixLine view={view} deviceId={r.deviceId} fix={r.fix} where={where} />
+                    </div>
+                  )}
                   {r.reason && (
                     <>
                       <span class="small muted">In their words:</span>
