@@ -25,6 +25,10 @@ export const LIMITS = {
   maxRestrictionKey: 64,
   /** Phase 6: the largest APK of Belay the server stores and serves. */
   maxAgentBytes: 100 * 1024 * 1024,
+  /** Phase 3: `POST /api/v1/usage`. */
+  usageBytes: 256 * 1024,
+  maxUsageDays: 31,
+  maxUsageApps: 500,
 } as const;
 
 const time = z.int().min(0);
@@ -46,6 +50,20 @@ const clientId = z
   .regex(/^[A-Za-z0-9_-]+$/, "use letters, digits, '-' and '_'");
 
 export const Version = z.strictObject({ name: text().nullish(), code: versionCode });
+
+// ── Phase 3 building blocks ─────────────────────────────────────────────
+/** An id the server makes for a rule (limit, schedule, extra time): short, letters, digits, '-' and '_'. */
+const ruleId = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[A-Za-z0-9_-]+$/, "use letters, digits, '-' and '_'");
+/** "HH:MM", 00:00 to 23:59. */
+const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "not HH:MM");
+/** "YYYY-MM-DD". */
+const ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "not YYYY-MM-DD");
+const weekday = z.enum(["mon", "tue", "wed", "thu", "fri", "sat", "sun"]);
+const dayMinutes = z.int().min(0).max(1440);
 
 export const ChangeKind = z.enum(["installed", "updated", "removed", "reinstalled"]);
 export const Detection = z.enum(["broadcast", "changed_packages", "snapshot"]);
@@ -158,6 +176,38 @@ export const Enforcement = z.strictObject({
     .optional(),
   /** The apps this phone never blocks (Belay, the dialer, the SMS app, the keyboard…): the server refuses to block them. */
   never_blocked: z.array(packageName).max(LIMITS.maxNeverBlocked).optional(),
+  /** Phase 3: the phone's view of screen time now; minutes left out when the policy doesn't measure. */
+  screen_time: z
+    .strictObject({
+      day: ymd,
+      measured: z.boolean(),
+      used_minutes: z.int().min(0).max(1500).nullish(),
+      limits: z
+        .array(
+          z.strictObject({
+            id: ruleId,
+            used: z.int().min(0).max(1500).nullish(),
+            left: z.int().min(0).max(1500).nullish(),
+            state: z.enum(["open", "used_up", "extra"]),
+          }),
+        )
+        .max(50),
+      schedule: z.strictObject({ id: ruleId, until: time }).nullish(),
+      self_serve: z
+        .array(
+          z.strictObject({
+            limit_id: ruleId,
+            package: packageName.nullish(),
+            minutes: z.int().min(1).max(240),
+            at: time,
+          }),
+        )
+        .max(20)
+        .optional(),
+    })
+    .nullish(),
+  /** Phase 3 (later): network logging; `paused` when Android paused it. */
+  network_log: z.strictObject({ enabled: z.boolean(), paused: z.boolean() }).nullish(),
 });
 export type Enforcement = z.infer<typeof Enforcement>;
 
@@ -211,11 +261,140 @@ export const Request = z.strictObject({
 export type Request = z.infer<typeof Request>;
 export const RequestsRequest = z.strictObject({ requests: z.array(Request).min(1).max(LIMITS.maxRequests) });
 
+/**
+ * Phase 3's request kinds. `Request` becomes a union on `kind` (app, more_time, agreement) when the
+ * server builds Phase 3; until then `POST /requests` accepts only `app`.
+ */
+export const MoreTimeRequest = z.strictObject({
+  id: clientId,
+  kind: z.literal("more_time"),
+  limit_id: ruleId,
+  minutes: z.int().min(5).max(240),
+  package: packageName.nullish(),
+  reason: text(LIMITS.maxReason).nullish(),
+  asked_at: time,
+});
+export const AgreementRequest = z.strictObject({
+  id: clientId,
+  kind: z.literal("agreement"),
+  version: z.int().min(1),
+  answer: z.enum(["agree", "talk"]),
+  reason: text(LIMITS.maxReason).nullish(),
+  asked_at: time,
+});
+
+/** Phase 3: one local day of usage. Idempotent by (day, zone): the newest `as_of` wins. */
+export const UsageDay = z.strictObject({
+  day: ymd,
+  zone: text(64),
+  as_of: time,
+  complete: z.boolean(),
+  /** A day with a clock change can have 25 hours. */
+  screen_minutes: z.int().min(0).max(1500),
+  unlocks: z.int().min(0).max(100_000),
+  /** On the day clocks go back, both 1 a.m. hours add up in one entry. */
+  by_hour: z.array(z.int().min(0).max(120)).length(24),
+  apps: z
+    .array(z.strictObject({ package: packageName, minutes: z.int().min(1).max(1500), opens: z.int().min(0).max(100_000) }))
+    .max(LIMITS.maxUsageApps),
+  gaps: z
+    .array(z.strictObject({ from: time, to: time, reason: z.enum(["no_usage_access", "phone_off", "unknown"]) }))
+    .max(200),
+});
+export type UsageDay = z.infer<typeof UsageDay>;
+export const UsageRequest = z.strictObject({ days: z.array(UsageDay).min(1).max(LIMITS.maxUsageDays) });
+
 export const PolicyQuery = z.strictObject({
   /** The version the phone has; the server answers at once if it has a different one. */
   have: z.coerce.number().int().min(-1).optional(),
   /** Seconds to hold the request open for a change (long-poll); 0 answers at once. */
   wait: z.coerce.number().int().min(0).max(LIMITS.maxWaitSeconds).optional(),
+});
+
+/** Phase 3: the policy's `screen_time` (docs/protocol.md, "ScreenTime"). */
+export const ScreenTime = z.strictObject({
+  measure: z.boolean(),
+  /** An IANA zone, or "phone". */
+  zone: text(64),
+  day_starts: hhmm,
+  limits: z
+    .array(
+      z.strictObject({
+        id: ruleId,
+        name: text(60),
+        /** ["*"]: every app that isn't exempt. */
+        packages: z.array(packageName.or(z.literal("*"))).max(500),
+        minutes: dayMinutes,
+        by_day: z
+          .strictObject({
+            mon: dayMinutes.optional(),
+            tue: dayMinutes.optional(),
+            wed: dayMinutes.optional(),
+            thu: dayMinutes.optional(),
+            fri: dayMinutes.optional(),
+            sat: dayMinutes.optional(),
+            sun: dayMinutes.optional(),
+          })
+          .nullable(),
+      }),
+    )
+    .max(50),
+  schedules: z
+    .array(
+      z.strictObject({
+        id: ruleId,
+        kind: z.enum(["school", "bedtime", "custom"]),
+        name: text(60),
+        days: z.array(weekday).max(7),
+        start: hhmm,
+        /** At or before `start`: ends the next day. */
+        end: hhmm,
+        allow: z.array(packageName).max(500),
+        lock: z.boolean(),
+        skip: z.array(ymd).max(366),
+      }),
+    )
+    .max(20),
+  exempt: z.array(packageName).max(500),
+  if_unmeasured: z.enum(["pause_limited", "keep_open"]),
+  extra: z
+    .array(
+      z.strictObject({
+        id: ruleId,
+        /** "*": every limit. */
+        limit_id: ruleId.or(z.literal("*")),
+        minutes: z.int().min(1).max(1440),
+        day: ymd,
+        request_id: clientId.nullable(),
+        /** Only this app may use the minutes. */
+        package: packageName.nullable(),
+      }),
+    )
+    .max(100),
+  self_serve: z.strictObject({ minutes: z.int().min(1).max(240), times: z.int().min(1).max(10) }).nullable(),
+  warn_before: z.int().min(0).max(60),
+});
+export type ScreenTime = z.infer<typeof ScreenTime>;
+
+/** Phase 3: the stage, for the kid's screen. `unlocks` and `how` are the family's words. */
+export const Stage = z.strictObject({
+  name: text(60),
+  number: z.int().min(0),
+  since: time,
+  next: z
+    .strictObject({
+      name: text(60),
+      unlocks: z.array(text(300)).max(30),
+      how: text(1000).nullable(),
+      screen_time: ScreenTime.nullable(),
+    })
+    .nullable(),
+});
+export const Agreement = z.strictObject({
+  version: z.int().min(1),
+  sections: z.array(z.strictObject({ title: text(200), text: text(2000) })).max(20),
+  kid_agreed_at: time.nullable(),
+  parents_agreed_at: time.nullable(),
 });
 
 /**
@@ -269,6 +448,8 @@ export const Policy = z.strictObject({
       note: text(1000).nullable(),
       answered_at: time.nullable(),
       answered_by: text(60).nullable(),
+      /** Phase 3: the minutes given, for an approved more_time request. */
+      minutes: z.int().min(1).max(1440).nullable().optional(),
     }),
   ),
   /** Phase 6: the version of Belay a parent approved for this phone, if any. */
@@ -286,7 +467,17 @@ export const Policy = z.strictObject({
     .nullable(),
   /** One-shot commands the phone hasn't reported done. */
   commands: z.array(
-    z.strictObject({ id: clientId, kind: z.enum(["remove_other_users"]), issued_at: time, expires_at: time.nullable() }),
+    z.strictObject({
+      id: clientId,
+      kind: z.enum(["remove_other_users", "lock_now"]),
+      issued_at: time,
+      expires_at: time.nullable(),
+    }),
   ),
+  // Phase 3: optional until the server builds them; the phone reads a missing one as off.
+  screen_time: ScreenTime.nullable().optional(),
+  stage: Stage.nullable().optional(),
+  agreement: Agreement.nullable().optional(),
+  network_log: z.strictObject({ enabled: z.boolean() }).optional(),
 });
 export type Policy = z.infer<typeof Policy>;

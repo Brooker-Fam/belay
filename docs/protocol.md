@@ -28,6 +28,7 @@ schemas in `server/src/device/schemas.ts`. Change all three together.
 | `GET /api/v1/policy` | (no body) |
 | `POST /api/v1/requests` | 128 KB, at most 100 requests |
 | `GET /api/v1/agent/<sha256>.apk` | (no body; the answer is at most 100 MB) |
+| `POST /api/v1/usage` | 256 KB, at most 31 days (Phase 3) |
 
 Errors: `{"error": "<code>", "error_description": "<words>"}` with
 
@@ -155,6 +156,31 @@ pending. When a new app is suspended, Belay makes its request at once (without a
 so the parent sees it even if the kid never opens Belay. The answers come back in the
 policy's `requests`, which Belay shows the kid.
 
+Phase 3 makes Request a union on `kind`: `app`, `more_time` (more minutes for a limit
+today) and `agreement` (the kid's answer to the family agreement). Only a parent answers;
+an approved `more_time` answer carries the `minutes` given, and the policy's
+`screen_time.extra` gets them. Until the server builds Phase 3 it accepts only `app`.
+
+## `POST /api/v1/usage`
+
+Phase 3. What the phone counted, one local day per entry, sent only while the policy's
+`screen_time.measure` is on: every 15 minutes or so while the phone is used, and once
+when a day is complete.
+
+```json
+{ "days": [ { …UsageDay… } ] }
+```
+→ `200`
+```json
+{ "server_time": 1794867161711, "accepted": 1 }
+```
+
+Idempotent by `(day, zone)`: a day sent again replaces the stored one when its `as_of`
+is newer. `as_of` is the time the day was counted up to, so a later report always
+replaces an earlier one even when no new event came. Apps the phone never blocks (the
+dialer, the SMS app…) are left out of `apps`, so a call or text to 988 never shows; their
+time still counts in `screen_minutes`.
+
 ## `GET /api/v1/agent/<sha256>.apk`
 
 Phase 6. The version of Belay a parent approved for this phone (the policy's
@@ -187,6 +213,35 @@ locks are lifted, so adb and Settings' reset work.
   even if the policy still has it. The phone reports the use in `enforcement.recovery`
   when it can; the server then drops that check from the policy and asks a parent to
   make a new key.
+
+## Screen time rules (Phase 3, both sides)
+
+The phone counts app time itself from Android's usage events (`queryEvents`, with the
+usage access granted at provisioning) and enforces `screen_time` by suspending apps, like
+a pause. The rules are one pure function in `:core` (`core/screentime/Rules.kt`); the
+server decides whether a change tightens or loosens.
+
+- **Days** run in `zone` (an IANA zone, or `"phone"`) from `day_starts`.
+- **Limits:** the apps in a limit share its minutes each day (`by_day` overrides some
+  days; 0 means not that day). `["*"]` is a daily total for every app that isn't exempt.
+  Used up: its apps are suspended until the next day starts, or until extra time.
+- **Schedules:** from `start` to `end` on `days` (an `end` at or before `start` ends the
+  next day), every app is suspended except the never-blocked ones, the `exempt` ones and
+  the schedule's `allow`; `lock` also locks the screen when it starts; `skip` names days
+  it doesn't start.
+- **Always open:** the never-blocked apps and `exempt`. Schedules and daily totals also
+  leave the clock and the keyboard alone, as a pause does; a limit that names the clock
+  itself still applies.
+- **Extra time:** `extra` gives minutes for one day, to a limit, to every limit (`"*"`),
+  or to one app (`package`). `self_serve` lets the kid take `minutes`, `times` a day,
+  without asking; each take is reported in `enforcement.screen_time.self_serve`.
+- **Warnings** `warn_before` minutes before a limit runs out or a schedule starts.
+- **Usage access off:** with `if_unmeasured: pause_limited` (the default) every app with
+  a limit is suspended until Belay can count again, and the kid and the parent page say
+  why; with `keep_open` they stay open, but a limit already used up stays used up.
+- **`measure: false`:** the phone still counts, to enforce limits, but sends no minutes:
+  no `POST /usage`, and no `used_minutes`, `used` or `left` in the report.
+- **`lock_now`** (a command): locks the screen once, unless it arrives after `expires_at`.
 
 ## Enforcement rules (both sides)
 
@@ -286,16 +341,39 @@ locks are lifted, so adb and Settings' reset work.
 | `requests` | `[{id, status: "pending"\|"approved"\|"declined"\|"talk", note?, answered_at?, answered_by?}]` | the kid's requests of the last 30 days |
 | `agent_update` | `{version_code, version_name?, sha256, size}`? | Phase 6: the version of Belay a parent approved for this phone |
 | `recovery` | `{version, salt, hash}`? | Phase 6: the recovery key's check (above); `salt` is 16 bytes, hex |
-| `commands` | `[{id, kind: "remove_other_users", issued_at, expires_at?}]` | one-shot commands not yet reported; after `expires_at` the phone doesn't run one |
+| `commands` | `[{id, kind: "remove_other_users"\|"lock_now", issued_at, expires_at?}]` | one-shot commands not yet reported; after `expires_at` the phone doesn't run one |
+| `screen_time` | ScreenTime? | Phase 3; null measures nothing and limits nothing |
+| `stage` | `{name, number, since, next?: {name, unlocks: string[], how?, screen_time?}}`? | Phase 3, for the kid's screen; `unlocks` and `how` are the family's words |
+| `agreement` | `{version, sections: [{title, text}], kid_agreed_at?, parents_agreed_at?}`? | Phase 3; at most 20 sections of 2000 characters |
+| `network_log` | `{enabled}` | Phase 3, later: off unless a parent turns it on (the phone doesn't log yet) |
+
+The answers in `requests` gain `minutes?` (Phase 3: an approved `more_time`).
+
+**ScreenTime** (Phase 3; the rules are above)
+
+| Field | Type | |
+|---|---|---|
+| `measure` | bool | count app time and send it with `POST /usage` |
+| `zone` | string | an IANA zone, or `"phone"` |
+| `day_starts` | `"HH:MM"` | when a day's limits reset |
+| `limits` | `[{id, name, packages, minutes, by_day?: {mon…sun}}]` | at most 50; `name` is the family's words (60); `packages: ["*"]` is a daily total; `minutes` 0 to 1440 |
+| `schedules` | `[{id, kind: "school"\|"bedtime"\|"custom", name, days: ["mon"…], start, end, allow, lock, skip: ["YYYY-MM-DD"]}]` | at most 20 |
+| `exempt` | string[] | never counted or paused |
+| `if_unmeasured` | `"pause_limited"` \| `"keep_open"` | |
+| `extra` | `[{id, limit_id, minutes, day, request_id?, package?}]` | `limit_id: "*"` gives every limit the minutes; `package` keeps them for one app |
+| `self_serve` | `{minutes, times}`? | |
+| `warn_before` | int | minutes; 0: no warnings |
 
 **Request** (phone → server)
 
 | Field | Type | |
 |---|---|---|
 | `id` | string | UUID made on the phone |
-| `kind` | `app` | |
-| `package` | string | |
-| `label` | string | untrusted |
+| `kind` | `app`, Phase 3: `more_time` `agreement` | |
+| `package` | string (app), string? (more_time: the app the kid was in) | |
+| `label` | string (app only) | untrusted |
+| `limit_id`, `minutes` | string, int (more_time only: 5 to 240) | |
+| `version`, `answer` | int, `agree`\|`talk` (agreement only) | |
 | `reason` | string? | the kid's own words, at most 500 characters: untrusted |
 | `asked_at` | int | |
 
@@ -311,6 +389,22 @@ locks are lifted, so adb and Settings' reset work.
 | `recovery` | `{version, used_at, until}`? | Phase 6: the last use of the recovery key; repair access is open until `until` |
 | `commands` | `[{id, result: "done"\|"failed"\|"expired", at, problem?}]` | the last 20 commands' results, newest first |
 | `never_blocked` | string[] | the packages this phone never blocks, at most 100 |
+| `screen_time` | `{day, measured, used_minutes?, limits: [{id, used?, left?, state: "open"\|"used_up"\|"extra"}], schedule?: {id, until}, self_serve: [{limit_id, package?, minutes, at}]}`? | Phase 3: the phone's view now; minutes left out when `measure` is off (`used` rounds down, `left` up) |
+| `network_log` | `{enabled, paused}`? | Phase 3, later |
+
+**UsageDay** (phone → server, Phase 3)
+
+| Field | Type | |
+|---|---|---|
+| `day` | `"YYYY-MM-DD"` | in `zone` |
+| `zone` | string | IANA |
+| `as_of` | int | counted up to this time |
+| `complete` | bool | the day is over |
+| `screen_minutes` | int | screen on and unlocked (a day with a clock change can have 25 hours) |
+| `unlocks` | int | |
+| `by_hour` | int[24] | screen minutes per local hour; the day clocks go back, both 1 a.m. hours add up |
+| `apps` | `[{package, minutes, opens}]` | at most 500, most used first; under a minute and never-blocked apps left out |
+| `gaps` | `[{from, to, reason: "no_usage_access"\|"phone_off"\|"unknown"}]` | times Belay couldn't count |
 
 **Device** (facts and the agent's own health; nothing about the kid's content)
 

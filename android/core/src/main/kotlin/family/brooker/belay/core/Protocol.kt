@@ -1,5 +1,12 @@
 package family.brooker.belay.core
 
+import family.brooker.belay.core.screentime.WireAgreement
+import family.brooker.belay.core.screentime.WireAgreementAnswer
+import family.brooker.belay.core.screentime.WireNetworkLog
+import family.brooker.belay.core.screentime.WireNetworkLogStatus
+import family.brooker.belay.core.screentime.WireScreenTime
+import family.brooker.belay.core.screentime.WireScreenTimeStatus
+import family.brooker.belay.core.screentime.WireStage
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -153,6 +160,10 @@ data class WireEnforcement(
      * phone resolves them. The server refuses to block them.
      */
     @SerialName("never_blocked") val neverBlocked: List<String> = emptyList(),
+    /** Phase 3: the phone's view of screen time right now. */
+    @SerialName("screen_time") val screenTime: WireScreenTimeStatus? = null,
+    /** Phase 3: network logging, if the policy turned it on. */
+    @SerialName("network_log") val networkLog: WireNetworkLogStatus? = null,
 )
 
 /** Phase 6: where an update is. */
@@ -325,6 +336,8 @@ data class WireRequestAnswer(
     @SerialName("answered_at") val answeredAt: Long? = null,
     /** The parent's name. */
     @SerialName("answered_by") val answeredBy: String? = null,
+    /** Phase 3: the minutes a parent gave, for an approved more_time request. */
+    val minutes: Int? = null,
 )
 
 /** Phase 6: a version of Belay a parent approved for this phone. */
@@ -362,6 +375,9 @@ data class WireCommand(
     companion object {
         /** Phase 10: remove every other user or profile (Android's own Parental Controls make one). */
         const val REMOVE_OTHER_USERS = "remove_other_users"
+
+        /** Phase 3: lock the screen now (DevicePolicyManager.lockNow). */
+        const val LOCK_NOW = "lock_now"
     }
 }
 
@@ -388,6 +404,14 @@ data class WirePolicy(
     val recovery: WireRecovery? = null,
     /** One-shot commands not yet reported done. */
     val commands: List<WireCommand> = emptyList(),
+    /** Phase 3: null measures nothing and limits nothing. */
+    @SerialName("screen_time") val screenTime: WireScreenTime? = null,
+    /** Phase 3: the stage the phone is on, for the kid's screen. */
+    val stage: WireStage? = null,
+    /** Phase 3: the family agreement, for the kid's screen. */
+    val agreement: WireAgreement? = null,
+    /** Phase 3: off unless a parent turns it on. */
+    @SerialName("network_log") val networkLog: WireNetworkLog = WireNetworkLog(),
 )
 
 @Serializable
@@ -400,20 +424,38 @@ data class PolicyResponse(
 enum class WireRequestKind {
     /** Let me use this app (a new one waiting, or a blocked one). */
     @SerialName("app") APP,
+
+    /** Phase 3: more time for a limit, today. */
+    @SerialName("more_time") MORE_TIME,
+
+    /** Phase 3: the kid's answer to the family agreement. */
+    @SerialName("agreement") AGREEMENT,
 }
 
-/** Something the kid asks a parent for, from Belay's screen. */
+/**
+ * Something the kid asks a parent for, from Belay's screen: a union on [kind], written flat. Each
+ * kind writes only its own fields (nulls are left out): `app` needs [packageName] and [label];
+ * `more_time` needs [limitId] and [minutes] (5 to 240) and may name the app the kid was in;
+ * `agreement` needs [version] and [answer].
+ */
 @Serializable
 data class WireRequest(
     /** UUID made on the phone; sending it again updates the reason while it's pending. */
     val id: String,
     val kind: WireRequestKind,
-    @SerialName("package") val packageName: String,
+    @SerialName("package") val packageName: String? = null,
     /** From the app's developer: untrusted. */
-    val label: String,
+    val label: String? = null,
     /** The kid's own words, at most 500 characters: untrusted. */
     val reason: String? = null,
     @SerialName("asked_at") val askedAt: Long,
+    /** more_time: the limit's id, or "*" for every limit. */
+    @SerialName("limit_id") val limitId: String? = null,
+    /** more_time: 5 to 240. */
+    val minutes: Int? = null,
+    /** agreement: the version the kid answers. */
+    val version: Int? = null,
+    val answer: WireAgreementAnswer? = null,
 )
 
 @Serializable

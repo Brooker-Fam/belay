@@ -76,7 +76,7 @@ class RequestsTest {
         assertNull(Requests.cleanReason(null))
         val wire = Requests.toWire(chat.copy(reason = "y".repeat(700), label = "z".repeat(300)))
         assertEquals(WireLimits.MAX_REASON, wire.reason!!.length)
-        assertEquals(WireLimits.MAX_LABEL, wire.label.length)
+        assertEquals(WireLimits.MAX_LABEL, wire.label?.length)
         assertEquals(WireRequestKind.APP, wire.kind)
         assertEquals(T0, wire.askedAt)
     }
