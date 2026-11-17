@@ -121,6 +121,17 @@ A phone event that arrives later for the same change (same package and kind, sam
 `happened_at`; for a removal, the latest thing recorded for the package) takes the
 backfill's place, so each change is listed once.
 
+What the server keeps, whatever a phone sends: at most 5,000 new app changes an hour per phone,
+its events and the changes found in its snapshots together. Past that, a snapshot still updates
+what the server knows of the apps, but its changes aren't kept (`backfilled` counts the kept
+ones); and an event is counted in `accepted` but neither kept nor applied, so the phone stops
+sending it: never `429`, since events share the outbox's first lane with requests. The next
+snapshot records what it changed. So is an event that would make more than 5,000 apps on the
+phone (a snapshot's own limit). It keeps at most 20,000 app changes per phone (past that, the
+ones that arrived first go), 2,000 apps that aren't on the phone any more, besides every one a
+parent decided on or reviewed (the ones removed longest ago go), and the newest 1,000
+snapshots' records.
+
 ## `POST /api/v1/events`
 
 Sent as soon as a change is found, from the agent's outbox.

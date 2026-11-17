@@ -7,10 +7,33 @@
  * event reported is recorded ("found by snapshot", backfilled = 1). When the phone's own
  * event for that change arrives later, it takes the backfill's place, so a change is listed
  * once.
+ *
+ * What a phone can make the server keep is capped (APP_LIMITS), whatever it sends: a stolen or
+ * rooted phone keeps its token until a parent disconnects it. Past a cap the oldest go, never an
+ * app a parent decided on or reviewed; a change past the hour's budget isn't kept at all, and the
+ * phone's next app list records what it changed, as found by snapshot.
  */
 import { newId } from "../crypto.js";
 import type { DB } from "../db.js";
-import type { Event, InventoryRequest, Package } from "./schemas.js";
+import { type Event, type InventoryRequest, LIMITS, type Package } from "./schemas.js";
+
+/** What one phone can make the server keep of its apps (docs/server.md, "What a phone can make the server keep"). */
+export const APP_LIMITS = {
+  /**
+   * App changes kept in all, the phone's own and those found in its app lists: past that, the
+   * ones that arrived first go. A phone with a hundred apps makes a few thousand a year.
+   */
+  changes: 20_000,
+  /** Apps on the phone: an app list has at most 5,000, so a change that would add one more isn't kept. */
+  present: LIMITS.maxPackages,
+  /**
+   * Apps that aren't on the phone any more, the ones removed last kept (so a reinstall is still
+   * recognized), besides every one a parent decided on or reviewed, which always stays.
+   */
+  removed: 2_000,
+  /** The record of the app lists the phone sent (when, and how many apps): the newest. */
+  lists: 1_000,
+} as const;
 
 export type ChangeKind = Event["kind"];
 
@@ -237,21 +260,59 @@ function applyEvent(db: DB, deviceId: string, e: Event, now: number): void {
   writeApp(db, next);
 }
 
-export interface EventsResult {
-  accepted: number;
-  duplicates: number;
+const count = (db: DB, rows: string, deviceId: string): number => db.prepare<[string], { n: number }>(`SELECT COUNT(*) AS n FROM ${rows}`).get(deviceId)?.n ?? 0;
+
+/**
+ * Keeps the phone within APP_LIMITS once something was added: the app changes that arrived
+ * first, the apps removed longest ago (never one a parent decided on or reviewed) and the
+ * oldest app lists go.
+ */
+function prune(db: DB, deviceId: string): void {
+  const changes = count(db, "app_events WHERE device_id = ?", deviceId) - APP_LIMITS.changes;
+  if (changes > 0) {
+    db.prepare("DELETE FROM app_events WHERE rowid IN (SELECT rowid FROM app_events WHERE device_id = ? ORDER BY received_at, rowid LIMIT ?)").run(deviceId, changes);
+  }
+  db.prepare(
+    `DELETE FROM apps WHERE rowid IN (SELECT a.rowid FROM apps a WHERE a.device_id = ? AND a.present = 0
+       AND NOT EXISTS (SELECT 1 FROM app_decisions d WHERE d.device_id = a.device_id AND d.package = a.package)
+       AND NOT EXISTS (SELECT 1 FROM reviews r WHERE r.device_id = a.device_id AND r.package = a.package)
+       ORDER BY a.removed_at DESC, a.rowid DESC LIMIT -1 OFFSET ?)`,
+  ).run(deviceId, APP_LIMITS.removed);
+  const lists = count(db, "snapshots WHERE device_id = ?", deviceId) - APP_LIMITS.lists;
+  if (lists > 0) {
+    db.prepare("DELETE FROM snapshots WHERE rowid IN (SELECT rowid FROM snapshots WHERE device_id = ? ORDER BY received_at, rowid LIMIT ?)").run(deviceId, lists);
+  }
 }
 
-export function applyEvents(db: DB, deviceId: string, events: Event[], now: number): EventsResult {
+export interface EventsResult {
+  /** New events: kept, or not (past the hour's budget, or an app past APP_LIMITS.present). The phone can stop sending them. */
+  accepted: number;
+  duplicates: number;
+  /** New events kept, for the hour's budget. */
+  kept: number;
+}
+
+/**
+ * Applies the phone's events, in order. `budget` is how many new app changes the phone may still
+ * make the server keep this hour; past it, and for an app beyond APP_LIMITS.present, an event is
+ * accepted but neither kept nor applied: the phone's next app list records what it changed.
+ */
+export function applyEvents(db: DB, deviceId: string, events: Event[], now: number, opts: { budget?: number } = {}): EventsResult {
   return db.transaction(() => {
     let accepted = 0;
     let duplicates = 0;
+    let kept = 0;
+    const budget = opts.budget ?? Infinity;
+    let present = count(db, "apps WHERE device_id = ? AND present = 1", deviceId);
     const known = db.prepare<[string, string], { id: string }>("SELECT id FROM app_events WHERE device_id = ? AND id = ?");
+    const onPhone = db.prepare<[string, string], { present: number }>("SELECT present FROM apps WHERE device_id = ? AND package = ?");
     for (const e of events) {
       if (known.get(deviceId, e.id)) {
         duplicates++;
         continue;
       }
+      accepted++;
+      if (kept >= budget) continue;
       const backfill = matchingBackfill(db, deviceId, e);
       if (backfill) {
         // The server already found this change in a snapshot, and applied it then: keep the
@@ -259,28 +320,39 @@ export function applyEvents(db: DB, deviceId: string, events: Event[], now: numb
         db.prepare("DELETE FROM app_events WHERE device_id = ? AND id = ?").run(deviceId, backfill.id);
         insertEvent(db, deviceId, { ...e, backfilled: false }, now);
       } else {
+        const was = onPhone.get(deviceId, e.package)?.present === 1;
+        const adds = e.kind !== "removed" && !was;
+        if (adds && present >= APP_LIMITS.present) continue;
         insertEvent(db, deviceId, { ...e, backfilled: false }, now);
         applyEvent(db, deviceId, e, now);
+        if (adds) present++;
+        else if (e.kind === "removed" && was) present--;
       }
-      accepted++;
+      kept++;
     }
-    return { accepted, duplicates };
+    if (kept > 0) prune(db, deviceId);
+    return { accepted, duplicates, kept };
   }).immediate();
 }
 
 export interface InventoryResult {
   duplicate: boolean;
+  /** Changes found in it and kept. */
   backfilled: number;
+  /** Changes found in it past the hour's budget: applied to the apps, but not kept as changes. */
+  dropped: number;
 }
 
 /**
  * Applies a snapshot: the phone's whole package list. The first one is the baseline and
- * records no changes. Later ones record what changed since the server last knew.
+ * records no changes. Later ones record what changed since the server last knew, `budget` of
+ * them at most (the new app changes the phone may still make the server keep this hour): past
+ * that, a change still applies to the apps, but isn't kept as one.
  */
-export function applyInventory(db: DB, deviceId: string, req: InventoryRequest, now: number): InventoryResult {
+export function applyInventory(db: DB, deviceId: string, req: InventoryRequest, now: number, opts: { budget?: number } = {}): InventoryResult {
   return db.transaction(() => {
     if (db.prepare("SELECT 1 FROM snapshots WHERE device_id = ? AND snapshot_id = ?").get(deviceId, req.snapshot_id)) {
-      return { duplicate: true, backfilled: 0 };
+      return { duplicate: true, backfilled: 0, dropped: 0 };
     }
     const baseline = !db.prepare("SELECT 1 FROM snapshots WHERE device_id = ? LIMIT 1").get(deviceId);
     const rows = new Map(
@@ -291,7 +363,13 @@ export function applyInventory(db: DB, deviceId: string, req: InventoryRequest, 
     );
     const seen = new Set<string>();
     let backfilled = 0;
+    let dropped = 0;
+    const budget = opts.budget ?? Infinity;
     const backfill = (kind: ChangeKind, pkg: string, label: string, from: NewEvent["from"], to: NewEvent["to"], happenedAt: number | null) => {
+      if (backfilled >= budget) {
+        dropped++;
+        return;
+      }
       insertEvent(
         db,
         deviceId,
@@ -337,6 +415,7 @@ export function applyInventory(db: DB, deviceId: string, req: InventoryRequest, 
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
     ).run(deviceId, req.snapshot_id, req.taken_at, req.boot_count ?? null, seen.size, now, backfilled);
     db.prepare("UPDATE devices SET last_inventory_at = ? WHERE id = ?").run(now, deviceId);
-    return { duplicate: false, backfilled };
+    prune(db, deviceId);
+    return { duplicate: false, backfilled, dropped };
   }).immediate();
 }

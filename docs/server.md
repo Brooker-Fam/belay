@@ -519,6 +519,16 @@ The end of the rules, for when the kid outgrows Belay: each step is a parent's, 
 A phone's token stays good until a parent disconnects the phone, so a stolen, sold or rooted
 phone can send anything a phone may. Whatever it sends, the server keeps at most, per phone:
 
+- **Apps** (Phase 1): 5,000 new app changes an hour (installs, updates and removals, the
+  phone's own and those found in its app lists together), and 20,000 in all: past that the ones
+  that arrived first go. At most 5,000 apps on the phone (an app list's own limit), and 2,000 that
+  aren't on it any more, the ones removed last (so a reinstall is still recognized); an app a
+  parent decided on or reviewed always stays, with its decisions and reviews. The record of the
+  newest 1,000 app lists the phone sent. A change past the hour's limit, or one that would make
+  more than 5,000 apps, is answered as accepted (the phone sends its changes in the same queue as
+  the kid's requests, which never wait behind them) and isn't kept: the phone's next app list
+  puts the apps right, as found by snapshot, and an app list past the hour's limit still updates
+  the apps, without keeping its changes as changes.
 - **Requests:** 300 new ones an hour (help requests aside: nothing holds one back), and 100 help
   requests no parent has seen. Of the requests that wait for no one any more (answered,
   withdrawn, asked again, the kid's "I agree"), the newest 1,000: past that the oldest go, the
@@ -531,8 +541,8 @@ phone can send anything a phone may. Whatever it sends, the server keeps at most
   tomorrow in its zone), in at most 3 zones, and for no longer than the family keeps it.
 - **Calls** (Phase 5): records only while Belay records calls, at most 1000 a day.
 
-Past an hour's limit the phone is answered `429` with `Retry-After`, and sends the rest later;
-every device call is limited to 120 a minute per phone too. Disconnecting a phone stops its
+Past an hour's limit the phone is answered `429` with `Retry-After`, and sends the rest later
+(app changes aside, as above); every device call is limited to 120 a minute per phone too. Disconnecting a phone stops its
 token at once, and deleting it deletes everything it sent.
 
 ## Backups
@@ -765,7 +775,7 @@ Put it behind a reverse proxy with HTTPS, as a service of its own user (a system
 Startup, the one-time setup link, "a phone enrolled", notifications that didn't go out, each
 daily backup (its file name and size, or why it failed), urgent notices about the server,
 why the database couldn't be opened, and errors; that a phone sent location items or call
-records its rules didn't ask for, and how many; and that a phone sent a call record Belay
+records its rules didn't ask for, or more app changes than the server keeps, and how many; and that a phone sent a call record Belay
 never keeps (an emergency number, 988 or a private number), without the number, the phone or
 the time of the call, since the phone shouldn't. Never tokens, passwords, passphrases,
 browsers' push addresses, app names, phone numbers or request bodies. The

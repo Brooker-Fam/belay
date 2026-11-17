@@ -132,17 +132,30 @@ export function deviceRoutes(deps: Deps): Hono<DeviceEnv> {
     const body = await readJson(c, InventoryRequest);
     if (!body.ok) return fail(400, "invalid_request", body.description);
     const now = deps.now();
-    saveFacts(c.var.phone, body.value.device, now);
-    const result = applyInventory(db, c.var.phone.id, body.value, now);
+    const phone = c.var.phone;
+    saveFacts(phone, body.value.device, now);
+    // App changes kept this hour, the phone's own and found in its lists: past that, a list still updates the apps.
+    const result = applyInventory(db, phone.id, body.value, now, { budget: limits.appChangesPerPhone.remaining(phone.id) });
+    if (result.backfilled) limits.appChangesPerPhone.hit(phone.id, result.backfilled);
+    if (result.dropped) deps.log(`A phone's app list had ${result.dropped} more app change${result.dropped === 1 ? "" : "s"} than Belay keeps in an hour: the apps are up to date, the changes not kept.`);
     return c.json({ server_time: now, duplicate: result.duplicate, backfilled: result.backfilled });
   });
 
+  /**
+   * App events, applied in order. Past the hour's budget of new app changes (or for an app beyond
+   * what a phone can have) an event is accepted but not kept, so the phone never holds back its
+   * requests behind it: its next app list records what it changed, as found by snapshot.
+   */
   app.post("/events", limit(LIMITS.eventsBytes), async (c) => {
     const body = await readJson(c, EventsRequest);
     if (!body.ok) return fail(400, "invalid_request", body.description);
     const now = deps.now();
-    db.prepare("UPDATE devices SET last_seen_at = ? WHERE id = ?").run(now, c.var.phone.id);
-    const result = applyEvents(db, c.var.phone.id, body.value.events, now);
+    const phone = c.var.phone;
+    db.prepare("UPDATE devices SET last_seen_at = ? WHERE id = ?").run(now, phone.id);
+    const result = applyEvents(db, phone.id, body.value.events, now, { budget: limits.appChangesPerPhone.remaining(phone.id) });
+    if (result.kept) limits.appChangesPerPhone.hit(phone.id, result.kept);
+    const notKept = result.accepted - result.kept;
+    if (notKept) deps.log(`A phone sent ${notKept} app change${notKept === 1 ? "" : "s"} past what Belay keeps: not kept (its next app list catches the apps up).`);
     return c.json({ server_time: now, accepted: result.accepted, duplicates: result.duplicates });
   });
 
