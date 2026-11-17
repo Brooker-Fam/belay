@@ -1,0 +1,191 @@
+package family.brooker.belay.core
+
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
+import java.time.format.DateTimeParseException
+
+/** What the outbox holds. */
+enum class OutboxType { EVENT, SNAPSHOT }
+
+/**
+ * One item waiting to be sent. [id]s grow in the order the agent made the items, and
+ * [bytes] is the size of its JSON payload (UTF-8).
+ */
+data class OutboxItem(val id: Long, val type: OutboxType, val bytes: Int)
+
+/** What the agent does with the server's answer to one request (docs/protocol.md, "Errors"). */
+sealed interface Verdict {
+    /** Accepted, or the server already had it: done. */
+    data object Sent : Verdict
+
+    /** Too large, or refused as invalid, with more than one item in it: send each half. */
+    data class Split(val reason: String) : Verdict
+
+    /** Refused on its own: it would only fail again, so it is dropped and the reason kept. */
+    data class Drop(val reason: String) : Verdict
+
+    /** Not now: try again after [afterMs] (the server's Retry-After), or after a backoff. */
+    data class Retry(val reason: String, val afterMs: Long? = null) : Verdict
+
+    /** The server no longer accepts this phone's token (the parent removed it): stop syncing. */
+    data class Disconnect(val reason: String) : Verdict
+}
+
+object OutboxPolicy {
+    /** Beyond this many unsent events, the oldest go: the next inventory still shows the result. */
+    const val MAX_PENDING_EVENTS = 5000
+
+    /** Sent and dropped items are kept a while, for the screen and for tests, then deleted. */
+    const val KEEP_FINISHED_MS = 7L * 24 * 60 * 60 * 1000
+    const val MAX_FINISHED = 1000
+
+    /** Well under the server's 512 KB limit for `POST /api/v1/events`. */
+    const val MAX_EVENTS_BODY_BYTES = 384 * 1024
+
+    /** `{"events":[` and `]}` around the comma-separated events. */
+    const val EVENTS_WRAPPER_BYTES = 13
+
+    const val BACKOFF_FIRST_MS = 30_000L
+    const val BACKOFF_MAX_MS = 60L * 60 * 1000
+    const val MAX_RETRY_AFTER_MS = 24L * 60 * 60 * 1000
+
+    /** Requests one sync run may make, so splitting a bad batch can't turn into a storm. */
+    const val MAX_REQUESTS_PER_RUN = 64
+
+    /**
+     * The protocol's table: 400 `invalid_request` and 413 split a batch until the item at
+     * fault is alone, then drop it; 401 `invalid_token` disconnects; 429 waits for
+     * Retry-After; 5xx retries with backoff. Anything else (a proxy's 401, a 404 while the
+     * server is being upgraded) is retried too: waiting loses nothing.
+     */
+    fun verdict(status: Int, error: String?, items: Int, retryAfterMs: Long? = null): Verdict {
+        val what = if (error.isNullOrBlank()) "HTTP $status" else "HTTP $status $error"
+        return when {
+            status in 200..299 -> Verdict.Sent
+            status == 401 && error == "invalid_token" -> Verdict.Disconnect(what)
+            status == 400 || status == 413 -> if (items > 1) Verdict.Split(what) else Verdict.Drop(what)
+            else -> Verdict.Retry(what, retryAfterMs)
+        }
+    }
+
+    /**
+     * The wait after the [attempts]-th failure in a row (1, 2, ...): doubling from 30 s up
+     * to an hour, at a random point ([random] in 0..1) in the upper half, so retries spread out.
+     */
+    fun backoffMs(attempts: Int, random: Double): Long {
+        val doublings = (attempts.coerceAtLeast(1) - 1).coerceAtMost(20)
+        val ceiling = (BACKOFF_FIRST_MS shl doublings).coerceAtMost(BACKOFF_MAX_MS)
+        val half = ceiling / 2
+        return half + (half * random.coerceIn(0.0, 1.0)).toLong()
+    }
+
+    /**
+     * A Retry-After header in milliseconds from [now]: delay-seconds or an HTTP-date. Null
+     * when absent or unreadable; capped at a day.
+     */
+    fun retryAfterMs(value: String?, now: Long): Long? {
+        val text = value?.trim().orEmpty()
+        if (text.isEmpty()) return null
+        text.toLongOrNull()?.let { seconds ->
+            return if (seconds < 0) null else seconds.coerceAtMost(MAX_RETRY_AFTER_MS / 1000) * 1000
+        }
+        val at = try {
+            ZonedDateTime.parse(text, DateTimeFormatter.RFC_1123_DATE_TIME).toInstant().toEpochMilli()
+        } catch (e: DateTimeParseException) {
+            return null
+        }
+        return (at - now).coerceIn(0, MAX_RETRY_AFTER_MS)
+    }
+
+    /**
+     * How many items from [from] go in one request. A snapshot goes alone. Events go
+     * together up to the server's count limit and [maxBytes], and never past a snapshot:
+     * always at least one.
+     */
+    fun batchSize(queue: List<OutboxItem>, from: Int = 0, maxBytes: Int = MAX_EVENTS_BODY_BYTES): Int {
+        require(from in queue.indices) { "nothing to send" }
+        if (queue[from].type == OutboxType.SNAPSHOT) return 1
+        var count = 0
+        var bytes = EVENTS_WRAPPER_BYTES.toLong()
+        while (from + count < queue.size && count < WireLimits.MAX_EVENTS_PER_REQUEST) {
+            val item = queue[from + count]
+            if (item.type != OutboxType.EVENT) break
+            val next = bytes + item.bytes + (if (count > 0) 1 else 0)
+            if (count > 0 && next > maxBytes) break
+            bytes = next
+            count++
+        }
+        return count
+    }
+}
+
+/**
+ * Sends the outbox in the order the agent made it. The server applies events and
+ * inventories in arrival order, and diffs each inventory against what it has, so nothing
+ * may overtake anything older: consecutive events go in batches, each snapshot on its own,
+ * and an item that can't go now holds back everything after it.
+ */
+object OutboxDrain {
+    data class Dropped(val id: Long, val reason: String)
+
+    sealed interface Stop {
+        /** [ids] failed; they and everything after them wait. */
+        data class Retry(val ids: List<Long>, val reason: String, val afterMs: Long?) : Stop
+
+        data class Disconnect(val reason: String) : Stop
+
+        /** This run's request budget is spent; the rest goes in the next run. */
+        data object Budget : Stop
+    }
+
+    /** [stop] is null when everything in the queue was sent or dropped. */
+    data class Result(val sent: List<Long>, val dropped: List<Dropped>, val stop: Stop?, val requests: Int)
+
+    /** [queue] oldest first. [send] makes one request and says what its answer means. */
+    fun run(
+        queue: List<OutboxItem>,
+        maxRequests: Int = OutboxPolicy.MAX_REQUESTS_PER_RUN,
+        send: (List<OutboxItem>) -> Verdict,
+    ): Result {
+        val sent = mutableListOf<Long>()
+        val dropped = mutableListOf<Dropped>()
+        // Halves of a split batch, which go before anything newer.
+        val halves = ArrayDeque<List<OutboxItem>>()
+        var next = 0
+        var requests = 0
+        while (halves.isNotEmpty() || next < queue.size) {
+            if (requests >= maxRequests) return Result(sent, dropped, Stop.Budget, requests)
+            val batch = halves.removeFirstOrNull()
+                ?: queue.subList(next, next + OutboxPolicy.batchSize(queue, next)).also { next += it.size }
+            requests++
+            when (val verdict = send(batch)) {
+                Verdict.Sent -> batch.mapTo(sent) { it.id }
+                is Verdict.Split -> if (batch.size > 1) {
+                    halves.addFirst(batch.subList(batch.size / 2, batch.size))
+                    halves.addFirst(batch.subList(0, batch.size / 2))
+                } else {
+                    dropped += Dropped(batch.single().id, verdict.reason)
+                }
+                is Verdict.Drop -> batch.mapTo(dropped) { Dropped(it.id, verdict.reason) }
+                is Verdict.Retry ->
+                    return Result(sent, dropped, Stop.Retry(batch.map { it.id }, verdict.reason, verdict.afterMs), requests)
+                is Verdict.Disconnect -> return Result(sent, dropped, Stop.Disconnect(verdict.reason), requests)
+            }
+        }
+        return Result(sent, dropped, null, requests)
+    }
+}
+
+object SyncPolicy {
+    const val CHECKIN_INTERVAL_MS = 2L * 60 * 60 * 1000
+
+    /** WorkManager and Doze move runs around a little; a check-in this close to due counts as due. */
+    const val CHECKIN_EARLY_MS = 10L * 60 * 1000
+
+    fun checkinDue(lastCheckinAt: Long?, now: Long): Boolean =
+        lastCheckinAt == null || now < lastCheckinAt || now - lastCheckinAt >= CHECKIN_INTERVAL_MS - CHECKIN_EARLY_MS
+
+    /** The server's clock minus the phone's, taking the middle of the request as when the server answered. */
+    fun clockSkewMs(serverTime: Long, sentAt: Long, receivedAt: Long): Long =
+        serverTime - (sentAt + (receivedAt - sentAt) / 2)
+}
