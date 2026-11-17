@@ -26,7 +26,8 @@ repository, and no account names, phone numbers or serial numbers.
 ## 2. New apps wait for a parent
 
 1. Install a free app from the Play Store.
-2. Open it: Android says it's paused or blocked. Write down the exact words.
+2. Open it: Android shows a dialog (titled "Blocked by work policy" in AOSP, with Belay's
+   message). Write down the exact words.
 3. Open Belay: the app is under "Waiting for your parent". Write a reason and send it.
 4. On the parent page, the request shows with the reason. Approve it. Within seconds, the
    app opens on the phone, and Belay shows "approved" with your note.

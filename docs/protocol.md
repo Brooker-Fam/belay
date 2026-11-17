@@ -169,12 +169,21 @@ policy's `requests`, which Belay shows the kid.
 - **Blocked** apps are hidden and suspended (`setApplicationHidden`: suspended apps that
   have run before can keep working in the background). System apps can be blocked too.
 - **Paused**: every launchable app but the never-blocked ones is suspended until
-  `pause.until` or until a parent resumes it.
+  `pause.until` or until a parent resumes it. The phone's clock and the keyboard in use stay
+  out of a pause too: a suspended app can't ring an alarm, and texting 988 needs a keyboard.
+  The keyboard that came with the phone is never blocked.
 - **`factory_reset` and `debugging`** can lock a phone for good. The server only sets them
   when a parent turns them on, with a warning, on the parent page; AI clients can't.
   Debug builds of Belay never apply them. `maintenance_until` lifts `debugging` so adb
   works for repairs.
 - **Offline**, the phone keeps enforcing the last policy it got. Belay stores it.
+- **Versions:** the phone applies any version that differs from the one it has, lower ones
+  too (a server restored from a backup), and checks in within seconds of applying one. A
+  policy can be larger than other answers: the phone accepts up to 1 MB.
+- **`web.private_dns: null`** leaves the phone's setting alone, except that if the phone
+  still has the host Belay set, Belay puts it back to Android's default (Automatic).
+- **Requests can't be withdrawn yet:** an app removed while it waits leaves its request
+  pending until a parent answers it.
 - **Tightening vs. loosening:** an AI client may tighten directly (block an app, pause
   the phone). Anything that loosens (approve, unblock, resume, lift a restriction) is
   only a proposal until a parent approves it on the parent page.

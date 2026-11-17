@@ -28,6 +28,18 @@ parent can see" (built from the code that collects them: `inventory/Collectors.k
 - whether Belay is still device owner and has the permissions and battery exemption it
   needs.
 
+**What the kid asks for (Phase 2)**
+
+- which apps they ask for and when: Belay asks by itself for each new app that waits for a
+  parent;
+- what they write in "Why I want it", up to 500 characters, in their own words.
+
+**What Belay enforces (Phase 2)**
+
+- the rules version the phone applied, how many apps it holds back, and what it couldn't do;
+- a changed SIM card (opaque ids, never the phone number), and another user or profile on the
+  phone, such as Android's own Parental Controls.
+
 **Not collected in Phase 1:** messages, calls, contacts, photos, files, browsing, searches,
 location, what's on the screen, or how long apps are used. Later phases add some of these
 only as listed in [ROADMAP.md](../ROADMAP.md), each shown to the kid on the phone first,
@@ -75,9 +87,19 @@ sends outside the family's server, and the parent page says so where you choose 
 
 - **Parents,** on the parent page, with their own accounts.
 - **AI apps a parent connects** (like Claude), through MCP, and only the categories the
-  parents allow in Settings. What an AI app reads goes to its provider under that
+  parents allow in Settings: apps, device status, and (from Phase 2) requests, the kid's own
+  words, all on by default. What an AI app reads goes to its provider under that
   provider's terms. [mcp.md](mcp.md#what-reaches-the-ai-provider) lists exactly what that
   is. Every read is in the activity log.
+
+## What the kid sees (Phase 2)
+
+- When a new app waits: a quiet notification naming it, and on Belay's screen a "Why I want
+  it" box.
+- Every answer, with the parent's note, who answered and when.
+- While the phone is paused: the parent's note and until when.
+- Which apps are blocked, and "This phone's rules": only the locks Belay actually applied,
+  each with why, and that calling or texting 911 and 988 always works.
 
 ## What the kid sees
 

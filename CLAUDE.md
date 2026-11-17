@@ -1,8 +1,9 @@
 # Belay: notes for contributors (people and Claude)
 
-Open-source, AI-first parental controls for a kid's first Android phone. Phase 1: the
-device-owner agent reports to the family's server, and parents use MCP (Claude) or the
-parent page. Monitoring only: nothing is blocked yet. [README.md](README.md) says what
+Open-source, AI-first parental controls for a kid's first Android phone. Phase 2: the
+device-owner agent enforces the rules the family's server sends (new apps wait for a parent,
+the web is filtered, the settings that undo Belay are locked), and parents use MCP (Claude)
+or the parent page. [README.md](README.md) says what
 exists; [ROADMAP.md](ROADMAP.md) says what's next.
 
 ## Principles (every phase)

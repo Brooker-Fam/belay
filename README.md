@@ -5,12 +5,14 @@ Open-source, AI-first parental controls for a kid's first Android phone.
 > A belayer doesn't climb for you. They hold the rope so a fall stays short, and they give
 > more slack as you get better.
 
-**Status: Phase 1, monitoring only.** The phone reports its apps and their changes to the
-family's own server, and a parent can ask Claude about them. Nothing is blocked yet: a kid
-could still reset the phone, install anything and browse anything
-([docs/threat-model.md](docs/threat-model.md)). Don't hand a phone running it to a kid as if
-it were locked down. Phase 2 is the milestone where it becomes safe to hand over
-([ROADMAP.md](ROADMAP.md)).
+**Status: Phase 2, safe to hand over once it's checked on the real phone.** The phone
+reports its apps to the family's own server, new apps wait until a parent approves them, the
+web is filtered, and the settings that undo Belay are locked when a parent turns protection
+on. A parent manages it by asking Claude or on the parent page. Locking factory reset and USB
+debugging is a separate step a parent takes when ready. What a determined kid can still do is
+in [docs/threat-model.md](docs/threat-model.md); [docs/phase2-checklist.md](docs/phase2-checklist.md)
+is the real-phone check, and [ROADMAP.md](ROADMAP.md) has what comes next (screen time,
+location, calls and texts, and more).
 
 ## What Belay is for
 
@@ -20,7 +22,7 @@ no monthly fee and no company that can change or disappear. A parent mostly mana
 asking Claude (or any MCP client) things like "what did they install this week, and is it
 OK?", with a web page as the fallback.
 
-## What exists today (Phase 1)
+## What exists today (Phases 1 and 2)
 
 - **`android/`: the device-owner agent.** Provisioned over adb, it becomes device owner and
   blocks its own uninstall. It always shows "This phone is managed by your parent", and its
@@ -28,10 +30,20 @@ OK?", with a web page as the fallback.
   removals as they happen (with a full check after every restart and every day), records
   each app's source and sensitive permissions, and sends them to the family's server. It
   checks in every 2 hours. Changes wait in an outbox when the phone is offline. It enrolls
-  with a one-time code: from `provision.sh`, a QR code, or typed.
+  with a one-time code: from `provision.sh`, a QR code, or typed. **Phase 2:** it enforces
+  the family's rules within seconds of a change (a long-poll), and keeps enforcing them
+  offline: new apps wait for a parent, blocked apps are hidden, the phone can be paused, and
+  safe mode, new users, sideloading, VPNs, Private DNS, the clock and default apps are locked.
+  Calls, texts, 911 and 988 always work. The kid sees every rule, asks for apps with a "Why I
+  want it" box, and sees every answer.
 - **`server/`: the family's server.** Node and SQLite in one Docker image. The device API,
   the parent pages (phones and their health, apps with "new" badges and reviews, the
   timeline, adding a phone, settings, the activity log), and OAuth 2.1 plus MCP for Claude.
+  **Phase 2:** each phone's rules (protection in one step, new apps ask or allow, allow or
+  block per app, pause, web filter and Chrome, locked settings, maintenance, hardening), the
+  kid's requests, AI proposals, and end-to-end encrypted Web Push to parents' browsers. Over
+  MCP, an AI client can block an app or pause the phone; anything that loosens is only a
+  proposal a parent approves on the parent page.
 - **CI:** Android build, unit tests and lint, an Android 17 emulator job that provisions
   the agent and checks it end to end, and the server's tests and Docker image.
 - **Docs:** [running the server](docs/server.md), [connecting Claude](docs/mcp.md),

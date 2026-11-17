@@ -49,6 +49,17 @@ relying on something new, it goes here first, with a source.
 | N1 | HTTPS only, the system's CAs; plain http only in debug builds, to the emulator's host | Confirmed; CT through OkHttp unproven | Docs; Emulator (cleartext path) |
 | N2 | Compose's EmojiCompat would ask Play services for a font; Belay turns it off | Confirmed | androidx source |
 | E1 | Enrolling over adb: a receiver only the shell can reach, and its answer | Confirmed | AOSP; Emulator (Phase 1 CI) |
+| C1 | Suspending apps: who can't be suspended, and what suspension does | Confirmed | AOSP; Emulator pending (Phase 2 CI) |
+| C2 | What a suspended app shows the kid | Confirmed; check the title on the Pixel | AOSP |
+| C3 | Hiding apps: killed, "removed" broadcast, invisible to plain queries | Confirmed | AOSP; Emulator pending (Phase 2 CI) |
+| C4 | User restrictions: API levels, unknown keys, what debugging and SIM locks really do | Confirmed; corrects M2 | AOSP; SDK |
+| C5 | The unknown-sources restrictions don't block `adb install` | Confirmed for 37.0; 37.2's new key unverified | AOSP |
+| C6 | Private DNS: device owner only, check in Belay's process, offline and other-user traps | Confirmed | AOSP |
+| C7 | Chrome's managed configuration: names and types | Confirmed | Chromium source |
+| C8 | Factory reset protection: who's notified, and when it can't apply | Confirmed | AOSP |
+| C9 | Network in Doze for a foreground-service process; exact alarms | Confirmed | AOSP |
+| C10 | Reading the phone, SMS, emergency, browser and keyboard apps without permissions | Confirmed | AOSP |
+| C11 | Android's own Parental Controls profile: detectable, not identifiable | Confirmed | AOSP |
 
 "Emulator" entries were seen in CI: `ci-emulator-test.sh` passed end to end on the API 37.0
 Automated Test Device image (`aosp_atd`, required) from run 8, and on the API 37.0 Google
@@ -562,8 +573,9 @@ times when the app is running" (answer/9888380). Belay has one.
 `…_GLOBALLY_INCLUDING_…`. From 37.2, `DISALLOW_INSTALL_UNKNOWN_SOURCES` and its
 `_GLOBALLY` variant "do not apply to installations initiated or performed by registered app
 stores" (apps holding `INSTALL_PACKAGES_AS_REGISTERED_APP_STORE`). The new key isn't in
-37.0; setting it there throws "Invalid restriction key". Phase 2 gates it on
-`Build.VERSION.SDK_INT_FULL >= 3700002`.
+37.0. Phase 2 gates it on `Build.VERSION.SDK_INT_FULL >= 3700002`. (Corrected in C4: for a
+device owner, an unknown key is silently ignored; "Invalid restriction key" is only thrown to
+permission-based callers.)
 
 ---
 
@@ -637,6 +649,117 @@ for anything; the phone's own emoji font still renders.
   2.5 s after boot, worked. `provision.sh` now tries again every 5 s for a minute while the
   server can't be reached; the code is only used once the server answers. In run 15 the
   ATD image needed one retry and enrolled about 6 s after boot.
+
+## Enforcing (Phase 2)
+
+All read in AOSP `android-17.0.0_r1` (and the 37.0 and 37.2 `android.jar`), the
+DevicePolicyManager [2026-09-16], UserManager [2026-08-28] and Doze [2026-10-22] reference
+pages, and Chromium's policy definitions, on 2026-11-17. Emulator checks run in Phase 2 CI;
+the rest needs the Pixel ([phase2-checklist.md](phase2-checklist.md)).
+
+### C1. Suspending apps
+
+**Confirmed.** `setPackagesSuspended`: the policy engine keeps each admin's set, and
+PackageManager attributes the suspension to "android". Android refuses to suspend device
+admins, the active launcher, the required installer, uninstaller and verifier, the default
+dialer, the permission controller, protected and required system packages, libraries, apps
+with `OP_SYSTEM_EXEMPT_FROM_SUSPENSION`, and DevicePolicyManager's `policy_exempt_apps`. A
+suspended app's activities stop and can't start, its notifications are hidden, and it can't
+show toasts or dialogs or play audio, so a suspended clock can't ring: Belay leaves the clock
+out of a pause. Its process keeps running. From a shell, the `User 0: … suspended=…` line of
+`dumpsys package <pkg>`.
+
+### C2. What a suspended app shows
+
+**Confirmed in AOSP; check the title on the Pixel.** The launch is intercepted and Settings'
+`ActionDisabledByAdminDialog` opens. On a fully managed phone its title is "Blocked by work
+policy" and its text is the device owner's short support message (otherwise "For more info,
+contact your IT admin"). Belay sets that message to "Your parent manages this phone with
+Belay…", or the parent's own words. `getSuspendPackagesTitle` ("Can't open this app") exists,
+but no AOSP 17 controller calls it. With Android's own supervision on, the dialog shows "Ask
+for help" instead. Belay's own notification names the waiting app.
+
+### C3. Hiding apps
+
+**Confirmed.** `setApplicationHidden(true)` kills the app and sends `PACKAGE_REMOVED` (not
+`FULLY_REMOVED`); showing it again sends `PACKAGE_ADDED`. A hidden app is invisible to
+queries without `MATCH_UNINSTALLED_PACKAGES`, keeps `FLAG_INSTALLED`, and still matches intent
+queries with that flag. Belay reads its inventory with that flag, so blocked apps stay
+present (no "removed" or "installed" events). The policy engine only acts when its stored
+value changes, so after a reinstall Belay sets "not hidden" and then "hidden" again.
+`pm list packages <pkg>` leaves a hidden app out; `-u` lists it.
+
+### C4. User restrictions
+
+**Confirmed; corrects M2.**
+
+- API levels: `DISALLOW_CONFIG_DEFAULT_APPS` 34, `DISALLOW_SIM_GLOBALLY` 35,
+  `…_INCLUDING_REGISTERED_APP_STORES` 37.2; every other one Belay uses is at or below its
+  minSdk 31. `setAutoTimePolicy` exists from 36.
+- For a device owner, an unknown key is silently ignored.
+- `DISALLOW_DEBUGGING_FEATURES` turns `ADB_ENABLED` and `ADB_WIFI_ENABLED` off.
+- `DISALLOW_ADD_USER` is a base restriction only after full managed provisioning, not after
+  `dpm set-device-owner`, so Belay sets it itself.
+- **`DISALLOW_SIM_GLOBALLY` only blocks downloading eSIMs.** A physical SIM swap isn't
+  blocked; Belay reports a changed SIM instead (opaque ids, never the number).
+
+### C5. The unknown-sources restrictions and adb
+
+**Confirmed for 37.0.** Creating an install session only checks `DISALLOW_INSTALL_APPS`, and
+the shell holds `INSTALL_PACKAGES`, so the unknown-sources check is never reached: `adb install`
+and `provision.sh` keep working. **37.2's `…_INCLUDING_REGISTERED_APP_STORES` is unverified:**
+its documentation says only privileged installers "explicitly allowed as trusted sources" may
+install, and 37.2's source isn't published. Test `provision.sh`'s update on the Pixel.
+
+### C6. Private DNS
+
+**Confirmed.** `setGlobalPrivateDnsModeSpecifiedHost` is device owner only. Android checks the
+host over TLS (port 853) **inside the caller's process**, with no connect timeout, so Belay
+calls it on its own thread with its own timeout. It answers "host not serving" whenever the
+phone is offline (Belay tries again later and doesn't report it while offline), and throws
+`SecurityException` while any other user or profile exists (C11). Afterwards the whole phone
+looks names up at that host.
+
+### C7. Chrome's managed configuration
+
+**Names and types confirmed** (Chromium's policy definitions and `PolicyConverter.java`), all
+supported on Android: `IncognitoModeAvailability` int, `ForceGoogleSafeSearch` bool,
+`ForceYouTubeRestrict` int, `SafeSitesFilterBehavior` int (Chrome 116+), `DownloadRestrictions`
+int (3 blocks all; Chrome 131+), `URLBlocklist` and `URLAllowlist` as `String[]`,
+`DnsOverHttpsMode` string. An empty bundle clears Belay's settings. Whether Chrome applies them
+without managed Google Play is checked on the Pixel.
+
+### C8. Factory reset protection
+
+**Confirmed in AOSP; release builds only.** `setFactoryResetProtectionPolicy` notifies the
+reset-protection agent itself; without one (emulators) it throws
+`UnsupportedOperationException`. Belay also sends `FRP_CONFIG_CHANGED` to Play services, as
+Google's guide says. Reset protection doesn't apply while OEM unlocking is on, and Belay can't
+read that state.
+
+### C9. Network in Doze, and exact alarms
+
+**Confirmed in AOSP.** A process at or above bound-foreground-service state keeps network
+access in Doze, so Belay's long-poll works while the phone idles (the Doze page doesn't list
+this exception). Apps on the battery allowlist may set exact alarms without
+`SCHEDULE_EXACT_ALARM`, which Belay uses for when a pause or maintenance ends.
+
+### C10. What Belay reads without permissions
+
+**Confirmed.** The default and system dialer, the default SMS app, the browsers (by the browser
+role's own test), the current keyboard (`DEFAULT_INPUT_METHOD` is `@Readable`), and the SIM's
+state, carrier id and default subscription id. Reading the emergency role holder needs a
+privileged permission, so Belay finds emergency apps by resolving `EMERGENCY_ASSISTANCE` among
+system apps. These make up the never-blocked list, with the keyboard that came with the phone
+(texting 988 needs one).
+
+### C11. Android's own Parental Controls profile
+
+**Detectable, not identifiable.** The supervising profile's type and `SupervisionManager` are
+system APIs. `getSecondaryUsers` counts it with any other user, and `onUserAdded` /
+`onUserRemoved` tell Belay when one appears. Belay reports "another user or profile" plainly,
+re-applies its suspensions (which the profile's app rules can lift), and doesn't remove it:
+public APIs can't tell it apart from another user ([design](design/phase10-android-parental-controls.md)).
 
 ---
 

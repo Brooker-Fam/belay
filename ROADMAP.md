@@ -59,7 +59,14 @@ example. One family per server.
 
 **Docs:** server, MCP, privacy, threat model; emulator and Pixel docs updated.
 
-## Phase 2: safe to hand over (being built)
+## Phase 2: safe to hand over (built)
+
+Built. CI runs it end to end on the Android 17 emulator against a real server: a new app is
+suspended on install, approved from the server and unsuspended within seconds, then blocked.
+**Still open:** [docs/phase2-checklist.md](docs/phase2-checklist.md) on the Pixel 8: Private
+DNS, Chrome's settings, the hardening locks and reset protection only work on the real phone
+with a release build.
+
 
 The contract is in [docs/protocol.md](docs/protocol.md) (Policy, long-poll, requests,
 enforcement rules); the Pixel checklist is [docs/phase2-checklist.md](docs/phase2-checklist.md).
