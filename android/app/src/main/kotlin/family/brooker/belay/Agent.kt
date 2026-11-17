@@ -16,6 +16,16 @@ import family.brooker.belay.core.Requests
 import family.brooker.belay.core.UpdateRecord
 import family.brooker.belay.core.WireDevice
 import family.brooker.belay.core.WireRequestKind
+import family.brooker.belay.calls.AndroidCalls
+import family.brooker.belay.calls.CallsGate
+import family.brooker.belay.calls.CallsStep
+import family.brooker.belay.calls.CallsView
+import family.brooker.belay.calls.Dialer
+import family.brooker.belay.calls.EndedCall
+import family.brooker.belay.core.calls.CallContacts
+import family.brooker.belay.core.calls.CallRecords
+import family.brooker.belay.core.calls.CallsPlan
+import family.brooker.belay.core.calls.CallsState
 import family.brooker.belay.core.kid.Told
 import family.brooker.belay.core.location.FixWant
 import family.brooker.belay.core.location.HelpShare
@@ -120,6 +130,12 @@ enum class Trigger(val label: String, val heartbeat: Boolean, val checkin: Boole
 
     /** Phase 7: Belay's screens closed while a help fix's grant waited for that. */
     SCREENS_CLOSED("Belay's screens closed", false, setup = false),
+
+    /** Phase 5: a call was decided, or ended (calls/CallFlow.kt). */
+    CALL("a call came or ended", false, setup = false),
+
+    /** Phase 5: the phone's default dialer changed (calls/DialerWatcher.kt). */
+    DIALER_CHANGED("the phone's calling app changed", false),
 }
 
 /** Everything the main screen shows from the agent's last step. */
@@ -139,6 +155,8 @@ data class AgentView(
     val recovery: RecoveryState = RecoveryState(),
     /** Phase 7: "What Belay told your parent", the newest first (the last 30 days). */
     val told: List<ToldEntry> = emptyList(),
+    /** Phase 5: Belay's dialer; null while the policy has no calls. */
+    val calls: CallsView? = null,
 )
 
 object Agent {
@@ -225,8 +243,8 @@ object Agent {
                 recheckAll = outcome.snapshotQueued || trigger == Trigger.USERS_CHANGED,
                 recheckDns = trigger == Trigger.PRIVATE_DNS_RETRY,
             )
-            publish(store, health, device ?: readDevice(), outcome.baseline.inventory, enforcement.view)
-            DebugTools.afterStep(app) { StateDump.json(store, connection) }
+            publish(app, store, health, device ?: readDevice(), outcome.baseline.inventory, enforcement.view)
+            DebugTools.afterStep(app) { StateDump.json(app, store, connection) }
             Sync.request(app, checkin = trigger.checkin)
             // The parent page shows the policy as applied once the server hears so.
             if (enforcement.reportChanged) Sync.checkinSoon(app)
@@ -237,9 +255,14 @@ object Agent {
             // Phase 3: screen time is read every minute the screen is on, while the policy has it.
             ScreenWatcher.want(app, enforcement.view.policy?.screenTime != null)
             sharing = store.locationState()?.help != null
-            // Phase 4: last of all, a location permission Belay no longer should hold is denied.
-            // Android then stops Belay's processes and starts them again (platform notes L7);
-            // everything above is stored, and the sync after the restart sends what waits.
+            // Phase 5: calls decide from what this step applied, until the next one.
+            CallsGate.publish(DebugTools.policyOverride ?: store.policy(), store.callsState())
+            // Phase 5: calls went off: the dialer role goes back, and Belay's dialer is disabled.
+            enforcement.calls?.let { CallsStep.after(app, it) }
+            // Phase 4: last of all, a location permission Belay no longer should hold is denied
+            // (Phase 5: or a call permission). Android then stops Belay's processes and starts
+            // them again (platform notes L7); everything above is stored, and the sync after the
+            // restart sends what waits.
             if (enforcement.revoke) DeviceOwnerSetup.revokeUnwanted(app)
         } catch (t: Throwable) {
             Log.e(TAG, "agent step failed (${trigger.label})", t)
@@ -520,6 +543,75 @@ object Agent {
         }
     }
 
+    /**
+     * Phase 5: "Ask to add a contact", with the [name] and [number] (E.164, as AndroidCalls.key made
+     * it) the kid gave and why. [done] gets whether it was sent (false: no name, or not a whole number).
+     */
+    fun askContact(context: Context, name: String, number: String?, reason: String?, done: ((Boolean) -> Unit)? = null) {
+        kidRequest(context, "asking to add a contact", done) { _, now ->
+            Requests.contact(name, number, reason, now) { UUID.randomUUID().toString() }
+        }
+    }
+
+    /**
+     * Phase 5: a call that ended (calls/CallFlow.kt), on the agent thread: kept in Belay's own recent
+     * calls unless it's with an emergency number, 988 or a private number (core's CallRecords, which
+     * makes nothing for those), and with `calls.log` also queued for POST /api/v1/calls.
+     */
+    fun recordCall(context: Context, call: EndedCall) {
+        val app = context.applicationContext
+        executor.execute {
+            try {
+                val store = AgentStore.get(app)
+                val policy = DebugTools.policyOverride ?: store.policy()
+                val calls = policy?.calls ?: return@execute
+                val android = AndroidCalls.emergencyNumbers(app)
+                val private = CallContacts.private(policy)
+                val entry = CallRecords.entry(
+                    UUID.randomUUID().toString(), call.at, call.direction, call.number, call.contact,
+                    call.durationS, call.outcome, call.reason, private, android,
+                )
+                val record = entry?.takeIf { calls.log }?.let { CallRecords.toWire(it, private, android) }
+                val now = System.currentTimeMillis()
+                store.commitCall(entry, record, now)
+                Log.i(TAG, "call ${call.direction.name.lowercase()}, ${call.outcome.name.lowercase()}: " + when {
+                    entry == null -> "not kept (an always-allowed or private number)"
+                    record != null -> "kept, and queued for the server"
+                    else -> "kept on the phone"
+                })
+                _view.value?.let { view -> view.calls?.let { _view.value = view.copy(calls = it.copy(recents = store.calls(SCREEN_CALLS))) } }
+                if (record != null) Sync.request(app)
+            } catch (t: Throwable) {
+                Log.e(TAG, "recording a call failed", t)
+            }
+        }
+    }
+
+    /**
+     * Phase 5: the kid called 911, an emergency number or 988, or texted 988 through Belay, at [at]:
+     * for 2 hours every caller rings. Stored on the phone only (core's CallsState), never sent, and
+     * forgotten once the window is over.
+     */
+    fun emergencyContact(context: Context, at: Long) {
+        val app = context.applicationContext
+        executor.execute {
+            try {
+                val store = AgentStore.get(app)
+                val state = store.callsState() ?: CallsState()
+                val last = CallsPlan.emergencyContact(state.lastEmergencyContactAt, at, System.currentTimeMillis())
+                if (last != state.lastEmergencyContactAt) {
+                    store.saveCallsState(state.copy(lastEmergencyContactAt = last), System.currentTimeMillis())
+                    CallsGate.publish(DebugTools.policyOverride ?: store.policy(), store.callsState())
+                    Log.i(TAG, "calls: every caller rings for the next 2 hours")
+                }
+            } catch (t: Throwable) {
+                Log.e(TAG, "storing the callback window failed", t)
+            }
+        }
+        // The block list lifts for the window at the next step.
+        handle(app, Trigger.CALL)
+    }
+
     /** The kid's screens show a new request at once, without waiting for a step. */
     private fun showRequests(store: AgentStore) {
         _view.value?.let { view ->
@@ -527,7 +619,7 @@ object Agent {
         }
     }
 
-    private fun publish(store: AgentStore, health: Health, device: WireDevice, inventory: Map<String, PackageRecord>, kid: KidView) {
+    private fun publish(app: Context, store: AgentStore, health: Health, device: WireDevice, inventory: Map<String, PackageRecord>, kid: KidView) {
         _view.value = AgentView(
             health = health,
             device = device,
@@ -538,9 +630,15 @@ object Agent {
             update = store.agentUpdate(),
             recovery = store.recovery(),
             told = Told.list(store.told(), System.currentTimeMillis()),
+            calls = kid.policy?.calls?.let { calls ->
+                CallsView(calls, CallContacts.of(kid.policy), store.calls(SCREEN_CALLS), Dialer.isDialer(app))
+            },
         )
     }
 
     private const val SCREEN_CHANGES = 30
     private const val SCREEN_HEARTBEATS = 24
+
+    /** Recent calls the dialer shows. */
+    private const val SCREEN_CALLS = 200
 }

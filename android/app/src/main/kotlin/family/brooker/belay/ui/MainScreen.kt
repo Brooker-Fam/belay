@@ -47,6 +47,7 @@ import family.brooker.belay.core.UpdateRecord
 import family.brooker.belay.core.WireAgentUpdate
 import family.brooker.belay.core.WireDevice
 import family.brooker.belay.core.WireUpdateState
+import family.brooker.belay.core.calls.CallContacts
 import family.brooker.belay.core.kid.Home
 import family.brooker.belay.core.kid.HomeInput
 import family.brooker.belay.core.kid.HomeState
@@ -122,7 +123,9 @@ fun MainScreen(
                     item { HomeStateCard(home(kid), words) }
                     kid.plan?.pause?.let { pause -> item { PausedBanner(pause) } }
                     item { HelpButton { kidActions.askHelp(null, false) { id -> if (id != null) helpSent(id) } } }
-                    item { EmergencyCard(kid.policy?.parentNumbers.orEmpty(), kidActions) }
+                    item { EmergencyCard(CallContacts.emergencyCard(kid.policy), kidActions) }
+                    // Phase 5: Belay's dialer, while the family has calls on.
+                    if (kid.policy?.calls != null) item { NavRow(stringResource(R.string.calls_open)) { kidActions.openCalls() } }
                     if (kid.screenTime != null) item { TodayCard(kid, unsentRequests, screenTime, askFor, onAsked) }
                     item { LocationCard(kid, view.told, words) { navigation.go(Screen.TOLD) } }
                     if (kid.plan?.waiting.orEmpty().isNotEmpty()) item { WaitingCard(kid, unsentRequests, onAsk) }

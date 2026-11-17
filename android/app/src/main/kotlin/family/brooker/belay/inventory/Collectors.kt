@@ -30,6 +30,12 @@ import family.brooker.belay.core.location.LocationRules
  *   sends the usage days (only while `measure` is on: [DataCategories.SCREEN_TIME]) and puts
  *   where each limit stands in the enforcement report (with `measure` off, without the
  *   minutes: [DataCategories.SCREEN_TIME_LIMITS]).
+ * - Phase 5, only while the policy's calls has `log` on: [family.brooker.belay.calls.CallFlow] and
+ *   [family.brooker.belay.calls.BelayCallScreeningService] note each call (when, which way, how
+ *   long, how it ended, and the contact or the number), and [family.brooker.belay.Agent.recordCall]
+ *   sends it, never one with 911, an emergency number, 988 or a private number:
+ *   [DataCategories.CALLS]. Whether Belay is the dialer goes in the device status; "Ask to add a
+ *   contact" ([family.brooker.belay.Agent.askContact]) is a request: [DataCategories.REQUESTS].
  * - Phase 4, only while the policy's location is on (a mode, or lost mode):
  *   [family.brooker.belay.location.LocationCollector] takes single fixes, and
  *   [family.brooker.belay.location.LocationStep] sends them with the place events and puts
@@ -44,5 +50,6 @@ object Collectors {
             listOfNotNull(
                 policy?.screenTime?.let { DataCategories.screenTime(it.measure) },
                 policy?.location?.takeIf { LocationRules.collecting(it) }?.let { DataCategories.location(it, clock) },
+                policy?.calls?.takeIf { it.log }?.let { DataCategories.CALLS },
             )
 }

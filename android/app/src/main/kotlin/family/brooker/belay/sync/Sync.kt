@@ -246,10 +246,11 @@ private class SyncRun(private val app: Context) {
 
     /**
      * Sends what waits, strictly in order (OutboxDrain): the server applies events and
-     * inventories as they arrive. Usage days (Phase 3) go in a lane of their own after it, and
-     * fixes and place events (Phase 4) in a third, so a server without `POST /usage` or
-     * `POST /locations` yet (it answers 404, which waits and tries again) holds back nothing
-     * else. Returns false if the server disconnected the phone.
+     * inventories as they arrive. Usage days (Phase 3) go in a lane of their own after it,
+     * fixes and place events (Phase 4) in a third, and call records (Phase 5) in a fourth, so a
+     * server without `POST /usage`, `POST /locations` or `POST /calls` yet (it answers 404, which
+     * waits and tries again) holds back nothing else. Returns false if the server disconnected the
+     * phone.
      */
     private fun drain(api: DeviceApi, token: String): Boolean {
         val queue = store.queue()
@@ -280,7 +281,7 @@ private class SyncRun(private val app: Context) {
 
     /**
      * One lane, oldest first; its head waits out a backoff, and everything behind it with it.
-     * [side]: the usage or the location lane, whose failures aren't a connection problem.
+     * [side]: the usage, the location or the calls lane, whose failures aren't a connection problem.
      */
     private fun drainLane(api: DeviceApi, token: String, lane: List<Pair<OutboxItem, Long>>, side: Boolean): LaneOutcome {
         val wait = OutboxPolicy.waitMs(lane.first().second, System.currentTimeMillis())
@@ -294,6 +295,7 @@ private class SyncRun(private val app: Context) {
         val what = when (lane.first().first.type) {
             OutboxType.USAGE -> "usage days"
             OutboxType.FIX, OutboxType.PLACE_EVENT -> "fixes and place events"
+            OutboxType.CALL -> "call records"
             else -> "items"
         }
         if (result.sent.isNotEmpty()) Log.i(Agent.TAG, "sent ${result.sent.size} $what in ${result.requests} requests")
@@ -325,6 +327,7 @@ private class SyncRun(private val app: Context) {
         OutboxRow.TYPE_USAGE -> OutboxType.USAGE
         OutboxRow.TYPE_FIX -> OutboxType.FIX
         OutboxRow.TYPE_PLACE_EVENT -> OutboxType.PLACE_EVENT
+        OutboxRow.TYPE_CALL -> OutboxType.CALL
         else -> OutboxType.EVENT
     }
 
@@ -359,6 +362,12 @@ private class SyncRun(private val app: Context) {
                 val (fixes, placeEvents) = store.locationPayloads(ids)
                 if (fixes.isEmpty() && placeEvents.isEmpty()) return Verdict.Sent
                 api.locations(token, fixes, placeEvents)
+            }
+            OutboxType.CALL -> {
+                // Gone when logging went off meanwhile.
+                val payloads = store.callPayloads(ids)
+                if (payloads.isEmpty()) return Verdict.Sent
+                api.calls(token, payloads)
             }
         }
         return when (answer) {

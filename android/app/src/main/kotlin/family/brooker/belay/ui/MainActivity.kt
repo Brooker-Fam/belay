@@ -18,7 +18,9 @@ import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import family.brooker.belay.Agent
 import family.brooker.belay.DebugTools
+import family.brooker.belay.R
 import family.brooker.belay.Trigger
+import family.brooker.belay.calls.CallFlow
 import family.brooker.belay.screentime.UsageAccess
 import family.brooker.belay.service.ScreenTimeNotice
 import family.brooker.belay.settings.ConnectionStore
@@ -62,6 +64,7 @@ class MainActivity : ComponentActivity() {
             text = { number -> Emergency.text(this, number) },
             emergencyInfo = if (Emergency.infoApp(this) != null) ({ Emergency.info(this) }) else null,
             navigate = { screen = it },
+            openCalls = ::openCalls,
         )
         setContent {
             BelayTheme {
@@ -138,6 +141,15 @@ class MainActivity : ComponentActivity() {
             startActivity(UsageAccess.settings(this))
         } catch (e: ActivityNotFoundException) {
             startActivity(Intent(Settings.ACTION_SETTINGS))
+        }
+    }
+
+    /** Phase 5: Belay's dialer, which is enabled only while the policy has calls. */
+    private fun openCalls() {
+        try {
+            startActivity(CallFlow.dialer(this))
+        } catch (e: ActivityNotFoundException) {
+            Toast.makeText(this, getString(R.string.calls_off_now), Toast.LENGTH_LONG).show()
         }
     }
 

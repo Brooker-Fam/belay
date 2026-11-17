@@ -7,16 +7,20 @@ import family.brooker.belay.BuildConfig
 import family.brooker.belay.DebugTools
 import family.brooker.belay.DeviceOwnerSetup
 import family.brooker.belay.R
+import family.brooker.belay.calls.CallsStep
 import family.brooker.belay.core.ActualState
 import family.brooker.belay.core.AnsweredRequest
 import family.brooker.belay.core.Applied
 import family.brooker.belay.core.ApplyOutcome
+import family.brooker.belay.core.CategoryPermissions
 import family.brooker.belay.core.Commands
+import family.brooker.belay.core.DataCategories
 import family.brooker.belay.core.Enforcement
 import family.brooker.belay.core.EnforcementChanges
 import family.brooker.belay.core.EnforcementPlan
 import family.brooker.belay.core.KidRequest
 import family.brooker.belay.core.KidRules
+import family.brooker.belay.core.NeverBlocked
 import family.brooker.belay.core.PackageRecord
 import family.brooker.belay.core.PolicyTooLarge
 import family.brooker.belay.core.RecoveryRules
@@ -88,10 +92,11 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
 
     /**
      * [reportChanged]: the enforcement report the server sees has changed (a check-in tells it).
-     * [revoke]: Phase 4, Belay holds a location permission it no longer should; the agent step
-     * denies it last (Android then restarts Belay).
+     * [revoke]: Phase 4, Belay holds a location permission it no longer should (Phase 5: or a call
+     * permission, calls being off); the agent step denies it last (Android then restarts Belay).
+     * [calls]: Phase 5, what calls' part does after the step is stored (CallsStep.after).
      */
-    data class Result(val view: KidView, val reportChanged: Boolean, val revoke: Boolean = false)
+    data class Result(val view: KidView, val reportChanged: Boolean, val revoke: Boolean = false, val calls: CallsStep.Done? = null)
 
     /**
      * [inventory] is everything installed, hidden apps included. Every step checks that what
@@ -187,6 +192,21 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
             Log.e(Agent.TAG, "location's part of the step failed", e)
             null
         }
+        // Phase 5: calls' part: Belay as the dialer, the block list, CALL_PHONE for other apps, the
+        // report; with calls off, undoing what Belay did. If it fails, the rest is still recorded.
+        val calling = try {
+            CallsStep(app, store).run(
+                policy = policy,
+                owner = owner,
+                protected = NeverBlocked.of(roles, inventory, applied.hidden).keys,
+                inventory = inventory,
+                newPolicy = before.policyVersion != policy.version,
+                now = now,
+            )
+        } catch (e: RuntimeException) {
+            Log.e(Agent.TAG, "calls' part of the step failed", e)
+            null
+        }
         val done = read?.let {
             try {
                 screenTimeStep?.after(it)
@@ -210,7 +230,7 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
             tooLarge?.let { PolicyTooLarge.problem(it.tooLargeBytes) },
             screenTimeState?.lockProblem,
             screenTimeProblem,
-        )
+        ) + calling?.problems.orEmpty()
         next = next.copy(sim = sim, problems = (next.problems + extra).distinct().take(Enforcement.MAX_PROBLEMS))
 
         // Belay asks for each new waiting app at once, so the parent sees it even if the kid
@@ -236,8 +256,9 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
             usage = done?.usage.orEmpty(),
             dropUsage = policy.screenTime?.measure == false && store.pendingUsageCount() > 0,
             location = located?.write,
+            calls = calling?.write,
         )
-        PolicyTimer.schedule(app, plan.nextChangeAt)
+        PolicyTimer.schedule(app, listOfNotNull(plan.nextChangeAt, calling?.nextAt).minOrNull())
         log(plan, changes, made)
         // Android's screen for a held-back app can't name it: Belay's notice does.
         if (owner && made.isNotEmpty()) WaitingNotice.show(app, made.map { it.label })
@@ -266,7 +287,11 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
         // screen time's minutes, which change every minute the phone is used.
         val report = EnforcementReport.of(store, next)
         lastReport = report
-        return Result(view, reportChanged = comparable(report) != comparable(reportBefore), revoke = located?.revoke == true)
+        // Phase 5: with calls off, a call permission Belay still holds is denied last, like location's.
+        val callsRevoke = policy.calls == null &&
+            DeviceOwnerSetup.unwanted(app, CategoryPermissions.categoriesOn(policy, store.locationState()?.help != null))
+                .any { CategoryPermissions.CATEGORY[it] == DataCategories.CALLS_ID }
+        return Result(view, reportChanged = comparable(report) != comparable(reportBefore), revoke = located?.revoke == true || callsRevoke, calls = calling)
     }
 
     /**
