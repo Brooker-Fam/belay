@@ -1,0 +1,23 @@
+one is set
+ is empty
+either is set
+= compares
+!= compares
+~ contains
+! turns it around
+< is a whole number: 08 is 8
+< counts empty as 0
+unless needs all of them
+braces stay: {8,12} {Not} {a b} {} \{a\} {a
+one pass: {a}
+  set: one-two
+  info indents the first line only:
+like this
+WARNING: a warning
+standard error, as it is
+  > first
+  > second
+! first
+! second
+
+a group's when is read once, when it starts

@@ -22,7 +22,7 @@ no monthly fee and no company that can change or disappear. A parent mostly mana
 asking Claude (or any MCP client) things like "what did they install this week, and is it
 OK?", with a web page as the fallback.
 
-## What exists today (Phases 1 and 2, and parts of 3, 4, 6, 7 and 10)
+## What exists today (Phases 1 and 2, and parts of 3, 4, 6, 7, 8 and 10)
 
 - **`android/`: the device-owner agent.** Provisioned over adb, it becomes device owner and
   blocks its own uninstall. It always shows "This phone is managed by your parent", and its
@@ -96,8 +96,14 @@ OK?", with a web page as the fallback.
   lifts the factory reset and debugging locks offline if the server is ever lost. When
   another user or profile appears (Android's own Parental Controls make one), the phone's
   page says so and a parent can remove it. AI clients can only read these.
+- **`setup-kit/`: setting up a phone without the Android SDK (Phase 8).** A container you
+  build and run on your own computer: it makes the family's release key (once, in a folder of
+  yours), builds and signs Belay, and serves a page on `localhost` that sets up the phone from
+  Chrome over USB (WebUSB, with Tango). `provision.sh` and the kit run the same provisioning
+  plan, held to the same fixtures; not yet tried with a real Pixel 8.
 - **CI:** Android build, unit tests and lint, an Android 17 emulator job that provisions
-  the agent and checks it end to end, and the server's tests and Docker image.
+  the agent and checks it end to end, the server's tests and Docker image, and the setup
+  kit's tests, with an informational emulator job that provisions with the kit's runner.
 - **Docs:** [running the server](docs/server.md), [connecting Claude](docs/mcp.md),
   [privacy](docs/privacy.md), the [threat model](docs/threat-model.md), the
   [device API](docs/protocol.md), and [platform notes](docs/platform-notes.md): every
@@ -152,18 +158,33 @@ docker compose logs belay               # open the one-time setup link it prints
 
 For development, without Docker: `cd server && npm ci --ignore-scripts && BELAY_PUBLIC_URL=http://localhost:8080 npm run dev`.
 
-**2. A phone.** Start with the emulator ([docs/emulator.md](docs/emulator.md)). You need
-JDK 21 and the Android SDK (platform 37.0). On the parent page, choose Add a phone, name
-it, and run the command it shows:
+**2. A phone.** Two ways, with the same steps and checks (one plan,
+[`provision-plan.json`](android/scripts/provision-plan.json)):
 
-```bash
-cd android
-scripts/provision.sh --debug --server https://belay.example.org --code 7KQ2M9XA
-```
+- **The setup kit, without the Android SDK** ([docs/setup-kit.md](docs/setup-kit.md)): with
+  Docker and Chrome or Edge on your computer. It makes your family's release key the first
+  time (kept in the folder you give it, never on the server), builds and signs Belay, and
+  serves a page on `http://localhost:8090` that sets up the phone over USB.
+
+  ```bash
+  docker build -f setup-kit/Dockerfile -t belay-setup .      # from the repository's root
+  mkdir -p ~/.config/belay
+  docker run --rm -it -p 127.0.0.1:8090:8090 -v ~/.config/belay:/keys belay-setup
+  ```
+
+- **With the Android SDK** (JDK 21 and platform 37.0): start with the emulator
+  ([docs/emulator.md](docs/emulator.md)). On the parent page, choose Add a phone, name it,
+  and run the command it shows:
+
+  ```bash
+  cd android
+  scripts/provision.sh --debug --server https://belay.example.org --code 7KQ2M9XA
+  ```
 
 For a real Pixel 8, follow [docs/pixel.md](docs/pixel.md), then the
 [Phase 0](docs/phase0-checklist.md) and [Phase 1](docs/phase1-checklist.md) checklists; a
-release build needs the release key first ([docs/signing.md](docs/signing.md)).
+release build needs the release key first ([docs/signing.md](docs/signing.md)), which the
+setup kit makes for you.
 
 **3. Claude.** Add a custom connector with the URL `https://belay.example.org/mcp`, sign
 in, and approve ([docs/mcp.md](docs/mcp.md)). Then ask: "Is Sam's phone OK, and what did
@@ -175,7 +196,8 @@ they install this week?"
 |---|---|
 | `android/core` | Plain Kotlin: package records, inventory diffs, the reconcile plan, the device API types, the outbox policy. JVM tests. |
 | `android/app` | The agent: device owner, receivers, services, sync, enrollment, the screens. |
-| `android/scripts` | Provisioning, release key, QR test, the emulator test. |
+| `android/scripts` | Provisioning (its plan, `provision-plan.json`, and the plan's fixture tests), release key, QR test, the emulator tests. |
+| `setup-kit/` | Setting up a phone without the Android SDK: the plan's second interpreter, the page, the container ([docs/setup-kit.md](docs/setup-kit.md)). Vitest tests. |
 | `server/` | The family's server: device API, parent pages, OAuth and MCP. Vitest tests. |
 | `docs/` | [server](docs/server.md), [MCP](docs/mcp.md), [privacy](docs/privacy.md), [threat model](docs/threat-model.md), [device API](docs/protocol.md), [platform notes](docs/platform-notes.md), [emulator](docs/emulator.md), [Pixel 8](docs/pixel.md), [Phase 0](docs/phase0-checklist.md), [Phase 1](docs/phase1-checklist.md), [Phase 2](docs/phase2-checklist.md), [Phase 3](docs/phase3-checklist.md) and [Phase 6](docs/phase6-checklist.md) checklists, [signing](docs/signing.md), [prior art](docs/prior-art.md) |
 | `ROADMAP.md` | Phases 2 to 5 and later. |

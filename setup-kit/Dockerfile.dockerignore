@@ -1,0 +1,26 @@
+# The setup kit's image is built from the repository's root (docker build -f setup-kit/Dockerfile .):
+# only what it needs goes in, and never a key.
+*
+!android/
+!setup-kit/
+!LICENSE
+!NOTICE
+
+android/**/build/
+android/.gradle/
+android/.kotlin/
+android/local.properties
+setup-kit/node_modules/
+setup-kit/dist/
+setup-kit/coverage/
+
+**/*.p12
+**/*.jks
+**/*.keystore
+**/*.pem
+**/*.key
+**/signing.properties
+**/.env
+**/.env.*
+**/*.apk
+**/*.aab

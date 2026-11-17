@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Set up a phone for Belay</title>
+    <link rel="stylesheet" href="style.css" />
+    <script type="module" src="app.js"></script>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Set up a phone for Belay</h1>
+        <p>
+          This page makes a freshly reset Android phone a Belay phone: it installs Belay and makes it the phone's
+          manager (Android calls it the "device owner"), with the same steps and checks as
+          <code>android/scripts/provision.sh</code>. It runs on this computer. The page talks to the phone over the USB
+          cable, and nothing goes to the internet.
+        </p>
+      </header>
+
+      <div id="unsupported" class="notice bad" hidden>
+        <p>
+          <strong>This page needs Google Chrome or Microsoft Edge</strong> (or another browser built on Chromium) on a
+          computer. It talks to the phone over USB with WebUSB, which Firefox and Safari don't have, and no browser on an
+          iPhone or iPad does.
+        </p>
+      </div>
+      <div id="insecure" class="notice bad" hidden>
+        <p>
+          <strong>Open this page as <code>http://localhost:8090</code>.</strong> Browsers only allow USB on pages from
+          this computer (localhost) or from https.
+        </p>
+      </div>
+      <div id="load-problem" class="notice bad" hidden></div>
+
+      <section>
+        <h2>1. Get the phone ready</h2>
+        <ol>
+          <li>Factory reset the phone: Settings &gt; System &gt; Reset options &gt; Erase all data.</li>
+          <li>
+            In the setup wizard, <strong>skip every account</strong>: don't add a Google account yet. You add the
+            parent's own account after Belay is set up.
+          </li>
+          <li>
+            Turn on USB debugging: Settings &gt; About phone &gt; tap "Build number" 7 times. Then Settings &gt; System
+            &gt; Developer options &gt; turn on "USB debugging".
+          </li>
+          <li>Plug the phone into this computer with a cable that carries data (some only charge).</li>
+        </ol>
+        <p class="aside">
+          If adb or Android Studio runs on this computer, close it or run <code>adb kill-server</code> first: only one
+          program at a time can use the phone's USB debugging.
+        </p>
+      </section>
+
+      <section>
+        <h2>2. The Belay app</h2>
+        <div id="kit-apk" hidden>
+          <p>The app this setup kit built, signed with your family's key: <strong id="kit-apk-name"></strong></p>
+          <p><a id="kit-apk-save" href="kit/belay.apk" download>Save a copy of this app</a></p>
+        </div>
+        <p id="no-kit-apk" hidden>
+          The setup kit didn't build an app this time. Choose the APK file you built (with
+          <code>android/scripts/build-release.sh</code>, or the kit before).
+        </p>
+        <p>
+          <label for="apk-file">Or choose an APK file on this computer:</label>
+          <input id="apk-file" type="file" accept=".apk,application/vnd.android.package-archive" />
+        </p>
+        <div id="apk-info" class="card" hidden>
+          <p id="apk-summary"></p>
+          <p id="apk-kind"></p>
+          <dl>
+            <dt>App</dt>
+            <dd id="apk-package"></dd>
+            <dt>Signing certificate's SHA-256 (its fingerprint)</dt>
+            <dd><code id="apk-cert"></code></dd>
+            <dt>Signed by</dt>
+            <dd id="apk-dn"></dd>
+          </dl>
+          <p>
+            <label for="apk-compare">
+              Compare it with the SHA-256 you wrote down when your family's key was made. Type or paste it here to check:
+            </label>
+            <input id="apk-compare" type="text" autocomplete="off" spellcheck="false" />
+          </p>
+          <p id="apk-compare-result" aria-live="polite"></p>
+        </div>
+      </section>
+
+      <section>
+        <h2>3. Your family's server <span class="optional">(you can do this later)</span></h2>
+        <p>
+          On your Belay server's parent page, choose <strong>Add a phone</strong>, give it a name, and copy its address
+          and code here. The code works once, for 30 minutes. If you leave both empty, connect the phone later from
+          Belay's own screen on the phone.
+        </p>
+        <p>
+          <label for="server">Server address</label>
+          <input id="server" type="url" placeholder="https://belay.example.org" autocomplete="off" spellcheck="false" />
+        </p>
+        <p>
+          <label for="code">Code</label>
+          <input id="code" type="text" placeholder="7KQ2M9XA" autocomplete="off" spellcheck="false" />
+        </p>
+        <p id="server-problem" class="problem" aria-live="polite"></p>
+      </section>
+
+      <section>
+        <h2>4. Connect the phone</h2>
+        <p>
+          <button id="connect" type="button">Connect the phone</button>
+        </p>
+        <p class="aside">
+          Your browser lists the phones it can see: choose yours. Then look at the phone: it asks "Allow USB debugging?".
+          Tick "Always allow from this computer" (so the restart doesn't ask again) and tap Allow.
+        </p>
+        <p id="connect-status" aria-live="polite"></p>
+      </section>
+
+      <section>
+        <h2>5. Set up the phone</h2>
+        <p>
+          <button id="check" type="button">Check the phone first (changes nothing)</button>
+          <button id="setup" type="button" class="primary">Set up the phone</button>
+        </p>
+        <p id="run-status" aria-live="polite"></p>
+        <ol id="progress"></ol>
+        <div id="log" class="log" aria-live="polite"></div>
+      </section>
+
+      <details>
+        <summary>Everything this page sent to the phone</summary>
+        <pre id="commands"></pre>
+      </details>
+
+      <footer>
+        <p>
+          Belay setup kit. It talks to the phone with Tango (ya-webadb, MIT). The page and everything it uses were built
+          into the kit: it loads nothing from the internet.
+        </p>
+      </footer>
+    </main>
+
+    <dialog id="confirm">
+      <h2 id="confirm-question"></h2>
+      <p id="confirm-warning"></p>
+      <p id="confirm-details"></p>
+      <p class="buttons">
+        <button id="confirm-no" type="button">No, stop here</button>
+        <button id="confirm-yes" type="button" class="primary">Yes, make Belay the phone's manager</button>
+      </p>
+    </dialog>
+  </body>
+</html>

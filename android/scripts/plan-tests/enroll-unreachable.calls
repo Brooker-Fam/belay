@@ -1,0 +1,58 @@
+devices
+shell getprop ro.product.manufacturer
+shell getprop ro.product.model
+shell getprop ro.build.version.release
+shell getprop ro.build.version.sdk
+shell getprop ro.build.version.security_patch
+shell dpm list-owners
+shell dumpsys account
+shell cmd user list -v
+shell pm list users
+install -r -t {apk}
+shell dpm set-device-owner family.brooker.belay/.AdminReceiver
+shell appops set family.brooker.belay GET_USAGE_STATS allow
+shell appops get family.brooker.belay GET_USAGE_STATS
+shell dumpsys deviceidle whitelist +family.brooker.belay
+shell dumpsys deviceidle whitelist
+shell am start -n family.brooker.belay/.ui.MainActivity
+shell dumpsys activity services family.brooker.belay/.service.BelayService
+sleep 1
+shell dumpsys activity services family.brooker.belay/.service.BelayService
+sleep 8
+reboot
+wait-for-device
+shell getprop sys.boot_completed
+sleep 2
+shell getprop sys.boot_completed
+sleep 2
+shell getprop sys.boot_completed
+shell dumpsys activity services family.brooker.belay/.service.BelayService
+sleep 1
+shell dumpsys activity services family.brooker.belay/.service.BelayService
+shell dumpsys deviceidle whitelist
+shell dumpsys deviceidle whitelist
+shell am broadcast -a family.brooker.belay.ENROLL -n family.brooker.belay/.EnrollReceiver --es server 'http://10.0.2.2:8080' --es code '7KQ2M9XA'
+sleep 5
+shell am broadcast -a family.brooker.belay.ENROLL -n family.brooker.belay/.EnrollReceiver --es server 'http://10.0.2.2:8080' --es code '7KQ2M9XA'
+sleep 5
+shell am broadcast -a family.brooker.belay.ENROLL -n family.brooker.belay/.EnrollReceiver --es server 'http://10.0.2.2:8080' --es code '7KQ2M9XA'
+sleep 5
+shell am broadcast -a family.brooker.belay.ENROLL -n family.brooker.belay/.EnrollReceiver --es server 'http://10.0.2.2:8080' --es code '7KQ2M9XA'
+sleep 5
+shell am broadcast -a family.brooker.belay.ENROLL -n family.brooker.belay/.EnrollReceiver --es server 'http://10.0.2.2:8080' --es code '7KQ2M9XA'
+sleep 5
+shell am broadcast -a family.brooker.belay.ENROLL -n family.brooker.belay/.EnrollReceiver --es server 'http://10.0.2.2:8080' --es code '7KQ2M9XA'
+sleep 5
+shell am broadcast -a family.brooker.belay.ENROLL -n family.brooker.belay/.EnrollReceiver --es server 'http://10.0.2.2:8080' --es code '7KQ2M9XA'
+sleep 5
+shell am broadcast -a family.brooker.belay.ENROLL -n family.brooker.belay/.EnrollReceiver --es server 'http://10.0.2.2:8080' --es code '7KQ2M9XA'
+sleep 5
+shell am broadcast -a family.brooker.belay.ENROLL -n family.brooker.belay/.EnrollReceiver --es server 'http://10.0.2.2:8080' --es code '7KQ2M9XA'
+sleep 5
+shell am broadcast -a family.brooker.belay.ENROLL -n family.brooker.belay/.EnrollReceiver --es server 'http://10.0.2.2:8080' --es code '7KQ2M9XA'
+sleep 5
+shell am broadcast -a family.brooker.belay.ENROLL -n family.brooker.belay/.EnrollReceiver --es server 'http://10.0.2.2:8080' --es code '7KQ2M9XA'
+sleep 5
+shell am broadcast -a family.brooker.belay.ENROLL -n family.brooker.belay/.EnrollReceiver --es server 'http://10.0.2.2:8080' --es code '7KQ2M9XA'
+shell dpm list-owners
+shell am get-standby-bucket family.brooker.belay

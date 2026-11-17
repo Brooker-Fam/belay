@@ -1,0 +1,44 @@
+{
+  "name": "A freshly reset phone, the debug build, connected to a server: the whole way, with one retry while the server can't be reached. Most fixtures start from this one.",
+  "plan": "provision",
+  "args": ["--yes", "--server", "http://10.0.2.2:8080", "--code", "7KQ2M9XA", "{apk}"],
+  "apk": {
+    "package": "family.brooker.belay", "testOnly": true, "signed": true,
+    "sha256": "fb72cb7ed181acfc60dfb82e7791dd67725f55ba939616929e1e762c516ef853",
+    "dn": "C=US, O=Android, CN=Android Debug"
+  },
+  "devices": [{"serial": "emulator-5554", "state": "device"}],
+  "install": "Performing Streamed Install\nSuccess",
+  "phone": [
+    {"run": "getprop ro.product.manufacturer", "out": "Google"},
+    {"run": "getprop ro.product.model", "out": "sdk_gphone64_x86_64"},
+    {"run": "getprop ro.build.version.release", "out": "17"},
+    {"run": "getprop ro.build.version.sdk", "out": "37"},
+    {"run": "getprop ro.build.version.security_patch", "out": "2026-10-05"},
+    {"run": "dpm list-owners", "out": ""},
+    {"run": "dpm list-owners", "after": "shell dpm set-device-owner family.brooker.belay/.AdminReceiver", "out": "User 0: admin=family.brooker.belay/.AdminReceiver,DeviceOwner"},
+    {"run": "dumpsys account", "out": "Accounts: 0\n\nAccountManagerService history:"},
+    {"run": "cmd user list -v", "out": "1 users:\n\n0: id=0, name=Owner, type=full.SYSTEM, flags=ADMIN|FULL|INITIALIZED|MAIN|PRIMARY|SYSTEM (running)"},
+    {"run": "pm list users", "out": "Users:\n\tUserInfo{0:Owner:4c13} running"},
+    {"run": "dpm set-device-owner family.brooker.belay/.AdminReceiver", "out": "Success: Device owner set to package ComponentInfo{family.brooker.belay/family.brooker.belay.AdminReceiver}\nActive admin set to component {family.brooker.belay/family.brooker.belay.AdminReceiver}"},
+    {"run": "appops set family.brooker.belay GET_USAGE_STATS allow", "out": ""},
+    {"run": "appops get family.brooker.belay GET_USAGE_STATS", "out": "GET_USAGE_STATS: allow; time=+1s108ms ago"},
+    {"run": "dumpsys deviceidle whitelist +family.brooker.belay", "out": "Added: family.brooker.belay"},
+    {"run": "dumpsys deviceidle whitelist", "out": "system-excidle,com.android.providers.downloads,10045\nsystem,com.android.shell,2000\nuser,family.brooker.belay,10183"},
+    {"run": "am start -n family.brooker.belay/.ui.MainActivity", "out": "Starting: Intent { cmp=family.brooker.belay/.ui.MainActivity }"},
+    {"run": "dumpsys activity services family.brooker.belay/.service.BelayService", "seq": [
+      "ACTIVITY MANAGER SERVICES (dumpsys activity services)\n  (nothing)",
+      "ACTIVITY MANAGER SERVICES (dumpsys activity services)\n  User 0 active services:\n  * ServiceRecord{4f1c2d u0 family.brooker.belay/.service.BelayService c:family.brooker.belay}\n    isForeground=true foregroundId=1 types=0x00000400"
+    ]},
+    {"run": "getprop sys.boot_completed", "after": "reboot", "seq": ["", "", "1"]},
+    {"run": "dumpsys activity services family.brooker.belay/.service.BelayService", "after": "reboot", "seq": [
+      "ACTIVITY MANAGER SERVICES (dumpsys activity services)\n  (nothing)",
+      "ACTIVITY MANAGER SERVICES (dumpsys activity services)\n  User 0 active services:\n  * ServiceRecord{77ab01 u0 family.brooker.belay/.service.BelayService c:family.brooker.belay}\n    isForeground=true foregroundId=1 types=0x00000400"
+    ]},
+    {"run": "am get-standby-bucket family.brooker.belay", "out": "5"},
+    {"run": "am broadcast -a family.brooker.belay.ENROLL -n family.brooker.belay/.EnrollReceiver --es server 'http://10.0.2.2:8080' --es code '7KQ2M9XA'", "seq": [
+      "Broadcasting: Intent { act=family.brooker.belay.ENROLL flg=0x400000 cmp=family.brooker.belay/.EnrollReceiver (has extras) }\nBroadcast completed: result=0, data=\"failed: unreachable (Failed to connect to /10.0.2.2:8080)\"",
+      "Broadcasting: Intent { act=family.brooker.belay.ENROLL flg=0x400000 cmp=family.brooker.belay/.EnrollReceiver (has extras) }\nBroadcast completed: result=-1, data=\"enrolled: \"CI phone\" on 10.0.2.2\""
+    ]}
+  ]
+}

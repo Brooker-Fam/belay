@@ -1,0 +1,4 @@
+Belay: provisioning
+
+STOPPED: No APK at {apk}
+  Build it first: android/scripts/build-release.sh (or ./gradlew :app:assembleDebug with --debug).

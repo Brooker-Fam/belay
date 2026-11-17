@@ -9,6 +9,7 @@ local.properties
 captures/
 node_modules/
 server/dist/
+setup-kit/dist/
 coverage/
 .claude/worktrees/
 

@@ -1,0 +1,17 @@
+{
+  "name": "dpm set-device-owner fails for another reason.",
+  "base": "fresh-debug",
+  "plan": "provision",
+  "args": [
+    "--yes",
+    "{apk}"
+  ],
+  "exit": 1,
+  "phone": [
+    {
+      "run": "dpm set-device-owner family.brooker.belay/.AdminReceiver",
+      "err": "java.lang.IllegalStateException: Trying to set the device owner, but the user is already set up.",
+      "exit": 255
+    }
+  ]
+}

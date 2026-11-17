@@ -1,0 +1,56 @@
+{
+  "format": 1,
+  "note": "Reads, checks, waits, run, change and confirm, for the interpreters' fixture tests.",
+  "package": "family.brooker.belay",
+  "admin": "family.brooker.belay/.AdminReceiver",
+  "steps": [
+    {"kind": "read", "run": ["cmd", "one"], "into": "plain"},
+    {"kind": "say", "text": "trailing newlines go: [{plain}]"},
+    {"kind": "read", "run": ["cmd", "noisy"], "into": "passed"},
+    {"kind": "read", "run": ["cmd", "noisy"], "stderr": "drop", "into": "dropped"},
+    {"kind": "read", "run": ["cmd", "errors"], "stderr": "merge", "into": "merged",
+      "note": "With both, the order of output and standard error isn't fixed in bash (standard error skips ash's tr), so this command only has the second."},
+    {"kind": "say", "text": "passed [{passed}] dropped [{dropped}] merged [{merged}]"},
+    {"kind": "read", "run": ["cmd", "list"], "count": "item {", "into": "items"},
+    {"kind": "read", "run": ["cmd", "list"], "lines": "item {", "indent": "- ", "into": "item_lines"},
+    {"kind": "read", "run": ["cmd", "list"], "tally": "type=([a-z.]+)", "into": "types"},
+    {"kind": "say", "text": "{items} items:\n{item_lines}"},
+    {"kind": "say", "prefix": "  ", "text": "{types}"},
+    {"kind": "read", "run": ["cmd", "empty"], "count": "x", "into": "zero"},
+    {"kind": "read", "run": ["cmd", "empty"], "tally": "(x)", "into": "nothing"},
+    {"kind": "say", "text": "zero={zero} nothing=[{nothing}]"},
+    {"kind": "read", "run": ["cmd", "fails"], "into": "failed"},
+    {"kind": "say", "text": "a read goes on when the command fails: [{failed}]"},
+
+    {"kind": "check", "run": ["cmd", "fails"], "contains": "partial", "into": "contained",
+      "pass": [{"kind": "say", "text": "never: contains needs exit status 0"}],
+      "fail": [{"kind": "say", "text": "contains needs exit status 0: [{contained}]"}]},
+    {"kind": "check", "run": ["cmd", "fails"], "equals": "partial", "into": "equal",
+      "pass": [{"kind": "say", "text": "equals only looks at the output: [{equal}]"}]},
+    {"kind": "check", "run": ["cmd", "lines"], "matches": "^two$",
+      "pass": [{"kind": "say", "text": "matches looks at each line of a command's output"}]},
+    {"kind": "check", "value": "{multi}", "matches": "^[a-z]+$",
+      "fail": [{"kind": "say", "text": "a value must match as a whole"}]},
+    {"kind": "check", "value": "{word}", "matches": "^[a-z]{3}$",
+      "pass": [{"kind": "say", "text": "a regular expression's braces stay"}]},
+
+    {"kind": "wait", "run": ["cmd", "later"], "contains": "ready", "tries": 5, "every": 2, "into": "ready"},
+    {"kind": "say", "text": "waited: [{ready}]"},
+    {"kind": "wait", "run": ["cmd", "never"], "equals": "1", "tries": 2, "every": 1, "into": "never"},
+    {"kind": "say", "text": "gave up: [{never}]"},
+
+    {"kind": "run", "run": ["cmd", "loud"]},
+    {"kind": "run", "run": ["cmd", "loud"], "quiet": true},
+    {"kind": "change", "run": ["cmd", "change"], "success": "^Done",
+      "failures": [
+        {"contains": "nope", "steps": [{"kind": "say", "text": "never: it doesn't contain nope"}]},
+        {"steps": [{"kind": "say", "text": "the first failure that fits: {output}"}]}
+      ]},
+    {"kind": "change", "run": ["cmd", "works"], "success": "^Done",
+      "failures": [{"steps": [{"kind": "say", "text": "never: it worked"}]}]},
+    {"kind": "confirm", "text": "Go on?", "no": ["You said no."]},
+    {"kind": "say", "text": "you said yes"},
+    {"kind": "run", "run": ["cmd", "fails"]},
+    {"kind": "say", "text": "never: a run that fails ends it, with its exit status"}
+  ]
+}

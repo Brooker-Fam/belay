@@ -1,0 +1,13 @@
+{
+  "name": "A --code with a quote in it.",
+  "base": "fresh-debug",
+  "plan": "provision",
+  "exit": 1,
+  "args": [
+    "--server",
+    "https://belay.example.org",
+    "--code",
+    "7KQ2'M9XA",
+    "{apk}"
+  ]
+}

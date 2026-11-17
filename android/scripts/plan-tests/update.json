@@ -1,0 +1,15 @@
+{
+  "name": "Belay is already the device owner: installed as an update, with no question, no dpm and no restart.",
+  "base": "fresh-debug",
+  "plan": "provision",
+  "args": [
+    "--yes",
+    "{apk}"
+  ],
+  "phone": [
+    {
+      "run": "dpm list-owners",
+      "out": "User 0: admin=family.brooker.belay/.AdminReceiver,DeviceOwner"
+    }
+  ]
+}

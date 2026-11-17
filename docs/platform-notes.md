@@ -81,6 +81,10 @@ relying on something new, it goes here first, with a source.
 | V2 | A device owner can list and remove other users and profiles | Confirmed, with one exception | AOSP; Docs; Emulator pending (Phase 10 CI) |
 | V4 | Telling the restrictions Belay set from everyone else's | Confirmed | AOSP; Docs |
 | E2 | `pm create-user` on the CI emulators | Confirmed: up to 4 users on both images | AOSP (goldfish) |
+| X1 | Tango (ya-webadb) runs adb over WebUSB in Chromium, from `localhost`; one program at a time holds the ADB interface | Confirmed; Windows' driver unverified | Docs; package source; the kit's tests; Pixel 8 pending |
+| X2 | `adb install` is a streamed `package install`, and Tango's is the same | Confirmed | AOSP; package source |
+| X3 | An APK's signing certificate, read without apksigner, as apksigner prints it | Confirmed | apksigner 37.0.0; the kit's tests |
+| X4 | The SDK packages AGP 9.5.1 builds Belay with | Confirmed | AGP 9.5.1; Google's SDK repository |
 
 "Emulator" entries were seen in CI: `ci-emulator-test.sh` passed end to end on the API 37.0
 Automated Test Device image (`aosp_atd`, required) from run 8, and on the API 37.0 Google
@@ -1212,6 +1216,102 @@ none.
 
 Belay's consequence: `OtherUsersInstrumentedTest` (emulators only) turns Belay's add-user lock off
 in its own test policy, makes a user, and has `remove_other_users` remove it.
+
+## Setting up without the Android SDK (Phase 8)
+
+Checked on 2026-11-17 for the setup kit ([setup-kit.md](setup-kit.md)). X1 was drafted in
+[the drafts](design/platform-notes-drafts.md) and re-checked here. "The kit's tests" are
+`setup-kit/test`: the plan's fixtures through Tango's adb-server client and a fake adb server,
+and the APK reader against apksigner.
+
+### X1. adb over WebUSB: Tango (ya-webadb)
+
+**Confirmed; the Windows driver is unverified.** Verified on: Docs; package source; the kit's
+tests (Tango's adb-server client); headless Chromium (the page loads, with `navigator.usb`);
+Pixel 8 pending.
+
+- npm registry: `@yume-chan/adb` 2.6.4, `@yume-chan/adb-daemon-webusb` 2.3.2,
+  `@yume-chan/adb-credential-web` 2.1.0, `@yume-chan/adb-server-node-tcp` 2.5.2,
+  `@yume-chan/android-bin` 2.1.0, `@yume-chan/stream-extra` 2.6.1 (with `struct` 2.3.2, `event`
+  2.0.0, `no-data-view` 2.0.0 and `async` 4.2.2); MIT; github.com/yume-chan/ya-webadb, last
+  published 2026-11-06. The kit pins these exactly.
+- tangoadb.dev/tango/daemon/usb/ (version 2.6.2, last updated 29 Aug 2025): "Chromium-based
+  browsers support WebUSB natively." "If Google ADB has already claimed the ADB interface, WebUSB
+  API in Chrome or `usb` package can't claim it again." "Windows doesn't allow opening multiple
+  handles to the same interface at all." The page doesn't mention WinUSB or Google's USB driver.
+- tangoadb.dev/tango/server/ (2.6.2): in Node, Tango "connects to Google ADB Server using TCP
+  sockets"; "Google ADB server must already be running".
+- MDN, WebUSB API [12 Jul 2025]: "available only in secure contexts (HTTPS)". MDN, Secure
+  contexts [14 Sep 2026]: `http://localhost` and hosts in 127.0.0.0/8 are potentially trustworthy,
+  so `http://localhost:8090` is a secure context. Headless Chromium (Playwright's build 1243)
+  reported `isSecureContext` and `navigator.usb` for the kit's page there.
+- In `@yume-chan/adb` 2.6.4: a shell command is the service `shell,v2,raw:<words joined by
+  spaces>` when the device has `shell_v2` (output, errors and exit status come back separately),
+  else `exec:` (output only); `power.reboot()` is `reboot:`; the server client switches to a phone
+  with `host:tport:serial:<serial>` and waits with `wait-for-any-device`. The words are joined by
+  spaces, as adb's own client joins `adb shell`'s arguments, so quoting reaches the phone's shell
+  the same way.
+- developer.android.com/studio/run/win-usb (no date shown): "The Google USB Driver is required to
+  perform adb debugging on Windows with Google devices." It doesn't say which Windows driver that
+  binds the ADB interface to, or whether WebUSB (which needs WinUSB on Windows) can open a Pixel 8
+  without it.
+
+Belay's consequence: the kit's page runs in Chromium browsers only, from `localhost`, and tells
+the parent to stop adb first. To check by hand: a factory-fresh Pixel 8 with Chrome on Linux (with
+the udev rule), macOS and Windows (with and without Google's driver), including the restart.
+
+### X2. `adb install` is a streamed `package install`
+
+**Confirmed.** Verified on: AOSP; package source.
+
+- `packages/modules/adb/client/adb_install.cpp` (`install_app_streamed`): adb prints "Performing
+  Streamed Install", sends `package install <options> -S <size>` over `abb_exec` (or
+  `exec:cmd package install …` without it), streams the APK, and reads one status line; anything
+  but "Success" becomes "failed to install <file>: <status>", which adb prints after "adb: ".
+- `@yume-chan/android-bin` 2.1.0 (`PackageManager.installStream`) sends
+  `abb_exec:package install <options> -r -S <size>` (or `cmd package install …`), streams the APK,
+  and throws the status line when it isn't "Success".
+
+Belay's consequence: the kit installs through the same `package` shell command as `adb install`,
+so restricted permissions are allowlisted the same way (I4). The runners print the same, but for
+adb's two additions around the status line.
+
+### X3. An APK's signing certificate, read without apksigner
+
+**Confirmed.** Verified on: apksigner 37.0.0; the kit's tests.
+
+- source.android.com/docs/security/features/apksigning/v2 and v3: the APK Signing Block sits right
+  before the ZIP central directory; its v2 (`0x7109871a`), v3 (`0xf05368c0`) and v3.1
+  (`0x1b93ad61`) blocks list signers, each with signed data whose second part is the
+  certificates, X.509 DER.
+- apksigner 37.0.0 `verify --print-certs` prints "V3.0 Signer: certificate DN: …" or "V2 Signer:
+  …" (lib.sh reads both forms) and the certificate's SHA-256, lowercase hex. The DN lists the
+  subject's parts in the reverse of their order in the certificate (Java's `X500Name`): Belay's
+  debug build, signed with AGP's debug key, prints "C=US, O=Android, CN=Android Debug", and a key
+  made with `keytool -dname "CN=Android Debug,O=Android,C=US"` prints "CN=Android Debug,
+  O=Android, C=US". The kit's reader gave the same SHA-256 and DN for both, and for made-up v2
+  and v3 APKs.
+- apksigner also verifies the signature; the kit's reader doesn't. Android verifies it when it
+  installs.
+
+Belay's consequence: the kit's page shows the certificate SHA-256 that `make-release-key.sh` and
+`build-release.sh` print, and the plan's debug-key check ("CN=Android Debug") works with either
+order.
+
+### X4. The SDK packages AGP 9.5.1 builds Belay with
+
+**Confirmed.** Verified on: AGP 9.5.1; Google's SDK repository (`repository2-3.xml`, read
+2026-11-17).
+
+- AGP 9.5.1's `com.android.builder.core.ToolsRevisionUtils`: `DEFAULT_BUILD_TOOLS_REVISION` is
+  `MIN_BUILD_TOOLS_REV`, 36.0.0. `compileSdk = 37` needs `platforms;android-37.0`, now revision 2
+  (`platform-37.0_r02.zip`).
+- `cmdline-tools;22.0` is `commandlinetools-linux-15859902_latest.zip`, SHA-256
+  `4e4c464f145a7512b57d088ac6c278c03c9eea610886b35a5e0804e74eedf583` as
+  developer.android.com/studio lists it; the download matched it and the repository's SHA-1.
+
+Belay's consequence: the kit's image installs exactly `platforms;android-37.0` (revision 2) and
+`build-tools;36.0.0`, and stops if Google ships another revision, until it's pinned again.
 
 ---
 

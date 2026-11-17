@@ -1,0 +1,16 @@
+{
+  "name": "Another app is the device owner: stop before changing anything.",
+  "base": "fresh-debug",
+  "plan": "provision",
+  "args": [
+    "--yes",
+    "{apk}"
+  ],
+  "exit": 1,
+  "phone": [
+    {
+      "run": "dpm list-owners",
+      "out": "User 0: admin=com.example.mdm/.AdminReceiver,DeviceOwner"
+    }
+  ]
+}

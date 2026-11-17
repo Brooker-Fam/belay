@@ -1,0 +1,29 @@
+Belay: provisioning
+APK: {apk}
+  test-only (debug) build: no
+  signed by: CN=Belay release key
+  certificate SHA-256: 64ed03ab327f851e45c14054f192a8d594cbb898ec2ef57bb4ff66fef32f1ec1
+  Phone: Google sdk_gphone64_x86_64, Android 17 (API 37), security update 2026-10-05, serial emulator-5554
+  No accounts, one user, no device owner: ready.
+This is a release build. Once it is the device owner, ONLY A FACTORY RESET removes it.
+Installing...
+  If the phone shows a Play Protect prompt, note its exact words for
+  docs/platform-notes.md before you answer it.
+  Performing Streamed Install
+  Success
+Making Belay the device owner...
+  Success: Device owner set to package ComponentInfo{family.brooker.belay/family.brooker.belay.AdminReceiver}
+  Active admin set to component {family.brooker.belay/family.brooker.belay.AdminReceiver}
+Granting usage access (for Phase 3 screen time)...
+  usage access: granted
+Exempting Belay from battery optimization (Doze still applies to everything else)...
+  battery exemption: granted
+Starting Belay...
+
+Result:
+  owners: User 0: admin=family.brooker.belay/.AdminReceiver,DeviceOwner
+  Belay's foreground service is running.
+  standby bucket: 5 (5 means exempted)
+
+Next: on the phone, open Belay. Under Setup checks everything should have a check mark.
+Then continue with docs/phase0-checklist.md.

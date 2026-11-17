@@ -35,6 +35,42 @@ src/app/.well-known/*. Its license:
   SOFTWARE.
 
 
+Bundled code
+------------
+
+The setup kit (setup-kit/) talks to phones with Tango (ya-webadb,
+https://github.com/yume-chan/ya-webadb): the npm packages @yume-chan/adb,
+@yume-chan/adb-daemon-webusb, @yume-chan/adb-credential-web,
+@yume-chan/adb-server-node-tcp, @yume-chan/android-bin,
+@yume-chan/stream-extra, @yume-chan/struct, @yume-chan/event and
+@yume-chan/no-data-view, with @yume-chan/async
+(https://github.com/yume-chan/async). Its page bundles them, and its image
+includes them with their own license files. Their license:
+
+  MIT License
+
+  Copyright (c) 2020-2025 Simon Chan
+  (@yume-chan/async: Copyright (c) 2019 Simon Chan)
+
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in all
+  copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+  SOFTWARE.
+
+
 References
 ----------
 
@@ -60,3 +96,10 @@ The server depends on the npm packages in server/package.json (Hono, the MCP
 TypeScript SDK, better-sqlite3, Zod, @node-rs/argon2, qrcode) and theirs, under
 MIT, ISC and BSD licenses. The Docker image includes them with their own
 license files.
+
+The setup kit depends on Tango (above), and is built with the development
+tools in setup-kit/package.json (TypeScript, ESLint, Vitest, esbuild), which
+aren't part of what it runs. Its image adds a JDK (Eclipse Temurin, GPLv2
+with the Classpath Exception) and the Android SDK's command-line tools,
+platform and build tools, under their own licenses, which building the image
+accepts; none of them is redistributed by this repository.

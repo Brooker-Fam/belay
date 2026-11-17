@@ -1,0 +1,31 @@
+{
+  "name": "Belay's service never starts, and the grants don't stick: no restart, and the result says so.",
+  "base": "fresh-debug",
+  "plan": "provision",
+  "args": [
+    "--yes",
+    "--server",
+    "http://10.0.2.2:8080",
+    "--code",
+    "7KQ2M9XA",
+    "{apk}"
+  ],
+  "phone": [
+    {
+      "run": "dumpsys activity services family.brooker.belay/.service.BelayService",
+      "out": "ACTIVITY MANAGER SERVICES (dumpsys activity services)\n  (nothing)"
+    },
+    {
+      "run": "appops get family.brooker.belay GET_USAGE_STATS",
+      "out": "GET_USAGE_STATS: default"
+    },
+    {
+      "run": "dumpsys deviceidle whitelist",
+      "out": "system-excidle,com.android.providers.downloads,10045"
+    },
+    {
+      "run": "am broadcast -a family.brooker.belay.ENROLL -n family.brooker.belay/.EnrollReceiver --es server 'http://10.0.2.2:8080' --es code '7KQ2M9XA'",
+      "out": "Broadcasting: Intent { act=family.brooker.belay.ENROLL flg=0x400000 cmp=family.brooker.belay/.EnrollReceiver (has extras) }\nBroadcast completed: result=-1, data=\"enrolled: \"CI phone\" on 10.0.2.2\""
+    }
+  ]
+}

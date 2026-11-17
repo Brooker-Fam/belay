@@ -1,0 +1,9 @@
+Belay: provisioning
+APK: {apk}
+  test-only (debug) build: no
+  signed by: C=US, O=Android, CN=Android Debug
+  certificate SHA-256: fb72cb7ed181acfc60dfb82e7791dd67725f55ba939616929e1e762c516ef853
+
+STOPPED: This release APK is signed with a debug key.
+  A device owner can only ever be updated with the key it was installed with.
+  Sign release builds with the family's release key: see docs/signing.md.

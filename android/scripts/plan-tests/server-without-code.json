@@ -1,0 +1,11 @@
+{
+  "name": "--server without --code.",
+  "base": "fresh-debug",
+  "plan": "provision",
+  "exit": 1,
+  "args": [
+    "--server",
+    "https://belay.example.org",
+    "{apk}"
+  ]
+}

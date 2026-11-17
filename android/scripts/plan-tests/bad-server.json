@@ -1,0 +1,13 @@
+{
+  "name": "A --server that could carry more than an address.",
+  "base": "fresh-debug",
+  "plan": "provision",
+  "exit": 1,
+  "args": [
+    "--server",
+    "https://belay.example.org/x;reboot",
+    "--code",
+    "7KQ2M9XA",
+    "{apk}"
+  ]
+}

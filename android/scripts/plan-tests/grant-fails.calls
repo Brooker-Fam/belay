@@ -1,0 +1,13 @@
+devices
+shell getprop ro.product.manufacturer
+shell getprop ro.product.model
+shell getprop ro.build.version.release
+shell getprop ro.build.version.sdk
+shell getprop ro.build.version.security_patch
+shell dpm list-owners
+shell dumpsys account
+shell cmd user list -v
+shell pm list users
+install -r -t {apk}
+shell dpm set-device-owner family.brooker.belay/.AdminReceiver
+shell appops set family.brooker.belay GET_USAGE_STATS allow

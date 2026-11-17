@@ -1,0 +1,19 @@
+{
+  "name": "The server can't be reached for a minute: twelve tries, five seconds apart, then what to do.",
+  "base": "fresh-debug",
+  "plan": "provision",
+  "args": [
+    "--yes",
+    "--server",
+    "http://10.0.2.2:8080",
+    "--code",
+    "7KQ2M9XA",
+    "{apk}"
+  ],
+  "phone": [
+    {
+      "run": "am broadcast -a family.brooker.belay.ENROLL -n family.brooker.belay/.EnrollReceiver --es server 'http://10.0.2.2:8080' --es code '7KQ2M9XA'",
+      "out": "Broadcasting: Intent { act=family.brooker.belay.ENROLL flg=0x400000 cmp=family.brooker.belay/.EnrollReceiver (has extras) }\nBroadcast completed: result=0, data=\"failed: unreachable (Failed to connect to /10.0.2.2:8080)\""
+    }
+  ]
+}
