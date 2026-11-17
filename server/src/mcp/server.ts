@@ -53,6 +53,7 @@ import { LIFTABLE, MAX_PENDING_PROPOSALS, PROPOSAL_KINDS, changeWords, createPro
 import { recoveryState, usableKey } from "../family/recovery.js";
 import { pendingRequestCount, recentRequests, type StoredRequestStatus, unseenHelp } from "../family/requests.js";
 import { registerScreenTimeTools } from "./screentime.js";
+import { callSettings, contactWithNumber } from "../family/calls/store.js";
 import { locationWords, registerLocationTools } from "./location.js";
 import { describeFix } from "../family/location/describe.js";
 import { listPlaces, locationSettings } from "../family/location/store.js";
@@ -614,10 +615,10 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
     {
       title: "The kid's requests",
       description:
-        "What the kid asked for from Belay's screen on the phone: \"I need help\" (urgent: these come first until a parent has seen them), \"Talk to my parent\", an app they want to use, more time for a limit today, or their answer to the family agreement (that needs the agreement category too), with their words, and each answer: waiting for a parent, approved, declined, let's talk, withdrawn by the kid, or for help, whether a parent saw it. Then the last 30 days. Only a parent answers them, or marks help seen, on the parent page; you can summarize them and suggest an answer.",
+        "What the kid asked for from Belay's screen on the phone: \"I need help\" (urgent: these come first until a parent has seen them), \"Talk to my parent\", an app they want to use, more time for a limit today, a contact to add (the number needs the Calls category), or their answer to the family agreement (that needs the agreement category too), with their words, and each answer: waiting for a parent, approved, declined, let's talk, withdrawn by the kid, or for help, whether a parent saw it. Then the last 30 days. Only a parent answers them, or marks help seen, on the parent page; you can summarize them and suggest an answer.",
       inputSchema: {
         device: deviceParam.optional().describe("Only this phone; all phones when left out"),
-        kind: z.enum(["help", "talk", "app", "more_time", "agreement"]).optional().describe("Only this kind of request"),
+        kind: z.enum(["help", "talk", "app", "more_time", "agreement", "contact"]).optional().describe("Only this kind of request"),
         status: z.enum(["pending", "approved", "declined", "talk", "withdrawn"]).optional().describe("Only requests with this answer; pending means waiting for a parent"),
       },
       annotations: READ,
@@ -635,6 +636,7 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
       const showApps = scopeOn("apps");
       const showAgreement = scopeOn("agreement");
       const showLocation = scopeOn("location");
+      const showNumbers = scopeOn("calls");
       const requests = recentRequests(db, deps.now(), { deviceId, kind, status, limit: 100 }).filter((r) => r.kind !== "agreement" || showAgreement);
       const limitNames = new Map<string, Map<string, string>>();
       const limitName = (phoneId: string, id: string): string | null => {
@@ -719,6 +721,20 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
               ...answer,
             };
           }
+          if (r.kind === "contact") {
+            // The number is someone else's: only with the Calls category on.
+            const existing = showNumbers ? contactWithNumber(db, r.deviceId, r.contactNumber) : null;
+            return {
+              ...common,
+              kind: "add a contact",
+              ...(r.withdrawnAt !== null ? { withdrawn: iso(Math.min(r.withdrawnAt, r.updatedAt)) } : {}),
+              ...(showNumbers ? {} : { number: "hidden: a parent turned off AI access to calls" }),
+              ...(existing ? { already_a_contact: true } : {}),
+              ...(callSettings(db, r.deviceId)?.enabled ? {} : { calls: "off on this phone: a contact rings once a parent turns calls on" }),
+              untrusted: { name: r.contactName, ...(showNumbers ? { number: r.contactNumber } : {}), ...(r.reason ? { reason: r.reason } : {}), ...(existing ? { existing_contact: existing.name } : {}) },
+              ...answer,
+            };
+          }
           const decision = showApps ? currentDecision(db, r.deviceId, r.package) : null;
           const app = showApps ? getApp(db, r.deviceId, r.package) : null;
           return {
@@ -737,7 +753,7 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
           };
         }),
         ...(showAgreement ? {} : { note: "Answers to the family agreement are hidden: a parent turned off AI access to the stage and agreement." }),
-        how_they_are_answered: `Only a parent answers, on the parent page (${parentsPage("/requests")}): for more time, 15, 30 or 60 minutes, let's talk, or no; for help, a parent marks it seen. You can summarize them and suggest an answer. To suggest allowing an app, use propose_change with kind allow_app: the parent still decides.`,
+        how_they_are_answered: `Only a parent answers, on the parent page (${parentsPage("/requests")}): for more time, 15, 30 or 60 minutes, let's talk, or no; for a contact, approving adds them; for help, a parent marks it seen. You can summarize them and suggest an answer. To suggest allowing an app, use propose_change with kind allow_app: the parent still decides.`,
       });
     },
   );

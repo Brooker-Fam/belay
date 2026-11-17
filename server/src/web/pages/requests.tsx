@@ -47,6 +47,8 @@ function subject(r: RequestView, limitName: LimitNames): string {
       return r.seenAt !== null ? `Needed help: seen${r.seenBy ? ` by ${r.seenBy}` : ""}` : "Needed help";
     case "talk":
       return "Would like to talk";
+    case "contact":
+      return `Add ${r.contactName} (${r.contactNumber}) as a contact`;
   }
 }
 
