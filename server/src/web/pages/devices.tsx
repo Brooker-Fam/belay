@@ -256,7 +256,13 @@ const unreviewedText = (app: App): string | null => {
 
 const AppItem: FC<{ app: App; deviceId: string; view: View; rule: AppRule; request?: RequestView }> = ({ app, deviceId, view, rule, request }) => (
   <div class="app">
-    <div>{app.unreviewed && <input type="checkbox" name="package" value={app.package} aria-label={`Select ${app.label}`} />}</div>
+    <div>
+      {app.unreviewed && (
+        <label class="pick">
+          <input type="checkbox" name="package" value={app.package} aria-label={`Select ${app.label}`} />
+        </label>
+      )}
+    </div>
     <div>
       <div class="row">
         <a class="name" href={`/devices/${deviceId}/apps/${encodeURIComponent(app.package)}`}>

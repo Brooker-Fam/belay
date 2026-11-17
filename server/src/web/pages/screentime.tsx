@@ -112,7 +112,7 @@ export const HourChart: FC<{ day: UsageDayView; zone: string }> = ({ day, zone }
         <line class="grid" x1="0" x2={W} y1={BASE - 60 * scale} y2={BASE - 60 * scale} />
         <line class="grid" x1="0" x2={W} y1={BASE} y2={BASE} />
         {day.byHour.map((minutes, h) => (
-          <g tabindex="0">
+          <g>
             <title>{`${hourWords(h)}: ${minutes} min${gaps.has(h) ? ". Belay couldn't count part of this hour" : ""}`}</title>
             <rect class="hit" x={h * COLUMN} y="0" width={COLUMN} height={BASE} />
             {gaps.has(h) && <rect class="gap-band" x={h * COLUMN + 1} y={TOP} width={COLUMN - 2} height={BASE - TOP} />}

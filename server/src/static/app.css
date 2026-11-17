@@ -51,7 +51,7 @@ body { margin: 0; background: var(--bg); color: var(--text); overflow-wrap: brea
 a { color: var(--accent); }
 :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 /* For the keyboard: the first Tab shows it, Enter skips the menu. */
-.skip { position: absolute; left: 16px; top: 8px; z-index: 1; padding: 10px 16px; border-radius: 8px; background: var(--card); color: var(--accent); font-weight: 600; transform: translateY(-200%); }
+.skip { position: absolute; left: 16px; top: 8px; z-index: 1; min-height: var(--tap); padding: 10px 16px; border-radius: 8px; background: var(--card); color: var(--accent); font-weight: 600; transform: translateY(-200%); }
 .skip:focus { transform: none; }
 header.top { background: var(--card); border-bottom: 1px solid var(--line); }
 header.top .bar { max-width: 960px; margin: 0 auto; padding: 4px 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 0 18px; }
@@ -67,6 +67,8 @@ footer { max-width: 960px; margin: 0 auto; padding: 16px; color: var(--muted); f
 h1 { font-size: 1.5rem; margin: 8px 0 16px; }
 h2 { font-size: 1.15rem; margin: 24px 0 10px; }
 h3 { font-size: 1rem; margin: 16px 0 8px; }
+/* A heading that's a card's title, the size of the card's words. */
+h2.in-card { font-size: 1rem; margin: 0; }
 p { margin: 0 0 12px; }
 .muted { color: var(--muted); }
 .small { font-size: 0.875rem; }
@@ -133,6 +135,9 @@ pre { background: var(--chip); padding: 10px 12px; border-radius: 8px; overflow-
 .applist .app { display: grid; grid-template-columns: auto 1fr; gap: 0 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
 .applist .app:last-child { border-bottom: none; }
 .applist .name { font-weight: 600; overflow-wrap: anywhere; }
+/* The checkbox for "Mark selected reviewed": a 44px target around it. */
+.applist .pick { display: flex; align-items: center; justify-content: center; width: var(--tap); height: var(--tap); margin: -11px -8px 0 -12px; }
+.applist .pick input { width: 1.25em; height: 1.25em; margin: 0; }
 /* Package names and numbers break only where they must, so a phone number moves to the next line whole. */
 .pkg { color: var(--muted); font-size: 0.8rem; overflow-wrap: anywhere; }
 .digest { overflow-wrap: anywhere; }
@@ -218,7 +223,7 @@ svg.hours .grid { stroke: var(--line); stroke-width: 1; }
 svg.hours .gap-band { fill: url(#hatch); }
 svg.hours .hatch-line { stroke: var(--gap); stroke-width: 1.5; }
 svg.hours .hit { fill: transparent; }
-svg.hours g:hover .col, svg.hours g:focus .col { opacity: 0.8; }
+svg.hours g:hover .col { opacity: 0.8; }
 .axis { display: flex; justify-content: space-between; color: var(--muted); font-size: 0.8rem; margin-top: 2px; }
 .key { display: inline-block; width: 12px; height: 12px; vertical-align: -1px; margin-right: 4px; border-radius: 2px; }
 .key.used { background: var(--bar); }
