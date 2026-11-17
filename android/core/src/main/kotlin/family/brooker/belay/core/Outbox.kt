@@ -7,13 +7,14 @@ import java.time.format.DateTimeParseException
 
 /**
  * What the outbox holds: app events, inventory snapshots, the kid's requests (Phase 2), usage
- * days (Phase 3), and fixes and place events (Phase 4). Usage goes in a lane of its own
- * ([OutboxPolicy.lane]): each day replaces the server's, so it needs no order, and a server
- * without `POST /usage` yet must not hold back anything else. Fixes and place events share a third
- * lane, for the same reason (`POST /locations`, idempotent by each item's id); a place event goes
- * after the fix it names.
+ * days (Phase 3), fixes and place events (Phase 4), and call records (Phase 5). Usage goes in a
+ * lane of its own ([OutboxPolicy.lane]): each day replaces the server's, so it needs no order, and
+ * a server without `POST /usage` yet must not hold back anything else. Fixes and place events share
+ * a third lane, for the same reason (`POST /locations`, idempotent by each item's id); a place event
+ * goes after the fix it names. Call records have a fourth (`POST /calls`, idempotent by id), so a
+ * server from before Phase 5 (404, tried again later) holds back nothing else.
  */
-enum class OutboxType { EVENT, SNAPSHOT, REQUEST, USAGE, FIX, PLACE_EVENT }
+enum class OutboxType { EVENT, SNAPSHOT, REQUEST, USAGE, FIX, PLACE_EVENT, CALL }
 
 /**
  * One item waiting to be sent. [id]s grow in the order the agent made the items, and
@@ -86,13 +87,27 @@ object OutboxPolicy {
      */
     const val MAX_PENDING_LOCATIONS = 2000
 
+    /** Phase 5: well under the server's 128 KB limit for `POST /api/v1/calls`. */
+    const val MAX_CALLS_BODY_BYTES = 96 * 1024
+
+    /** `{"calls":[` and `]}` around the comma-separated records. */
+    const val CALLS_WRAPPER_BYTES = 12
+
+    /** The server takes at most 500 records in one request. */
+    const val MAX_CALLS_PER_REQUEST = 500
+
+    /** Unsent call records kept, the newest; older ones give way (weeks of calls offline). */
+    const val MAX_PENDING_CALLS = 2000
+
     /**
      * The lanes the outbox is sent in: everything in order, then usage on its own (Phase 3), then
-     * fixes and place events (Phase 4). A failure in one holds back only the rest of that lane.
+     * fixes and place events (Phase 4), then call records (Phase 5). A failure in one holds back
+     * only the rest of that lane.
      */
     fun lane(type: OutboxType): Int = when (type) {
         OutboxType.USAGE -> 1
         OutboxType.FIX, OutboxType.PLACE_EVENT -> 2
+        OutboxType.CALL -> 3
         else -> 0
     }
 
@@ -183,12 +198,14 @@ object OutboxPolicy {
             OutboxType.EVENT -> WireLimits.MAX_EVENTS_PER_REQUEST
             OutboxType.USAGE -> MAX_USAGE_DAYS_PER_REQUEST
             OutboxType.FIX -> MAX_LOCATIONS_PER_REQUEST
+            OutboxType.CALL -> MAX_CALLS_PER_REQUEST
             else -> WireLimits.MAX_REQUESTS_PER_REQUEST
         }
         val byteLimit = maxBytes ?: when (type) {
             OutboxType.EVENT -> MAX_EVENTS_BODY_BYTES
             OutboxType.USAGE -> MAX_USAGE_BODY_BYTES
             OutboxType.FIX -> MAX_LOCATIONS_BODY_BYTES
+            OutboxType.CALL -> MAX_CALLS_BODY_BYTES
             else -> MAX_REQUESTS_BODY_BYTES
         }
         var count = 0
@@ -196,6 +213,7 @@ object OutboxPolicy {
             OutboxType.EVENT -> EVENTS_WRAPPER_BYTES
             OutboxType.USAGE -> USAGE_WRAPPER_BYTES
             OutboxType.FIX -> LOCATIONS_WRAPPER_BYTES
+            OutboxType.CALL -> CALLS_WRAPPER_BYTES
             else -> REQUESTS_WRAPPER_BYTES
         }.toLong()
         while (from + count < queue.size && count < maxCount) {
