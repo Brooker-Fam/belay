@@ -5,17 +5,24 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import family.brooker.belay.core.AgentState
 import family.brooker.belay.core.AppChange
+import family.brooker.belay.core.Applied
 import family.brooker.belay.core.Baseline
 import family.brooker.belay.core.ChangeCursor
 import family.brooker.belay.core.ChangeKind
 import family.brooker.belay.core.Detection
 import family.brooker.belay.core.Heartbeat
 import family.brooker.belay.core.InventoryRequest
+import family.brooker.belay.core.KidRequest
+import family.brooker.belay.core.Lock
 import family.brooker.belay.core.OutboxPolicy
 import family.brooker.belay.core.PackageRecord
 import family.brooker.belay.core.VersionRef
+import family.brooker.belay.core.WireAppPolicy
 import family.brooker.belay.core.WireDevice
 import family.brooker.belay.core.WireHealth
+import family.brooker.belay.core.WireNewApps
+import family.brooker.belay.core.WirePolicy
+import family.brooker.belay.core.WireRequest
 import family.brooker.belay.core.toWire
 import family.brooker.belay.store.AgentStore
 import family.brooker.belay.store.BelayDatabase
@@ -198,6 +205,48 @@ class AgentStoreInstrumentedTest {
         assertFalse(file.exists())
         store.importPhase0() // nothing left to import
         assertEquals(1, store.recentChanges(10).size)
+    }
+
+    // Phase 2.
+
+    @Test
+    fun aNewerPolicyReplacesTheStoredOneAndAnOlderOneOnlyFromTheLongPoll() {
+        assertTrue(store.savePolicy(WirePolicy(version = 3), fromLongPoll = false, at = T0))
+        assertFalse(store.savePolicy(WirePolicy(version = 3), fromLongPoll = true, at = T0))
+        assertFalse(store.savePolicy(WirePolicy(version = 2), fromLongPoll = false, at = T0))
+        assertEquals(3, store.policy()?.version)
+        assertTrue(store.savePolicy(WirePolicy(version = 2, apps = WireAppPolicy(WireNewApps.ASK)), fromLongPoll = true, at = T0))
+        assertEquals(WireNewApps.ASK, store.policy()?.apps?.newApps)
+    }
+
+    @Test
+    fun whatBelayAppliedSurvivesAsWritten() {
+        val applied = Applied(policyVersion = 4, appliedAt = T0, suspended = setOf("com.example.a"), locks = setOf(Lock.SAFE_BOOT))
+        store.commitEnforcement(applied, emptyList(), T0)
+        assertEquals(applied, store.applied())
+    }
+
+    @Test
+    fun requestsQueueBehindTheEventsBeforeThemAndAResendReplacesAnUnsentOne() {
+        val a = app("com.example.a")
+        store.commit(step(Baseline(), Baseline(), listOf(change("e1", ChangeKind.INSTALLED, a))))
+        val asked = KidRequest("request-1", a.packageName, a.label, null, T0)
+        store.commitEnforcement(Applied(policyVersion = 1), listOf(asked), T0)
+        assertEquals(listOf(OutboxRow.TYPE_EVENT, OutboxRow.TYPE_REQUEST), store.queue().map { it.type })
+
+        // The kid writes why before the first send went: only the newer send waits.
+        store.commitEnforcement(null, listOf(asked.copy(reason = "For school", revision = 1)), T0 + 1)
+        val queued = store.requestsQueuedFor(a.packageName)
+        assertEquals(1, queued.size)
+        assertEquals("request:request-1:1", queued.single().itemId)
+        val wire = lenient.decodeFromString(WireRequest.serializer(), store.requestPayloads(listOf(queued.single().id)).single())
+        assertEquals("request-1", wire.id)
+        assertEquals("For school", wire.reason)
+        assertEquals(listOf("For school"), store.requests().map { it.reason })
+
+        store.markSent(store.queue().map { it.id }, T0 + 2)
+        assertTrue(store.queue().isEmpty())
+        assertEquals(OutboxRow.STATE_SENT, store.requestsQueuedFor(a.packageName).single().state)
     }
 
     private companion object {

@@ -6,28 +6,39 @@ import android.util.Log
 import family.brooker.belay.Agent
 import family.brooker.belay.core.AgentState
 import family.brooker.belay.core.AppChange
+import family.brooker.belay.core.Applied
 import family.brooker.belay.core.Baseline
 import family.brooker.belay.core.ChangeCursor
 import family.brooker.belay.core.Heartbeat
 import family.brooker.belay.core.InventoryRequest
+import family.brooker.belay.core.KidRequest
 import family.brooker.belay.core.OutboxPolicy
 import family.brooker.belay.core.PackageRecord
+import family.brooker.belay.core.PolicyRules
 import family.brooker.belay.core.Reconcile
+import family.brooker.belay.core.Requests
 import family.brooker.belay.core.Wire
 import family.brooker.belay.core.WireEvent
+import family.brooker.belay.core.WirePolicy
+import family.brooker.belay.core.WireRequest
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
 import java.io.File
 
 /**
  * The agent's storage, on top of Room. The agent thread is the only writer of the baseline,
- * the change log and the heartbeats, and the only one that adds to the outbox; the sync
- * thread marks outbox items sent, failed or dropped. SQLite transactions keep both safe.
+ * the change log, the heartbeats, what Belay applied and the kid's requests, and the only
+ * one that adds to the outbox; the sync thread marks outbox items sent, failed or dropped;
+ * the long-poll and the sync thread store the policy; the Private DNS thread writes its own
+ * row. SQLite transactions keep all of them safe.
  */
 class AgentStore internal constructor(private val db: BelayDatabase, private val noBackupDir: File) {
     private val inventory = db.inventory()
     private val log = db.log()
     private val outbox = db.outbox()
+    private val enforcement = db.enforcement()
 
     /** What one agent step found, written in one transaction. */
     data class Step(
@@ -137,8 +148,13 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
     fun queue(): List<QueuedRow> = outbox.queue(OutboxPolicy.MAX_PENDING_EVENTS + 10)
 
     /** The events' JSON, in [ids] order. */
-    fun eventPayloads(ids: List<Long>): List<String> =
-        ids.chunked(CHUNK).flatMap { outbox.eventPayloads(it) }.sortedBy { it.id }.map { it.payload }
+    fun eventPayloads(ids: List<Long>): List<String> = payloads(ids, OutboxRow.TYPE_EVENT)
+
+    /** The requests' JSON (WireRequests), in [ids] order. */
+    fun requestPayloads(ids: List<Long>): List<String> = payloads(ids, OutboxRow.TYPE_REQUEST)
+
+    private fun payloads(ids: List<Long>, type: String): List<String> =
+        ids.chunked(CHUNK).flatMap { outbox.payloads(it, type) }.sortedBy { it.id }.map { it.payload }
 
     /** A payload read in parts, so a large snapshot never has to fit in one CursorWindow. */
     fun payload(id: Long): String? {
@@ -155,7 +171,7 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
     fun markSent(ids: List<Long>, at: Long) {
         db.runInTransaction {
             ids.chunked(CHUNK).forEach {
-                outbox.markEventsSent(it, at)
+                outbox.markItemsSent(it, at)
                 outbox.deleteSnapshots(it)
             }
         }
@@ -182,6 +198,77 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
     fun countsByState(): Map<String, Int> = outbox.countsByState().associate { it.state to it.count }
 
     fun eventsFor(packageName: String): List<OutboxRow> = outbox.eventsFor(packageName)
+
+    fun requestsQueuedFor(packageName: String): List<OutboxRow> = outbox.requestsFor(packageName)
+
+    // Phase 2: the policy, what Belay applied, the kid's requests, Private DNS.
+
+    /** The last policy the phone got, or null before the first (or if it can't be read). */
+    fun policy(): WirePolicy? = enforcement.policy()?.let { decode(it.policy, WirePolicy.serializer()) }
+
+    /** The policy as the screen watches it. */
+    val policyFlow: Flow<WirePolicy?>
+        get() = enforcement.policyFlow().map { row -> row?.let { decode(it.policy, WirePolicy.serializer()) } }
+
+    /**
+     * Keeps [incoming] if it replaces the stored policy (core's PolicyRules), in one
+     * transaction, so the long-poll and a check-in can't race. True when it was kept.
+     */
+    fun savePolicy(incoming: WirePolicy, fromLongPoll: Boolean, at: Long): Boolean = db.runInTransaction<Boolean> {
+        if (!PolicyRules.replaces(policy(), incoming, fromLongPoll)) return@runInTransaction false
+        enforcement.setPolicy(PolicyRow(version = incoming.version, policy = Wire.json.encodeToString(WirePolicy.serializer(), incoming), receivedAt = at))
+        true
+    }
+
+    /** What Belay applied; empty before the first policy. */
+    fun applied(): Applied = enforcement.enforcement()?.let { decode(it.applied, Applied.serializer()) } ?: Applied()
+
+    /** The kid's requests, newest first. */
+    fun requests(): List<KidRequest> = enforcement.requests().mapNotNull { decode(it.request, KidRequest.serializer()) }
+
+    /**
+     * What one enforcement step did, in one transaction: what Belay now holds, and the
+     * requests it made or the kid sent, each queued for the server behind everything older.
+     */
+    fun commitEnforcement(applied: Applied?, requests: List<KidRequest>, at: Long) {
+        db.runInTransaction {
+            if (applied != null) {
+                enforcement.setEnforcement(EnforcementRow(applied = json.encodeToString(Applied.serializer(), applied), updatedAt = at))
+            }
+            if (requests.isNotEmpty()) {
+                enforcement.upsertRequests(
+                    requests.map { RequestRow(it.id, it.packageName, json.encodeToString(KidRequest.serializer(), it), it.askedAt) },
+                )
+                requests.forEach { outbox.deletePendingRequestSends("request:${it.id}:") }
+                outbox.insert(
+                    requests.map {
+                        OutboxRow(
+                            type = OutboxRow.TYPE_REQUEST,
+                            itemId = Requests.itemId(it),
+                            packageName = it.packageName,
+                            payload = Wire.json.encodeToString(WireRequest.serializer(), Requests.toWire(it)),
+                            createdAt = at,
+                        )
+                    },
+                )
+            }
+            enforcement.pruneRequests(at - Requests.KEEP_MS)
+        }
+    }
+
+    /** What the Private DNS thread last did; null before it ever ran. */
+    fun privateDns(): PrivateDnsRow? = enforcement.privateDns()
+
+    /** For the Private DNS thread only. */
+    fun savePrivateDns(row: PrivateDnsRow) = enforcement.setPrivateDns(row)
+
+    private fun <T> decode(text: String, serializer: KSerializer<T>): T? = try {
+        json.decodeFromString(serializer, text)
+    } catch (e: IllegalArgumentException) {
+        // Unreadable (a bug, or a downgrade): treated as absent, and the next step rewrites it.
+        Log.e(Agent.TAG, "stored ${serializer.descriptor.serialName} unreadable", e)
+        null
+    }
 
     /** Forgets sent and dropped items after a while. */
     fun pruneFinished(now: Long) = outbox.pruneFinished(now - OutboxPolicy.KEEP_FINISHED_MS, OutboxPolicy.MAX_FINISHED)
