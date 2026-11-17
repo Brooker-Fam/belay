@@ -4,6 +4,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import family.brooker.belay.core.InstallSource
 import family.brooker.belay.core.SensitivePermissions
+import family.brooker.belay.health.DeviceStatus
 import family.brooker.belay.health.HealthReader
 import family.brooker.belay.inventory.PackageReader
 import org.junit.Assert.assertEquals
@@ -70,5 +71,16 @@ class InventoryInstrumentedTest {
         assertTrue(health.permissions.isNotEmpty())
         health.permissions.forEach { assertTrue("${it.name} not granted by policy", it.granted && it.fixedByPolicy) }
         assertTrue("managed notice can't show", health.notificationsShown)
+    }
+
+    @Test
+    fun deviceStatusIsComplete() {
+        val device = DeviceStatus.read(context, HealthReader(context).read())
+        assertEquals(37, device.sdk)
+        assertTrue(device.sdkFull.startsWith("37"))
+        assertTrue(device.timezone.isNotEmpty())
+        assertTrue(device.storageTotalBytes!! > 0)
+        assertTrue(device.storageFreeBytes!! in 0..device.storageTotalBytes!!)
+        assertEquals(BuildConfig.VERSION_NAME, device.agentVersionName)
     }
 }

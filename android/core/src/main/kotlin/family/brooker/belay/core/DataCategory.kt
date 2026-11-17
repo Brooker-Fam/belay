@@ -32,9 +32,11 @@ object DataCategories {
         id = "device_status",
         title = "How Belay and the phone are doing",
         details = listOf(
-            "The phone's model, Android version and security update date",
+            "The phone's model, Android version and security update date, and Belay's version",
             "Whether Belay is still set up and has the permissions it needs",
-            "When the phone last restarted",
+            "When the phone last restarted, and how many times it has started",
+            "The battery level and whether it's charging, and how much storage is free",
+            "The phone's time zone, and its clock, to check that the time is right",
         ),
     )
 }
