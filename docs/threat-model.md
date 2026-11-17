@@ -71,6 +71,30 @@ describes them by the family's places itself, with no outside service.
 | Send made-up fixes (with the phone's token) | Kept only as the rules ask: a periodic fix only in periodic mode within its hours, a check's fix only for one of this phone's own checks, a place event only for one of its places; at most 200 of each in 64 KB a call, rate limited per phone. Lost-mode and help fixes are always kept, as the kid's own report. |
 | Get the parent's AI to change location | No tool and no proposal changes the mode, the places, keeping location on or lost mode. An AI app may only check where the phone is, with the Location category on, and the kid sees each check. |
 
+## The kid and calls (Phase 5)
+
+Off until a parent turns calls on; then Belay is the phone app and decides who rings, in the
+phone's own code, with 911, emergency numbers and 988 always allowed there, never from the
+policy. The server keeps the rules, the contacts and the numbers, and call records only while a
+parent records calls.
+
+| What they could do | What Belay does |
+|---|---|
+| Change the default phone app back, or install another dialer | Phase 2's `config_default_apps` lock and app approval; the phone reports when Belay isn't the phone app, and the parent page and daily summary say "Calls are going through the phone's own app". |
+| Break Belay's dialer to get unfiltered calls | Telecom falls back to the phone's own dialer, on purpose (a phone that can't take calls is worse); the problem is reported plainly, as above. |
+| Have a stranger spoof a contact's number | A number that fails the carrier's check counts as unknown (the phone's rule). |
+| Ask for a contact with words meant for the AI | The name and reason are `untrusted` for AI clients (principle 3), and no AI tool answers a contact request: only a parent approves it, and may change the name first. |
+| Flood contact requests | At most 60 wait per phone (one per number: a new one for the same number takes the old one's place); past that, 429. Notices are capped per phone. |
+| Send made-up call records (with the phone's token) | Kept only while the rules record calls, at most 500 in 128 KB a call, rate limited per phone apart from its other calls, and at most 1000 kept a day. A record naming an emergency number, 988 or a private number is never kept, in any form. |
+| Call 988, or a helpline, without a parent knowing | By design: Belay never records calls with 911, emergency numbers, 988 or the family's private numbers, the server drops any record of one it gets, and no count a parent sees says that one was dropped. |
+
+| Who | Risk | What Belay does |
+|---|---|---|
+| A parent, or the parent's AI app, blocking 911 or 988 | The kid can't reach help. | The phone allows them in its own code whatever the policy says, and the server refuses to put an emergency number or 988 (988's full number included) in `blocked_numbers`, saying why, for parents, the CLI and AI apps alike. |
+| The parent's AI app, steered by a prompt injection | Loosening who can call the kid, or cutting a parent off. | An AI app applies a calls change only when every part tightens (the classifier in `family/calls/classify.ts`); adding a contact, unblocking, and anything that takes from a parent contact (who always rings and is on the emergency card) are proposals a parent approves, checked again when approved. It can't turn calls on or off, record them, or touch private numbers, not even as a proposal, and can't block a contact's number or one on the emergency card. |
+| The AI provider (Phase 5) | Learning who the kid talks to, and other people's numbers. | Nothing of the records or any number while the `calls` scope is off (the default for every family): AI clients see the rules and the contacts' names. Which numbers are private is never shown to them. |
+| An unsafe adult in the home | Learning that the kid called 988. | Belay never records 988 calls or texts, the server drops any record of one and its log names no number or phone, and the kid's screen says so. |
+
 ## The kid's side (Phase 7)
 
 | What they could do | What Belay does |
@@ -92,7 +116,7 @@ describes them by the family's places itself, with no outside service.
 | Whoever gets a phone's token (a stolen or sold phone) | Sending fake data, including text meant for the parent's AI. | The parent disconnects the phone on its page: the token stops at once. Tokens are stored only as hashes. What the phone says reaches an AI client in plain fields only in Android's own formats (a release, a patch date, a declared permission); the rest, the model's name and a failed lock's words included, is in `untrusted` fields. |
 | The same, with screen time (Phase 3) | Made-up usage, or a flood of it. | Usage is the phone's own report, so it can be wrong like any report. The server takes at most 31 days of at most 500 apps in 256 KB a call, rate limited per phone, keeps one day per date and zone (sent again, it replaces the stored one only when it's at least as new), keeps nothing while measuring is off, and never keeps the time of the apps it never blocks. Apps and a zone that isn't a real one reach an AI client only as `untrusted`. |
 | An app developer | Prompt injection through app names, versions or store text. | Untrusted fields, capped lengths, strict package-name format, and instructions that say it's data. |
-| The AI provider | Seeing family data. | Only what the tools return, only the categories the parents allow, every read in the activity log. The server itself never calls an AI. Where the phone is: nothing while the Location category is off (the default for every family). |
+| The AI provider | Seeing family data. | Only what the tools return, only the categories the parents allow, every read in the activity log. The server itself never calls an AI. Where the phone is: nothing while the Location category is off (the default for every family); who calls the kid and other people's numbers: nothing while the Calls category is off (also the default). |
 | Someone with a parent's account (Phase 4) | Tracking the kid in secret. | Not possible in secret: every check is in the activity log and on the kid's phone, with a notice each time, and the kid sees whether location is shared, how often, and the places' names. |
 | A map or address service (Phase 4) | Learning where the kid is. | The server never calls one: fixes are described by the family's own places, by the server. "Open in a map" is a link the parent's browser follows only when clicked, to the site the family picked. |
 | Google, with the combined provider (Phase 4) | Seeing location requests. | With `fused` (Android's combined provider, Google's on a Pixel), Google's location service handles the request, under Google's settings; the parent page says so. With GPS only, the default, only the phone's own receiver is used. |

@@ -223,6 +223,27 @@ by default). `locate-now` refuses while location is off. `parent-number` gives t
 own list for the emergency card, starting from the family's numbers, and changes the number of
 the one with that name.
 
+And for calls (Phase 5), as the phone's Calls page sets them:
+
+```bash
+docker compose exec belay node dist/cli.js calls "Sam's phone" --mode contacts --unknown voicemail --withheld reject --outgoing contacts --quiet on --log on   # turns calls on
+docker compose exec belay node dist/cli.js calls "Sam's phone" --off
+docker compose exec belay node dist/cli.js contact "Sam's phone" --name Mom --number +15555550100 --parent   # prints only its id; --calls on|off, --texts on|off
+docker compose exec belay node dist/cli.js contact "Sam's phone" --remove <id>
+docker compose exec belay node dist/cli.js block-number "Sam's phone" +15555550199     # unblock-number to undo
+docker compose exec belay node dist/cli.js private-number "Sam's phone" +15555550177   # --remove <number> to undo
+docker compose exec belay node dist/cli.js answer "Sam's phone" <request id> approve --name "Coach Lee" --texts off   # a contact request
+```
+
+`calls` turns calls on with `--mode` (`open`: anyone can call; `contacts`: only contacts), and
+once they're on changes only the rules it's given (`--unknown` and `--withheld` are `reject`,
+`voicemail` or `ring`; voicemail unless given). It says on stderr when a number on the
+emergency card isn't a contact, since with only contacts that parent's calls would follow
+`--unknown`. `contact` with a name the phone already has adds the number to that contact,
+keeping its id; calls and texts are on unless turned off, and a parent only with `--parent`.
+Numbers are E.164 (`+`, the country code, the number). `block-number` refuses 911, 988 and
+every emergency number, a contact's number and one on the emergency card, with why.
+
 They're logged as the server's ("The server" on the Activity page), and a running server
 passes them to the phone within a second or two. `status --json` gives each phone's
 `policy_version` (the server's), `enforcement` (what the phone last said it applied, exactly
@@ -241,14 +262,18 @@ accuracy_m, provider, reason, command_id, mock}]`) and `place_events` (newest fi
 ones with `seen_at`, in the family's timezone, `seen_by`, and `location`, the fix the kid
 shared: `{id, at, lat, lng, accuracy_m, mock}` or `null`), `withdrawn_at` (as the phone sent
 it) on any request the kid withdrew, and the policy's `help_seen`, `parent_numbers` and
-`ai_reads`. Hardening (factory reset, debugging, reset protection) can only be turned on on
-the parent page.
+`ai_reads`. Phase 5 adds the policy's `calls` (`null` while calls are off), `contacts`,
+`private_numbers` and `blocked_numbers`, and `call_records` (newest first, at most 50: `[{id,
+at, direction, contact_id, number, duration_s, outcome, reason}]`, `at` as the phone sent it),
+and `contact` entries in `requests` with `contact_name`, `contact_number` and `contact_id` (the
+contact an approval added, or the one that had the number; `null` until approved). Hardening
+(factory reset, debugging, reset protection) can only be turned on on the parent page.
 
 For scripts: `agent-add` prints only the APK's SHA-256 (lowercase) on stdout,
 `recovery-key` prints only the key, grouped like `7KD2M-8Q4ZX-1HNP3-RT6VW-B9CF0G`, and
-`limit`, `schedule`, `lock-now`, `place` and `locate-now` print only the id of the limit,
-schedule, place or command; everything else goes to stderr. They exit 1 with a reason on
-stderr when they can't.
+`limit`, `schedule`, `lock-now`, `place`, `locate-now` and `contact` print only the id of the
+limit, schedule, place, command or contact; everything else goes to stderr. They exit 1 with a
+reason on stderr when they can't.
 
 Outside Docker, use `npm run cli -- <command>` from `server/`.
 
@@ -400,6 +425,54 @@ departures 90 days (1 to 365), lost-mode fixes 7 days after lost mode ends (1 to
 while it's on), and the fix the kid shared with a help request as long as the request (until
 the phone is deleted). A fix counts from its own time, or from when it arrived if the phone's
 clock was ahead. Fixes and place events the rules didn't ask for aren't kept at all.
+
+## Calls (Phase 5)
+
+Calls are off until a parent turns them on, on the phone's **Calls** page: until then the
+policy's `calls` is `null`, and Belay leaves calls alone. Turned on, Belay becomes the phone's
+phone app (the default dialer), and decides who rings. Turned off, `calls` is `null` again; the
+rules are kept for next time.
+
+- **911, 988 and every emergency number always work**, in and out, in every mode, even when the
+  phone is paused or at bedtime: the phone allows them in its own code, never from the policy,
+  and Android sends an emergency call to the phone's own dialer. For 2 hours after a call to an
+  emergency number or 988, every caller rings, so they can call back. Belay never records calls
+  with them. If Belay stops working as the phone app, calls go through the phone's own app with
+  no rules, on purpose, and the phone's page says "Calls are going through the phone's own app"
+  (also in the daily summary).
+- **The rules:** who can call (anyone, or only contacts who can call); with only contacts,
+  callers who aren't contacts, and callers with no caller ID, ring, go to voicemail or are
+  refused; whom the kid can call (any number, or only contacts); quiet times (during bedtime and
+  school schedules, only parents ring); and whether Belay keeps a record of calls.
+- **Contacts** (at most 500, each with a name the kid sees, at most 60 characters, and 1 to 5
+  numbers in E.164, each one contact's): whether they can call and text, and whether they're a
+  parent, who always rings and is on the kid's emergency card. The page warns when a number on
+  the emergency card isn't a contact, with a button to add it as a parent. Belay keeps contacts
+  in its own storage on the phone; it never writes them into Android's Contacts.
+- **Blocked numbers** (at most 500): Belay, as the phone app, puts them on Android's block list,
+  which blocks their texts too. Never 911, 988 or an emergency number (in any form, 988's full
+  number included), a contact's number, or one on the emergency card: the server refuses, with
+  why. Adding a blocked number as a contact unblocks it.
+- **Private numbers** (at most 50): numbers Belay never records, like a helpline, besides 911,
+  988 and emergency numbers, which it never records anyway. Making a number private deletes the
+  records already kept of it.
+- **Recent calls** (only while Belay records calls): the last 30 days, with **Add as contact**
+  and **Block** beside someone who isn't a contact.
+- **The kid's contact requests** come to the Requests page with their name for the contact, the
+  number and why. **Approve** adds the contact, with the name and whether they can call and text
+  as the parent chooses; a number that's a contact already adds no one.
+
+Only a parent turns calls on or off, decides whether they're recorded, or chooses private
+numbers, there or with the CLI: AI apps can't, and can't propose it. An AI app may tighten the
+rest at once (only contacts, a stricter rule for unknown or withheld callers, calling only
+contacts, quiet times, fewer contacts allowed to call, blocking a number) and proposes anything
+else, adding a contact included; anything that takes from a parent contact is a parent's to
+approve too.
+
+**Kept** (Settings, "Keep the record of calls"): 90 days by default (1 to 365), then deleted by
+the hourly clean-up. A record counts from its own time, or from when it arrived if the phone's
+clock was ahead. Records sent while Belay doesn't record calls aren't kept, and are counted on
+the Calls page; at most 1000 are kept a day per phone.
 
 ## Backups
 
@@ -623,8 +696,11 @@ Put it behind a reverse proxy with HTTPS, as a service of its own user (a system
 
 Startup, the one-time setup link, "a phone enrolled", notifications that didn't go out, each
 daily backup (its file name and size, or why it failed), urgent notices about the server,
-why the database couldn't be opened, and errors. Never tokens, passwords, passphrases,
-browsers' push addresses, app names or request bodies. The
+why the database couldn't be opened, and errors; that a phone sent location items or call
+records its rules didn't ask for, and how many; and that a phone sent a call record Belay
+never keeps (an emergency number, 988 or a private number), without the number, the phone or
+the time of the call, since the phone shouldn't. Never tokens, passwords, passphrases,
+browsers' push addresses, app names, phone numbers or request bodies. The
 activity log on the parent page is where parents see who did what.
 
 ## Development
