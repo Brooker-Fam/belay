@@ -7,6 +7,10 @@ local.properties
 *.aab
 *.idsig
 captures/
+node_modules/
+server/dist/
+coverage/
+.claude/worktrees/
 
 # Editors and OS
 .idea/
@@ -31,3 +35,8 @@ belay-provisioning.png
 # Real device data never goes in the repository
 *.hprof
 bugreport*.zip
+# The server's database (BELAY_DATA_DIR) holds family data
+server/data/
+*.db
+*.db-wal
+*.db-shm

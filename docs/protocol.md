@@ -14,6 +14,9 @@ schemas in `server/src/device/schemas.ts`. Change all three together.
 - Optional fields may be omitted or `null`.
 - Every call is idempotent: `inventory` by `snapshot_id`, `events` by each event's `id`.
   The agent can always send again.
+- **Order:** the agent delivers events and inventories in the order it made them. It never
+  sends an inventory while events found before it are still unsent, and it takes the snapshot
+  after flushing them. The server applies both in the order they arrive.
 - No CORS: these endpoints are for the agent, not for browsers.
 
 | Endpoint | Body limit |
@@ -30,6 +33,7 @@ Errors: `{"error": "<code>", "error_description": "<words>"}` with
 | 400 | `invalid_request` | drops the request (a bug: it would fail again) and logs it |
 | 400 | `invalid_code` | (enroll) tells the person the code is wrong, used or expired |
 | 401 | `invalid_token` | stops syncing: the parent revoked this phone; shows "disconnected" |
+| 404 | `not_found` | drops the request (a bug) and logs it |
 | 413 | `too_large` | splits or drops, logs it |
 | 429 | `rate_limited` | waits for `Retry-After` seconds |
 | 5xx | | retries with backoff |
@@ -95,9 +99,13 @@ Every 24 hours, after each boot, and right after enrollment.
 { "server_time": 1794867161711, "duplicate": false, "backfilled": 1 }
 ```
 
-The server diffs the snapshot against what it knows and records any change no event
-reported ("found by snapshot"). A change the phone reports later is matched to it, not
-recorded twice.
+The first snapshot after enrollment is the baseline: it records no changes. After that the
+server diffs each snapshot against what it knows and records any change no event reported
+("found by snapshot"): `installed` (new, or back after a removal), `reinstalled` (a new
+first-install time), `updated` (a new version code or last-update time) and `removed`.
+A phone event that arrives later for the same change (same package and kind, same
+`happened_at`; for a removal, the latest thing recorded for the package) takes the
+backfill's place, so each change is listed once.
 
 ## `POST /api/v1/events`
 
@@ -125,12 +133,13 @@ Sent as soon as a change is found, from the agent's outbox.
 | `happened_at` | int? | the package's own first-install or last-update time; null for removals |
 | `detected_at` | int | when the phone noticed |
 | `detection` | `broadcast` `changed_packages` `snapshot` | which layer noticed |
+| `app` | Package? | the app as it is after the change, for installed, updated and reinstalled, so its source and permissions arrive at once; omitted for removed |
 
 **Package**
 
 | Field | Type | |
 |---|---|---|
-| `package` | string | |
+| `package` | string | letters, digits, `_` and `.` only (`com.example.app`) |
 | `label` | string | untrusted, at most 200 characters |
 | `version_name` | string? | untrusted |
 | `version_code` | int | |
