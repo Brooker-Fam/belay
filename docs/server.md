@@ -185,6 +185,12 @@ docker compose exec belay node dist/cli.js recovery-key "Sam's phone"           
 docker compose exec belay node dist/cli.js remove-other-users "Sam's phone"     # remove every other user and profile
 ```
 
+And at the end (Phase 11), a parent's action, never an AI app's:
+
+```bash
+docker compose exec belay node dist/cli.js handover "Sam's phone"   # hands the phone over to the kid (Off belay, below)
+```
+
 And for screen time (Phase 3), as the phone's Rules and Screen time pages set it:
 
 ```bash
@@ -266,14 +272,17 @@ it) on any request the kid withdrew, and the policy's `help_seen`, `parent_numbe
 `private_numbers` and `blocked_numbers`, and `call_records` (newest first, at most 50: `[{id,
 at, direction, contact_id, number, duration_s, outcome, reason}]`, `at` as the phone sent it),
 and `contact` entries in `requests` with `contact_name`, `contact_number` and `contact_id` (the
-contact an approval added, or the one that had the number; `null` until approved). Hardening
-(factory reset, debugging, reset protection) can only be turned on on the parent page.
+contact an approval added, or the one that had the number; `null` until approved). Phase 11
+adds `handover` (`{at, by, version}` or `null`: when, as the policy has it in milliseconds since
+the epoch, the parent's name or `null` from the CLI, and the rules version that carried it).
+Hardening (factory reset, debugging, reset protection) can only be turned on on the parent page;
+`handover` lifts it, as the phone page's "Hand this phone over" does.
 
 For scripts: `agent-add` prints only the APK's SHA-256 (lowercase) on stdout,
-`recovery-key` prints only the key, grouped like `7KD2M-8Q4ZX-1HNP3-RT6VW-B9CF0G`, and
+`recovery-key` prints only the key, grouped like `7KD2M-8Q4ZX-1HNP3-RT6VW-B9CF0G`,
 `limit`, `schedule`, `lock-now`, `place`, `locate-now` and `contact` print only the id of the
-limit, schedule, place, command or contact; everything else goes to stderr. They exit 1 with a
-reason on stderr when they can't.
+limit, schedule, place, command or contact, and `handover` prints one sentence; everything else
+goes to stderr. They exit 1 with a reason on stderr when they can't.
 
 Outside Docker, use `npm run cli -- <command>` from `server/`.
 
@@ -473,6 +482,30 @@ approve too.
 the hourly clean-up. A record counts from its own time, or from when it arrived if the phone's
 clock was ahead. Records sent while Belay doesn't record calls aren't kept, and are counted on
 the Calls page; at most 1000 are kept a day per phone.
+
+## Off belay (Phase 11)
+
+The end of the rules, for when the kid outgrows Belay: each step is a parent's, on the parent page
+(handing over from the CLI too), never an AI app's, not even as a proposal.
+
+- **Off belay** is every family's last stage (Stages, in the menu): it has no limits or schedules,
+  keeps its name and place, and can't be deleted. Its page takes the family's words for when it
+  comes ("When you turn 16"), which every phone shows the kid from the first day, last on My stage.
+  New stages go in before it. Moving a phone there (its Screen-time rules tab) stops its limits
+  and schedules; turning protection off on its page stops the rest of the blocking.
+- **Stop collecting** (a phone's page, "What the server keeps about this phone"): per kind of data,
+  a confirmation lists exactly what goes and what stays, then the server deletes it at once and
+  turns off the phone's switch where it has one (measuring; location, lost mode and keeping
+  location on; recording calls). The app list and the kid's requests keep coming while Belay is on the phone;
+  [privacy.md](privacy.md) has exactly what each stop deletes.
+- **Hand this phone over** (a phone's page, after typing its name): lifts the locks on factory
+  reset, debugging and accounts and clears reset protection, and the phone shows the kid what to
+  back up and how to reset it from Settings. While it lasts, those can't be locked again; "Take the
+  hand-over back" stops the phone showing it (the locks stay lifted). The page says when the phone
+  has it.
+- **Afterwards,** once the phone is reset: it goes quiet here, as expected. Disconnect it, then
+  delete everything about it, on its page. [phase11-checklist.md](phase11-checklist.md) walks
+  through it on a Pixel.
 
 ## Backups
 

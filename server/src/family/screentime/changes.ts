@@ -20,8 +20,10 @@ import { type Classification, classifyScreenTimeChange } from "./classify.js";
 import { clockMinutes } from "./days.js";
 import {
   NO_OWN,
+  NO_RULES,
   type PhoneSettings,
   type RuleSet,
+  canonical,
   familyLabels,
   getStage,
   insertExtra,
@@ -183,16 +185,32 @@ export function resetToStage(ctx: PolicyContext, deviceId: string, who: Person):
 
 export interface StageInput {
   name: string;
-  /** Where it goes: 1 is the first stage. Left out: after the last. */
+  /** Where it goes: 1 is the first stage. Left out: after the last, before Off belay. */
   number?: number;
   how: string | null;
   rules: RuleSet;
 }
 
 /**
+ * Phase 11: Off belay (family/offbelay) keeps its name, stays the last stage and blocks nothing; a
+ * family changes only its words for when it comes. Refuses anything else, for Off belay or for
+ * another stage that would go after it.
+ */
+function checkOffBelay(existing: StageView | null, offBelay: StageView | null, name: string, number: number, rules: RuleSet): void {
+  if (existing?.offBelay) {
+    if (name.toLowerCase() !== existing.name.toLowerCase()) throw new RuleRefused(`${existing.name} keeps its name: it's Belay's last stage, and the kid's phone calls it that.`);
+    if (number !== existing.number) throw new RuleRefused(`${existing.name} is always the last stage.`);
+    if (canonical(rules) !== canonical(NO_RULES)) throw new RuleRefused(`${existing.name} blocks nothing: it has no time limits, schedules or other screen-time rules.`);
+  } else if (offBelay && number > offBelay.number - (existing ? 1 : 0)) {
+    throw new RuleRefused(`${offBelay.name} is always the last stage: give this one a number before ${offBelay.number}.`);
+  }
+}
+
+/**
  * Makes a stage, or changes one (`id`). Every phone on it gets the change at once, with its own
  * changes kept on top. A number another stage has: a stage moving there swaps places with it; a
- * new stage goes in before it, and the ones after move up. A parent's action.
+ * new stage goes in before it, and the ones after move up. A new stage without a number goes in
+ * before Off belay, the last stage (Phase 11). A parent's action.
  */
 export function saveStage(ctx: PolicyContext, id: string | null, input: StageInput, who: Person): { stage: StageView; phonesChanged: number } {
   onlyPeople(who);
@@ -202,14 +220,19 @@ export function saveStage(ctx: PolicyContext, id: string | null, input: StageInp
   const existing = id === null ? null : getStage(db, id);
   if (id !== null && !existing) throw new RuleRefused("There's no such stage.");
   const others = listStages(db).filter((s) => s.id !== id);
+  const offBelay = others.find((s) => s.offBelay) ?? null;
   if (others.some((s) => s.name.toLowerCase() === name.toLowerCase())) throw new RuleRefused(`Another stage is already called ${name}.`);
-  if (!existing && others.length >= STAGE_LIMITS.maxStages) throw new RuleRefused(`A family can have at most ${STAGE_LIMITS.maxStages} stages.`);
+  if (!existing && others.filter((s) => !s.offBelay).length >= STAGE_LIMITS.maxStages) throw new RuleRefused(`A family can have at most ${STAGE_LIMITS.maxStages} stages, besides Off belay.`);
   checkRuleSet(input.rules, neverAnywhere);
-  const number = input.number ?? existing?.number ?? (others.at(-1)?.number ?? 0) + 1;
+  const number = input.number ?? existing?.number ?? offBelay?.number ?? (others.at(-1)?.number ?? 0) + 1;
   if (!Number.isInteger(number) || number < 1 || number > 99) throw new RuleRefused("A stage's number is 1 to 99.");
+  checkOffBelay(existing, offBelay, name, number, input.rules);
   for (const phone of id === null ? [] : phonesOnStage(db, id)) checkRuleSet(merge(input.rules, phoneRow(db, phone.id).own), neverBlockedOn(db, phone.id));
-  // Every phone on any stage: a change of number changes which stage comes next.
-  const phones = db.prepare<[], { device_id: string }>("SELECT device_id FROM phone_stages").all().map((r) => r.device_id);
+  // Every phone on any stage: a change of number changes which stage comes next. Off belay's
+  // words are in every phone's rules (Phase 11), on a stage or not.
+  const phones = existing?.offBelay
+    ? db.prepare<[], { id: string }>("SELECT id FROM devices").all().map((r) => r.id)
+    : db.prepare<[], { device_id: string }>("SELECT device_id FROM phone_stages").all().map((r) => r.device_id);
   const how = input.how?.trim().slice(0, STAGE_LIMITS.how) || null;
   const stageId = id ?? newId();
   const done = changePolicies(ctx, phones, who, (log) => {
@@ -263,6 +286,7 @@ export function deleteStage(ctx: PolicyContext, id: string, who: Person): void {
   const { db } = ctx;
   const stage = getStage(db, id);
   if (!stage) throw new RuleRefused("There's no such stage.");
+  if (stage.offBelay) throw new RuleRefused(`Every family has ${stage.name}, the last stage: it can't be deleted.`);
   const on = phonesOnStage(db, id);
   if (on.length) throw new RuleRefused(`${on.map((p) => p.name).join(" and ")} ${on.length === 1 ? "is" : "are"} on this stage. Move ${on.length === 1 ? "it" : "them"} to another stage first.`);
   const phones = db.prepare<[], { device_id: string }>("SELECT device_id FROM phone_stages").all().map((r) => r.device_id);

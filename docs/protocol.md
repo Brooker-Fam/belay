@@ -361,21 +361,37 @@ What the server does with them:
 ## Off belay (Phase 11, both sides)
 
 The last stage, and the hand-over. Every step loosens or deletes, so each is a parent's action on
-the parent page (never an AI client's, not even as a proposal), and the phone shows each step
-before it happens.
+the parent page, or the server's CLI acting as one (never an AI client's, not even as a
+proposal), and the phone shows each step before it happens.
 
-- **Off belay** is an ordinary stage (Phase 3) whose template blocks nothing and collects only
-  device health; the kid's "My stage" shows it at the end of the list from the first day, with
-  the family's words for when it comes.
-- **Stop collecting:** each data category a parent turns off is deleted on the server, after a
-  confirmation that says exactly what goes.
-- **`handover`** in the policy: the server also lifts `factory_reset` and `debugging`, empties
-  `frp_accounts` and frees Play's accounts (all ordinary fields); the phone clears its reset
-  protection policy, lifts those locks, and shows the kid what happens next: back up to their
-  own account, remove the parent's account, then reset from Settings. Release builds still
-  contain nothing that switches Belay off: the reset does.
-- **Afterwards** the server disconnects the phone and offers to delete everything it recorded
-  about it.
+- **Off belay** is a stage (Phase 3) every family has, always the last one: no limits or
+  schedules, its own name, and it can't be deleted. The policy's **`off_belay`** carries the
+  family's words for when it comes (`how`, null until they write some) and where it is for this
+  phone: `on` (the phone is on it), `next` (it's the phone's next stage, so `stage.next` is it) or
+  `later` (further on, or the phone is on no stage). The kid's "My stage" shows it at the end from
+  the first day: on a stage, or on none once the family wrote its words.
+- **Stop collecting** is the server's: a parent stops one data category of a phone, and after a
+  confirmation that lists exactly what goes, the server deletes what it keeps of it. Where the
+  phone has a switch, it turns off with ordinary fields (screen time's `measure`; `location` off,
+  with lost mode and `keep_on`; recording calls, `calls.log`). The app list and the kid's requests
+  have none: the phone keeps
+  sending its apps while Belay is on it, and the kid can always ask ("I need help" always reaches a
+  parent). A request the phone still lists (60 days) keeps a bare record, without anyone's words,
+  so the policy's `requests` still carries its answer.
+- **`handover`** (`{at, by}`: when, and the parent's name, or null from the CLI): the server also
+  lifts `factory_reset`, `debugging` and `modify_accounts`, empties `frp_accounts` (all ordinary
+  fields), and refuses to lock any of them again while the hand-over lasts. Belay sets no
+  `allowed_accounts` for Play, so lifting `modify_accounts` is what frees Play for the kid's own
+  account. While the policy has `handover`, the phone holds none of those three locks and no reset
+  protection policy, whatever the restrictions say. A release build clears the policy once per
+  hand-over (`setFactoryResetProtectionPolicy(null)`, then `FRP_CONFIG_CHANGED` to Play services),
+  even without a record of setting one, and again at the next step if that failed; a debug build,
+  which never sets one, leaves it alone and records that it did. The phone shows the kid what
+  happens next: back up to their own account, remove the parent's account, then Settings > System
+  > Reset options > Erase all data. Release builds still contain nothing that switches Belay off:
+  the reset does. Taking it back (`handover` null) stops the phone showing it; the locks stay
+  lifted until a parent locks them again.
+- **Afterwards** a parent disconnects the phone and deletes everything recorded about it.
 
 ## Location rules (Phase 4, both sides)
 
@@ -620,7 +636,8 @@ server decides whether a change tightens or loosens.
 | `contacts` | `[{id, name, numbers: [E.164], calls, texts, parent}]` | Phase 5: at most 500; `name` at most 60 characters, at most 5 numbers |
 | `private_numbers` | string[] | Phase 5: E.164 numbers Belay never records or reads, beyond 988 and emergency numbers; at most 50 |
 | `blocked_numbers` | string[] | Phase 5: E.164 numbers a parent blocked; Belay, as the dialer, puts them on Android's block list (which blocks their texts too); at most 500 |
-| `handover` | `{at, by?}`? | Phase 11: a parent is handing the phone over (see "Off belay") |
+| `handover` | `{at, by}`? | Phase 11: a parent is handing the phone over (see "Off belay"); `by` is the parent's name, null from the server's CLI |
+| `off_belay` | `{how, position: "on"\|"next"\|"later"}`? | Phase 11: the family's last stage, for the kid's "My stage": the family's words for when it comes (at most 1000 characters, or null), and where it is for this phone |
 
 The `commands` kinds gain `locate_now` (Phase 4).
 

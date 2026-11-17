@@ -4,6 +4,7 @@ import android.content.Context
 import family.brooker.belay.calls.CallFlow
 import family.brooker.belay.calls.Dialer
 import family.brooker.belay.core.AppChange
+import family.brooker.belay.core.HandoverPlan
 import family.brooker.belay.core.Heartbeat
 import family.brooker.belay.core.Reconcile
 import family.brooker.belay.core.UpdateRecord
@@ -27,9 +28,11 @@ import kotlinx.serialization.json.putJsonObject
  * requests it made, without the kid's words, (Phases 6 and 10) the update, the recovery
  * key's tries and use, and the commands' results, (Phase 3) why each app is held and
  * screen time's count and state, (Phase 4) location's report and what it wants, without where the
- * phone is, (Phase 7) whether each request was taken back or seen, and (Phase 5) the dialer, the
- * block list Belay keeps and how it decided the last calls, without numbers. Debug builds write it after
- * every step (DebugTools.afterStep), for android/scripts/ci-emulator-test.sh.
+ * phone is, (Phase 7) whether each request was taken back or seen, (Phase 5) the dialer, the
+ * block list Belay keeps and how it decided the last calls, without numbers, and (Phase 11) the
+ * hand-over: when the policy asked for it, what Belay did about reset protection, and whether it
+ * still holds any of the hand-over's locks. Debug builds write it after every step
+ * (DebugTools.afterStep), for android/scripts/ci-emulator-test.sh.
  */
 object StateDump {
     fun json(context: Context, store: AgentStore, connection: Connection): String = buildJsonObject {
@@ -113,6 +116,16 @@ object StateDump {
                 },
             ),
         )
+        // Phase 11: the hand-over the policy asks for, and as Belay carried it out. A debug build never
+        // touches reset protection: "skipped_debug" says it left it alone where a release build clears it.
+        putJsonObject("handover") {
+            put("at", store.policy()?.handover?.at)
+            put("done_for", applied.handover?.at)
+            put("done_at", applied.handover?.doneAt)
+            put("frp", applied.handover?.frp?.name?.lowercase())
+            put("frp_held", applied.frpAccounts != null)
+            put("locks_held", JsonArray(applied.locks.filter { it in HandoverPlan.LIFTS }.map { JsonPrimitive(it.name) }))
+        }
         // Phase 4: location as the last step left it, without where the phone is.
         val location = store.locationState()
         putJsonObject("location") {

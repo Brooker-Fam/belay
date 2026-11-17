@@ -311,9 +311,11 @@ export const DevicePage: FC<{
   filter: { q: string; system: boolean; permission: string };
   /** Phase 7: a help request no parent has seen, above everything. */
   help?: Child;
+  /** Phase 11: what the server keeps about the phone, and handing it over (web/pages/offbelay.tsx). */
+  offBelay?: Child;
   message?: string;
   error?: string;
-}> = ({ view, device, apps, phone, filter, help, message, error }) => {
+}> = ({ view, device, apps, phone, filter, help, offBelay, message, error }) => {
   const unreviewed = apps.filter((a) => a.unreviewed).length;
   const requestFor = new Map(phone.openRequests.map((r) => [r.package, r]));
   const tampering = device.problems.filter((p) => p.code === "tampering");
@@ -435,6 +437,8 @@ export const DevicePage: FC<{
       <div class="card">
         <Facts device={device} view={view} />
       </div>
+
+      {offBelay}
 
       <h2>Manage</h2>
       <div class="card">

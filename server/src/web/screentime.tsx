@@ -471,7 +471,9 @@ export function screenTimeWebRoutes(deps: Deps, h: ScreenTimeWebHelpers): Hono<W
   app.post("/stages/:sid", (c) =>
     stageChange(
       c,
-      (body) => {
+      (body, stage) => {
+        // Phase 11: Off belay keeps its name and place; its page only has the family's words.
+        if (stage.offBelay) return { how: first(body, "how") || null };
         const number = Number(first(body, "number"));
         if (!Number.isInteger(number) || number < 1 || number > 99) throw new FormProblem("A stage's number is 1 to 99.");
         return { name: first(body, "name"), number, how: first(body, "how") || null };

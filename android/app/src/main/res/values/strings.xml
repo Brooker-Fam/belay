@@ -376,6 +376,28 @@
     <string name="agreement_kid_agreed">You agreed on %1$s.</string>
     <string name="agreement_parents_agreed">Your parents agreed on %1$s.</string>
 
+    <!-- Phase 11: Off belay, the family's last stage, on My stage (core's kid.OffBelay), and the
+         hand-over, first on Home. Plain and respectful, for a 12-year-old; never more than Belay does.
+         %1$s in off_belay_last is the family's own words for when it comes. -->
+    <string name="off_belay_title">The last stage</string>
+    <string name="off_belay_last">Last stage: Off belay. %1$s</string>
+    <string name="off_belay_last_plain">Last stage: Off belay.</string>
+    <string name="off_belay_next">Your next stage, Off belay, is the last one.</string>
+    <string name="off_belay_on">You\'re on Off belay, the last stage.</string>
+    <string name="off_belay_nothing_blocked">Belay isn\'t blocking any apps or websites on this phone any more.</string>
+    <string name="off_belay_after">After it, your parent can hand this phone over to you, and then it\'s simply yours.</string>
+    <string name="off_belay_after_on">Next, your parent can hand this phone over to you, and then it\'s simply yours.</string>
+    <string name="off_belay_meaning">In climbing, \"off belay\" means the climber is safe and doesn\'t need the rope any more.</string>
+    <string name="handover_title">This phone is becoming yours</string>
+    <string name="handover_intro">Your parent is handing this phone over to you.</string>
+    <string name="handover_started_by">%1$s started this on %2$s.</string>
+    <string name="handover_started">Your parent started this on %1$s.</string>
+    <string name="handover_backup">Before you reset it, back up your photos and anything else you want to keep to your own account.</string>
+    <string name="handover_account">Then remove your parent\'s Google account from this phone: in Settings, open the page with your accounts, tap your parent\'s account, then Remove account.</string>
+    <string name="handover_reset">Then go to Settings &gt; System &gt; Reset options &gt; Erase all data.</string>
+    <string name="handover_after">After the reset, this phone is yours. Belay won\'t be on it.</string>
+    <string name="handover_together">You can do it together with your parent.</string>
+
     <!-- Phase 3: screen time's notifications. -->
     <string name="screen_time_channel_name">Screen time</string>
     <string name="screen_time_channel_description">Tells you when time is almost up or up, when a schedule starts, when your parent pauses the phone, and when Belay can\'t count.</string>

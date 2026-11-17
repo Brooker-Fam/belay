@@ -61,6 +61,11 @@
 # and `calls --off` gives the default dialer back (or, with none before, Android drops Belay from
 # the role), Belay loses its call permissions and comes back. Made-up 555-01xx numbers only: never
 # a call to or from 911 or 988.
+#
+# Phase 11, with BELAY_E2E_CLI and a server whose status has handover, just before the restart: a
+# parent hands the phone over; the phone applies that policy, and its debug state shows the hand-over
+# carried out, holding none of its locks and no reset protection (a debug build never sets it, and
+# says it left it alone). Then the restart and unprovision.sh, as without it.
 set -euo pipefail
 # shellcheck source-path=SCRIPTDIR source=lib.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -795,6 +800,28 @@ elif [ -n "$E2E_CLI" ]; then
   echo "calls off: the default dialer is ${dialer_before:-none again} ($(default_dialer)), and Belay holds no call permission"
 elif [ -n "$E2E_SERVER" ]; then
   echo "BELAY_E2E_CLI not given: the Phase 5 calls checks are skipped"
+fi
+
+if [ -n "$E2E_CLI" ] && ! server_status | jq -e '.phones[0] | has("handover")' >/dev/null 2>&1; then
+  echo "the server's status has no handover (its Phase 11 isn't there yet): the hand-over check is skipped"
+elif [ -n "$E2E_CLI" ]; then
+  phone="$(server_status | jq -r '.phones[0].name')"
+
+  step "Phase 11: a parent hands the phone over; the debug build shows it, with the locks and reset protection lifted"
+  server_cli handover "$phone"
+  wait_applied
+  at="$(server_status | jq -r '.phones[0].handover.at')"
+  [[ "$at" =~ ^[0-9]+$ ]] || die "the server's status has no handover.at" "$(server_status | jq -c '.phones[0].handover')"
+  done_it=0
+  for _ in $(seq 1 30); do
+    if state | jq -e ".handover | .at == $at and .done_for == $at and .frp == \"skipped_debug\" and .frp_held == false and .locks_held == []" >/dev/null 2>&1; then
+      done_it=1
+      break
+    fi
+    sleep 1
+  done
+  [ "$done_it" = 1 ] || { diagnose; die "the phone's debug state doesn't show the hand-over carried out" "$(state | jq -c '.handover')"; }
+  echo "the phone: $(state | jq -c '.handover')"
 fi
 
 adb logcat -c
