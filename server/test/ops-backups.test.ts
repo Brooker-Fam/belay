@@ -6,6 +6,7 @@ import { loadMigrations } from "../src/db.js";
 import { BACKUPS_KEPT, backupDir, backupPassphrase, dailyBackupDue, latestBackup, listBackups, runDailyBackup, writeBackup } from "../src/ops/backups.js";
 import { decryptFile } from "../src/ops/crypt.js";
 import { opsTick } from "../src/ops/jobs.js";
+import { setOpsOptions } from "../src/ops/options.js";
 import { enrollPhone, T0 } from "./helpers.js";
 import { FAST_SCRYPT, PASSPHRASE, dailyContext, opsServer, scratchDir } from "./ops-helpers.js";
 
@@ -144,11 +145,12 @@ describe("the daily backup", () => {
   });
 
   it("runs from the server's periodic work, with the passphrase from the environment", async () => {
-    const t = opsServer();
-    await opsTick(t.deps, { env: { BELAY_BACKUP_PASSPHRASE: PASSPHRASE }, scrypt: FAST_SCRYPT });
+    const t = opsServer({ ops: { env: { BELAY_BACKUP_PASSPHRASE: PASSPHRASE } } });
+    await opsTick(t.deps);
     expect(latestBackup(t.deps.db)).toMatchObject({ file: "belay-2026-11-16.db.enc", ok: true });
     t.advance(DAY);
-    await opsTick(t.deps, { env: { BELAY_BACKUP_PASSPHRASE: "too short" }, scrypt: FAST_SCRYPT });
+    setOpsOptions(t.deps, { env: { BELAY_BACKUP_PASSPHRASE: "too short" }, scrypt: FAST_SCRYPT });
+    await opsTick(t.deps);
     expect(latestBackup(t.deps.db)).toMatchObject({ ok: false, error: "BELAY_BACKUP_PASSPHRASE is too short: use at least 15 characters, like four or five random words." });
   });
 });
