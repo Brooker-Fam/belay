@@ -177,6 +177,11 @@ fieldset { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px
 legend { padding: 0 4px; }
 details > summary { cursor: pointer; color: var(--accent); margin: 0; padding: 10px 0; min-height: var(--tap); }
 .card > ul { padding-left: 20px; }
+/* "On this page": a long page's sections. A section's box, jumped to, keeps its heading in view. */
+details.jump { margin: 0 0 4px; }
+details.jump nav { display: flex; flex-wrap: wrap; gap: 0 18px; padding-bottom: 8px; }
+details.jump nav a { display: inline-flex; align-items: center; min-height: var(--tap); }
+.card[id], form[id] { scroll-margin-top: 4rem; }
 @media (max-width: 560px) {
   header.top .brand { flex: 1; }
   header.top nav { order: 3; flex-basis: 100%; }

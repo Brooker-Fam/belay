@@ -14,7 +14,7 @@ import type { Check, PlaceEventView } from "../../family/location/fixes.js";
 import { LOCATION_LIMITS, LOST_MESSAGE, type FixView, type LocationSettings, type Place } from "../../family/location/store.js";
 import type { HelpView } from "../../family/requests.js";
 import { MAX_PARENT_NUMBERS, type ParentNumber } from "../../settings.js";
-import { Csrf, Layout, Notice, PostButton, Time, type View } from "../ui.js";
+import { Csrf, Layout, Notice, OnThisPage, PostButton, Time, type View } from "../ui.js";
 import { FixLine, HelpCard, type Where } from "./help.js";
 import { PhoneTabs } from "./screentime.js";
 
@@ -267,6 +267,17 @@ export const LocationPage: FC<{ view: View; data: LocationPageData; message?: st
       {data.unseenHelp.map((r) => (
         <HelpCard view={view} request={r} showDevice={false} kidNumber={data.help.kidNumber} where={where} back="location" />
       ))}
+      <OnThisPage
+        links={[
+          ["#where", "Where the phone is"],
+          ["#sharing", "Sharing"],
+          ["#checks", "Checks"],
+          ["#events", "Arrivals and departures"],
+          ["#places", "Places"],
+          ["#lost", "Lost mode"],
+          ["#numbers", "Help and the emergency card"],
+        ]}
+      />
 
       <h2 id="where">Where the phone is</h2>
       <div class="card">

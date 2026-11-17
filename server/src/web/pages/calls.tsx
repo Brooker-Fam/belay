@@ -15,7 +15,7 @@ import type { DeviceView } from "../../family/devices.js";
 import type { ContactRequestView } from "../../family/requests.js";
 import type { ParentNumber } from "../../settings.js";
 import { formatDuration } from "../../time.js";
-import { Csrf, Layout, Notice, PostButton, Time, type View } from "../ui.js";
+import { Csrf, Layout, Notice, OnThisPage, PostButton, Time, type View } from "../ui.js";
 import { PhoneTabs } from "./screentime.js";
 
 export interface CallsPageData {
@@ -281,6 +281,17 @@ export const CallsPage: FC<{ view: View; data: CallsPageData; message?: string; 
       <PhoneTabs view={view} device={device} current="calls" />
       {message && <Notice>{message}</Notice>}
       {error && <Notice kind="error">{error}</Notice>}
+      <OnThisPage
+        links={[
+          ["#calls", "Calls"],
+          ["#rules", "Rules"],
+          ["#contacts", "Contacts"],
+          ...(data.requests.length > 0 ? [["#requests", "The kid's contact requests"] as const] : []),
+          ["#blocked", "Blocked numbers"],
+          ["#private", "Private numbers"],
+          ["#recent", "Recent calls"],
+        ]}
+      />
 
       <h2 id="calls">Calls</h2>
       <div class="card">

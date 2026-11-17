@@ -17,7 +17,7 @@ import { type Labels, clock, days as daysWords, duration } from "../../family/sc
 import type { Enforcement } from "../../device/schemas.js";
 import { STATUS_WORDS } from "../../family/requests.js";
 import { isValidTimeZone } from "../../time.js";
-import { Csrf, Layout, Notice, PostButton, Time, type View } from "../ui.js";
+import { Csrf, Layout, Notice, OnThisPage, PostButton, Time, type View } from "../ui.js";
 
 const DAY_SHORT: Record<Weekday, string> = { mon: "Mon", tue: "Tue", wed: "Wed", thu: "Thu", fri: "Fri", sat: "Sat", sun: "Sun" };
 const DAY_LONG: Record<Weekday, string> = { mon: "Monday", tue: "Tuesday", wed: "Wednesday", thu: "Thursday", fri: "Friday", sat: "Saturday", sun: "Sunday" };
@@ -819,6 +819,16 @@ export const RulesPage: FC<{ view: View; data: RulesPageData; message?: string; 
       <div class="card">
         <Preview rules={phone.rules} />
       </div>
+      <OnThisPage
+        links={[
+          ["#stage", "Stage"],
+          ["#limits", "Time limits"],
+          ["#schedules", "Schedules"],
+          ["#other", "Exempt apps, self-serve and more"],
+          ["#extra", "Extra time today"],
+          ["#measuring", "Measuring and days"],
+        ]}
+      />
 
       <h2 id="stage">Stage</h2>
       <div class="card">

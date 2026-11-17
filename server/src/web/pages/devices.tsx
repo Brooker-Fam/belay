@@ -9,7 +9,7 @@ import { type DeviceView, patchAgeDays } from "../../family/devices.js";
 import { type AskAgain, type Decision, LIMITS, type Rules } from "../../family/policy.js";
 import type { AppRequestView as RequestView } from "../../family/requests.js";
 import { formatAgo, formatDate, formatDuration } from "../../time.js";
-import { Csrf, Layout, Notice, PermissionChips, PostButton, Problems, StatusBadge, Time, type View } from "../ui.js";
+import { Csrf, Layout, Notice, OnThisPage, PermissionChips, PostButton, Problems, StatusBadge, Time, type View } from "../ui.js";
 import {
   HardeningCard,
   MaintenanceCard,
@@ -353,6 +353,21 @@ export const DevicePage: FC<{
       )}
       <OtherUsersCard view={view} device={device} commands={phone.commands} />
       <Problems problems={device.problems.filter((p) => p.code !== "tampering" && p.code !== "other_users")} />
+      <OnThisPage
+        links={[
+          ["#rules", "Rules"],
+          ["#pause", "Pause"],
+          ["#apps", "Apps"],
+          ["#web", "Web"],
+          ["#locks", "Settings the kid can't change"],
+          ["#maintenance", "Maintenance mode"],
+          ["#hardening", "Hardening"],
+          ["#update", "Updating Belay"],
+          ["#facts", "This phone"],
+          ...(offBelay ? [["#off-belay", "Off belay"] as const] : []),
+          ["#manage", "Manage"],
+        ]}
+      />
 
       <h2 id="rules">Rules</h2>
       <RulesStatus view={view} device={device} />
@@ -447,14 +462,14 @@ export const DevicePage: FC<{
       <h2 id="update">Updating Belay</h2>
       <UpdateCard view={view} device={device} files={phone.agentFiles} />
 
-      <h2>This phone</h2>
+      <h2 id="facts">This phone</h2>
       <div class="card">
         <Facts device={device} view={view} />
       </div>
 
       {offBelay}
 
-      <h2>Manage</h2>
+      <h2 id="manage">Manage</h2>
       <div class="card">
         <form class="row" method="post" action={`/devices/${device.id}/rename`}>
           <Csrf view={view} />

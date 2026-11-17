@@ -138,6 +138,18 @@ export const PermissionChips: FC<{ permissions: string[]; highlight?: string[] }
   </>
 );
 
+/** For a long page: its sections, folded away until wanted, so a phone needn't scroll past the rest. */
+export const OnThisPage: FC<{ links: (readonly [href: string, label: string])[] }> = ({ links }) => (
+  <details class="jump">
+    <summary>On this page</summary>
+    <nav aria-label="On this page">
+      {links.map(([href, label]) => (
+        <a href={href}>{label}</a>
+      ))}
+    </nav>
+  </details>
+);
+
 /** A POST button with the CSRF token, optionally asking first. */
 export const PostButton: FC<PropsWithChildren<{ view: View; action: string; confirm?: string; kind?: "quiet" | "danger"; fields?: Record<string, string> }>> = ({
   view,
