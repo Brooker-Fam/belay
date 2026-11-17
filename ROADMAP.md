@@ -124,9 +124,11 @@ screen time (limits, schedules, lock now, measuring, more time, stages and the a
 profile, and the fixes from a security review of the Phase 2 server. The contracts are in
 [docs/protocol.md](docs/protocol.md); each phase's Pixel checklist is in `docs/`. Phase 8's setup kit is
 built too: one provisioning plan that `provision.sh` and the kit both run, the kit's page and
-runner, and its container; CI provisions the emulator with the kit's runner. **In progress:**
-Phase 7 (the kid's side: Home, help, the emergency card, talk) and Phase 4 (location, off by
-default). Network logging (Phase 3) comes after.
+runner, and its container; CI provisions the emulator with the kit's runner. Phase 7 (the kid's side:
+Home, help, the emergency card, talk) and Phase 4 (location, off by default) are built and run end
+to end too. **In progress:** Phase 5's calls (Belay as the phone app, approved contacts) and
+Phase 11 (off belay). Phase 5's texts wait for a Pixel test of Google Messages' archival hook;
+network logging (Phase 3) comes after.
 
 ### Phase 3: screen time, schedules and stages ([design](docs/design/phase3-screen-time.md)) (built)
 
@@ -144,7 +146,12 @@ needs one restart before lock now works: platform notes, S5).
 - Opt-in network logging, reduced on the phone to domains per app per day; AI can't read it
   unless allowed.
 
-### Phase 4: location ([design](docs/design/phase4-location.md))
+### Phase 4: location ([design](docs/design/phase4-location.md)) (built)
+
+Built and run end to end in CI (an emulator GPS fix answers "locate now"; turning location off
+takes the permission away). **Still open:** [docs/phase4-checklist.md](docs/phase4-checklist.md)
+on the Pixel, including the battery cost per mode.
+
 
 - Off by default; on demand, or periodic with places (arrived at school, left school) computed on
   the phone, and a lost-phone mode. Belay grants itself location only while the family has it on.
@@ -178,7 +185,12 @@ self-update uses a non-test-only debug build: platform notes, I5).
   server is ever lost.
 - Daily backups with a verify command and restore drills; health monitoring of phones and server.
 
-### Phase 7: the kid's side ([design](docs/design/phase7-kid-side.md))
+### Phase 7: the kid's side ([design](docs/design/phase7-kid-side.md)) (built)
+
+Built and run end to end in CI (a help request with a shared fix, even with location off; a
+parent's "seen" reaching the phone). **Still open:** [docs/phase7-checklist.md](docs/phase7-checklist.md)
+on the Pixel, including the emergency card while paused.
+
 
 - Belay as the kid's own app: requests and answers, their stage and agreement, what the parents
   can see and what Belay told them, an "I need help" button and an emergency card that work even

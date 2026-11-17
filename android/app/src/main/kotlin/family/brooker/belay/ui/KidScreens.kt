@@ -234,6 +234,8 @@ private fun requestTitle(request: AnsweredRequest, kid: KidView, words: KidWords
         )
         WireRequestKind.HELP -> stringResource(R.string.request_help)
         WireRequestKind.TALK -> stringResource(R.string.request_talk)
+        // Phase 5's contact requests (the calls work adds the screen that makes them).
+        WireRequestKind.CONTACT -> stringResource(R.string.request_contact)
     }
 }
 
