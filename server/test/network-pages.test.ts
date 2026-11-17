@@ -67,6 +67,9 @@ describe("network logging on the parent pages", () => {
     const off = await form(`${base}/network`, { on: "0" });
     expect(off.headers.get("location")).toBe(`${base}?saved=network_off#network`);
     expect(policy().network_log).toEqual({ enabled: false });
+    ({ html } = await page("/activity"));
+    expect(html).toContain("turned on network logging (which websites and services apps look up) (Alex&#39;s phone)");
+    expect(html).toContain("turned off network logging (which websites and services apps look up) (Alex&#39;s phone)");
   });
 
   it("the Network tab: domains per app per day, most looked up first, with the retention stated", async () => {

@@ -122,16 +122,16 @@ time given today, the last "lock now" and how it went), and from Phase 4 whether
 where it is (off, on demand, or how often), and whether it's in lost mode: never where it is.
 From Phase 5: whether calls are on and the call rules, and the contacts' names, whether each may
 call and text and whether they're a parent, and how many blocked and private numbers there
-are: never who called, a number, or which numbers are private. Blocked and waiting apps are
-listed only with the Apps category.
+are: never who called, a number, or which numbers are private. From Phase 3's network logging:
+that Android paused it, as one of the phone's problems; never what apps looked up. Blocked and
+waiting apps are listed only with the Apps category.
 
 Also always included: the server's own health (`get_server_health`): backups, disk, database
 size, its clock. It names no phone or app.
 
 Never included, because Belay doesn't collect it: messages, what's said on calls, Android's
 own contacts and call log, photos, the pages of websites (network logging keeps only names, per
-app per day), or what's on the screen. Whether network logging is on is said only by
-`get_network_activity`, with the Network category. Passwords, tokens,
+app per day), or what's on the screen. Passwords, tokens,
 enrollment codes, reset protection account ids and recovery keys (or their checks) are never
 returned, and neither is the kid's own phone number (it's only for "Call" on the parent page)
 or which numbers are private.

@@ -119,6 +119,9 @@ function what(e: AuditEntry): string {
     }
     case "screen_time.measure":
       return `${d.on === true ? "turned on" : "turned off"} measuring screen time${device}`;
+    case "network.on":
+    case "network.off":
+      return `${e.action === "network.on" ? "turned on" : "turned off"} network logging (which websites and services apps look up)${device}`;
     case "screen_time.settings":
       return `changed which time zone the phone's days follow, or when they start${device}`;
     case "stage.moved":
