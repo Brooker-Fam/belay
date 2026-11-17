@@ -73,7 +73,8 @@ class CallFlowInstrumentedTest {
         assertEquals(SAM.id, decided.contactId)
         assertTrue("Belay didn't ring for an approved contact", decided.rang)
         assertTrue("the call isn't on Belay's screen", CallFlow.calls.value.any { it.id == call.id && it.name == "Sam" })
-        if (notificationsAllowed()) assertTrue("no incoming-call notification", incomingShown())
+        // NotificationManager posts and cancels asynchronously: wait for each, don't sample once.
+        if (notificationsAllowed()) await("no incoming-call notification") { incomingShown() }
         assertFalse(call.rejected)
         // The caller gives up: a missed call from Sam, and nothing rings any more.
         call.state = Call.STATE_DISCONNECTED
@@ -82,7 +83,7 @@ class CallFlowInstrumentedTest {
         assertEquals(WireCallOutcome.MISSED, record.outcome)
         assertEquals(SAM.id, record.contact?.id)
         assertFalse(CallFlow.ringing)
-        assertFalse(incomingShown())
+        await("the incoming-call notification stayed after the caller gave up") { !incomingShown() }
     }
 
     @Test
