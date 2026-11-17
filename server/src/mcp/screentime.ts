@@ -42,9 +42,11 @@ import {
 import { GAP_WORDS, oneEach, usageDays } from "../family/screentime/usage.js";
 import { changeSentence } from "../family/screentime/words.js";
 import { notifyParents, proposalNotice } from "../push.js";
+import { AI_PER_HOUR } from "../ratelimit.js";
 import { type AiScope, AI_SCOPES, getSettings } from "../settings.js";
 import { oneLine } from "../text.js";
 import { isValidTimeZone, isoInZone } from "../time.js";
+import { aiCounted, aiLimited } from "./limits.js";
 import type { Caller } from "./server.js";
 
 const READ = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
@@ -526,7 +528,7 @@ export function registerScreenTimeTools(server: McpServer, deps: Deps, caller: C
     "lock_phone",
     {
       title: "Lock the phone now",
-      description: `Pauses a phone at once for ${LOCK_MINUTES.min} to ${LOCK_MINUTES.max} minutes and locks its screen: every app but the phone app, texting and Belay is suspended, so calls, texts, 911 and 988 still work. Tightening, so it acts directly; use it only when the parent asks. The screen locks if the phone gets this within ${LOCK_NOW_MS / 60_000} minutes. A pause already running for longer stays as it is. The kid's phone says so in Belay's own words ("Your parent paused this phone until 6:30 PM."), never yours: a parent can add a note of their own on the parent page. Only a parent can resume early, on the parent page (you can propose that with propose_change).`,
+      description: `Pauses a phone at once for ${LOCK_MINUTES.min} to ${LOCK_MINUTES.max} minutes and locks its screen: every app but the phone app, texting and Belay is suspended, so calls, texts, 911 and 988 still work. Tightening, so it acts directly; use it only when the parent asks. The screen locks if the phone gets this within ${LOCK_NOW_MS / 60_000} minutes. A pause already running for longer stays as it is. The kid's phone says so in Belay's own words ("Your parent paused this phone until 6:30 PM."), never yours: a parent can add a note of their own on the parent page. Only a parent can resume early, on the parent page (you can propose that with propose_change). At most ${AI_PER_HOUR.locks} locks and pauses (pause_phone) an hour per phone through this connection: past that it says when to try again.`,
       inputSchema: {
         device: deviceParam,
         minutes: z.int().min(LOCK_MINUTES.min).max(LOCK_MINUTES.max).describe("How long the phone stays paused"),
@@ -537,7 +539,10 @@ export function registerScreenTimeTools(server: McpServer, deps: Deps, caller: C
       const row = phone(device);
       if (isRefusal(row)) return row;
       if (row.revoked_at !== null) return refusal(`${row.name} is disconnected, so Belay can't change anything on it.`);
+      const limited = aiLimited(deps, caller, "lock_phone", row);
+      if (limited) return limited;
       const done = lockPhone(ctx(), row.id, { minutes }, ai);
+      aiCounted(deps, caller, "lock_phone", row.id);
       return result({
         phone: row.name,
         paused_until: done.result.until === null ? "a parent resumes it" : iso(done.result.until),

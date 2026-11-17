@@ -32,6 +32,7 @@ Factory reset and debugging locks are a separate step a parent takes when ready.
 | Get the parent's AI to tighten too much: block the keyboard or the dialer, or thousands of made-up apps until the phone can't take its rules | The server refuses to block what the phone never blocks (its own report, and the well-known dialers, texting apps, keyboards, home screens, telephony and emergency apps). AI clients may block at most 50 apps that aren't on the phone, everyone together 500, and no change can make the policy larger than 256 KB (the phone takes 1 MB); a parent clears blocks of apps that aren't on the phone on its page. An AI's pause can't shorten one running or change its note. | Closed. |
 | Get the parent's AI to put its own words on the kid's screen: a limit or schedule named "Call 555-0100 now" that limits nothing, or a pause's note | An AI client writes no words the kid reads. Belay names a limit or schedule it adds or renames after what it is (its apps, as the phone names them, or its kind; apps the phone never reported are only counted), renaming is a proposal, and its pause or lock has no note. Every name and note the kid sees, a parent's too, is sent without control, invisible or direction-changing characters. | Closed. |
 | Pause the phone to get out of something, or wait out a pause | During a pause, calls and texts (and 911 and 988), the clock, the keyboard, Settings and Belay keep working; nothing else opens. | By design. |
+| Get the parent's AI to pause or lock the phone again and again | An AI client may pause or lock a phone at most 6 times an hour through one connection (pauses and locks together; one that changes nothing doesn't count). Past that the tool refuses and says when to try again, and the activity log says so. A parent isn't limited. | Closed. |
 
 ## The kid and screen time (Phase 3)
 
@@ -71,6 +72,7 @@ describes them by the family's places itself, with no outside service.
 | Hover at a place's edge to make it flap | Two fixes in a row on the same side, beyond the radius plus or minus the accuracy, decide; a fix near the edge starts the count again. |
 | Send made-up fixes (with the phone's token) | Kept only as the rules ask: a periodic fix only in periodic mode within its hours, a check's fix only for one of this phone's own checks, a place event only for one of its places; at most 200 of each in 64 KB a call, rate limited per phone. Lost-mode and help fixes are always kept, as the kid's own report, but like the rest at most 600 new ones an hour (then `429`) and 10,000 fixes a phone (then the oldest go). |
 | Get the parent's AI to change location | No tool and no proposal changes the mode, the places, keeping location on or lost mode. An AI app may only check where the phone is, with the Location category on, and the kid sees each check. |
+| Get the parent's AI to check where the phone is again and again | The kid's phone shows every check, and an AI app may make at most 6 an hour per phone through one connection; past that the tool refuses and says when to try again, and the activity log says so. A parent's checks aren't limited. |
 
 ## The kid and calls (Phase 5)
 

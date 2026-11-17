@@ -74,6 +74,8 @@ function what(e: AuditEntry): string {
       return `connected ${str(d.client) || "an AI app"}`;
     case "ai.disconnected":
       return `disconnected ${str(d.client) || "an AI app"}`;
+    case "ai.limited":
+      return `was refused: it tried to ${d.what === "checks" ? "check where the phone is" : "pause or lock the phone"} more than ${str(d.limit)} times in an hour${device}`;
     case "token.created":
       return `made a personal access token, "${str(d.name)}"`;
     case "token.revoked":

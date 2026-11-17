@@ -64,7 +64,7 @@ export function mcpRoutes(deps: Deps): Hono<{ Bindings: Bindings }> {
     if (messages > MAX_BATCH) return c.json(rpcError(-32600, `Invalid Request: at most ${MAX_BATCH} messages in one batch`), 400);
     touchGrant(db, grant.id, now);
 
-    const server = buildMcpServer(deps, { parentId: grant.parentId, parentName: grant.parentName, clientName: grant.clientName });
+    const server = buildMcpServer(deps, { grantId: grant.id, parentId: grant.parentId, parentName: grant.parentName, clientName: grant.clientName });
     const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     await server.connect(transport);
     try {

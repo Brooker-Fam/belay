@@ -93,7 +93,7 @@ OK?", with a web page as the fallback.
   requests for more time (answered with 15, 30 or 60 minutes), lock now, and each phone's
   screen time by the hour and by day, drawn on the server with a table beside each chart.
   Usage is kept 13 months by default. Over MCP, an AI client reads screen time, locks the
-  phone and tightens the rules; the server decides whether a change only tightens, and
+  phone (pauses and locks at most 6 times an hour per connection) and tightens the rules; the server decides whether a change only tightens, and
   anything else, or a move to another stage, is a proposal.
 - **Phases 4 and 7 on the server: location, and the kid's side.** Location is off until a
   parent turns it on, on the phone's Location and help page: on demand (a parent's "Check
@@ -108,7 +108,8 @@ OK?", with a web page as the fallback.
   kid's phone shows; "Talk to my parent" and withdrawing a request too. The policy tells the
   phone which data the parents' AI app may read, and the numbers for its emergency card.
   Over MCP, an AI client reads location only if a parent turns that on (it starts off), may
-  check where the phone is (the kid sees every check), and never changes any of it.
+  check where the phone is (the kid sees every check; at most 6 an hour per connection), and
+  never changes any of it.
 - **Phase 5 on the server: calls.** Calls are off until a parent turns them on, on the
   phone's Calls page; then the phone's policy makes Belay its phone app. The family decides who
   can call (anyone, or only contacts, and what happens to callers who aren't contacts or have no

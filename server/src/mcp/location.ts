@@ -18,9 +18,11 @@ import { describeFix, distanceWords } from "../family/location/describe.js";
 import { checkAnswer, latestFix, listPlaceEvents } from "../family/location/fixes.js";
 import { type FixView, type LocationSettings, listPlaces, locationSettings } from "../family/location/store.js";
 import { type Changer, type PolicyContext, RuleRefused } from "../family/policy.js";
+import { AI_PER_HOUR } from "../ratelimit.js";
 import { AI_SCOPES, getSettings } from "../settings.js";
 import { oneLine } from "../text.js";
 import { durations, formatAgo, isoInZone, parseWhen } from "../time.js";
+import { aiCounted, aiLimited } from "./limits.js";
 import type { Caller } from "./server.js";
 
 const READ = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
@@ -135,7 +137,7 @@ export function registerLocationTools(server: McpServer, deps: Deps, caller: Cal
     {
       title: "Check where the phone is now",
       description:
-        "Asks a phone for a fresh fix and waits up to a minute for it. Only while the phone shares where it is when a parent checks (on demand) or periodically, and only with the Location category on. The kid's phone shows a notice for every check, naming you (\"Your parent checked where this phone is, using …\"), and the activity log has it. Use it only when the parent asks.",
+        `Asks a phone for a fresh fix and waits up to a minute for it. Only while the phone shares where it is when a parent checks (on demand) or periodically, and only with the Location category on. The kid's phone shows a notice for every check, naming you ("Your parent checked where this phone is, using …"), and the activity log has it. Use it only when the parent asks. At most ${AI_PER_HOUR.checks} checks an hour per phone through this connection: past that it says when to try again (get_location still shows the latest fix).`,
       inputSchema: { device: deviceParam },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     },
@@ -149,6 +151,8 @@ export function registerLocationTools(server: McpServer, deps: Deps, caller: Cal
       if (!s || s.mode === "off") {
         return refusal(`Location is off for ${row.name}, so it doesn't answer a check. Only a parent turns it on, on the phone's Location page; you can't, and can't propose it.`);
       }
+      const limited = aiLimited(deps, caller, "locate_now", row);
+      if (limited) return limited;
       let command: string;
       try {
         command = locateNow(ctx(), row.id, ai).result.command;
@@ -156,6 +160,8 @@ export function registerLocationTools(server: McpServer, deps: Deps, caller: Cal
         if (error instanceof RuleRefused) return refusal(error.message);
         throw error;
       }
+      // Counted as soon as the check is sent, before waiting for its fix: the kid's phone shows it either way.
+      aiCounted(deps, caller, "locate_now", row.id);
       const answered = await deps.fixWaiters.wait(row.id, () => checkAnswer(db, row.id, command) !== null, deps.locateWaitMs, extra.signal);
       const fix = answered ? checkAnswer(db, row.id, command) : null;
       const via = oneLine(caller.clientName, 60) || "an AI app";
