@@ -7,6 +7,7 @@ import { audit } from "../audit.js";
 import { normalizeCode, sha256 } from "../crypto.js";
 import type { Deps } from "../deps.js";
 import { offeredFile } from "../family/agent.js";
+import { saveCallRecords, withoutAlwaysAllowed } from "../family/calls/records.js";
 import { markNotified, saveLocations } from "../family/location/fixes.js";
 import { buildPolicy, changePolicy, neverBlockedOn, policyVersion } from "../family/policy.js";
 import { receiveReport } from "../family/reports.js";
@@ -14,14 +15,14 @@ import { saveRequests, type SavedRequests } from "../family/requests.js";
 import { recordAgreementAnswers } from "../family/screentime/changes.js";
 import { phoneRow, phoneRules } from "../family/screentime/rules.js";
 import { retentionCutoff, saveUsage } from "../family/screentime/usage.js";
-import { bearerToken, clientAddress, parseRange, readJson, type Bindings } from "../http.js";
+import { bearerToken, checkJson, clientAddress, parseRange, readJson, readJsonBody, type Bindings } from "../http.js";
 import { helpNotice, notifyParents, placeNotice, recoveryUsedNotice, requestsNotice, updateFailedNotice } from "../push.js";
 import type { Verdict } from "../ratelimit.js";
 import { getSettings } from "../settings.js";
 import { formatDateTime, formatTime } from "../time.js";
 import { applyEvents, applyInventory } from "./apps.js";
 import { enroll } from "./enroll.js";
-import { CheckinRequest, EnrollRequest, EventsRequest, InventoryRequest, LIMITS, LocationsRequest, PolicyQuery, RequestsRequest, UsageRequest, type Device } from "./schemas.js";
+import { CallsRequest, CheckinRequest, EnrollRequest, EventsRequest, InventoryRequest, LIMITS, LocationsRequest, PolicyQuery, RequestsRequest, UsageRequest, type Device } from "./schemas.js";
 
 interface PhoneRow {
   id: string;
@@ -53,6 +54,7 @@ function blocked(...verdicts: Verdict[]): number | null {
 
 const isPolicyPoll = (method: string, path: string) => method === "GET" && path.endsWith("/policy");
 const isDownload = (path: string) => /\/agent\/[^/]*$/.test(path);
+const isCalls = (method: string, path: string) => method === "POST" && path.endsWith("/calls");
 
 export function deviceRoutes(deps: Deps): Hono<DeviceEnv> {
   const { db, limits } = deps;
@@ -104,7 +106,13 @@ export function deviceRoutes(deps: Deps): Hono<DeviceEnv> {
       ? db.prepare<[string], PhoneRow>("SELECT id, name FROM devices WHERE token_hash = ? AND revoked_at IS NULL").get(sha256(token))
       : undefined;
     if (!phone) return fail(401, "invalid_token", "This phone isn't connected to Belay. A parent can reconnect it from the parent page.");
-    const limiter = isPolicyPoll(c.req.method, c.req.path) ? limits.policyPerPhone : isDownload(c.req.path) ? limits.agentPerPhone : limits.devicePerPhone;
+    const limiter = isPolicyPoll(c.req.method, c.req.path)
+      ? limits.policyPerPhone
+      : isDownload(c.req.path)
+        ? limits.agentPerPhone
+        : isCalls(c.req.method, c.req.path)
+          ? limits.callsPerPhone
+          : limits.devicePerPhone;
     const verdict = limiter.hit(phone.id);
     if (!verdict.ok) return fail(429, "rate_limited", "Too many requests", verdict.retryAfterSeconds);
     c.set("phone", phone);
@@ -190,6 +198,8 @@ export function deviceRoutes(deps: Deps): Hono<DeviceEnv> {
           return { kind: r.kind, ...(r.shared ? { shared_location: true } : {}) };
         case "talk":
           return { kind: r.kind };
+        case "contact":
+          return { kind: r.kind, contact: r.contactName ?? undefined };
       }
     };
     const actor = { kind: "phone", deviceId: phone.id } as const;
@@ -260,6 +270,32 @@ export function deviceRoutes(deps: Deps): Hono<DeviceEnv> {
       return fail(429, "rate_limited", "This phone sent more new fixes this hour than Belay keeps: send the rest later", wait.ok ? 60 : wait.retryAfterSeconds);
     }
     return c.json({ server_time: now, accepted: saved.accepted });
+  });
+
+  /**
+   * Phase 5: call records, kept only while the phone's rules record calls (family/calls/records.ts);
+   * the rest is dropped and still answered as accepted, so the phone stops sending them. Idempotent
+   * by each record's id. A record naming an emergency number, 988 or a private number is never
+   * kept: it's taken out before the body is checked (911 isn't E.164), and the server's log says
+   * only that it happened, never the number or the phone.
+   */
+  app.post("/calls", limit(LIMITS.callsBytes), async (c) => {
+    const raw = await readJsonBody(c);
+    if (!raw.ok) return fail(400, "invalid_request", raw.description);
+    const { body, neverKept: taken } = withoutAlwaysAllowed(raw.value);
+    const now = deps.now();
+    const phone = c.var.phone;
+    const empty = Array.isArray((body as { calls?: unknown }).calls) && (body as { calls: unknown[] }).calls.length === 0;
+    const checked = empty && taken > 0 ? null : checkJson(CallsRequest, body);
+    if (checked && !checked.ok) return fail(400, "invalid_request", checked.description);
+    db.prepare("UPDATE devices SET last_seen_at = ? WHERE id = ?").run(now, phone.id);
+    const saved = checked ? saveCallRecords(db, phone.id, checked.value.calls, now) : { accepted: 0, stored: 0, dropped: 0, neverKept: 0 };
+    const neverKept = taken + saved.neverKept;
+    if (neverKept > 0) {
+      deps.log(`A phone sent ${neverKept === 1 ? "a call record" : `${neverKept} call records`} Belay never keeps (an emergency number, 988 or a private number): not kept. Belay on the phone shouldn't send them.`);
+    }
+    if (saved.dropped > 0) deps.log(`A phone sent ${saved.dropped} call record${saved.dropped === 1 ? "" : "s"} its rules didn't ask for: not kept.`);
+    return c.json({ server_time: now, accepted: saved.accepted + taken });
   });
 
   /**

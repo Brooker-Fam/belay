@@ -45,6 +45,7 @@ object DataCategories {
             "The phone's time zone, and its clock, to check that the time is right",
             "Which of your parent's rules Belay is using, how many apps it's holding back, " +
                 "which apps it never blocks (like the phone and texting apps), and anything it couldn't do",
+            "Whether Belay is the phone's calling app, when your parent turned calls on",
             "Whether the SIM card was changed, how many other users or profiles are on the phone, " +
                 "and which settings something other than Belay has locked (not the phone number, " +
                 "and nothing about what's on them)",
@@ -71,7 +72,28 @@ object DataCategories {
             "When you tap \"I need help\": that you need help, what you write with it, and where " +
                 "this phone is, only if you choose to share it",
             "What you write in \"Talk to my parent\"",
+            "When you ask to add a contact: the name and number you give, and what you write about why",
             "When you change what you wrote, or take a request back",
+        ),
+    )
+
+    /** Phase 5: the calls category's id, which is also the server's AI scope. */
+    const val CALLS_ID = "calls"
+
+    /**
+     * Phase 5, while the policy's calls has `log` on: the call records Belay sends
+     * (POST /api/v1/calls). Calls with 911, Android's emergency numbers, 988 and the family's
+     * private numbers are never recorded or sent (core's CallRecords).
+     */
+    val CALLS = DataCategory(
+        id = CALLS_ID,
+        title = "Your calls",
+        details = listOf(
+            "Who you call and who calls you, when, and for how long: the contact's name, or the " +
+                "number of someone who isn't one of your contacts",
+            "Calls Belay didn't let through, and why, like a number that isn't in your contacts",
+            "Never what anyone says. Calls with 911, 988 and the numbers your parent made private " +
+                "are never recorded or sent.",
         ),
     )
 

@@ -39,8 +39,8 @@ android {
         applicationId = "family.brooker.belay"
         minSdk = 31
         targetSdk = 37
-        versionCode = belayVersionCode ?: 5
-        versionName = "0.4.0-phase4-7"
+        versionCode = belayVersionCode ?: 6
+        versionName = "0.5.0-phase5-calls"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

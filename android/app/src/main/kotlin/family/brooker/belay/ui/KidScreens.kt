@@ -71,6 +71,8 @@ class KidActions(
     /** Android's own emergency information; null when the phone has none. */
     val emergencyInfo: (() -> Boolean)?,
     val navigate: (Screen) -> Unit,
+    /** Phase 5: Belay's dialer, while the family has calls on. */
+    val openCalls: () -> Unit = {},
 )
 
 /** Home's first card: the phone's state in one line, and what works now. */
@@ -102,9 +104,10 @@ internal fun HelpButton(onHelp: () -> Unit) {
 }
 
 /**
- * The emergency card: 911 and 988 (call or text), the parents' numbers from the policy, and
- * Android's own emergency information. Always on Home and Help, also while the phone is paused:
- * Belay, the dialer and the texting app are never blocked.
+ * The emergency card: 911 and 988 (call or text), the parents (Phase 5: the `parent` contacts, else
+ * the policy's `parent_numbers`; core's CallContacts.emergencyCard), and Android's own emergency
+ * information. Always on Home and Help, also while the phone is paused: Belay, the dialer and the
+ * texting app are never blocked.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -234,8 +237,9 @@ private fun requestTitle(request: AnsweredRequest, kid: KidView, words: KidWords
         )
         WireRequestKind.HELP -> stringResource(R.string.request_help)
         WireRequestKind.TALK -> stringResource(R.string.request_talk)
-        // Phase 5's contact requests (the calls work adds the screen that makes them).
-        WireRequestKind.CONTACT -> stringResource(R.string.request_contact)
+        // Phase 5: "Ask to add a contact", named by what the kid wrote (their words, shown as text).
+        WireRequestKind.CONTACT -> r.contactName?.takeIf { it.isNotBlank() }?.let { stringResource(R.string.request_contact_named, it) }
+            ?: stringResource(R.string.request_contact)
     }
 }
 
@@ -326,7 +330,8 @@ internal fun CanSeeCard(categories: List<DataCategory>, connection: Connection, 
         val shown = categories.map { it.id }.toSet()
         val others = reads - shown
         if (AGREEMENT_SCOPE in others) Text(stringResource(R.string.can_see_ai_agreement), style = MaterialTheme.typography.bodyMedium)
-        val unknown = (others - AGREEMENT_SCOPE - DataCategories.LOCATION_ID).sorted()
+        // Location and calls are read only while their collectors are on (listed above when they are).
+        val unknown = (others - AGREEMENT_SCOPE - DataCategories.LOCATION_ID - DataCategories.CALLS_ID).sorted()
         if (unknown.isNotEmpty()) Text(stringResource(R.string.can_see_ai_other, unknown.joinToString(", ")), style = MaterialTheme.typography.bodyMedium)
         if (reads.isEmpty() && connection.connected) Text(stringResource(R.string.can_see_ai_none), style = MaterialTheme.typography.bodyMedium)
         val whereItGoes = when {

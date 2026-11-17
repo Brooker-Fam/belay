@@ -51,6 +51,21 @@
 # after help-seen the phone's state shows it seen; location off takes the permission away (Android
 # restarts Belay, which comes back); and with location off, a help request's shared fix still gets
 # in, and the permission is gone again afterwards.
+#
+# Phase 5, with BELAY_E2E_CLI, a server whose status has calls and an image with telephony: with
+# `calls --mode contacts --unknown reject --log on`, Belay becomes the default dialer (telecom
+# get-default-dialer) and reports it; the calls instrumented tests run; an incoming call from a
+# contact's number (the emulator console's `gsm call`) rings Belay's screen (its debug state); one
+# from another number is rejected without ringing and reaches the server as rejected, unknown, with
+# its number; block-number puts the number on Android's block list and unblock-number takes it off;
+# and `calls --off` gives the default dialer back (or, with none before, Android drops Belay from
+# the role), Belay loses its call permissions and comes back. Made-up 555-01xx numbers only: never
+# a call to or from 911 or 988.
+#
+# Phase 11, with BELAY_E2E_CLI and a server whose status has handover, just before the restart: a
+# parent hands the phone over; the phone applies that policy, and its debug state shows the hand-over
+# carried out, holding none of its locks and no reset protection (a debug build never sets it, and
+# says it left it alone). Then the restart and unprovision.sh, as without it.
 set -euo pipefail
 # shellcheck source-path=SCRIPTDIR source=lib.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -162,6 +177,8 @@ diagnose() {
   state | grep -oE '"(agent_update|recovery)":\{[^}]*\}|"commands":\[[^]]*\]' || true
   echo "--- why apps are held, and screen time:"
   state | grep -o '"reasons":.*' | cut -c 1-2000 || true
+  echo "--- calls (Phase 5):"
+  state 2>/dev/null | jq -c '.calls' 2>/dev/null || true
 }
 # Phase 3: "suspended=true" or "suspended=false" for package $1, user 0 (dumpsys package).
 package_suspended() {
@@ -640,6 +657,171 @@ elif [ -n "$E2E_CLI" ]; then
   echo "help request $help_id has the shared fix; $(fine_location) again"
 elif [ -n "$E2E_SERVER" ]; then
   echo "BELAY_E2E_CLI not given: the Phase 4 and 7 end-to-end checks are skipped"
+fi
+
+# Phase 5: the default dialer's package, from Telecom's shell command (else the dialer role's
+# holder); empty when there's none (the ATD image has no preloaded dialer).
+default_dialer() {
+  local out
+  out="$(ash telecom get-default-dialer 2>/dev/null | tr -d '[:space:]' || true)"
+  if [[ ! "$out" =~ ^[A-Za-z0-9_.]+$ ]] || [ "$out" = null ]; then
+    out="$(ash cmd role get-role-holders android.app.role.DIALER 2>/dev/null | tr -d '[:space:]' || true)"
+  fi
+  if [[ "$out" =~ ^[A-Za-z0-9_.]+$ ]] && [ "$out" != null ]; then printf '%s\n' "$out"; fi
+}
+# Waits up to $2 seconds until the default dialer is $1, or (with $3 = not) until it isn't.
+wait_dialer() {
+  local _ now
+  for _ in $(seq 1 "${2:-60}"); do
+    now="$(default_dialer)"
+    if [ "${3:-}" = not ]; then [ "$now" != "$1" ] && return 0; else [ "$now" = "$1" ] && return 0; fi
+    sleep 1
+  done
+  echo "--- the default dialer: ${now:-none}"
+  return 1
+}
+# The calls part of Belay's debug state: the dialer, Belay's own block-list entries and how it
+# decided the last calls (no numbers; never when the kid last called 911 or 988).
+calls_state() { state 2>/dev/null | jq -c '.calls' 2>/dev/null || true; }
+# An incoming call from $1 (made-up, 555-01xx, never 911 or 988) on the emulator's modem, written
+# in E.164; if the console refuses the "+", the US national form (10 digits), which Belay formats
+# to E.164 with the phone's country.
+gsm_call() {
+  local out
+  out="$(adb emu gsm call "$1" 2>&1 || true)"
+  case "$out" in
+    *KO*)
+      echo "the emulator console refused $1 ($out); calling from ${1#+1} instead"
+      adb emu gsm call "${1#+1}" >/dev/null 2>&1 || true
+      ;;
+  esac
+}
+gsm_cancel() {
+  adb emu gsm cancel "$1" >/dev/null 2>&1 || true
+  adb emu gsm cancel "${1#+1}" >/dev/null 2>&1 || true
+}
+# Whether $1 is on Android's own block list: the shell holds READ_BLOCKED_NUMBERS (AOSP 17 Shell).
+blocked_on_android() {
+  ash content query --uri content://com.android.blockednumber/blocked --projection original_number 2>/dev/null | contains "original_number=$1"
+}
+# Waits up to $2 seconds until the jq filter $1 holds for Belay's calls state.
+wait_calls_state() {
+  local _
+  for _ in $(seq 1 "${2:-30}"); do
+    if calls_state | jq -e "$1" >/dev/null 2>&1; then return 0; fi
+    sleep 1
+  done
+  echo "--- Belay's calls state: $(calls_state)"
+  return 1
+}
+
+if [ -n "$E2E_CLI" ] && ! server_status | jq -e '.phones[0] | has("calls")' >/dev/null 2>&1; then
+  echo "the server's status has no calls (its Phase 5 isn't there yet): the Phase 5 calls checks are skipped"
+elif [ -n "$E2E_CLI" ] && [ "$(ash pm has-feature android.hardware.telephony 2>/dev/null | tr -d '[:space:]')" != true ]; then
+  echo "this image has no telephony: the Phase 5 calls checks are skipped"
+elif [ -n "$E2E_CLI" ]; then
+  phone="$(server_status | jq -r '.phones[0].name')"
+  # Made-up numbers only (555-01xx). Never 911 or 988, in or out: those are JVM-tested.
+  CONTACT_NUMBER=+15555550123
+  STRANGER_NUMBER=+15555550199
+  BLOCKED_NUMBER=+15555550177
+
+  step "Phase 5: calls on (contacts only, unknown callers rejected, logged): Belay becomes the default dialer"
+  dialer_before="$(default_dialer)"
+  echo "the default dialer before Belay: ${dialer_before:-none}"
+  server_cli calls "$phone" --mode contacts --unknown reject --log on
+  wait_applied
+  wait_dialer "$PKG" 60 || { diagnose; die "Belay didn't become the default dialer within 60 s of calls --mode contacts" "$(calls_state)"; }
+  wait_server '.enforcement.calls.dialer == true' "the phone's report that Belay is the dialer" 30
+  echo "the default dialer: $(default_dialer); the report: $(server_status | jq -c '.phones[0].enforcement.calls')"
+
+  step "Phase 5: the calls instrumented tests (the role, the call permissions, CALL_PHONE for other apps)"
+  out="$(ash am instrument -w -e class "$PKG.CallsInstrumentedTest" "$TEST_PKG/androidx.test.runner.AndroidJUnitRunner")"
+  printf '%s\n' "$out"
+  grep -q '^OK (' <<<"$out" || { diagnose; die "the calls instrumented tests failed"; }
+  open_belay
+  wait_dialer "$PKG" 30 || { diagnose; die "Belay wasn't the default dialer after its instrumented tests"; }
+
+  step "Phase 5: a call from an approved contact rings Belay's screen"
+  contact_id="$(server_cli_out contact "$phone" --name "CI Contact" --number "$CONTACT_NUMBER" --calls on)"
+  [[ "$contact_id" =~ ^c-[A-Za-z0-9_-]+$ ]] || die "contact should print only the new contact's id" "$contact_id"
+  wait_applied
+  gsm_call "$CONTACT_NUMBER"
+  ring="[.decided[]? | select(.action == \"ring\" and .contact_id == \"$contact_id\" and .rang and (.screened | not))] | length > 0"
+  wait_calls_state "$ring" 30 || { gsm_cancel "$CONTACT_NUMBER"; diagnose; die "a call from the contact's number didn't ring Belay's screen"; }
+  wait_calls_state '[.now[]? | select(.direction == "in" and .shown == "true")] | length > 0' 10 ||
+    { gsm_cancel "$CONTACT_NUMBER"; diagnose; die "Belay's in-call service doesn't show the contact's call"; }
+  echo "Belay rings: $(calls_state | jq -c '{ringing, now}')"
+  gsm_cancel "$CONTACT_NUMBER"
+  wait_calls_state '(.now // []) | length == 0' 20 || { diagnose; die "the contact's call didn't end after gsm cancel"; }
+
+  step "Phase 5: a call from a number that isn't a contact is rejected, never rings, and is reported"
+  gsm_call "$STRANGER_NUMBER"
+  # The record carries the number (the caller isn't a contact), so a parent can approve or block it.
+  wait_server "[.call_records[]? | select(.direction == \"in\" and .number == \"$STRANGER_NUMBER\" and .outcome == \"rejected\" and .reason == \"unknown\")] | length > 0" \
+    "a rejected call record from $STRANGER_NUMBER with reason unknown" 60
+  calls_state | jq -e '[.decided[]? | select(.action == "reject" and .reason == "unknown")] | length > 0 and (map(.rang) | any | not)' >/dev/null ||
+    { gsm_cancel "$STRANGER_NUMBER"; diagnose; die "Belay didn't refuse the stranger's call without ringing" "$(calls_state)"; }
+  gsm_cancel "$STRANGER_NUMBER"
+  # And the contact's call reached the server by its contact id, without the number.
+  wait_server "[.call_records[]? | select(.direction == \"in\" and .contact_id == \"$contact_id\" and .number == null)] | length > 0" \
+    "the contact's call record, by contact id" 30
+  server_status | jq -c '.phones[0].call_records[:3]'
+
+  step "Phase 5: block-number puts the number on Android's block list; unblock-number takes it off"
+  server_cli block-number "$phone" "$BLOCKED_NUMBER"
+  wait_applied
+  blocked=0
+  for _ in $(seq 1 30); do if blocked_on_android "$BLOCKED_NUMBER"; then blocked=1; break; fi; sleep 1; done
+  [ "$blocked" = 1 ] || { diagnose; die "$BLOCKED_NUMBER isn't on Android's block list 30 s after block-number" "$(calls_state)"; }
+  echo "$BLOCKED_NUMBER is on Android's block list; Belay's own entries: $(calls_state | jq -c '.blocked_by_belay')"
+  server_cli unblock-number "$phone" "$BLOCKED_NUMBER"
+  wait_applied
+  for _ in $(seq 1 30); do blocked_on_android "$BLOCKED_NUMBER" || { blocked=0; break; }; sleep 1; done
+  [ "$blocked" = 0 ] || { diagnose; die "$BLOCKED_NUMBER is still on Android's block list 30 s after unblock-number"; }
+
+  step "Phase 5: calls off gives the default dialer back; Android restarts Belay, which comes back"
+  server_cli contact "$phone" --remove "$contact_id" >/dev/null
+  server_cli calls "$phone" --off
+  if [ -n "$dialer_before" ]; then
+    wait_dialer "$dialer_before" 90 || { diagnose; die "the default dialer wasn't given back to $dialer_before within 90 s of calls --off"; }
+  else
+    wait_dialer "$PKG" 90 not || { diagnose; die "Belay was still the default dialer 90 s after calls --off (there was none before)"; }
+  fi
+  for _ in $(seq 1 90); do service_running && break; sleep 1; done
+  service_running || { diagnose; die "BelayService didn't come back after calls went off"; }
+  wait_applied
+  held=1
+  for _ in $(seq 1 60); do
+    if ! ash dumpsys package "$PKG" | grep -q 'android.permission.CALL_PHONE: granted=true'; then held=0; break; fi
+    sleep 1
+  done
+  [ "$held" = 0 ] || { diagnose; die "Belay still held CALL_PHONE 60 s after calls went off"; }
+  echo "calls off: the default dialer is ${dialer_before:-none again} ($(default_dialer)), and Belay holds no call permission"
+elif [ -n "$E2E_SERVER" ]; then
+  echo "BELAY_E2E_CLI not given: the Phase 5 calls checks are skipped"
+fi
+
+if [ -n "$E2E_CLI" ] && ! server_status | jq -e '.phones[0] | has("handover")' >/dev/null 2>&1; then
+  echo "the server's status has no handover (its Phase 11 isn't there yet): the hand-over check is skipped"
+elif [ -n "$E2E_CLI" ]; then
+  phone="$(server_status | jq -r '.phones[0].name')"
+
+  step "Phase 11: a parent hands the phone over; the debug build shows it, with the locks and reset protection lifted"
+  server_cli handover "$phone"
+  wait_applied
+  at="$(server_status | jq -r '.phones[0].handover.at')"
+  [[ "$at" =~ ^[0-9]+$ ]] || die "the server's status has no handover.at" "$(server_status | jq -c '.phones[0].handover')"
+  done_it=0
+  for _ in $(seq 1 30); do
+    if state | jq -e ".handover | .at == $at and .done_for == $at and .frp == \"skipped_debug\" and .frp_held == false and .locks_held == []" >/dev/null 2>&1; then
+      done_it=1
+      break
+    fi
+    sleep 1
+  done
+  [ "$done_it" = 1 ] || { diagnose; die "the phone's debug state doesn't show the hand-over carried out" "$(state | jq -c '.handover')"; }
+  echo "the phone: $(state | jq -c '.handover')"
 fi
 
 adb logcat -c

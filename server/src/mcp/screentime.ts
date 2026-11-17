@@ -206,7 +206,7 @@ export function registerScreenTimeTools(server: McpServer, deps: Deps, caller: C
                 since: iso(p.stage.since),
                 untrusted: { name: stage.name, ...(stage.next ? { next: { name: stage.next.name, how_to_get_there: stage.next.how, what_changes: stage.next.unlocks } } : {}) },
                 ...(stage.next ? {} : { next: "This is the last stage." }),
-                who_moves_it: "Only a parent moves the phone to another stage, on the parent page. You can propose it with change_screen_time's stage.",
+                who_moves_it: "Only a parent moves the phone to another stage, on the parent page. You can propose it with change_screen_time's stage, except Off belay, the last stage: only a parent chooses it.",
               }
             : "This phone isn't on a stage.",
         agreement: !settings.aiScopes.agreement
@@ -342,7 +342,7 @@ export function registerScreenTimeTools(server: McpServer, deps: Deps, caller: C
     {
       title: "Change screen time",
       description:
-        "Changes one phone's screen-time rules: add or change limits (by id from get_rules) and schedules, remove them, add or remove exempt apps, set self-serve, or what happens when Belay can't count. The server decides: a change that only tightens (a lower or new limit, more apps under a limit, a schedule that starts earlier, ends later or runs on more days, fewer apps left open or exempt, less self-serve, pausing apps when Belay can't count) applies at once, within seconds when the phone is online; use it only when the parent asks. Anything else, or a mix, becomes a proposal a parent approves or rejects on the parent page: then say it's waiting for them, never that it's done. Moving the phone to another stage (stage, alone) is always a proposal. Measuring isn't something you can change. The kid sees each limit's and schedule's name, so Belay writes the name of one you add or rename, never in your words: a limit is named after its apps (\"Chess Club and Puzzle Pop\"; a daily total is \"Screen time\"), a schedule after its kind (School, Bedtime, Schedule). Only a parent gives one a name of their own, on the parent page.",
+        "Changes one phone's screen-time rules: add or change limits (by id from get_rules) and schedules, remove them, add or remove exempt apps, set self-serve, or what happens when Belay can't count. The server decides: a change that only tightens (a lower or new limit, more apps under a limit, a schedule that starts earlier, ends later or runs on more days, fewer apps left open or exempt, less self-serve, pausing apps when Belay can't count) applies at once, within seconds when the phone is online; use it only when the parent asks. Anything else, or a mix, becomes a proposal a parent approves or rejects on the parent page: then say it's waiting for them, never that it's done. Moving the phone to another stage (stage, alone) is always a proposal, and to Off belay, the last stage, not even that: only a parent moves a phone there. Measuring isn't something you can change. The kid sees each limit's and schedule's name, so Belay writes the name of one you add or rename, never in your words: a limit is named after its apps (\"Chess Club and Puzzle Pop\"; a daily total is \"Screen time\"), a schedule after its kind (School, Bedtime, Schedule). Only a parent gives one a name of their own, on the parent page.",
       inputSchema: {
         device: deviceParam,
         change: z
@@ -392,6 +392,8 @@ export function registerScreenTimeTools(server: McpServer, deps: Deps, caller: C
           return refusal(names.length ? `No stage is called "${change.stage}". The stages are: ${names.join(", ")}.` : "The family has no stages yet.");
         }
         if (p.stage?.stage.id === stage.id) return refusal(`Nothing to propose: ${row.name} is already on that stage.`);
+        // Phase 11: the last stage, and the hand-over after it, are a parent's alone.
+        if (stage.offBelay) return refusal(`Only a parent moves ${row.name} to ${stage.name}, on the parent page: an AI app can't propose it.`);
         const busy = tooMany();
         if (busy) return busy;
         const classification = classifyScreenTimeChange(

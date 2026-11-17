@@ -126,6 +126,10 @@ object CallsWireLimits {
     const val MAX_CALLS_PER_REQUEST = 500
     const val MAX_BODY_BYTES = 128 * 1024
 
+    /** The policy's `blocked_numbers` and `private_numbers`, at most. */
+    const val MAX_BLOCKED_NUMBERS = 500
+    const val MAX_PRIVATE_NUMBERS = 50
+
     /** After a call to an emergency number or 988, or a text to 988, every caller rings this long. */
     const val EMERGENCY_CALLBACK_MS = 2 * 60 * 60 * 1000L
 }

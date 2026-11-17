@@ -1,5 +1,7 @@
 package family.brooker.belay.core
 
+import family.brooker.belay.core.calls.CallsWireLimits
+import family.brooker.belay.core.calls.PhoneNumbers
 import family.brooker.belay.core.location.WireFix
 import family.brooker.belay.core.screentime.AgreementAnswer
 import family.brooker.belay.core.screentime.MoreTime
@@ -13,7 +15,8 @@ import kotlinx.serialization.Serializable
  * policy's `requests`. Phase 3 adds two [kind]s, each with its own fields: more time for a
  * limit today, and the kid's answer to the family agreement. Phase 7 adds "I need help" (with
  * where the phone is, only when the kid shares it) and "Talk to my parent", and lets the kid
- * change the words of a pending request or take it back ([withdrawnAt]).
+ * change the words of a pending request or take it back ([withdrawnAt]). Phase 5 adds "Ask to add a
+ * contact" ([contactName], [contactNumber]).
  */
 @Serializable
 data class KidRequest(
@@ -46,6 +49,10 @@ data class KidRequest(
     val sharing: Boolean = false,
     /** Phase 7, help: Belay looked for where the phone is and found nothing (the kid may try again). */
     val shareFailed: Boolean = false,
+    /** Phase 5, contact: the name the kid gave, at most 60 characters: untrusted. */
+    val contactName: String? = null,
+    /** Phase 5, contact: the number, E.164. */
+    val contactNumber: String? = null,
 )
 
 /**
@@ -91,6 +98,26 @@ object Requests {
         kind = WireRequestKind.HELP,
         sharing = sharing,
     )
+
+    /**
+     * Phase 5: "Ask to add a contact": the [name] and [number] the kid gave, and why ([reason],
+     * optional). Null when there's no name or the number isn't E.164 (the phone formats it first).
+     * A parent approving it adds the contact on the server.
+     */
+    fun contact(name: String?, number: String?, reason: String?, now: Long, newId: () -> String): KidRequest? {
+        val words = name?.trim()?.take(CallsWireLimits.MAX_CONTACT_NAME)?.takeIf { it.isNotEmpty() } ?: return null
+        val e164 = PhoneNumbers.e164(number) ?: return null
+        return KidRequest(
+            id = newId(),
+            packageName = "",
+            label = "",
+            reason = cleanReason(reason),
+            askedAt = now,
+            kind = WireRequestKind.CONTACT,
+            contactName = words,
+            contactNumber = e164,
+        )
+    }
 
     /** Phase 7: "Talk to my parent", with the kid's words; null when there are none (the server needs them). */
     fun talk(reason: String?, now: Long, newId: () -> String): KidRequest? {
@@ -277,12 +304,14 @@ object Requests {
             reason = cleanReason(request.reason),
             askedAt = request.askedAt,
         )
-        // Phase 5 (the phone side builds it; the contract is here already).
+        // Phase 5: the kid's words for the name, and the number in E.164.
         WireRequestKind.CONTACT -> WireRequest(
             id = request.id,
             kind = WireRequestKind.CONTACT,
             reason = cleanReason(request.reason),
             askedAt = request.askedAt,
+            contactName = request.contactName?.trim()?.take(CallsWireLimits.MAX_CONTACT_NAME),
+            contactNumber = PhoneNumbers.e164(request.contactNumber),
         )
     }.copy(withdrawnAt = request.withdrawnAt)
 

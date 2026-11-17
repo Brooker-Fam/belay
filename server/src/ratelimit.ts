@@ -104,6 +104,11 @@ export interface Limiters {
    * lost mode; past it, 429.
    */
   locationsPerPhone: RateLimiter;
+  /**
+   * Phase 5: call records, per phone, counted apart from its other calls, so a phone sending a
+   * backlog of records never holds back its check-ins or requests.
+   */
+  callsPerPhone: RateLimiter;
 }
 
 export function createLimiters(now: () => number): Limiters {
@@ -124,5 +129,6 @@ export function createLimiters(now: () => number): Limiters {
     placeNotices: new RateLimiter(1, 10 * MIN, now),
     requestsPerPhone: new RateLimiter(300, 60 * MIN, now),
     locationsPerPhone: new RateLimiter(600, 60 * MIN, now),
+    callsPerPhone: new RateLimiter(30, MIN, now),
   };
 }

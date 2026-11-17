@@ -42,6 +42,8 @@ export interface DeviceRow {
   loc_mode: "off" | "on_demand" | "periodic" | null;
   loc_keep_on: number | null;
   loc_lost_since: number | null;
+  /** Phase 5: whether calls are on (Belay should be the phone app); null: never turned on. */
+  calls_on: number | null;
 }
 
 const DEVICE_SELECT = `SELECT d.*, p.version AS policy_version, p.changed_at AS policy_changed_at,
@@ -50,12 +52,14 @@ const DEVICE_SELECT = `SELECT d.*, p.version AS policy_version, p.changed_at AS 
     (SELECT k.used_at FROM recovery_keys k WHERE k.device_id = d.id ORDER BY k.version DESC LIMIT 1) AS recovery_used_at,
     st.measure AS st_measure,
     COALESCE(st.if_unmeasured, json_extract(sg.rules, '$.if_unmeasured'), 'pause_limited') AS st_if_unmeasured,
-    ls.mode AS loc_mode, ls.keep_on AS loc_keep_on, ls.lost_since AS loc_lost_since
+    ls.mode AS loc_mode, ls.keep_on AS loc_keep_on, ls.lost_since AS loc_lost_since,
+    cs.enabled AS calls_on
   FROM devices d LEFT JOIN policies p ON p.device_id = d.id
   LEFT JOIN agent_offers o ON o.device_id = d.id LEFT JOIN agent_files f ON f.sha256 = o.sha256
   LEFT JOIN screen_time_rules st ON st.device_id = d.id
   LEFT JOIN phone_stages ps ON ps.device_id = d.id LEFT JOIN stages sg ON sg.id = ps.stage_id
-  LEFT JOIN location_settings ls ON ls.device_id = d.id`;
+  LEFT JOIN location_settings ls ON ls.device_id = d.id
+  LEFT JOIN call_settings cs ON cs.device_id = d.id`;
 
 /** Phase 6: the update a parent offered the phone, and what the phone last said about it. */
 export interface UpdateView {
@@ -102,7 +106,8 @@ export interface Problem {
     | "other_users"
     | "screen_time_unmeasured"
     | "location_permission"
-    | "location_off";
+    | "location_off"
+    | "calls_not_dialer";
   text: string;
   /** For phone_reported: what Belay on the phone said, as it said it. It comes from the kid's phone: untrusted. */
   fromPhone?: string;
@@ -230,6 +235,13 @@ export function problemsOf(row: DeviceRow, facts: Device | null, settings: Setti
         });
       }
     }
+    // Phase 5: with calls on, Belay should be the phone app. If it isn't, Telecom uses the phone's own
+    // dialer, unfiltered, on purpose: calls still work, but Belay can't decide who rings.
+    const calls = facts.enforcement?.calls;
+    if (calls && row.calls_on === 1 && !calls.dialer) {
+      problems.push({ code: "calls_not_dialer", text: "Calls are going through the phone's own app, so Belay can't decide who rings or keep a record of calls. Calls, 911 and 988 still work" });
+    }
+    if (calls?.problem && row.calls_on === 1) problems.push({ code: "phone_reported", text: `Belay on the phone says: ${calls.problem}`, fromPhone: calls.problem });
     if (row.facts_at !== null && Math.abs(facts.device_time - row.facts_at) > CLOCK_TOLERANCE_MS) {
       const off = facts.device_time - row.facts_at;
       problems.push({ code: "clock_off", text: `The phone's clock is ${formatDuration(Math.abs(off))} ${off > 0 ? "ahead" : "behind"}` });

@@ -22,7 +22,7 @@ no monthly fee and no company that can change or disappear. A parent mostly mana
 asking Claude (or any MCP client) things like "what did they install this week, and is it
 OK?", with a web page as the fallback.
 
-## What exists today (Phases 1 and 2, and parts of 3, 4, 6, 7, 8 and 10)
+## What exists today (Phases 1 and 2, and parts of 3, 4, 5, 6, 7, 8, 10 and 11)
 
 - **`android/`: the device-owner agent.** Provisioned over adb, it becomes device owner and
   blocks its own uninstall. It always shows "This phone is managed by your parent", and its
@@ -68,6 +68,18 @@ OK?", with a web page as the fallback.
   that work while the phone is paused; My requests shows every answer and lets the kid change or
   take back a waiting one; "Talk to my parent"; what the parent and their AI app can see; and what
   Belay told the parent, from the phone's own record.
+  **Phase 5 (the phone's side): calls.** While a parent has calls on, Belay is the phone's calling
+  app (the app it took over from is again when calls goes off): a large-print dial pad,
+  the approved contacts, recent calls, and its own incoming-call and in-call screens, with
+  "Emergency (911)" and "988: Call or text for crisis support" always there. Belay decides every
+  call in code before anything rings: 911, Android's emergency numbers and 988 always work, in and
+  out; parents always ring; for 2 hours after a call to 911 or 988 everyone rings, so they can call
+  back; otherwise the family's rules for contacts, other callers, callers with no caller ID and
+  quiet times. A refused call never rings, and Belay's recent calls say why. The kid can ask to add
+  a contact. Belay keeps Android's block list in step with the family's blocked numbers, stops other
+  apps from placing calls around its rules, and, while calls are recorded, sends each call's record
+  (never one with 911, 988 or a private number). If Belay's dialer breaks, calls go through the
+  phone's own app, unfiltered, and the parents are told.
 - **`server/`: the family's server.** Node and SQLite in one Docker image. The device API,
   the parent pages (phones and their health, apps with "new" badges and reviews, the
   timeline, adding a phone, settings, the activity log), and OAuth 2.1 plus MCP for Claude.
@@ -97,6 +109,18 @@ OK?", with a web page as the fallback.
   phone which data the parents' AI app may read, and the numbers for its emergency card.
   Over MCP, an AI client reads location only if a parent turns that on (it starts off), may
   check where the phone is (the kid sees every check), and never changes any of it.
+- **Phase 5 on the server: calls.** Calls are off until a parent turns them on, on the
+  phone's Calls page; then the phone's policy makes Belay its phone app. The family decides who
+  can call (anyone, or only contacts, and what happens to callers who aren't contacts or have no
+  caller ID), whom the kid can call, quiet times at bedtime and school, and whether calls are
+  recorded; the contacts (parents always ring and are on the kid's emergency card), private
+  numbers Belay never records, and blocked numbers. 911, every emergency number and 988 always
+  work, in the phone's own code: the server refuses to block one and never keeps a record of
+  one. Recent calls (only while recorded, 90 days by default) have "Add as contact" and "Block";
+  the kid's "Please add this contact" comes to the Requests page. Over MCP, an AI client reads
+  calls and other people's numbers only if a parent turns that on (it starts off), may tighten
+  the rules, and proposes anything else; it never turns calls on, records them or answers a
+  request.
 - **Phase 6, so far: backups that are proven to restore, and health monitoring.** The server
   backs itself up every day (the newest 14 kept, encrypted with the family's passphrase if
   they set one); `verify-backup` proves a backup restores, `restore` puts one back, and the
@@ -111,6 +135,18 @@ OK?", with a web page as the fallback.
   lifts the factory reset and debugging locks offline if the server is ever lost. When
   another user or profile appears (Android's own Parental Controls make one), the phone's
   page says so and a parent can remove it. AI clients can only read these.
+- **Phase 11: off belay, both sides.** Every family's stage list ends with Off belay, which
+  blocks nothing; the kid's "My stage" shows it last from the first day, with the family's words
+  for when it comes, and says so once Belay really blocks no app or website. A parent can stop
+  collecting each kind of data on a phone's page, which deletes what the server keeps of it after
+  a confirmation that lists exactly what goes, and can hand the phone over (after typing its
+  name): the server lifts the locks on factory reset, debugging and accounts and clears reset
+  protection, and the phone, which then holds none of them, shows the kid what to back up, to
+  remove the parent's account, and to reset it from Settings. A release build clears its reset
+  protection policy itself; nothing in it switches Belay off: the reset does. Then the parent
+  disconnects the phone and deletes everything about it. AI apps can do none of this, not even
+  as a proposal. The Pixel checklist, ending in a reset and a setup with the kid's own account, is
+  [docs/phase11-checklist.md](docs/phase11-checklist.md).
 - **`setup-kit/`: setting up a phone without the Android SDK (Phase 8).** A container you
   build and run on your own computer: it makes the family's release key (once, in a folder of
   yours), builds and signs Belay, and serves a page on `localhost` that sets up the phone from
@@ -214,7 +250,7 @@ they install this week?"
 | `android/scripts` | Provisioning (its plan, `provision-plan.json`, and the plan's fixture tests), release key, QR test, the emulator tests. |
 | `setup-kit/` | Setting up a phone without the Android SDK: the plan's second interpreter, the page, the container ([docs/setup-kit.md](docs/setup-kit.md)). Vitest tests. |
 | `server/` | The family's server: device API, parent pages, OAuth and MCP. Vitest tests. |
-| `docs/` | [server](docs/server.md), [MCP](docs/mcp.md), [privacy](docs/privacy.md), [threat model](docs/threat-model.md), [device API](docs/protocol.md), [platform notes](docs/platform-notes.md), [emulator](docs/emulator.md), [Pixel 8](docs/pixel.md), [Phase 0](docs/phase0-checklist.md), [Phase 1](docs/phase1-checklist.md), [Phase 2](docs/phase2-checklist.md), [Phase 3](docs/phase3-checklist.md), [Phase 4](docs/phase4-checklist.md), [Phase 6](docs/phase6-checklist.md) and [Phase 7](docs/phase7-checklist.md) checklists, [signing](docs/signing.md), [prior art](docs/prior-art.md) |
+| `docs/` | [server](docs/server.md), [MCP](docs/mcp.md), [privacy](docs/privacy.md), [threat model](docs/threat-model.md), [device API](docs/protocol.md), [platform notes](docs/platform-notes.md), [emulator](docs/emulator.md), [Pixel 8](docs/pixel.md), [Phase 0](docs/phase0-checklist.md), [Phase 1](docs/phase1-checklist.md), [Phase 2](docs/phase2-checklist.md), [Phase 3](docs/phase3-checklist.md), [Phase 4](docs/phase4-checklist.md), [Phase 6](docs/phase6-checklist.md), [Phase 7](docs/phase7-checklist.md) and [Phase 11](docs/phase11-checklist.md) checklists, [signing](docs/signing.md), [prior art](docs/prior-art.md) |
 | `ROADMAP.md` | Phases 2 to 5 and later. |
 | `CLAUDE.md` | Conventions and commands, for people and for Claude. |
 

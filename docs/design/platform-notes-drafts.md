@@ -46,12 +46,12 @@ back the designs in this folder, and re-check some Phase 2 facts.
 | L4 | Platform geofencing without Play services | Moved to platform-notes.md (Phase 4) | |
 | L5 | Belay needs a `location` foreground service | Moved to platform-notes.md (Phase 4) | |
 | L6 | The kid sees when location is used | Moved to platform-notes.md (Phase 4) | |
-| T1 | Belay as the default dialer (`setDefaultDialerApplication`) | Confirmed: requirements listed | AOSP; Docs |
-| T2 | 911 works when Belay is the dialer | Confirmed: the preloaded dialer takes every emergency call | AOSP; Docs |
-| T3 | Android treats 988 like 911 | **Contradicted**: 988 is an ordinary number to Android | AOSP |
-| T4 | Call screening sees withheld numbers | **Contradicted** | AOSP; Docs |
-| T5 | The dialer decides whether a call rings | Confirmed with `IN_CALL_SERVICE_RINGING` | AOSP; Docs |
-| T6 | Blocked numbers, and blocking after an emergency call | Confirmed: the default dialer may write the list; blocking pauses 2 h | AOSP; Docs |
+| T1 | Belay as the default dialer (`setDefaultDialerApplication`) | Moved to platform-notes.md (Phase 5) | |
+| T2 | 911 works when Belay is the dialer | Moved to platform-notes.md (Phase 5) | |
+| T3 | Android treats 988 like 911 | Moved to platform-notes.md (Phase 5) | |
+| T4 | Call screening sees withheld numbers | Moved to platform-notes.md (Phase 5) | |
+| T5 | The dialer decides whether a call rings | Moved to platform-notes.md (Phase 5) | |
+| T6 | Blocked numbers, and blocking after an emergency call | Moved to platform-notes.md (Phase 5) | |
 | T7 | Reading texts with `READ_SMS` on Android 17 | Partly: drafts, restricted (RCS) rows and one-time codes are hidden | AOSP; Docs |
 | T8 | Google Messages RCS archival | Confirmed in the docs and the code; untested | Docs; AOSP |
 | T9 | Belay as the default SMS app | Confirmed: requirements listed; SMS and MMS only | AOSP |
@@ -439,71 +439,8 @@ with L7 to L10 and G1 to G2.
 
 ## Calls and texts
 
-### T1. Belay as the default dialer
-
-**Confirmed.** Verified on: AOSP; Docs.
-
-- `setDefaultDialerApplication(packageName)` (API 34, device owner): `DevicePolicyManagerService`
-  calls `RoleManager.addRoleHolderAsUser(ROLE_DIALER, …)` and waits up to 20 s; it throws
-  `IllegalArgumentException` if that fails or times out.
-- `roles.xml`, `DIALER` requires an activity for `ACTION_DIAL`, one for `ACTION_DIAL` with `tel:`,
-  and (target 33 and up) an `InCallService` protected by `BIND_INCALL_SERVICE` with meta-data
-  `android.telecom.IN_CALL_SERVICE_UI = true` and no car-mode UI flag. The role grants its holder
-  the phone, contacts, SMS, microphone, camera and notification permissions it declares.
-- InCallService reference [2026-09-16]: the app must "fully implement the InCallService API and
-  provide both an incoming call UI, as well as an ongoing call UI"; don't mark the service
-  `exported="false"`; a holder that stops meeting the requirements is removed from the role.
-- The default dialer can't be suspended (S1).
-
-### T2. 911 with a third-party dialer
-
-**Confirmed.** Verified on: AOSP; Docs.
-
-- InCallService reference [2026-09-16]: "The preloaded dialer will ALWAYS be used when the user
-  places an emergency call, even if your app fills the ROLE_DIALER role"; place every call with
-  `TelecomManager.placeCall`; an emergency `ACTION_CALL` from another dialer is "raised to the
-  preloaded dialer app using ACTION_DIAL for confirmation".
-- `packages/services/Telecomm`, `InCallController.EmergencyInCallServiceConnection` proxies to the
-  default dialer "until it finds an emergency call, or the other connection dies", then binds the
-  system dialer. If the dialer returns a null binding, Telecom falls back to the preloaded dialer
-  and tells the user.
-
-Belay's consequence: the preloaded dialer (on a Pixel, Google's Phone app; check the package) is
-never hidden, suspended or disabled.
-
-### T3. 988 is an ordinary number to Android
-
-**Contradicted.** Verified on: AOSP.
-
-- `packages/services/Telephony`, `ecc/input/eccdata.txt`: the US entry lists only 911 (police,
-  ambulance, fire; fallback 911). Carriers and SIMs can add numbers. 988 goes through the default
-  dialer like any other call.
-- `core/res/res/xml/sms_short_codes.xml`: US short codes match `\d{5,6}`, so 988 isn't treated as a
-  short code, and texting it shows no premium-SMS warning.
-
-Belay's consequence: 988 is on Belay's own always-allowed list, in code.
-
-### T4. Call screening and withheld numbers
-
-**Contradicted.** Verified on: AOSP; Docs. CallScreeningService reference [2026-09-16]: only `tel:`
-calls; only calls from numbers not in contacts, unless the service holds `READ_CONTACTS`; "Calls
-with a … PRESENTATION_RESTRICTED, PRESENTATION_UNKNOWN, PRESENTATION_UNAVAILABLE or
-PRESENTATION_PAYPHONE presentation are not provided"; the service must answer within 5 seconds; it
-also sees outgoing calls, for caller id; blocked calls are logged as `BLOCKED_TYPE`.
-
-### T5. The dialer decides whether a call rings
-
-**Confirmed in the docs; untested.** Verified on: AOSP; Docs. InCallService reference: with the
-meta-data `android.telecom.IN_CALL_SERVICE_RINGING`, the app "is responsible for playing the
-ringtone for incoming calls", through its own incoming-call notification channel.
-
-### T6. Blocked numbers
-
-**Confirmed.** Verified on: AOSP; Docs. BlockedNumberContract [2026-08-03]: "Only the system, the
-default SMS application, and the default phone app … and carrier apps can read, and write";
-"The platform blocks calls, and messages from an address if it is present". CarrierConfigManager
-`KEY_DURATION_BLOCKING_DISABLED_AFTER_EMERGENCY_INT`: "The duration in seconds that platform call
-and message blocking is disabled after the user contacts emergency services", default 7200.
+T1 to T6 moved to [docs/platform-notes.md](../platform-notes.md#calls-phase-5) for Phase 5's
+calls, next to T10 to T16. T7 to T9, about texts, are still a design.
 
 ### T7. Reading texts with `READ_SMS` on Android 17
 

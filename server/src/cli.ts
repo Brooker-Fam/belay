@@ -10,6 +10,7 @@
  *   node dist/cli.js restore-drill               the steps of a restore drill, for the newest backup
  *   node dist/cli.js status [--json]             each phone's status, apps, rules, requests and latest changes
  *   node dist/cli.js protect "<phone>"           and policy, decide, pause, resume: see admin.ts
+ *   node dist/cli.js handover "<phone>"          hands the phone over to the kid (Phase 11)
  */
 import { createInterface } from "node:readline";
 import { runCommand } from "./admin.js";

@@ -1,4 +1,5 @@
 import type { DB } from "./db.js";
+import { pruneCallRecords } from "./family/calls/records.js";
 import { pruneLocations } from "./family/location/fixes.js";
 import { pruneRequests } from "./family/requests.js";
 import { pruneUsage } from "./family/screentime/usage.js";
@@ -11,8 +12,9 @@ const DAY = 24 * 3_600_000;
  * (13 months by default), with the extra time given that long ago; lock_now commands a month
  * old; and where the phone was, as the family keeps it (Phase 4: periodic fixes 7 days, checks 30,
  * arrivals and departures 90, lost-mode fixes until 7 days after lost mode ends, a help request's
- * fix with its request); and the kid's requests that wait for no one any more a year after they
- * last changed (help requests stay until the phone is deleted). Run hourly; safe to run any time.
+ * fix with its request); call records, as the family keeps them (Phase 5: 90 days by default);
+ * and the kid's requests that wait for no one any more a year after they last changed (help
+ * requests stay until the phone is deleted). Run hourly; safe to run any time.
  */
 export function cleanUp(db: DB, now: number): void {
   db.transaction(() => {
@@ -29,6 +31,7 @@ export function cleanUp(db: DB, now: number): void {
     db.prepare("DELETE FROM commands WHERE kind = 'lock_now' AND issued_at <= ? AND (result IS NOT NULL OR replaced_at IS NOT NULL OR expires_at <= ?)").run(now - 30 * DAY, now - 30 * DAY);
     pruneLocations(db, now, settings.locationDays);
     pruneRequests(db, now);
+    pruneCallRecords(db, now, settings.callDays);
   })();
   db.pragma("optimize");
 }

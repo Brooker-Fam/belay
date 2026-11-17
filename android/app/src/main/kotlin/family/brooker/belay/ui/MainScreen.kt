@@ -47,9 +47,11 @@ import family.brooker.belay.core.UpdateRecord
 import family.brooker.belay.core.WireAgentUpdate
 import family.brooker.belay.core.WireDevice
 import family.brooker.belay.core.WireUpdateState
+import family.brooker.belay.core.calls.CallContacts
 import family.brooker.belay.core.kid.Home
 import family.brooker.belay.core.kid.HomeInput
 import family.brooker.belay.core.kid.HomeState
+import family.brooker.belay.core.kid.OffBelay
 import family.brooker.belay.core.screentime.LocalTimes
 import family.brooker.belay.core.screentime.WireIfUnmeasured
 import family.brooker.belay.enforce.KidView
@@ -117,18 +119,24 @@ fun MainScreen(
                 navigation.onHelpSent(id)
                 navigation.go(Screen.HELP)
             }
+            // Phase 11: Off belay, last on My stage from the first day.
+            val offBelay = OffBelay.line(kid.policy, kid.plan)
             when (screen) {
                 Screen.HOME -> {
+                    // Phase 11: while a parent hands the phone over, what happens next comes first.
+                    kid.policy?.handover?.let { handover -> item { HandoverCard(handover) } }
                     item { HomeStateCard(home(kid), words) }
                     kid.plan?.pause?.let { pause -> item { PausedBanner(pause) } }
                     item { HelpButton { kidActions.askHelp(null, false) { id -> if (id != null) helpSent(id) } } }
-                    item { EmergencyCard(kid.policy?.parentNumbers.orEmpty(), kidActions) }
+                    item { EmergencyCard(CallContacts.emergencyCard(kid.policy), kidActions) }
+                    // Phase 5: Belay's dialer, while the family has calls on.
+                    if (kid.policy?.calls != null) item { NavRow(stringResource(R.string.calls_open)) { kidActions.openCalls() } }
                     if (kid.screenTime != null) item { TodayCard(kid, unsentRequests, screenTime, askFor, onAsked) }
                     item { LocationCard(kid, view.told, words) { navigation.go(Screen.TOLD) } }
                     if (kid.plan?.waiting.orEmpty().isNotEmpty()) item { WaitingCard(kid, unsentRequests, onAsk) }
                     item { Text(stringResource(R.string.home_more), style = MaterialTheme.typography.titleMedium) }
                     item { NavRow(stringResource(R.string.screen_requests)) { navigation.go(Screen.REQUESTS) } }
-                    if (kid.policy?.stage != null || kid.policy?.agreement != null) {
+                    if (kid.policy?.stage != null || kid.policy?.agreement != null || offBelay != null) {
                         item { NavRow(stringResource(R.string.screen_stage)) { navigation.go(Screen.STAGE) } }
                     }
                     item { NavRow(stringResource(R.string.screen_rules)) { navigation.go(Screen.RULES) } }
@@ -145,6 +153,7 @@ fun MainScreen(
                 }
                 Screen.STAGE -> {
                     if (kid.policy?.stage != null) item { StageCard(kid) }
+                    offBelay?.let { line -> item { OffBelayCard(line) } }
                     if (kid.policy?.agreement != null) item { AgreementCard(kid, unsentRequests, screenTime) }
                 }
                 Screen.RULES -> item { RulesCard(kid) }

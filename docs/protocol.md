@@ -312,6 +312,16 @@ Phase 5. Call records, only while the policy's `calls.log` is on.
 ```
 → `200 {"server_time", "accepted"}`. Idempotent by each record's `id`.
 
+What the server keeps: a record only while the policy's `calls` is set with `log` on; otherwise
+it's answered `200`, counted in `accepted`, dropped, and counted for the parent page. A record
+never names an emergency number, 988 or one of the phone's `private_numbers`: the server drops
+any record of one before it checks the body (so a record with `911`, which isn't E.164, costs the
+others in the call nothing), counts it for no one, and logs only that it happened, without the
+number or the phone; it treats 988's full number (`+18002738255`) as 988 too. `number` is kept
+only when `contact_id` is null. At most 1000 records are kept a day per phone; past that they're
+dropped and counted. `accepted` counts every record in the call, kept, already kept or dropped.
+The endpoint is rate limited per phone apart from the phone's other calls (30 a minute).
+
 ## Calls rules (Phase 5, both sides)
 
 - **Off until a parent turns it on.** With `calls` null, Belay isn't the dialer and nothing
@@ -337,12 +347,73 @@ Phase 5. Call records, only while the policy's `calls.log` is on.
   phone's own app" (`enforcement.calls.problem`).
 - **Records** (`log`): when, direction, duration, outcome, and the contact, or the number for
   a caller who isn't one. Calls with emergency numbers, 988 or the family's private numbers
-  are never recorded or sent.
+  are never recorded or sent, and neither is a call that rang only because of the 2 hours
+  after an emergency contact (the rules would have refused it): its record would tell.
 - **Contacts** live in the policy and in Belay's own storage; Belay never writes them into
   Android's Contacts. A `contact` request is the kid asking for one; a parent approves it.
 - Only a parent turns calls on or off or changes who may call; an AI client may only
   propose (it would loosen or change who reaches the kid), and reads records only with the
   `calls` scope on (off by default).
+
+What the server does with them:
+
+- **`calls`** is null until a parent turns calls on, and null again once they turn them off (the
+  rules are kept for next time). **`contacts`**, **`private_numbers`** and **`blocked_numbers`**
+  are always sent, calls on or not, sorted (contacts by name, numbers as strings).
+- **Numbers** are E.164, cleaned of spaces, dashes, dots and parentheses as people type them. A
+  number is one contact's; contact names are 1 to 60 characters, one per phone. The server
+  refuses to put 911, any emergency number it knows (112, 999, 000…, with or without a country
+  code) or 988 (988's full number included) in `blocked_numbers`, saying why, and refuses a
+  contact's number there, or one on the emergency card (`parent_numbers`). A number a contact
+  gains that was blocked is unblocked. Making a number private deletes the records kept of it.
+- **Who may change what:** turning calls on or off, `log` and `private_numbers` are a parent's
+  alone (the parent page or the server's CLI), never an AI client's, not even as a proposal. An
+  AI client may apply a change whose every part tightens (`mode: contacts`, a stricter `unknown`
+  or `withheld`, `outgoing: contacts`, `quiet` on, fewer contacts allowed to call or text, a
+  number taken off a contact, blocking a number); anything else, and anything that takes from a
+  `parent` contact, is a proposal a parent approves, checked again then.
+- **A `contact` request:** a new one for a number that has one waiting takes its place, with the
+  kid's earlier reason; at most 60 can wait per phone, past that `429`. Approving it adds the
+  contact (the parent may change the name, and chooses `calls` and `texts`, on by default); a
+  number that's a contact already adds no one. Declining or "let's talk" adds no one.
+- **`enforcement.calls`:** with calls on, `dialer: false` is shown to the parents as "Calls are
+  going through the phone's own app" (and in the daily summary); `problem` is shown as Belay's
+  own words.
+
+## Off belay (Phase 11, both sides)
+
+The last stage, and the hand-over. Every step loosens or deletes, so each is a parent's action on
+the parent page, or the server's CLI acting as one (never an AI client's, not even as a
+proposal), and the phone shows each step before it happens.
+
+- **Off belay** is a stage (Phase 3) every family has, always the last one: no limits or
+  schedules, its own name, and it can't be deleted. The policy's **`off_belay`** carries the
+  family's words for when it comes (`how`, null until they write some) and where it is for this
+  phone: `on` (the phone is on it), `next` (it's the phone's next stage, so `stage.next` is it) or
+  `later` (further on, or the phone is on no stage). The kid's "My stage" shows it at the end from
+  the first day: on a stage, or on none once the family wrote its words.
+- **Stop collecting** is the server's: a parent stops one data category of a phone, and after a
+  confirmation that lists exactly what goes, the server deletes what it keeps of it. Where the
+  phone has a switch, it turns off with ordinary fields (screen time's `measure`; `location` off,
+  with lost mode and `keep_on`; recording calls, `calls.log`). The app list and the kid's requests
+  have none: the phone keeps
+  sending its apps while Belay is on it, and the kid can always ask ("I need help" always reaches a
+  parent). A request the phone still lists (60 days) keeps a bare record, without anyone's words,
+  so the policy's `requests` still carries its answer.
+- **`handover`** (`{at, by}`: when, and the parent's name, or null from the CLI): the server also
+  lifts `factory_reset`, `debugging` and `modify_accounts`, empties `frp_accounts` (all ordinary
+  fields), and refuses to lock any of them again while the hand-over lasts. Belay sets no
+  `allowed_accounts` for Play, so lifting `modify_accounts` is what frees Play for the kid's own
+  account. While the policy has `handover`, the phone holds none of those three locks and no reset
+  protection policy, whatever the restrictions say. A release build clears the policy once per
+  hand-over (`setFactoryResetProtectionPolicy(null)`, then `FRP_CONFIG_CHANGED` to Play services),
+  even without a record of setting one, and again at the next step if that failed; a debug build,
+  which never sets one, leaves it alone and records that it did. The phone shows the kid what
+  happens next: back up to their own account, remove the parent's account, then Settings > System
+  > Reset options > Erase all data. Release builds still contain nothing that switches Belay off:
+  the reset does. Taking it back (`handover` null) stops the phone showing it; the locks stay
+  lifted until a parent locks them again.
+- **Afterwards** a parent disconnects the phone and deletes everything recorded about it.
 
 ## Location rules (Phase 4, both sides)
 
@@ -423,7 +494,8 @@ What the server does with them:
   parent gave it one; changing the family's gives each phone using them a new version.
   **`ai_reads`** uses the server's AI scope ids, which are the phone's data category ids:
   `apps`, `device_status`, `requests`, `screen_time`, `agreement` (the stage and agreement,
-  which no phone collector makes) and `location`. A phone ignores one it has no category for.
+  which no phone collector makes), `location` and (Phase 5) `calls`. A phone ignores one it has
+  no category for.
   Changing them gives every phone a new version.
 
 ## Screen time rules (Phase 3, both sides)
@@ -592,6 +664,8 @@ server decides whether a change tightens or loosens.
 | `contacts` | `[{id, name, numbers: [E.164], calls, texts, parent}]` | Phase 5: at most 500; `name` at most 60 characters, at most 5 numbers |
 | `private_numbers` | string[] | Phase 5: E.164 numbers Belay never records or reads, beyond 988 and emergency numbers; at most 50 |
 | `blocked_numbers` | string[] | Phase 5: E.164 numbers a parent blocked; Belay, as the dialer, puts them on Android's block list (which blocks their texts too); at most 500 |
+| `handover` | `{at, by}`? | Phase 11: a parent is handing the phone over (see "Off belay"); `by` is the parent's name, null from the server's CLI |
+| `off_belay` | `{how, position: "on"\|"next"\|"later"}`? | Phase 11: the family's last stage, for the kid's "My stage": the family's words for when it comes (at most 1000 characters, or null), and where it is for this phone |
 
 The `commands` kinds gain `locate_now` (Phase 4).
 

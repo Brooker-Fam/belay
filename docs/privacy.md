@@ -116,6 +116,29 @@ Location and help page, never an AI app:
 - "Talk to my parent": the kid's words. It changes no rule.
 - When the kid changes what they wrote in a request that's still waiting, or takes one back.
 
+**Calls (Phase 5).** Nothing until a parent turns calls on for the phone; then Belay is its phone
+app. Call records only while a parent also turns on "Keep a record of calls" (`log`), each one:
+
+- when, incoming or outgoing, how long, and what happened (answered, missed, refused, voicemail,
+  or not placed because the rules didn't allow it) and why (not a contact, no caller ID, a quiet
+  time, a number the kid may not call);
+- the contact's id, or the number of someone who isn't a contact, so a parent can add or block
+  them. Nothing for a caller with no caller ID.
+
+Never what anyone says, and never a call with 911, an emergency number, 988 or one of the
+family's private numbers: the phone doesn't record those at all, and the server drops any record
+of one it gets (it also treats 988's full number, 1-800-273-8255, as 988). For 2 hours after the
+kid calls 911 or 988 (or taps one of Belay's buttons to text them), every caller rings, so they
+can call back; a call that rings only because of that is never sent either, since its record
+would tell. "Please add this contact": the name the kid gives, the number and why. The contacts
+themselves, and the private and blocked numbers, are the family's own choices, on the server and
+in Belay's own storage on the phone (the blocked ones also on Android's own block list while
+Belay is the phone app); Belay never writes them into Android's Contacts. While calls is on,
+Belay reads Android's call log on the phone, and never keeps or sends what it reads there: to
+notice a call to 911 or 988 made without Belay (which starts those 2 hours), and to show the kid
+their calls with 911, 988 and the private numbers in Belay's recent calls, for as long as
+Android's own log has them.
+
 **Not collected in Phase 1:** messages, calls, contacts, photos, files, browsing, searches,
 location (Phase 4 adds it, off by default), what's on the screen, or how long apps are used. Later phases add some of these
 only as listed in [ROADMAP.md](../ROADMAP.md), each shown to the kid on the phone first,
@@ -137,6 +160,10 @@ and some (location, network logs) off by default for AI.
 - Phase 4: each fix and place event as soon as it's taken (it waits in the outbox while the phone
   is offline). When a parent turns location off, the ones not sent yet are dropped.
 - Phase 7: a help or talk request at once; a shared fix as soon as Belay has it.
+- Phase 5: each call record after the call, only while the phone's rules record calls; a contact
+  request at once. When a parent turns recording or calls off, the phone drops the records it
+  hasn't sent yet. Records the server gets while it doesn't record calls are dropped, and only
+  counted.
 
 The camera is used only to scan the enrollment QR code, only if the person scanning
 allows it, and only while that screen is open. Camera frames are never stored or sent.
@@ -154,6 +181,12 @@ allows it, and only while that screen is open. Camera frames are never stored or
   event that was sent is deleted from the phone at once, and all of it goes when location is
   turned off. Phase 7's "What Belay told your parent" is the phone's own list of the checks it
   ran for the last 30 days (when, and the AI app's name if one was used; no coordinates).
+  Phase 5 keeps Belay's own recent calls, the last 30 days (at most 500): when, which way, how
+  long, what happened and why, and the contact or the number; never a call with 911, an
+  emergency number, 988 or a private number. They're the kid's recent calls, kept whether or not
+  calls are recorded, and deleted, with any records not sent yet, when calls is turned off. When
+  the kid last called 911 or 988 (or tapped a button to text them) is kept only for the 2 hours
+  every caller rings, and never sent.
 - **On the family's server:** one SQLite database in `/data`, on a machine the family
   controls ([server.md](server.md)). Nothing goes to Belay's authors or anyone else. There
   are no analytics, telemetry, ads or crash-reporting SDKs, in the agent or the server.
@@ -203,6 +236,11 @@ sends outside the family's server, and the parent page says so where you choose 
   [mcp.md](mcp.md#what-reaches-the-ai-provider) lists exactly what that is. Every read is in
   the activity log, and every check of where the phone is, a parent's or an AI app's, is on
   the kid's phone too. The kid's own phone number (for "Call") is only on the parent page.
+  **Calls** (Phase 5) are off for every family too, until a parent turns them on: call records
+  and other people's numbers (contacts', blocked ones, and the one in a contact request) are
+  about the kid's relationships, and about people who never agreed to Belay. Until then an AI
+  app sees the call rules and the contacts' names, never who called or a number. Which numbers
+  are private is never shown to an AI app, only how many.
 
 ## What the kid sees (Phase 2)
 
@@ -284,6 +322,47 @@ sends outside the family's server, and the parent page says so where you choose 
 - **What Belay told your parent:** every check of the last 30 days, each lost mode, and each fix
   the kid shared, from the phone's own record, so none is left out.
 
+## What the kid sees (Phase 5)
+
+- **Belay as the phone app** once a parent turns calls on: a dial pad, the contacts the parents
+  approved, recent calls, and Belay's own screens for a call that rings and a call going on, with
+  two buttons that are always there: "Emergency (911)", and "988: Call or text for crisis
+  support", which says that 988 is free and private and that Belay never tells anyone the kid
+  called or texted.
+- **Who can call them and whom they can call**, in plain words from the policy's rules and
+  contacts ("Calls from other numbers don't ring.", "911 and 988 always work. For 2 hours after
+  you call 911 or 988, anyone can call you back."), and "Ask to add a contact" (a name, the number
+  and why), with the parent's answer under My requests.
+- **What your parent can see** gains "Your calls" only while calls are recorded: who they call and
+  who calls them, when, and for how long; not what anyone says; never 911 or 988. It loses it when
+  recording stops. "How the phone and Belay are doing" adds whether Belay is the phone's calling
+  app.
+- A call the rules refused never rings; Belay's recent calls say why ("Missed: number not in your
+  contacts"). Calls with 911, 988 and the private numbers show there, marked "only on this phone",
+  only while the phone's own call history has them.
+- When Belay isn't the phone's calling app (it broke, or Android refused), its screen says so:
+  "calls go through the phone's own app. Your parent can see this."
+
+These are the phone's words and screens ([protocol.md](protocol.md), "Calls rules"); the server
+sends the rules and contacts they're built from, and nothing else about calls.
+
+## What the kid sees (Phase 11)
+
+- **My stage** lists the last stage, Off belay, at the end from the first day, with the family's
+  words for when it comes ("Last stage: Off belay. When you turn 16"), and what it means: after
+  it, the parent can hand the phone over, and it's simply the kid's. On a phone with no stage it
+  shows once the family has written those words.
+- **On Off belay:** "Belay isn't blocking any apps or websites on this phone any more.", only when
+  that's so: nothing held back, paused, filtered or limited, and nothing kept from installing.
+  Settings still locked are listed under "This phone's rules".
+- **When a parent stops collecting** screen time, location or calls, "What your parent can see"
+  loses it at once (it follows the policy). The app list and the kid's requests stay listed: the phone keeps
+  sending them while Belay is on it.
+- **The hand-over,** first on Home: "This phone is becoming yours. Your parent is handing this phone
+  over to you.", who started it and when, then: back up photos and anything else to your own
+  account; remove your parent's Google account; then Settings > System > Reset options > Erase all
+  data. "After the reset, this phone is yours. Belay won't be on it."
+
 ## What the kid sees
 
 - A notification that never goes away: "This phone is managed by your parent".
@@ -295,8 +374,11 @@ sends outside the family's server, and the parent page says so where you choose 
 ## How long it's kept
 
 Until a parent deletes it. Deleting a disconnected phone on its page deletes everything
-recorded about it: its apps, changes and reviews, and from Phase 3 its screen time, rules,
-requests and agreement. The server's daily backups still hold it until they age out, 14 days
+recorded about it: its apps, changes and reviews, from Phase 3 its screen time, rules,
+requests and agreement, from Phase 4 where it was and its places, from Phase 5 its contacts,
+private and blocked numbers and call records, and from Phase 11 its hand-over. One kind at a
+time, a parent can also stop collecting it and delete it sooner (below). The server's daily
+backups still hold it until they age out, 14 days
 later, as do any copies the family made. Expired sessions, codes and tokens are deleted
 automatically. The activity log is kept so parents can see what happened.
 
@@ -316,6 +398,43 @@ The kid's other requests stay while they wait for a parent. Once they wait for n
 at most the newest 1,000 per phone; then the hourly clean-up deletes them.
 The AI scope "location" is off by default: while it's off, AI apps see that a phone has location
 on, never a fix or a place event.
+
+Call records (Phase 5) are kept 90 days by default (the family chooses 1 to 365 in Settings),
+then deleted by the hourly clean-up; a record counts from its own time, or from when it arrived
+if the phone's clock was ahead. Making a number private deletes the records already kept of it.
+Turning recording or calls off stops new records; the ones kept stay until they age out.
+Contacts, private and blocked numbers stay until a parent removes them, or deletes the phone.
+The AI scope "calls" is off by default for every family.
+
+**Stopping collecting (Phase 11).** A parent can stop one kind of data for a phone, on its page,
+at any time, and the server deletes what it keeps of it at once, after a confirmation that lists
+exactly what goes (counted then: if more arrives before the parent confirms, the list is shown
+again). It's in the activity log, with what went. Only a parent does it, never an AI app.
+
+- **Screen time:** measuring turns off, and every usage day goes (minutes per app, opens, the hours
+  the phone was used, unlocks). While the phone still has time limits, its check-ins still say
+  whether each one is used up; Off belay has none.
+- **Where the phone is:** location turns off, with lost mode and keeping location on (Belay gives
+  up the permission), and every fix goes, the ones shared with help requests too, with arrivals and
+  departures, the family's places, and the record of each check.
+- **Calls (Phase 5):** recording calls turns off, and every call record goes (who called whom,
+  when, for how long, and what happened). Calls stay on with their rules if they were, and the
+  contacts and the private and blocked numbers stay: they're the phone's rules.
+- **Apps:** every app change, every review and its notes, the apps that aren't on the phone any
+  more (but one a parent blocked or allowed, which its decision names), and the record of the app
+  lists the phone sent. The phone keeps sending its app list and changes while Belay is on it (its
+  rules work from them), so the apps on it now, and new changes, are still kept.
+- **Requests:** what the kid wrote in every request (the name they gave a contact they asked for
+  too), the parents' notes on their answers, where the phone was in a help request, and requests
+  from more than 60 days ago. A request of the last 60
+  days keeps a bare record (that it was asked, for which app or what, and the answer), because
+  the kid's phone keeps its own list that long and would otherwise show it as waiting again.
+  Requests still waiting for a parent, and help requests no parent has seen, stay as they are. The
+  kid can always ask: new requests, "I need help" first, still arrive.
+
+The daily backups still hold what went until they age out (the newest 14 are kept). Handing a
+phone over deletes nothing by itself: once the phone is reset, a parent disconnects it and deletes
+everything about it, as for any phone.
 
 ## Respecting the kid
 

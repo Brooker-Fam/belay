@@ -97,6 +97,20 @@ relying on something new, it goes here first, with a source.
 | L10 | `setDeviceOwnerLockScreenInfo` for lost mode | Confirmed | AOSP; Docs |
 | G1 | Calling and texting 911, 988 and a parent while every other app is suspended | Confirmed: ACTION_DIAL and ACTION_SENDTO to the default apps, which Belay never suspends | AOSP; Docs; Emulator pending (Phase 7 CI) |
 | G2 | Android's own emergency information has an intent on Android 17 | Confirmed: `android.telephony.action.EMERGENCY_ASSISTANCE`, the emergency role's activity | AOSP |
+| T1 | Belay as the default dialer (`setDefaultDialerApplication`) | Confirmed: requirements listed; does nothing without telephony | AOSP; Docs; Emulator pending (Phase 5 CI) |
+| T2 | 911 works when Belay is the dialer | Confirmed: the preloaded dialer takes every emergency call | AOSP; Docs |
+| T3 | Android treats 988 like 911 | **Contradicted**: 988 is an ordinary number to Android | AOSP |
+| T4 | Call screening sees every incoming call | **Contradicted**: not withheld callers, and a screening app the kid picks replaces the dialer's | AOSP; Docs; Emulator pending (Phase 5 CI) |
+| T5 | The dialer decides whether a call rings | Confirmed with `IN_CALL_SERVICE_RINGING`; Do Not Disturb's verdict needs `READ_CONTACTS` | AOSP; Docs; Emulator pending (Phase 5 CI) |
+| T6 | Blocked numbers, and blocking after an emergency call | Confirmed: the default dialer may write the list; blocking pauses 2 h | AOSP; Docs; Emulator pending (Phase 5 CI) |
+| T10 | Giving the dialer role back, without being killed | Confirmed: a dialer that stops qualifying is dropped; policy-fixed grants stay | AOSP; Emulator pending (Phase 5 CI) |
+| T11 | Seeing a 911 or 988 call Belay's dialer didn't place | Partly: `NEW_OUTGOING_CALL` always; the call log for 988, for 911 only if the carrier allows | AOSP; Docs |
+| T12 | Missed-call notifications for the calls Belay lets ring | Confirmed: Android posts them; a refused call isn't "missed" | AOSP |
+| T13 | `isEmergencyNumber` without permissions | Confirmed; it throws while the phone process is down | AOSP |
+| T14 | Denying `CALL_PHONE` to other apps leaves emergency calls working | Confirmed | AOSP; Emulator pending (Phase 5 CI) |
+| T15 | CI: no preloaded dialer on ATD; the emulator console simulates incoming calls | Confirmed | AOSP; Docs; Emulator pending (Phase 5 CI) |
+| T16 | Call audio routes and the SIM choice for an in-call app | Confirmed: the endpoint API from API 34 | AOSP; Pixel pending |
+| O1 | Handing over: clearing reset protection, and what a reset from Settings does on a fully managed phone | Confirmed in AOSP; Pixel pending (Phase 11 checklist) | AOSP |
 
 "Emulator" entries were seen in CI: `ci-emulator-test.sh` passed end to end on the API 37.0
 Automated Test Device image (`aosp_atd`, required) from run 8, and on the API 37.0 Google
@@ -1487,7 +1501,7 @@ screen and takes it away when lost mode ends. The Pixel checklist records where 
 **Confirmed.** Verified on: AOSP; Docs; Emulator pending (Phase 7 CI, `KidSideInstrumentedTest`).
 
 - `Intent.ACTION_DIAL` with a `tel:` number needs no permission and opens the dialer with the
-  number filled in. The drafts' T2: an emergency call always goes through the preloaded dialer, and
+  number filled in. T2: an emergency call always goes through the preloaded dialer, and
   an `ACTION_CALL` (which needs `CALL_PHONE`) to 911 from another app is raised to it as ACTION_DIAL.
 - `Intent.ACTION_SENDTO` with `smsto:` opens the texting app (the SMS role holder takes it).
 - `TelecomManager.getDefaultDialerPackage()` and `Telephony.Sms.getDefaultSmsPackage()` need no
@@ -1516,6 +1530,321 @@ Android's choice; the kid taps Call in the dialer. Text 911 says it only works i
 Belay's consequence: "Medical information and emergency contacts" starts that action in the system
 app that takes it (`ui/Emergency.kt`), and isn't shown when none does. Belay never copies medical
 details. The emergency apps are never suspended.
+
+## Calls (Phase 5)
+
+All read in AOSP `android-17.0.0_r1` on 2026-11-17 (`platform/frameworks/base` unless named; Telecom
+is `packages/services/Telecomm`, the role controller `packages/modules/Permission`), and in the
+InCallService, CallScreeningService and BlockedNumberContract references. T1 to T6 moved here from
+[the drafts](design/platform-notes-drafts.md) and were checked again where Belay now relies on them;
+T10 to T16 are new (T7 to T9, about texts, stay in the drafts). The emulator checks run in CI
+(`CallFlowInstrumentedTest`, `CallsInstrumentedTest` and `ci-emulator-test.sh`'s Phase 5 block); the
+Pixel's are in [phase5-checklist.md](phase5-checklist.md). No test calls or texts 911 or 988, on the
+emulator or anywhere else: those paths are JVM tests (`AlwaysAllowedTest`, `CallRulesTest`,
+`CallRecordsTest`) and checks that don't dial.
+
+### T1. Belay as the default dialer
+
+**Confirmed.** Verified on: AOSP; Docs; Emulator pending (Phase 5 CI).
+
+- `services/devicepolicy/.../DevicePolicyManagerService.setDefaultDialerApplication` (API 34; the
+  device owner, or the profile owner of an organization-owned phone): returns without doing anything
+  when the phone lacks `FEATURE_TELEPHONY`; otherwise calls `RoleManager.addRoleHolderAsUser(ROLE_DIALER, …)`
+  and waits up to 20 s, throwing `IllegalArgumentException` ("… cannot be set as the dialer", or
+  "Timeout when setting the app as the dialer") when that fails.
+- `PermissionController/res/xml/roles.xml`, `android.app.role.DIALER`: requires an activity for
+  `ACTION_DIAL`, one for `ACTION_DIAL` with `tel:`, and (target 33 and up) an `InCallService`
+  protected by `BIND_INCALL_SERVICE` with meta-data `android.telecom.IN_CALL_SERVICE_UI = true` and
+  no car-mode UI. It grants its holder the phone, contacts, SMS, microphone, camera and notification
+  permissions it requests, and `SYSTEM_ALERT_WINDOW`; it's exclusive, with
+  `fallBackToDefaultHolder="true"` (T10).
+- InCallService reference [2026-09-16]: the app must "fully implement the InCallService API and
+  provide both an incoming call UI, as well as an ongoing call UI"; don't mark the service
+  `exported="false"`. The default dialer can't be suspended (C1).
+
+Belay's consequence: Belay's dialer (`BelayInCallService`, `BelayCallScreeningService`,
+`DialerActivity`, its launcher alias and `OutgoingCallReceiver`) is disabled in the manifest and
+enabled only while the policy has `calls`, so with calls off Belay isn't in Settings' list of phone
+apps and Telecom never binds it. The agent step makes Belay the dialer on the agent thread (the call
+blocks), checks `getDefaultDialerPackage()` afterwards, and after a refusal asks again only every 15
+minutes or at a new policy. While it isn't the dialer, the report says "Calls are going through the
+phone's own app" (`enforcement.calls.problem`).
+
+### T2. 911 when Belay is the dialer
+
+**Confirmed.** Verified on: AOSP; Docs. Never tried on a device: no test calls 911.
+
+- InCallService reference [2026-09-16]: "The preloaded dialer will ALWAYS be used when the user
+  places an emergency call, even if your app fills the ROLE_DIALER role"; place every call with
+  `TelecomManager.placeCall`.
+- Telecom `TelecomServiceImpl.placeCall`: "the default/system dialer is always allowed to attempt to
+  place a call (regardless of permission state), in case it turns out to be an emergency call"; a
+  call to another number without `CALL_PHONE` is refused later, by `UserCallIntentProcessor`.
+- `NewOutgoingCallIntentBroadcaster`: an `ACTION_CALL` to an emergency number from an app that isn't
+  the default or system dialer is cancelled and opened in the system dialer as `ACTION_DIAL`
+  (`launchSystemDialer`); from the default dialer it's placed at once, with no redirection.
+- `InCallController.EmergencyInCallServiceConnection` proxies to the default dialer until there's an
+  emergency call (`setHasEmergency` → `takeControl`) or the dialer's connection fails or dies ("the
+  sub-connection just died so we need to stop proxying and connect to the system in-call service
+  instead"), then binds the system dialer. Telecom makes a new one each time it binds for calls.
+
+Belay's consequence: Belay places 911, Android's emergency numbers and 988 with `placeCall` like any
+other call. The preloaded dialer (on a Pixel, Google's Phone app; the checklist records the
+package) takes the emergency calls, and is never hidden, suspended or disabled, and keeps
+`CALL_PHONE` (T14). If Belay's in-call service crashes or won't bind, Telecom uses the preloaded
+dialer, with no filtering: on purpose, since a phone that can't take calls is worse.
+
+### T3. 988 is an ordinary number to Android
+
+**Contradicted.** Verified on: AOSP.
+
+- `packages/services/Telephony`, `ecc/input/eccdata.txt`: the US entry lists only 911 (police,
+  ambulance, fire; fallback 911). Carriers and SIMs can add numbers. 988 goes through the default
+  dialer like any other call.
+- `core/res/res/xml/sms_short_codes.xml`: US short codes match `\d{5,6}`, so 988 isn't treated as a
+  short code, and texting it shows no premium-SMS warning.
+
+Belay's consequence: 988 is on Belay's always-allowed list in code (`:core` `AlwaysAllowed`), with
+the Lifeline's older number, 1-800-273-8255, which still reaches it (the server treats it as 988
+too), next to 911 and whatever Android reports as an emergency number (T13).
+
+### T4. Call screening and withheld numbers
+
+**Contradicted** (that screening sees every incoming call). Verified on: AOSP; Docs; Emulator
+pending (Phase 5 CI).
+
+- CallScreeningService reference [2026-09-16]: only `tel:` calls; "Calls with a …
+  PRESENTATION_RESTRICTED, PRESENTATION_UNKNOWN, PRESENTATION_UNAVAILABLE or PRESENTATION_PAYPHONE
+  presentation are not provided"; the service must answer within 5 seconds
+  (`CallScreeningServiceFilter.CALL_SCREENING_FILTER_TIMEOUT = 5000`); it also sees outgoing calls,
+  for caller id; blocked calls are logged as `BLOCKED_TYPE`.
+- Only calls from numbers not in Android's contacts go to a screening app without `READ_CONTACTS`,
+  but `CallScreeningServiceFilter.hasReadContactsPermission` is true for the default dialer: it's
+  asked about every call with a number.
+- `CallsManager.setUpCallFilterGraph`: a screening app the user chose (`ROLE_CALL_SCREENING`) that
+  isn't the default dialer replaces the default dialer's screening; Telecom asks one or the other.
+
+Belay's consequence: Belay decides every incoming call in its `InCallService.onCallAdded` (withheld
+callers, and every call when another app holds the screening role), refusing it before anything
+rings. Its screening service only decides sooner: it answers within 4 seconds, letting the call
+through when it can't, and asks Android to post no notification for a call it refuses.
+
+### T5. The dialer decides whether a call rings
+
+**Confirmed.** Verified on: AOSP; Docs; Emulator pending (Phase 5 CI).
+
+- InCallService reference: with the meta-data `android.telecom.IN_CALL_SERVICE_RINGING`, the app "is
+  responsible for playing the ringtone for incoming calls".
+- Telecom `Ringer.startRinging`: while the bound dialer handles ringing
+  (`doesConnectedDialerSupportRinging`), Telecom plays no ringtone and no vibration ("Dialer
+  handles"), and only takes audio focus for it when the ringer would be audible.
+- `Call.EXTRA_SILENT_RINGING_REQUESTED`: a screening app asked to silence the call, so a dialer
+  that rings shouldn't. `Call.EXTRA_IS_SUPPRESSED_BY_DO_NOT_DISTURB` "will be removed from the Call
+  object for InCallServices that do not hold the READ_CONTACTS permission".
+- `InCallController` binds in-call services with `BIND_FOREGROUND_SERVICE |
+  BIND_ALLOW_BACKGROUND_ACTIVITY_STARTS`, so the dialer can open its call screen from the background.
+- `core/res/AndroidManifest.xml`: `USE_FULL_SCREEN_INTENT` is `normal|appop`: granted at install, but
+  an app op, which can be switched off.
+
+Belay's consequence: a call the rules refuse never rings. Belay rings only once it has decided, with
+its own looping ringtone (`USAGE_NOTIFICATION_RINGTONE`) and vibration, following the ringer mode,
+and only vibrates when another call is on or a screening app asked. The incoming call is a
+`CallStyle` notification with a full-screen intent to Belay's call screen. Belay holds no
+`READ_CONTACTS`, so it doesn't get Do Not Disturb's verdict: what Do Not Disturb does to Belay's
+ringtone is on the Pixel checklist.
+
+### T6. Blocked numbers
+
+**Confirmed.** Verified on: AOSP; Docs; Emulator pending (Phase 5 CI).
+
+- BlockedNumberContract [2026-08-03]: "Only the system, the default SMS application, and the default
+  phone app … and carrier apps can read, and write"; "The platform blocks calls, and messages from
+  an address if it is present".
+- `packages/providers/BlockedNumberProvider`, `checkForPrivilegedApplications`: root, the default
+  and the system dialer, an app allowed the `WRITE_SMS` app op (the default SMS app), or one with
+  carrier privileges; anyone else needs `READ_BLOCKED_NUMBERS` or `WRITE_BLOCKED_NUMBERS`
+  (signature), which the shell holds (`packages/Shell/AndroidManifest.xml`). Blocking works for the
+  phone's system user (and a main user or managed profile).
+- `CarrierConfigManager.KEY_DURATION_BLOCKING_DISABLED_AFTER_EMERGENCY_INT`: "The duration in
+  seconds that platform call and message blocking is disabled after the user contacts emergency
+  services", default 7200.
+
+Belay's consequence: while it's the dialer, Belay keeps Android's block list in step with the
+policy's `blocked_numbers`, adding and removing only its own entries (it remembers which), never an
+always-allowed number. It takes them off during its own 2-hour callback window and puts them back
+after, and takes them all off before it gives the role back, since afterwards it can't. CI reads the
+list as the shell, with `content query`.
+
+### T10. Giving the dialer role back
+
+**Confirmed.** Verified on: AOSP; Emulator pending (Phase 5 CI).
+
+- `services/core/.../role/RoleServicePlatformHelperImpl.computePackageStateHash` covers every
+  package's enabled and disabled components, and `RoleService` (`packages/modules/Permission`)
+  re-checks the default roles on `PACKAGE_CHANGED` when that hash changes.
+  `RoleControllerServiceImpl` then drops a "package that no longer qualifies for the role", and with
+  `fallBackToDefaultHolder` gives the role to the default holder (`config_defaultDialer`) if that
+  one qualifies.
+- The role controller's `Permissions.revokeSingleAsUser` revokes only what the role granted, and
+  stops at a permission "fixed to granted" (`FLAG_PERMISSION_POLICY_FIXED`): a device owner's grant
+  outlives the role, and since nothing is revoked, the app isn't killed (L7).
+- `TelecomServiceImpl`: `ACTION_DEFAULT_DIALER_CHANGED`, with the new package, goes out when the
+  dialer changes, but not when there's none ("We are replacing the dialer, just wait for the
+  upcoming callback").
+
+Belay's consequence: when calls goes off, Belay gives the role back with
+`setDefaultDialerApplication` to the dialer it recorded when it took over, then disables its dialer
+without stopping itself (`DONT_KILL_APP`), which also drops it from the role where there was no
+dialer to give back (the ATD image, T15). Its call permissions go last, denied by policy, which
+restarts Belay once (L7). Belay listens for `ACTION_DEFAULT_DIALER_CHANGED`, and each agent step (at
+least hourly) checks the dialer, for a change with no broadcast.
+
+### T11. Seeing a call to 911 or 988 that Belay's dialer didn't place
+
+**Partly.** Verified on: AOSP; Docs.
+
+- `NewOutgoingCallIntentBroadcaster`: "Calls to emergency numbers are still broadcast for
+  informative purposes. The call is placed prior to sending ACTION_NEW_OUTGOING_CALL and cannot be
+  redirected nor prevented." Only voicemail and self-managed calls skip it. It goes to holders of
+  `PROCESS_OUTGOING_CALLS` with `FLAG_RECEIVER_INCLUDE_BACKGROUND`, so a manifest receiver gets it.
+- `CallLogManager.okayToLogCall`: an emergency call goes in Android's call log only when the
+  carrier sets `KEY_ALLOW_EMERGENCY_NUMBERS_IN_CALL_LOG_BOOL` (`CarrierConfigManager`: `false` by
+  default). 988 is an ordinary number to Android (T3), so its calls are logged.
+- `READ_CALL_LOG` and `PROCESS_OUTGOING_CALLS` are hard-restricted (`core/res/AndroidManifest.xml`),
+  which an adb install allowlists (the drafts' I4).
+- Telecom adds `Call.EXTRA_LAST_EMERGENCY_CALLBACK_TIME_MILLIS` to an incoming call only when it
+  connects the system dialer itself (`EmergencyInCallServiceConnection.connect`), not while it hands
+  calls to the default dialer: Belay will rarely see it.
+
+Belay's consequence: the 2-hour callback window opens on a call Belay places to an always-allowed
+number, a tap on one of Belay's buttons to text 911 or 988, `NEW_OUTGOING_CALL` to one of those
+numbers (from the preloaded dialer or the lock screen's emergency dialer), an outgoing one in
+Android's call log, or Telecom's extra. Belay keeps the time only on the phone, and forgets it once
+the window is over. A call that rings only because of the window is never sent (its record would
+tell a parent).
+
+### T12. Missed-call notifications
+
+**Confirmed.** Verified on: AOSP.
+
+- Telecom `ui/MissedCallNotifierImpl`: when the default dialer has a receiver for
+  `ACTION_SHOW_MISSED_CALLS_NOTIFICATION`, Telecom sends it there (to holders of `READ_PHONE_STATE`
+  only); otherwise Telecom posts its own missed-call notification.
+- `CallLogManager`: an incoming call that ends as `MISSED` is logged `MISSED_TYPE` and notified; one
+  the dialer rejected is `REJECTED_TYPE`, with no notification; one call screening blocked is
+  `BLOCKED_TYPE`, notified only if the screening response asks.
+
+Belay's consequence: Belay has no such receiver (it doesn't hold `READ_PHONE_STATE`), so Android
+shows its own notification for a call that rang and was missed. A call the rules refuse is
+rejected, never left to ring out, so Android doesn't call it missed; Belay's recent calls say why it
+didn't ring.
+
+### T13. `isEmergencyNumber`
+
+**Confirmed.** Verified on: AOSP.
+
+- `telephony/.../TelephonyManager.isEmergencyNumber(String)`: no permission (the phone process's
+  `PhoneInterfaceManager` checks one only for the old "potential" match). It throws
+  `IllegalStateException` when the phone process isn't there, and `UnsupportedOperationException`
+  without `FEATURE_TELEPHONY_CALLING` or `FEATURE_TELEPHONY_MESSAGING`. It asks every phone's
+  `EmergencyNumberTracker` (the SIM's, the network's, the modem's and Android's own numbers for the
+  country).
+- `frameworks/opt/telephony`, `EmergencyNumberTracker`: "According spec 3GPP TS22.101", 112 and 911,
+  and with no SIM also 000, 08, 110, 118, 119 and 999.
+
+Belay's consequence: `AlwaysAllowed` asks Android about every number that isn't 911 or 988; when
+Android can't say (it throws, or the phone has no telephony), the no-SIM list counts, so a phone
+process that's down never stops an emergency number working.
+
+### T14. `CALL_PHONE` for other apps
+
+**Confirmed.** Verified on: AOSP; Emulator pending (Phase 5 CI).
+
+- `core/res/AndroidManifest.xml`: `CALL_PHONE` is a dangerous permission (`costsMoney`); a device
+  owner can deny it to another app with `setPermissionGrantState` (R2).
+- `TelecomServiceImpl.canCallPhone`: `placeCall` needs `CALL_PHONE` and its app op, except for the
+  default and system dialers and holders of `CALL_PRIVILEGED` (the phone process's emergency dialer).
+  `UserCallIntentProcessor` refuses a call without it only when the number isn't an emergency
+  number, and T2's `ACTION_CALL` to an emergency number goes to the system dialer whatever the app
+  holds.
+
+Belay's consequence: while calls is on, Belay denies `CALL_PHONE` to every app that requests it,
+except itself and the apps it never blocks (core's `NeverBlocked`: the dialers, the texting app,
+Android's telephony and emergency apps…), and gives it back (to its default state) when calls goes
+off. Emergency calls don't depend on it. A call another app starts anyway still reaches Belay's
+`onCallAdded`, which ends it before it connects if the rules don't allow it.
+
+### T15. The CI emulator: no preloaded dialer, and calls from the console
+
+**Confirmed.** Verified on: AOSP; Docs; Emulator pending (Phase 5 CI).
+
+- The ATD image's product (`device/generic/goldfish`, `product/slim_handheld.mk`) inherits
+  `telephony_system_ext.mk` but not `telephony_product.mk` (`platform/build`, `target/product/`),
+  the makefile that adds `Dialer`: there's no preloaded dialer, and there may be no default dialer
+  before Belay. The Google APIs image is expected to have AOSP's Dialer (`com.android.dialer`; not
+  checked).
+- Emulator console reference [2026-11-13]: `gsm call <phonenumber>` "Simulates an inbound phone call
+  from phonenumber", `gsm cancel <phonenumber>` ends it, and "The Android system handles simulated
+  calls exactly as it would actual calls. The emulator doesn't support call audio."
+
+Belay's consequence: CI's Phase 5 block calls the emulator from made-up 555-01xx numbers and checks
+that a contact rings Belay's screen, a stranger is rejected without ringing and reported, a blocked
+number reaches Android's block list, and calls off gives the dialer back (on ATD: to nobody). It
+never calls or simulates 911 or 988, which only JVM tests cover.
+
+### T16. Call audio and the SIM choice in an in-call app
+
+**Confirmed.** Verified on: AOSP; Pixel pending (Phase 5 checklist).
+
+- `telecomm/.../InCallService`: `onCallAudioStateChanged` is deprecated for `onCallEndpointChanged`,
+  `onAvailableCallEndpointsChanged` and `requestCallEndpointChange` (API 34): earpiece, speaker,
+  Bluetooth and wired headsets as endpoints.
+- `Call.STATE_SELECT_PHONE_ACCOUNT`: an outgoing call waits for the dialer to pick a SIM
+  (`phoneAccountSelected`) when the phone has two and no default, with
+  `Call.EXTRA_SUGGESTED_PHONE_ACCOUNTS`.
+
+Belay's consequence: Belay's call screen routes audio with the endpoint API from Android 14 (the
+older `CallAudioState` before), and picks the first suggested SIM, only once the call is allowed.
+
+## Off belay (Phase 11)
+
+Read in AOSP `android-17.0.0_r1` on 2026-11-17 (`platform/frameworks/base`, and
+`platform/packages/apps/Settings`). CI runs the debug build's side on the emulator
+(`HandoverInstrumentedTest`, `ci-emulator-test.sh`); the Pixel's is in
+[phase11-checklist.md](phase11-checklist.md), with a release build.
+
+### O1. Handing over: clearing reset protection, and a reset from Settings
+
+**Confirmed in AOSP; Pixel pending.** Verified on: AOSP.
+
+- `DevicePolicyManagerService.setFactoryResetProtectionPolicy` with a null policy: the default
+  device owner (or the profile owner of an organization-owned phone) only; it sets the admin's
+  `mFactoryResetProtectionPolicy` to null, saves, and sends
+  `ACTION_RESET_PROTECTION_POLICY_CHANGED` to the reset-protection agent (the persistent data
+  block's allowed uid: Play services on a Pixel). Without a persistent data block it throws
+  `UnsupportedOperationException` (emulators), as C8 says. Clearing a policy that isn't there is
+  harmless: the same call, the same broadcast.
+- Settings' `MainClearConfirm` (System > Reset options > Erase all data (factory reset), its strings
+  `reset_dashboard_title` and `main_clear_title`) wipes the persistent data block, where reset
+  protection's data lives, before the reset, unless reset protection is active, the phone is still
+  being set up, the phone has no reset protection support, or it's an organization-owned phone with
+  a managed profile and a reset protection policy. A fully managed phone (a device owner) is none of
+  those, so a reset from Settings leaves no reset protection behind, whatever the policy was. It
+  needs `DISALLOW_FACTORY_RESET` lifted first.
+- The accounts page's title in Settings depends on flags (`account_dashboard_title`, "Passwords &
+  accounts", `account_dashboard_title_with_passkeys`, or "Accounts and backup" with
+  `enable_accounts_and_backup_screen`); "Remove account" (`remove_account_label`) is the same in
+  each.
+
+Belay's consequence: while the policy has `handover`, the phone holds no `DISALLOW_FACTORY_RESET`,
+`DISALLOW_DEBUGGING_FEATURES` or `DISALLOW_MODIFY_ACCOUNTS`, and a release build clears the reset
+protection policy once per hand-over, record or not, then sends `FRP_CONFIG_CHANGED` as Phase 2
+does. Clearing it matters for a reset that isn't from Settings (recovery mode): without the policy,
+the phone is back to consumer reset protection, which asks for an account that was on the phone
+([drafts](design/platform-notes-drafts.md) F1, from Google's guide; Play services decides it, not
+AOSP), and after the hand-over that's the kid's, if they added it. The kid's screen names no
+accounts path. The Pixel checklist records the paths and what the setup wizard asks after the
+reset.
 
 ---
 

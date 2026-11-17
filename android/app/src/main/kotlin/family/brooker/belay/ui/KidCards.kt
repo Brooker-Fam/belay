@@ -122,6 +122,8 @@ internal fun RulesCard(kid: KidView) {
                 chrome.forEach { Text("• ${stringResource(chromeWords(it))}", style = MaterialTheme.typography.bodyMedium) }
             }
         }
+        // Phase 5: who can call and whom the kid can call, while the family has calls on.
+        kid.policy?.calls?.let { CallRulesText(it) }
         Text(stringResource(R.string.rules_emergency), style = MaterialTheme.typography.bodyMedium)
     }
 }

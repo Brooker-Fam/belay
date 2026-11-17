@@ -376,6 +376,28 @@
     <string name="agreement_kid_agreed">You agreed on %1$s.</string>
     <string name="agreement_parents_agreed">Your parents agreed on %1$s.</string>
 
+    <!-- Phase 11: Off belay, the family's last stage, on My stage (core's kid.OffBelay), and the
+         hand-over, first on Home. Plain and respectful, for a 12-year-old; never more than Belay does.
+         %1$s in off_belay_last is the family's own words for when it comes. -->
+    <string name="off_belay_title">The last stage</string>
+    <string name="off_belay_last">Last stage: Off belay. %1$s</string>
+    <string name="off_belay_last_plain">Last stage: Off belay.</string>
+    <string name="off_belay_next">Your next stage, Off belay, is the last one.</string>
+    <string name="off_belay_on">You\'re on Off belay, the last stage.</string>
+    <string name="off_belay_nothing_blocked">Belay isn\'t blocking any apps or websites on this phone any more.</string>
+    <string name="off_belay_after">After it, your parent can hand this phone over to you, and then it\'s simply yours.</string>
+    <string name="off_belay_after_on">Next, your parent can hand this phone over to you, and then it\'s simply yours.</string>
+    <string name="off_belay_meaning">In climbing, \"off belay\" means the climber is safe and doesn\'t need the rope any more.</string>
+    <string name="handover_title">This phone is becoming yours</string>
+    <string name="handover_intro">Your parent is handing this phone over to you.</string>
+    <string name="handover_started_by">%1$s started this on %2$s.</string>
+    <string name="handover_started">Your parent started this on %1$s.</string>
+    <string name="handover_backup">Before you reset it, back up your photos and anything else you want to keep to your own account.</string>
+    <string name="handover_account">Then remove your parent\'s Google account from this phone: in Settings, open the page with your accounts, tap your parent\'s account, then Remove account.</string>
+    <string name="handover_reset">Then go to Settings &gt; System &gt; Reset options &gt; Erase all data.</string>
+    <string name="handover_after">After the reset, this phone is yours. Belay won\'t be on it.</string>
+    <string name="handover_together">You can do it together with your parent.</string>
+
     <!-- Phase 3: screen time's notifications. -->
     <string name="screen_time_channel_name">Screen time</string>
     <string name="screen_time_channel_description">Tells you when time is almost up or up, when a schedule starts, when your parent pauses the phone, and when Belay can\'t count.</string>
@@ -467,6 +489,7 @@
     <string name="request_help">I need help</string>
     <string name="request_talk">Talk to my parent</string>
     <string name="request_contact">To add a contact</string>
+    <string name="request_contact_named">To add a contact: %1$s</string>
     <string name="request_asked">You asked %1$s.</string>
     <string name="request_words">You wrote: “%1$s”</string>
     <string name="request_withdrawn">You took this back %1$s.</string>
@@ -557,4 +580,86 @@
     <string name="release_confirm_text">Belay stops being the device owner. Debug builds only: you can then uninstall it without a factory reset.</string>
     <string name="release_confirm_yes">Release</string>
     <string name="cancel">Cancel</string>
+
+    <!-- Phase 5: calls. Belay's dialer, while the family has calls on. Plain and respectful, for a
+         12-year-old; never more than the code does (docs/privacy.md, "Calls"). -->
+    <string name="calls_open">Calls</string>
+    <string name="calls_launcher_label">Calls</string>
+    <string name="calls_title">Calls</string>
+    <string name="calls_close">Close</string>
+    <string name="calls_off_now">Your parent hasn\'t turned on calls in Belay. You can still call and text 911 and 988, and use the phone app.</string>
+    <string name="calls_not_dialer">Belay isn\'t the phone\'s calling app right now, so calls go through the phone\'s own app. Your parent can see this.</string>
+    <string name="calls_emergency_911">Emergency (911)</string>
+    <string name="calls_988">988: Call or text for crisis support</string>
+    <string name="calls_988_title">988 Suicide &amp; Crisis Lifeline</string>
+    <string name="calls_988_text">Call or text 988 any time, for yourself or a friend. It\'s free and private, and Belay never tells anyone you called or texted.</string>
+    <string name="calls_tab_keypad">Keypad</string>
+    <string name="calls_tab_contacts">Contacts</string>
+    <string name="calls_tab_recent">Recent</string>
+    <string name="calls_type_number">Type a number</string>
+    <string name="calls_delete">Delete</string>
+    <string name="calls_call">Call</string>
+    <string name="calls_parent">Parent</string>
+    <string name="calls_contacts_none">Your parent hasn\'t added any contacts yet. You can ask for one below.</string>
+    <string name="calls_not_allowed">Your parent hasn\'t allowed calls to %1$s.</string>
+    <string name="calls_ask_this_one">Ask to add this number</string>
+
+    <!-- What the family's rules mean, on the Contacts tab and in This phone's rules. -->
+    <string name="calls_rule_anyone_rings">Anyone can call you.</string>
+    <string name="calls_rule_contacts_ring">Your parent decides who can call you. The people in your contacts can.</string>
+    <string name="calls_rule_others_dont_ring">Calls from other numbers don\'t ring.</string>
+    <string name="calls_rule_hidden_dont_ring">Calls from a hidden number don\'t ring.</string>
+    <string name="calls_rule_call_anyone">You can call any number.</string>
+    <string name="calls_rule_call_contacts">You can call your contacts, your parents, 911 and 988.</string>
+    <string name="calls_rule_quiet">During bedtime and school, only your parents, 911 and 988 ring. Other calls go to voicemail.</string>
+    <string name="calls_rule_log">Belay tells your parent who you call and who calls you, and for how long. Never what anyone says, and never calls with 911, 988 or the numbers your parent made private.</string>
+    <string name="calls_rule_always">911 and 988 always work. For 2 hours after you call 911 or 988, anyone can call you back.</string>
+
+    <!-- Ask to add a contact (a request your parent answers). -->
+    <string name="calls_ask_title">Ask to add a contact</string>
+    <string name="calls_ask_intro">Your parent decides. If they say yes, they add this person to your contacts.</string>
+    <string name="calls_ask_name">Their name</string>
+    <string name="calls_ask_number">Their phone number</string>
+    <string name="calls_ask_why">Why (optional)</string>
+    <string name="calls_ask_send">Send to my parent</string>
+    <string name="calls_ask_sent">Sent. Your parent will decide. You can see it in My requests.</string>
+    <string name="calls_ask_failed">Belay couldn\'t send that. Check the name, and the whole phone number with its area code.</string>
+
+    <!-- Recent calls: Belay's own list, on this phone. -->
+    <string name="calls_recent_private_note">Calls with 911, 988 and the numbers your parent made private show here only while the phone\'s own call history has them. Belay never keeps them or sends them to anyone.</string>
+    <string name="calls_recent_none">No calls yet.</string>
+    <string name="calls_number_hidden">Hidden number</string>
+    <string name="calls_unknown_caller">Unknown caller</string>
+    <string name="calls_recent_in">Incoming</string>
+    <string name="calls_recent_out">Outgoing</string>
+    <string name="calls_recent_only_here">only on this phone</string>
+    <string name="calls_recent_missed">Missed</string>
+    <string name="calls_recent_declined">Declined</string>
+    <string name="calls_recent_refused_unknown">Missed: number not in your contacts</string>
+    <string name="calls_recent_refused_withheld">Missed: the number was hidden</string>
+    <string name="calls_recent_refused_quiet">Missed during quiet time</string>
+    <string name="calls_recent_refused_not_allowed">Missed: your parent hasn\'t allowed calls from this number</string>
+    <string name="calls_recent_not_placed">Not placed: your parent hasn\'t allowed calls to this number</string>
+    <string name="calls_recent_no_answer">Outgoing, no answer</string>
+
+    <!-- The call screen and its notifications. -->
+    <string name="calls_incoming">Incoming call</string>
+    <string name="calls_dialing">Calling…</string>
+    <string name="calls_in_call">On a call</string>
+    <string name="calls_on_hold">On hold</string>
+    <string name="calls_ending">Call ended</string>
+    <string name="calls_more_than_one">Another call is waiting.</string>
+    <string name="calls_answer">Answer</string>
+    <string name="calls_decline">Decline</string>
+    <string name="calls_end">End call</string>
+    <string name="calls_hang_up">Hang up</string>
+    <string name="calls_mute">Mute</string>
+    <string name="calls_speaker">Speaker</string>
+    <string name="calls_keypad">Keypad</string>
+    <string name="calls_hold">Hold</string>
+    <string name="calls_bluetooth">Bluetooth</string>
+    <string name="calls_channel_incoming">Incoming calls</string>
+    <string name="calls_channel_incoming_description">Shows a call while your phone rings. Belay plays the ringtone itself.</string>
+    <string name="calls_channel_ongoing">Calls going on</string>
+    <string name="calls_channel_ongoing_description">Shows the call you\'re on, so you can get back to it or hang up.</string>
 </resources>

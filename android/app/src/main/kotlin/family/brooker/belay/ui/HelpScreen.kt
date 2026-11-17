@@ -25,6 +25,7 @@ import family.brooker.belay.R
 import family.brooker.belay.core.AnsweredRequest
 import family.brooker.belay.core.WireLimits
 import family.brooker.belay.core.WireRequestKind
+import family.brooker.belay.core.calls.CallContacts
 import family.brooker.belay.core.location.LocationRules
 import family.brooker.belay.enforce.KidView
 
@@ -51,7 +52,7 @@ internal fun HelpScreen(kid: KidView, unsent: Set<String>, helpId: String?, word
         } else {
             HelpSent(help, help.request.id in unsent, LocationRules.collecting(kid.policy?.location), words, actions)
         }
-        EmergencyCard(kid.policy?.parentNumbers.orEmpty(), actions)
+        EmergencyCard(CallContacts.emergencyCard(kid.policy), actions)
         TalkCard(actions)
     }
 }

@@ -36,7 +36,7 @@ const width = (value: number, max: number) => `w${value <= 0 || max <= 0 ? 0 : M
 
 // ── Tabs ─────────────────────────────────────────────────────────────
 
-export const PhoneTabs: FC<{ view: View; device: DeviceView; current: "apps" | "usage" | "rules" | "agreement" | "location" }> = ({ device, current }) => (
+export const PhoneTabs: FC<{ view: View; device: DeviceView; current: "apps" | "usage" | "rules" | "agreement" | "location" | "calls" }> = ({ device, current }) => (
   <nav class="tabs" aria-label="This phone">
     <a href={`/devices/${device.id}`} aria-current={current === "apps" ? "page" : undefined}>
       Apps and rules
@@ -52,6 +52,9 @@ export const PhoneTabs: FC<{ view: View; device: DeviceView; current: "apps" | "
     </a>
     <a href={`/devices/${device.id}/location`} aria-current={current === "location" ? "page" : undefined}>
       Location and help
+    </a>
+    <a href={`/devices/${device.id}/calls`} aria-current={current === "calls" ? "page" : undefined}>
+      Calls
     </a>
   </nav>
 );
@@ -849,6 +852,7 @@ export const RulesPage: FC<{ view: View; data: RulesPageData; message?: string; 
               {data.stages.map((s) => (
                 <option value={s.id} selected={phone.stage?.stage.id === s.id}>
                   {s.number}. {s.name}
+                  {s.offBelay && " (the last stage: it blocks nothing)"}
                 </option>
               ))}
             </select>

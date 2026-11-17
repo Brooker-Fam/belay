@@ -83,7 +83,7 @@ object DeviceOwnerSetup {
 
     /**
      * Tied permissions Belay still holds but shouldn't with the categories [on] (location turned off,
-     * lost mode or a help fix ended).
+     * lost mode or a help fix ended; Phase 5: calls turned off).
      */
     fun unwanted(context: Context, on: Set<String>): List<String> =
         declaredRuntimePermissions(context).filter { CategoryPermissions.tied(it) && CategoryPermissions.CATEGORY[it] !in on && granted(context, it) }
@@ -98,9 +98,10 @@ object DeviceOwnerSetup {
         if (!dpm.isDeviceOwnerApp(context.packageName)) return emptyList()
         val problems = mutableListOf<String>()
         // Background location first: it only works with a foreground one (core's CategoryPermissions.plan).
+        // Phase 5: the call permissions, once calls is off, the same way.
         val unwanted = permissionPlan(context).deny.filter { CategoryPermissions.tied(it) && granted(context, it) }
         if (unwanted.isEmpty()) return problems
-        Log.i(Agent.TAG, "location: denying ${unwanted.map { it.substringAfterLast('.') }} by policy; Android restarts Belay")
+        Log.i(Agent.TAG, "permissions: denying ${unwanted.map { it.substringAfterLast('.') }} by policy; Android restarts Belay")
         for (permission in unwanted) {
             setGrantState(dpm, admin(context), context.packageName, permission, DevicePolicyManager.PERMISSION_GRANT_STATE_DENIED, problems)
         }

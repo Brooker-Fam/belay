@@ -16,7 +16,9 @@ export interface StageSummary {
 }
 
 const summary = (s: StageView) =>
-  `${s.rules.limits.length} limit${s.rules.limits.length === 1 ? "" : "s"}, ${s.rules.schedules.length} schedule${s.rules.schedules.length === 1 ? "" : "s"}`;
+  s.offBelay
+    ? "The last stage: it blocks nothing"
+    : `${s.rules.limits.length} limit${s.rules.limits.length === 1 ? "" : "s"}, ${s.rules.schedules.length} schedule${s.rules.schedules.length === 1 ? "" : "s"}`;
 
 export const StagesPage: FC<{
   view: View;
@@ -31,7 +33,8 @@ export const StagesPage: FC<{
     <p class="muted">
       Stages bundle screen-time rules into named steps, so a change is a step the kid works toward: stage 1 first, then the next. Each phone on a stage
       gets its rules at once, and its own changes on top. The phone shows the kid its stage, what the next one changes, and how to get there in your
-      words. Only a parent moves a phone to another stage; AI apps can only propose it.
+      words. Only a parent moves a phone to another stage; AI apps can only propose it. Every family's list ends with Off belay: it blocks nothing,
+      and the kid's phone shows it, with your words for when it comes, from the first day.
     </p>
     {message && <Notice>{message}</Notice>}
     {error && <Notice kind="error">{error}</Notice>}
@@ -57,9 +60,11 @@ export const StagesPage: FC<{
       <label for="stage-from">Start from</label>
       <select id="stage-from" name="from">
         <option value="">No rules</option>
-        {stages.map(({ stage }) => (
-          <option value={`stage:${stage.id}`}>The rules of {stage.name}</option>
-        ))}
+        {stages
+          .filter(({ stage }) => !stage.offBelay)
+          .map(({ stage }) => (
+            <option value={`stage:${stage.id}`}>The rules of {stage.name}</option>
+          ))}
         {phones.map((p) => (
           <option value={`phone:${p.id}`}>{p.name}'s rules now</option>
         ))}
@@ -82,6 +87,7 @@ export const StagePage: FC<{
   message?: string;
   error?: string;
 }> = ({ view, stage, phones, fromBefore, apps, labels, message, error }) => {
+  if (stage.offBelay) return <OffBelayPage view={view} stage={stage} phones={phones} fromBefore={fromBefore} message={message} error={error} />;
   const base = `/stages/${stage.id}`;
   const editor = { view, base, rules: stage.rules, apps, labels };
   return (
@@ -150,3 +156,64 @@ export const StagePage: FC<{
     </Layout>
   );
 };
+
+/**
+ * Phase 11: Off belay, every family's last stage. It blocks nothing, keeps its name and place, and
+ * can't be deleted; the family writes when it comes, which the kid's phone shows from the first day.
+ */
+const OffBelayPage: FC<{
+  view: View;
+  stage: StageView;
+  phones: { id: string; name: string }[];
+  fromBefore: { name: string; unlocks: string[] } | null;
+  message?: string;
+  error?: string;
+}> = ({ view, stage, phones, fromBefore, message, error }) => (
+  <Layout view={view} title={stage.name}>
+    <p class="small">
+      <a href="/stages">Stages</a>
+    </p>
+    <h1>
+      {stage.number}. {stage.name}
+    </h1>
+    {message && <Notice>{message}</Notice>}
+    {error && <Notice kind="error">{error}</Notice>}
+    <p>
+      The last stage, the one every family's list ends with: the kid outgrows Belay, and the phone becomes simply theirs. On it, a phone has no time
+      limits or schedules. Then you can stop collecting, and hand the phone over, on its page. Moving a phone here is yours alone: AI apps can't,
+      not even as a proposal.
+    </p>
+    <p class="muted small">
+      {phones.length ? `On it: ${phones.map((p) => p.name).join(", ")}.` : "No phone is on it yet."} Changed <Time ms={stage.updatedAt} tz={view.tz} />
+      {stage.updatedBy && ` by ${stage.updatedBy}`}.
+    </p>
+    {fromBefore && (
+      <div class="card">
+        <p class="small">What it changes from {fromBefore.name}, as the kid sees it:</p>
+        {fromBefore.unlocks.length ? (
+          <ul class="small">
+            {fromBefore.unlocks.map((u) => (
+              <li>{u}</li>
+            ))}
+          </ul>
+        ) : (
+          <p class="small muted">Nothing in the rules.</p>
+        )}
+      </div>
+    )}
+    <h2>When it comes, in your words</h2>
+    <form class="card stack" method="post" action={`/stages/${stage.id}`}>
+      <Csrf view={view} />
+      <label for="stage-how">
+        Every phone shows these words from the first day, in "My stage": "Last stage: {stage.name}." and then yours, like "When you turn 16", or
+        "When you've kept the agreement for a year".
+      </label>
+      <textarea id="stage-how" name="how" maxlength={STAGE_LIMITS.how}>
+        {stage.how ?? ""}
+      </textarea>
+      <p>
+        <button type="submit">Save</button>
+      </p>
+    </form>
+  </Layout>
+);

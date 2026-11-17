@@ -194,6 +194,8 @@ export interface StageView {
   createdAt: number;
   updatedAt: number;
   updatedBy: string | null;
+  /** Phase 11: Off belay, the family's last stage (family/offbelay): it blocks nothing, and keeps its name and place. */
+  offBelay: boolean;
 }
 
 interface StageRow {
@@ -205,6 +207,7 @@ interface StageRow {
   created_at: number;
   updated_at: number;
   updated_by_name: string | null;
+  off_belay: number;
 }
 
 const STAGE_SELECT = "SELECT s.*, p.name AS updated_by_name FROM stages s LEFT JOIN parents p ON p.id = s.updated_by";
@@ -218,6 +221,7 @@ const toStage = (r: StageRow): StageView => ({
   createdAt: r.created_at,
   updatedAt: r.updated_at,
   updatedBy: r.updated_by_name,
+  offBelay: r.off_belay === 1,
 });
 
 /** The family's stages, first one first. */
@@ -233,6 +237,12 @@ export function getStage(db: DB, id: string): StageView | null {
 /** A stage by its name, ignoring case and surrounding space. */
 export function findStageByName(db: DB, name: string): StageView | null {
   const row = db.prepare<[string], StageRow>(`${STAGE_SELECT} WHERE s.name = ? COLLATE NOCASE`).get(name.trim());
+  return row ? toStage(row) : null;
+}
+
+/** Phase 11: Off belay, the family's last stage (every family has it, from migration 8). */
+export function offBelayStage(db: DB): StageView | null {
+  const row = db.prepare<[], StageRow>(`${STAGE_SELECT} WHERE s.off_belay = 1`).get();
   return row ? toStage(row) : null;
 }
 

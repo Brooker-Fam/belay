@@ -21,22 +21,31 @@ export function clientAddress<E extends { Bindings: Bindings }>(c: Context<E>, t
 
 export type JsonResult<T> = { ok: true; value: T } | { ok: false; description: string };
 
-/** Reads a JSON body and checks it against a schema. The error names a field, never a value. */
-export async function readJson<S extends z.ZodType>(c: Context, schema: S): Promise<JsonResult<z.infer<S>>> {
+/** Reads a JSON body, unchecked: for a route that looks at it before checking it (readJson checks it too). */
+export async function readJsonBody(c: Context): Promise<JsonResult<unknown>> {
   const type = c.req.header("content-type")?.split(";")[0]?.trim().toLowerCase();
   if (type !== "application/json") return { ok: false, description: "Content-Type must be application/json" };
-  let body: unknown;
   try {
-    body = JSON.parse(await c.req.text());
+    return { ok: true, value: JSON.parse(await c.req.text()) as unknown };
   } catch {
     return { ok: false, description: "The body isn't valid JSON" };
   }
+}
+
+/** Checks a value against a schema. The error names a field, never a value. */
+export function checkJson<S extends z.ZodType>(schema: S, body: unknown): JsonResult<z.infer<S>> {
   const parsed = schema.safeParse(body);
   if (parsed.success) return { ok: true, value: parsed.data };
   const issue = parsed.error.issues[0];
   const where = issue?.path.length ? issue.path.join(".") : "body";
   const what = issue?.code === "unrecognized_keys" ? `unknown field ${issue.keys.map((k) => `"${k}"`).join(", ")}` : (issue?.message ?? "invalid");
   return { ok: false, description: `${where}: ${what}`.slice(0, 300) };
+}
+
+/** Reads a JSON body and checks it against a schema. The error names a field, never a value. */
+export async function readJson<S extends z.ZodType>(c: Context, schema: S): Promise<JsonResult<z.infer<S>>> {
+  const body = await readJsonBody(c);
+  return body.ok ? checkJson(schema, body.value) : body;
 }
 
 /**

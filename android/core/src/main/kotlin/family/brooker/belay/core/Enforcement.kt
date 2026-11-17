@@ -1,5 +1,6 @@
 package family.brooker.belay.core
 
+import family.brooker.belay.core.calls.WireCallsStatus
 import family.brooker.belay.core.location.LocationRules
 import family.brooker.belay.core.location.WireLocationStatus
 import family.brooker.belay.core.screentime.WireScreenTimeStatus
@@ -230,7 +231,41 @@ data class EnforcementPlan(
     val reasons: Map<String, List<String>> = emptyMap(),
     /** Phase 3: screen time now, for the report (Decision.status); null without screen time. */
     val screenTime: WireScreenTimeStatus? = null,
+    /** Phase 11: the hand-over the policy asks for, as this build carries it out; null without one. */
+    val handover: HandoverPlan? = null,
 )
+
+/**
+ * Phase 11: a parent is handing the phone over (the policy's `handover`, docs/protocol.md "Off
+ * belay"). Whatever the restrictions say, Belay then holds none of [LIFTS] and no reset protection
+ * policy, and a release build clears that policy once ([clearFrp]), even if it has no record of
+ * setting one: the kid resets the phone from Settings and sets it up with their own account.
+ */
+data class HandoverPlan(
+    /** The policy's handover.at: Belay carries out each hand-over once. */
+    val at: Long,
+    /** False on a debug build, which never sets reset protection, so never clears it either. */
+    val clearFrp: Boolean,
+) {
+    companion object {
+        /** Factory reset from Settings, Developer options and adb, and adding or removing accounts (Play's too). */
+        val LIFTS: Set<Lock> = setOf(Lock.FACTORY_RESET, Lock.DEBUGGING, Lock.MODIFY_ACCOUNTS)
+    }
+}
+
+/** Phase 11: what Belay did about reset protection for a hand-over. */
+@Serializable
+enum class HandoverFrp {
+    /** It cleared the reset protection policy and told Play services (a release build). */
+    CLEARED,
+
+    /** A test build never sets reset protection, so it left it alone; a release build clears it here. */
+    SKIPPED_DEBUG,
+}
+
+/** Phase 11: a hand-over Belay carried out (the policy's handover.at), and when. */
+@Serializable
+data class HandoverDone(val at: Long, val doneAt: Long, val frp: HandoverFrp)
 
 /**
  * What Belay itself did, so it only ever undoes its own work: an app someone else suspended
@@ -267,6 +302,8 @@ data class Applied(
     val reasons: Map<String, List<String>> = emptyMap(),
     /** Phase 3: screen time as of the last step, for the report's screen_time. */
     val screenTime: WireScreenTimeStatus? = null,
+    /** Phase 11: the hand-over Belay carried out; null without one (or until it has). */
+    val handover: HandoverDone? = null,
 )
 
 /** What to change on the phone to get from [Applied] to an [EnforcementPlan]. */
@@ -411,23 +448,30 @@ object Enforcement {
 
         val maintenanceUntil = policy.maintenanceUntil?.takeIf { it > now }
         val recoveryUntil = input.recoveryUntil?.takeIf { it > now }
+        // Phase 11: while the phone is handed over, none of the hand-over's locks hold, whatever the restrictions say.
+        val handover = policy.handover?.let { HandoverPlan(it.at, clearFrp = !input.debugBuild) }
+        val restrictions = if (handover == null) {
+            policy.restrictions
+        } else {
+            policy.restrictions.copy(factoryReset = false, debugging = false, modifyAccounts = false)
+        }
         // Phase 4: keep_on (with a mode on) and lost mode keep location on: the kid can't turn it off.
-        val locks = locks(policy.restrictions, input.debugBuild, maintenanceUntil != null, recoveryUntil != null, input.sdkFull, problems) +
+        val locks = locks(restrictions, input.debugBuild, maintenanceUntil != null, recoveryUntil != null, input.sdkFull, problems) +
             listOfNotNull(Lock.CONFIG_LOCATION.takeIf { LocationRules.keepOn(policy.location) })
 
         val privateDns = policy.web.privateDns?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }?.let { host ->
             if (Hostnames.valid(host)) host else null.also { problems += "Private DNS: \"$host\" isn't a host name." }
         }
 
-        val frpAccounts = policy.frpAccounts.map { it.trim() }.filter { it.isNotEmpty() }.distinct().takeIf { it.isNotEmpty() }
+        val frpAccounts = policy.frpAccounts.map { it.trim() }.filter { it.isNotEmpty() }.distinct().takeIf { it.isNotEmpty() && handover == null }
         if (frpAccounts != null && input.debugBuild) {
             problems += "This is a test build of Belay: it never sets factory reset protection."
         }
 
         val nextChangeAt = listOfNotNull(
             pause?.until,
-            maintenanceUntil?.takeIf { policy.restrictions.debugging && !input.debugBuild },
-            recoveryUntil?.takeIf { (policy.restrictions.debugging || policy.restrictions.factoryReset) && !input.debugBuild },
+            maintenanceUntil?.takeIf { restrictions.debugging && !input.debugBuild },
+            recoveryUntil?.takeIf { (restrictions.debugging || restrictions.factoryReset) && !input.debugBuild },
         ).minOrNull()
 
         val hide = blocked + hiddenBrowsers
@@ -458,6 +502,7 @@ object Enforcement {
             neverBlocked = NeverBlocked.report(protected, apps),
             agentUpdate = policy.agentUpdate,
             reasons = reasons,
+            handover = handover,
         )
     }
 
@@ -521,6 +566,8 @@ object Enforcement {
             else -> Setting.Set(plan.chrome)
         },
         frpAccounts = when {
+            // Phase 11: a release build clears reset protection once per hand-over, record or not.
+            plan.handover?.clearFrp == true && applied.handover?.at != plan.handover.at -> Setting.Clear
             plan.frpAccounts == applied.frpAccounts -> null
             plan.frpAccounts == null -> Setting.Clear
             else -> Setting.Set(plan.frpAccounts)
@@ -552,7 +599,22 @@ object Enforcement {
             // A package still held only because letting it go failed keeps the reasons it had.
             reasons = suspended.associateWith { plan.reasons[it] ?: applied.reasons[it].orEmpty() }.toSortedMap(),
             screenTime = plan.screenTime,
+            handover = handoverAfter(applied, plan, changes, outcome, now),
         )
+    }
+
+    /**
+     * Phase 11: the hand-over Belay has carried out. A release build's is done once reset protection
+     * is cleared (a failure is tried again at the next step); a debug build's at once, leaving it alone.
+     */
+    private fun handoverAfter(applied: Applied, plan: EnforcementPlan, changes: EnforcementChanges, outcome: ApplyOutcome, now: Long): HandoverDone? {
+        val wanted = plan.handover ?: return null
+        applied.handover?.takeIf { it.at == wanted.at }?.let { return it }
+        return when {
+            !wanted.clearFrp -> HandoverDone(wanted.at, now, HandoverFrp.SKIPPED_DEBUG)
+            changes.frpAccounts == Setting.Clear && !outcome.frpFailed -> HandoverDone(wanted.at, now, HandoverFrp.CLEARED)
+            else -> null
+        }
     }
 
     private fun <T> settle(before: T?, change: Setting<T>?, failed: Boolean): T? = when {
@@ -589,6 +651,7 @@ object Enforcement {
         recovery: WireRecoveryUse? = null,
         commands: List<WireCommandResult> = emptyList(),
         location: WireLocationStatus? = null,
+        calls: WireCallsStatus? = null,
     ): WireEnforcement? {
         val version = applied.policyVersion ?: return null
         return WireEnforcement(
@@ -603,6 +666,8 @@ object Enforcement {
             screenTime = applied.screenTime,
             // Phase 4: whether Belay can take a fix; null while location is off.
             location = location,
+            // Phase 5: whether Belay is the default dialer; null while calls is off.
+            calls = calls,
         )
     }
 }

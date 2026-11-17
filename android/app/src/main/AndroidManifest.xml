@@ -59,8 +59,28 @@
     <uses-feature
         android:name="android.hardware.location.gps"
         android:required="false" />
-    <!-- Phase 4: keeps the phone awake for one fix, at most 75 seconds (LocationCollector). -->
+    <!-- Phase 4: keeps the phone awake for one fix, at most 75 seconds (LocationCollector).
+         Phase 5: and the proximity sensor's screen-off lock during a call (calls/CallActivity.kt). -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- Phase 5: calls, only while the family has calls on. Declared, but granted by policy only
+         then and denied by policy otherwise (core's CategoryPermissions), so the dialer role can
+         neither grant nor revoke them (docs/platform-notes.md T1). CALL_PHONE places calls with
+         TelecomManager.placeCall; READ_CALL_LOG and PROCESS_OUTGOING_CALLS let Belay see a call to
+         911 or 988 its own dialer didn't place (the preloaded dialer, the lock screen), for the
+         2-hour callback window, and show calls with 911, 988 and private numbers in its recent
+         calls only while Android's own call log has them. Nothing read with them is sent.
+         Belay declares no contacts, SMS, microphone or phone-state permission: the dialer role
+         would grant whatever it declares. -->
+    <uses-permission android:name="android.permission.CALL_PHONE" />
+    <uses-permission android:name="android.permission.READ_CALL_LOG" />
+    <uses-permission android:name="android.permission.PROCESS_OUTGOING_CALLS" />
+    <!-- The incoming-call screen over the lock screen, and Belay's own ringer's vibration. -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-feature
+        android:name="android.hardware.telephony"
+        android:required="false" />
 
     <application
         android:name=".BelayApp"
@@ -233,6 +253,105 @@
             android:exported="false"
             android:foregroundServiceType="systemExempted"
             tools:ignore="ForegroundServicePermission" />
+
+        <!-- Phase 5: Belay's dialer. Disabled here, and enabled only while the policy has calls
+             (calls/Dialer.kt), so with calls off Belay isn't a dialer at all; disabling them again
+             makes Android drop Belay from the dialer role even when there's no other dialer to
+             give it back to. What the dialer role requires (PermissionController roles.xml, AOSP
+             17): an activity for ACTION_DIAL, one for ACTION_DIAL with tel:, and an exported
+             InCallService behind BIND_INCALL_SERVICE with IN_CALL_SERVICE_UI (docs/platform-notes.md T1).
+             IN_CALL_SERVICE_RINGING: Belay plays the ringtone itself, so a refused call never rings (T5). -->
+        <service
+            android:name=".calls.BelayInCallService"
+            android:enabled="false"
+            android:exported="true"
+            android:permission="android.permission.BIND_INCALL_SERVICE">
+            <meta-data
+                android:name="android.telecom.IN_CALL_SERVICE_UI"
+                android:value="true" />
+            <meta-data
+                android:name="android.telecom.IN_CALL_SERVICE_RINGING"
+                android:value="true" />
+            <intent-filter>
+                <action android:name="android.telecom.InCallService" />
+            </intent-filter>
+        </service>
+
+        <!-- Telecom asks the default dialer's screening service about incoming calls with a
+             caller id, before they ring (T4). Only Telecom holds BIND_SCREENING_SERVICE. -->
+        <service
+            android:name=".calls.BelayCallScreeningService"
+            android:enabled="false"
+            android:exported="true"
+            android:permission="android.permission.BIND_SCREENING_SERVICE">
+            <intent-filter>
+                <action android:name="android.telecom.CallScreeningService" />
+            </intent-filter>
+        </service>
+
+        <!-- The dial pad, contacts and recent calls; other apps open it with ACTION_DIAL or a
+             tel: link. -->
+        <activity
+            android:name=".calls.DialerActivity"
+            android:enabled="false"
+            android:exported="true"
+            android:label="@string/calls_launcher_label"
+            android:launchMode="singleTop">
+            <intent-filter>
+                <action android:name="android.intent.action.DIAL" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.DIAL" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="tel" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="tel" />
+            </intent-filter>
+        </activity>
+
+        <!-- The dialer's own icon in the launcher, only while calls is on. -->
+        <activity-alias
+            android:name=".calls.DialerLauncher"
+            android:enabled="false"
+            android:exported="true"
+            android:label="@string/calls_launcher_label"
+            android:targetActivity=".calls.DialerActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <!-- Telecom's outgoing-call broadcast, sent only to holders of PROCESS_OUTGOING_CALLS and
+             from the system: a call to 911 or 988 through any dialer opens the callback window. -->
+        <receiver
+            android:name=".calls.OutgoingCallReceiver"
+            android:enabled="false"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.NEW_OUTGOING_CALL" />
+            </intent-filter>
+        </receiver>
+
+        <!-- The incoming-call and in-call screen, over the lock screen. Only Belay opens it. -->
+        <activity
+            android:name=".calls.CallActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:showWhenLocked="true"
+            android:taskAffinity="family.brooker.belay.call"
+            android:turnScreenOn="true" />
+
+        <!-- Answer, Decline and Hang up from the call notifications: only Belay's own PendingIntents. -->
+        <receiver
+            android:name=".calls.CallActionReceiver"
+            android:exported="false" />
 
         <!-- No downloadable emoji font: Compose's EmojiCompat would ask Google Play
              services' font provider for one, and Belay uses no Play services (CLAUDE.md,

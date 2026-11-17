@@ -348,18 +348,20 @@ export function requestNotice(deviceName: string, labels: string[]): Notice {
 
 /** A request as requestsNotice reads it (help requests have helpNotice). */
 export interface NewRequest {
-  kind: "app" | "more_time" | "agreement" | "talk";
+  kind: "app" | "more_time" | "agreement" | "talk" | "contact";
   label: string | null;
   limitId?: string;
   minutes?: number;
   reason: string | null;
   answer?: "agree" | "talk";
+  /** contact: the name the kid gave (their words). */
+  contactName?: string;
 }
 
 /**
  * The notice for the kid's new requests, in the style of requestNotice: one app, more time
- * (`Sam's phone asks for 15 more minutes for Games: "One more level"`), the agreement, or how
- * many. The kid's reason goes with "more time" and "let's talk": like everything in a notice it's
+ * (`Sam's phone asks for 15 more minutes for Games: "One more level"`), the agreement, a contact
+ * (Phase 5), or how many. The kid's reason goes with "more time", "let's talk" and a contact: like everything in a notice it's
  * end-to-end encrypted to the parent's own browser, and it's cleaned and capped. Limit names are
  * the family's own words.
  */
@@ -378,6 +380,10 @@ export function requestsNotice(deviceName: string, requests: NewRequest[], limit
     return { title: "Belay", body, url: "/requests" };
   }
   if (requests.length === 1 && first?.kind === "talk") return { title: "Belay", body: `${phone}: the kid would like to talk${why(first)}`, url: "/requests" };
+  // Phase 5: the kid's name for the contact; never the number, which waits on the Requests page.
+  if (requests.length === 1 && first?.kind === "contact") {
+    return { title: "Belay", body: `${phone} asks to add a contact: "${oneLine(first.contactName ?? "", 60) || "a number"}"${why(first)}`, url: "/requests" };
+  }
   return { title: "Belay", body: `${phone}: ${requests.length} requests are waiting for you`, url: "/requests" };
 }
 

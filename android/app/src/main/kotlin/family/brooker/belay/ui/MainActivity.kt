@@ -18,7 +18,12 @@ import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import family.brooker.belay.Agent
 import family.brooker.belay.DebugTools
+import family.brooker.belay.R
 import family.brooker.belay.Trigger
+import family.brooker.belay.calls.AndroidCalls
+import family.brooker.belay.calls.CallFlow
+import family.brooker.belay.calls.CallsGate
+import family.brooker.belay.core.calls.AlwaysAllowed
 import family.brooker.belay.screentime.UsageAccess
 import family.brooker.belay.service.ScreenTimeNotice
 import family.brooker.belay.settings.ConnectionStore
@@ -59,9 +64,17 @@ class MainActivity : ComponentActivity() {
             edit = { id, reason -> Agent.editRequest(applicationContext, id, reason) },
             withdraw = { id -> Agent.withdraw(applicationContext, id) },
             call = { number -> Emergency.call(this, number) },
-            text = { number -> Emergency.text(this, number) },
+            text = { number ->
+                // With calls on, texting 911 or 988 opens the 2-hour callback window, as in Belay's dial pad.
+                val callsOn = Agent.view.value?.kid?.policy?.calls != null
+                if (callsOn && AlwaysAllowed.opensCallbackWindow(number, AndroidCalls.emergencyNumbers(this))) {
+                    CallsGate.emergencyContact(applicationContext, System.currentTimeMillis())
+                }
+                Emergency.text(this, number)
+            },
             emergencyInfo = if (Emergency.infoApp(this) != null) ({ Emergency.info(this) }) else null,
             navigate = { screen = it },
+            openCalls = ::openCalls,
         )
         setContent {
             BelayTheme {
@@ -138,6 +151,15 @@ class MainActivity : ComponentActivity() {
             startActivity(UsageAccess.settings(this))
         } catch (e: ActivityNotFoundException) {
             startActivity(Intent(Settings.ACTION_SETTINGS))
+        }
+    }
+
+    /** Phase 5: Belay's dialer, which is enabled only while the policy has calls. */
+    private fun openCalls() {
+        try {
+            startActivity(CallFlow.dialer(this))
+        } catch (e: ActivityNotFoundException) {
+            Toast.makeText(this, getString(R.string.calls_off_now), Toast.LENGTH_LONG).show()
         }
     }
 
