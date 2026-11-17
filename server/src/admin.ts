@@ -44,6 +44,17 @@
  *   parent-number "<phone>" --name <name> --number <E.164>, or --remove <name>
  *                                                 a number on the phone's emergency card
  *   kid-number "<phone>" <E.164>|--clear          the kid's own number, for "Call" on the parent page
+ *   calls "<phone>" --mode open|contacts [--unknown reject|voicemail|ring] [--withheld reject|voicemail|ring]
+ *         [--outgoing contacts|any] [--quiet on|off] [--log on|off]
+ *                                                 turns calls on (Belay becomes the phone app), with these rules (Phase 5)
+ *   calls "<phone>" --off                         turns calls off: the policy's calls is null again
+ *   contact "<phone>" --name <words> --number <E.164> [--calls on|off] [--texts on|off] [--parent]
+ *                                                 a contact (the same name again gains the number); prints only its id
+ *   contact "<phone>" --remove <id>               removes it; prints only its id
+ *   block-number "<phone>" <E.164>, unblock-number "<phone>" <E.164>
+ *                                                 a number on Android's block list (never 911, 988 or an emergency number)
+ *   private-number "<phone>" <E.164>, or private-number "<phone>" --remove <E.164>
+ *                                                 a number Belay never records
  *
  * Changes are logged as the server's (the activity log's "The server"). A running server sees
  * them within a second or two and passes them to the phone's long-poll. Hardening (factory
@@ -68,6 +79,10 @@ import { type LocationChange, locateNow, removePlace, savePlace, setLocation, se
 import { latestFix, listFixes, listPlaceEvents } from "./family/location/fixes.js";
 import { type Notify, listPlaces, locationFor, locationSettings } from "./family/location/store.js";
 import { locationWords } from "./mcp/location.js";
+import { type CallsSettingsChange, blockNumber, putContact, removeContact, setCalls, setPrivateNumber, unblockNumber } from "./family/calls/changes.js";
+import { listCallRecords } from "./family/calls/records.js";
+import { callSettings, callsFor, contactsFor, listContacts, numbersOf } from "./family/calls/store.js";
+import { callsSummary } from "./family/calls/words.js";
 import { setPhoneRules, setPhoneSettings } from "./family/screentime/changes.js";
 import { WEEKDAYS, type Weekday, clockMinutes } from "./family/screentime/days.js";
 import { newRuleId, phoneLabels, phoneRules, screenTimeFor } from "./family/screentime/rules.js";
@@ -157,13 +172,32 @@ const USAGE = `Commands:
   help-seen "<phone>" <request id> [--note <words>]
   parent-number "<phone>" --name <name> --number <E.164>
   parent-number "<phone>" --remove <name>
-  kid-number "<phone>" <E.164>|--clear`;
+  kid-number "<phone>" <E.164>|--clear
+  calls "<phone>" --mode open|contacts [--unknown reject|voicemail|ring] [--withheld reject|voicemail|ring] [--outgoing contacts|any] [--quiet on|off] [--log on|off]
+  calls "<phone>" --off
+  contact "<phone>" --name <words> --number <E.164> [--calls on|off] [--texts on|off] [--parent]
+  contact "<phone>" --remove <id>
+  block-number "<phone>" <E.164>
+  unblock-number "<phone>" <E.164>
+  private-number "<phone>" <E.164>
+  private-number "<phone>" --remove <E.164>`;
+
+/** How many of the newest call records status --json lists per phone. */
+const STATUS_CALLS = 50;
 
 /** How many of the newest fixes and place events status --json lists per phone. */
 const STATUS_FIXES = 50;
 
 /** How many of the newest usage days status --json lists per phone. */
 const STATUS_USAGE_DAYS = 31;
+
+/** An on|off flag: true, false, left out (undefined), or anything else ("bad"). */
+function onOff(value: string | true | undefined): boolean | undefined | "bad" {
+  if (value === undefined) return undefined;
+  if (value === "on") return true;
+  if (value === "off") return false;
+  return "bad";
+}
 
 /** Positional arguments, and --name value (or --name=value, or a bare --name) flags. */
 function parseArgs(args: string[]): { positional: string[]; flags: Map<string, string | true> } {
@@ -306,6 +340,7 @@ async function run(argv: string[], io: CliIO): Promise<void> {
                   location: r.fix ? { id: r.fix.id, at: r.fix.at, lat: r.fix.lat, lng: r.fix.lng, accuracy_m: r.fix.accuracyM, mock: r.fix.mock } : null,
                 }
               : {}),
+            ...(r.kind === "contact" ? { contact_name: r.contactName, contact_number: r.contactNumber, contact_id: r.contactId } : {}),
             ...(r.withdrawnAt !== null ? { withdrawn_at: r.withdrawnAt } : {}),
           })),
           recent_changes: listChanges(db, { deviceId: d.id, includeSystem: true, limit: 20 }).map((c) => ({
@@ -344,6 +379,22 @@ async function run(argv: string[], io: CliIO): Promise<void> {
           help_seen: helpSeenFor(db, d.id, now),
           parent_numbers: parentNumbersFor(db, d.id),
           ai_reads: aiReads(settings),
+          /** Phase 5: the policy's calls (null while they're off), contacts, private and blocked numbers. */
+          calls: callsFor(db, d.id),
+          contacts: contactsFor(db, d.id),
+          private_numbers: numbersOf(db, d.id, "private"),
+          blocked_numbers: numbersOf(db, d.id, "blocked"),
+          /** Phase 5: the call records the server keeps, newest first, at most 50 (times as the phone sent them). */
+          call_records: listCallRecords(db, d.id, { limit: STATUS_CALLS }).map((r) => ({
+            id: r.id,
+            at: r.at,
+            direction: r.direction,
+            contact_id: r.contactId,
+            number: r.number,
+            duration_s: r.durationS,
+            outcome: r.outcome,
+            reason: r.reason,
+          })),
         };
       });
       if (flags.has("json")) {
@@ -372,6 +423,8 @@ async function run(argv: string[], io: CliIO): Promise<void> {
           const last = latestFix(db, id);
           io.out(`  location: ${locationWords(s)}${last ? `; last fix ${formatAgo(last.at, now)}` : ""}`);
         }
+        const cs = callSettings(db, id);
+        if (cs) io.out(`  calls: ${callsSummary(cs)}; ${p.contacts.length} contact${p.contacts.length === 1 ? "" : "s"}, ${p.blocked_numbers.length} blocked`);
         for (const c of p.recent_changes.slice(0, 5)) io.out(`  ${c.at ?? ""} ${c.kind} ${c.package}`);
       }
       return;
@@ -592,13 +645,124 @@ async function run(argv: string[], io: CliIO): Promise<void> {
       const minutesFlag = flags.get("minutes");
       const minutes = minutesFlag === undefined ? undefined : Number(minutesFlag);
       const note = flags.get("note");
-      if (!id || !answer || (minutes !== undefined && (!Number.isInteger(minutes) || minutes < 1 || minutes > 240))) {
-        throw new CliError(`Usage: answer "<phone>" <request id> approve|decline|talk [--minutes <n>] [--note <words>]; minutes are 1 to 240, for more time`);
+      // Phase 5: approving a contact request takes the contact's name and what they may do (calls and texts on unless turned off).
+      const contactName = flags.get("name");
+      const contactCalls = onOff(flags.get("calls"));
+      const contactTexts = onOff(flags.get("texts"));
+      if (!id || !answer || (minutes !== undefined && (!Number.isInteger(minutes) || minutes < 1 || minutes > 240)) || contactName === true || contactCalls === "bad" || contactTexts === "bad") {
+        throw new CliError(
+          `Usage: answer "<phone>" <request id> approve|decline|talk [--minutes <n>] [--note <words>] [--name <words>] [--calls on|off] [--texts on|off]; minutes are 1 to 240, for more time; name, calls and texts, for a contact`,
+        );
       }
-      const done = answerRequest(ctx, row.id, id, answer, server, typeof note === "string" ? note : null, minutes === undefined ? {} : { minutes });
+      const contact = { ...(contactName !== undefined ? { name: contactName } : {}), ...(contactCalls !== undefined ? { calls: contactCalls } : {}), ...(contactTexts !== undefined ? { texts: contactTexts } : {}) };
+      const done = answerRequest(ctx, row.id, id, answer, server, typeof note === "string" ? note : null, { ...(minutes === undefined ? {} : { minutes }), contact });
       if (!done.result) throw new CliError(`${row.name} has no request ${id}.`);
       const given = done.result.minutes !== null ? `: ${done.result.minutes} more minutes for ${done.result.day ?? "today"}` : "";
-      io.out(`${row.name}: request ${id} is ${answer === "talk" ? "answered \"let's talk\"" : answer}${given} (rules version ${done.version}).`);
+      const added = done.result.contact ? (done.result.contact.existing ? `: ${done.result.contact.name} was a contact already` : `: ${done.result.contact.name} is a contact now`) : "";
+      io.out(`${row.name}: request ${id} is ${answer === "talk" ? "answered \"let's talk\"" : answer}${given}${added} (rules version ${done.version}).`);
+      return;
+    }
+    case "calls": {
+      const row = phone();
+      const usage = `Usage: calls "<phone>" --mode open|contacts [--unknown reject|voicemail|ring] [--withheld reject|voicemail|ring] [--outgoing contacts|any] [--quiet on|off] [--log on|off], or calls "<phone>" --off`;
+      if (flags.has("off")) {
+        if (flags.size > 1) throw new CliError(usage);
+        const was = callSettings(db, row.id)?.enabled === true;
+        const done = setCalls(ctx, row.id, { enabled: false }, server);
+        io.out(was ? `${row.name}: calls are off: Belay isn't the phone app, so it leaves calls alone (rules version ${done.version}).` : `${row.name}: calls were already off.`);
+        return;
+      }
+      const change: CallsSettingsChange = {};
+      const mode = flags.get("mode");
+      if (mode !== undefined) {
+        if (mode !== "open" && mode !== "contacts") throw new CliError(usage);
+        change.mode = mode;
+      }
+      for (const key of ["unknown", "withheld"] as const) {
+        const value = flags.get(key);
+        if (value === undefined) continue;
+        if (value !== "reject" && value !== "voicemail" && value !== "ring") throw new CliError(usage);
+        change[key] = value;
+      }
+      const outgoing = flags.get("outgoing");
+      if (outgoing !== undefined) {
+        if (outgoing !== "contacts" && outgoing !== "any") throw new CliError(usage);
+        change.outgoing = outgoing;
+      }
+      for (const key of ["quiet", "log"] as const) {
+        const value = onOff(flags.get(key));
+        if (value === "bad") throw new CliError(usage);
+        if (value !== undefined) change[key] = value;
+      }
+      const known = new Set(["mode", "unknown", "withheld", "outgoing", "quiet", "log"]);
+      if ([...flags.keys()].some((k) => !known.has(k))) throw new CliError(usage);
+      // Turning calls on needs the mode; once they're on, any one rule can change alone.
+      const on = callSettings(db, row.id)?.enabled === true;
+      if (!on && change.mode === undefined) throw new CliError(`${usage}. Turning calls on needs --mode.`);
+      if (on && !Object.keys(change).length) throw new CliError(usage);
+      const done = setCalls(ctx, row.id, { ...change, enabled: true }, server);
+      io.out(`${row.name}: calls are ${callsSummary(callSettings(db, row.id))} (rules version ${done.version}).`);
+      // A parent on the emergency card who isn't a contact can't get through "contacts only".
+      const s = callSettings(db, row.id);
+      const numbers = new Set(listContacts(db, row.id).flatMap((c) => c.numbers));
+      const missing = parentNumbersFor(db, row.id).filter((p) => !numbers.has(p.number));
+      if (s?.mode === "contacts" && missing.length) {
+        io.err(`On the emergency card but not a contact: ${missing.map((p) => `${p.name} (${p.number})`).join(", ")}. With only contacts, their calls follow --unknown. Add them with contact --parent.`);
+      }
+      return;
+    }
+    case "contact": {
+      // Its only line on stdout is the contact's id, for scripts.
+      const row = phone();
+      const remove = flags.get("remove");
+      if (remove !== undefined) {
+        const done = typeof remove === "string" ? removeContact(ctx, row.id, remove, server) : null;
+        if (!done?.result.removed) throw new CliError(`Usage: contact "<phone>" --remove <id>, the id contact printed. ${row.name} has no contact with that id.`);
+        io.out(done.result.removed.id);
+        io.err(`${row.name}: ${done.result.removed.name} isn't a contact any more (rules version ${done.version}).`);
+        return;
+      }
+      const usage = `Usage: contact "<phone>" --name <words> --number <E.164> [--calls on|off] [--texts on|off] [--parent]`;
+      const name = flags.get("name");
+      const number = flags.get("number");
+      const calls = onOff(flags.get("calls"));
+      const texts = onOff(flags.get("texts"));
+      const parentFlag = flags.get("parent");
+      const parent = parentFlag === undefined ? undefined : parentFlag === true ? true : onOff(parentFlag);
+      if (typeof name !== "string" || !name.trim() || typeof number !== "string" || calls === "bad" || texts === "bad" || parent === "bad") throw new CliError(usage);
+      const done = putContact(ctx, row.id, { name, number, ...(calls !== undefined ? { calls } : {}), ...(texts !== undefined ? { texts } : {}), ...(parent !== undefined ? { parent } : {}) }, server);
+      const c = done.result.contact;
+      io.out(c.id);
+      const can = c.calls && c.texts ? "can call and text" : c.calls ? "can call, not text" : c.texts ? "can text, not call" : "can't call or text";
+      io.err(`${row.name}: ${c.name} (${c.numbers.join(", ")}) ${can}${c.parent ? ", as a parent" : ""} (rules version ${done.version}).`);
+      return;
+    }
+    case "block-number":
+    case "unblock-number": {
+      const row = phone();
+      const number = positional[1] ?? "";
+      if (!number || flags.size) throw new CliError(`Usage: ${command} "<phone>" <E.164>, like +15555550100`);
+      if (command === "block-number") {
+        const done = blockNumber(ctx, row.id, number, server);
+        io.out(done.changed ? `${row.name}: ${number} is blocked (rules version ${done.version}).` : `${row.name}: ${number} was blocked already.`);
+        if (callSettings(db, row.id)?.enabled !== true) io.err("Calls are off on this phone: Belay blocks it once calls are on.");
+        return;
+      }
+      const done = unblockNumber(ctx, row.id, number, server);
+      io.out(done.result.was ? `${row.name}: ${number} is unblocked (rules version ${done.version}).` : `${row.name}: ${number} wasn't blocked.`);
+      return;
+    }
+    case "private-number": {
+      const row = phone();
+      const remove = flags.get("remove");
+      const number = typeof remove === "string" ? remove : (positional[1] ?? "");
+      if (!number || remove === true || (remove === undefined && flags.size)) throw new CliError(`Usage: private-number "<phone>" <E.164>, or private-number "<phone>" --remove <E.164>`);
+      const done = setPrivateNumber(ctx, row.id, number, remove === undefined, server);
+      if (remove === undefined) {
+        io.out(done.result.was ? `${row.name}: ${number} was private already.` : `${row.name}: Belay never records calls with ${number} (rules version ${done.version}).`);
+      } else {
+        io.out(done.result.was ? `${row.name}: ${number} isn't a private number any more (rules version ${done.version}).` : `${row.name}: ${number} wasn't a private number.`);
+      }
       return;
     }
     case "location": {
