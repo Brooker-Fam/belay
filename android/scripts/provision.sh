@@ -128,6 +128,12 @@ else
       "Factory reset, and skip every account in the setup wizard. Add the parent-owned" \
       "Google account after provisioning (docs/pixel.md)."
   fi
+  # Android 17's own Parental Controls keep their PIN in a hidden supervising profile, which
+  # `cmd user list -v` shows as "type=profile.SUPERVISING" (AOSP 17
+  # UserManagerServiceShellCommand), and which makes `dpm set-device-owner` refuse.
+  if ash cmd user list -v 2>/dev/null | matches 'type=profile\.SUPERVISING'; then
+    die "Android's own Parental Controls are set up on this phone. Turn them off in Settings > Parental controls, then run this again."
+  fi
   users="$(ash pm list users | grep -c 'UserInfo{' || true)"
   if [ "$users" != 1 ]; then
     die "The phone has $users users or profiles (a guest, a work profile, Private Space...)." \
