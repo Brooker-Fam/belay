@@ -57,9 +57,11 @@ class InventoryInstrumentedTest {
         assumeTrue("not device owner", DeviceOwnerSetup.isDeviceOwner(context))
         DeviceOwnerSetup.ensure(context)
         val self = PackageReader(context).read(listOf(context.packageName)).getValue(context.packageName)
-        // A device owner is an active device admin, and holds ACCESS_LOCAL_NETWORK by policy.
+        // A device owner is an active device admin, and holds ACCESS_LOCAL_NETWORK by policy;
+        // its camera is denied by policy outside the enrollment screen.
         assertTrue(SensitivePermissions.DEVICE_ADMIN in self.permissions)
         assertTrue(SensitivePermissions.NEARBY_DEVICES in self.permissions)
+        assertFalse(SensitivePermissions.CAMERA in self.permissions)
     }
 
     @Test
@@ -69,7 +71,17 @@ class InventoryInstrumentedTest {
         val health = HealthReader(context).read()
         assertEquals(true, health.uninstallBlocked)
         assertTrue(health.permissions.isNotEmpty())
-        health.permissions.forEach { assertTrue("${it.name} not granted by policy", it.granted && it.fixedByPolicy) }
+        val neverGranted = DeviceOwnerSetup.NEVER_GRANTED.map { it.substringAfterLast('.') }
+        health.permissions.forEach {
+            if (it.name in neverGranted) {
+                // CAMERA: never granted by policy, and denied by policy outside the enrollment screen.
+                assertFalse("${it.name} is granted", it.granted)
+                assertTrue("${it.name} not denied by policy", it.fixedByPolicy)
+            } else {
+                assertTrue("${it.name} not granted by policy", it.granted && it.fixedByPolicy)
+            }
+        }
+        assertTrue("CAMERA isn't reported", "CAMERA" in health.permissions.map { it.name })
         assertTrue("managed notice can't show", health.notificationsShown)
     }
 

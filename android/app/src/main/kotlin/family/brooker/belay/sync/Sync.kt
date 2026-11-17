@@ -6,12 +6,14 @@ import android.net.NetworkCapabilities
 import android.util.Log
 import family.brooker.belay.Agent
 import family.brooker.belay.core.CheckinRequest
+import family.brooker.belay.core.EnrollProblem
 import family.brooker.belay.core.OutboxDrain
 import family.brooker.belay.core.OutboxItem
 import family.brooker.belay.core.OutboxPolicy
 import family.brooker.belay.core.OutboxType
 import family.brooker.belay.core.SyncPolicy
 import family.brooker.belay.core.Verdict
+import family.brooker.belay.enroll.Enroller
 import family.brooker.belay.health.DeviceStatus
 import family.brooker.belay.health.HealthReader
 import family.brooker.belay.settings.ConnectionStore
@@ -27,8 +29,8 @@ import kotlin.random.Random
 
 /**
  * Talks to the family's server, on its own thread so network waits never hold up the
- * agent's reconcile thread. Every call is idempotent on the server, so sending again is
- * always safe.
+ * agent's reconcile thread. Enrollment runs here too, so it never overlaps a sync.
+ * Every call is idempotent on the server, so sending again is always safe.
  */
 object Sync {
     private val executor = Executors.newSingleThreadExecutor { r -> Thread(r, "belay-sync") }
@@ -66,6 +68,24 @@ object Sync {
         } catch (e: InterruptedException) {
             Thread.currentThread().interrupt()
             null
+        }
+    }
+
+    /**
+     * Enrolls with [server] and [code] as typed, scanned or passed over adb, then calls
+     * [done] on the sync thread. [replace]: may replace an existing connection (only the
+     * adb path, which only the parent can use).
+     */
+    fun enroll(context: Context, server: String, code: String, replace: Boolean, done: (Enroller.Outcome) -> Unit) {
+        val app = context.applicationContext
+        executor.execute {
+            val outcome = try {
+                Enroller(app).enroll(server, code, replace)
+            } catch (e: RuntimeException) {
+                Log.e(Agent.TAG, "enroll failed", e)
+                Enroller.Outcome.Failed(EnrollProblem.PHONE_ERROR, e.javaClass.simpleName)
+            }
+            done(outcome)
         }
     }
 

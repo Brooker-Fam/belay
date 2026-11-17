@@ -34,6 +34,9 @@ enum class EnrollProblem(val code: String) {
 
     /** Connected to a server already: only the parent (adb) can move the phone. */
     ALREADY_CONNECTED("already_connected"),
+
+    /** Something failed on the phone itself, such as storing the token. */
+    PHONE_ERROR("phone_error"),
 }
 
 object Enrollment {

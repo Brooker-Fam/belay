@@ -35,6 +35,8 @@ enum class Trigger(val label: String, val heartbeat: Boolean, val checkin: Boole
     SERVICE_STARTED("service started", true, checkin = true),
     ADMIN_SERVICE_BOUND("admin service bound", true),
     WATCHDOG("periodic check", true),
+    ENROLLED("enrolled", true, checkin = true),
+    CAMERA_DONE("enrollment screen closed", false),
     PACKAGE_BROADCAST("package broadcast", false),
     APP_OPENED("Belay opened", false),
 }
@@ -63,8 +65,8 @@ object Agent {
      * 1. If Belay is device owner, apply its setup again (idempotent) and make sure the
      *    service and the periodic checks are running.
      * 2. Reconcile the inventory: getChangedPackages since the last check, or a full scan
-     *    after a boot and once a day. What it finds goes into the outbox in the same
-     *    transaction.
+     *    after a boot, once a day and after enrolling. What it finds goes into the outbox
+     *    in the same transaction.
      * 3. Publish the result for the main screen, and ask the sync thread to send.
      *
      * [done] runs afterwards on the agent thread; receivers pass PendingResult.finish.
@@ -93,7 +95,10 @@ object Agent {
                 val health = HealthReader(app).read()
                 var device: WireDevice? = null
                 val readDevice = { DeviceStatus.read(app, health).also { device = it } }
-                val outcome = Reconciler(app, store).run(trigger, packages, null, readDevice)
+                // Set by enrollment until a full inventory is queued, so a restart can't lose it.
+                val wanted = if (connection.connected && connection.inventoryWanted) "enrolled" else null
+                val outcome = Reconciler(app, store).run(trigger, packages, wanted, readDevice)
+                if (wanted != null && outcome.snapshotQueued) ConnectionStore.inventoryQueued(app)
                 _view.value = AgentView(
                     health = health,
                     device = device ?: readDevice(),
