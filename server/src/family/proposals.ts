@@ -14,6 +14,7 @@ import { oneLine } from "../text.js";
 import {
   LOCK_RESTRICTIONS,
   RESTRICTION_NAMES,
+  RuleRefused,
   SAFE_RESTRICTIONS,
   activePause,
   currentDecision,
@@ -328,6 +329,10 @@ export function createProposal(
   reason: string,
   by: { parentId: string; clientName: string },
 ): { proposal: Proposal; duplicate: boolean } {
+  // Phase 11: Off belay is a parent's step on the parent page, never an AI app's, not even as a proposal.
+  if (change.kind === "move_stage" && getStage(db, change.stageId)?.offBelay) {
+    throw new RuleRefused("Only a parent moves a phone to Off belay, on the parent page: an AI app can't propose it.");
+  }
   return db.transaction(() => {
     const pkg = change.kind === "allow_app" ? change.package : null;
     const restriction = change.kind === "lift_restriction" ? change.restriction : null;

@@ -17,6 +17,7 @@ import { oneLine } from "../text.js";
 import { deviceFacts } from "./devices.js";
 import { aiReadsFor, helpSeenFor, parentNumbersFor } from "./kidside.js";
 import { locationFor } from "./location/store.js";
+import { handoverFor, offBelayFor } from "./offbelay/store.js";
 import { agreementFor } from "./screentime/agreement.js";
 import { insertExtra, phoneDay, phoneRules, screenTimeFor, stageFor } from "./screentime/rules.js";
 
@@ -601,6 +602,9 @@ export function buildPolicy(db: DB, deviceId: string, now: number): Policy {
     ai_reads: aiReadsFor(db),
     help_seen: helpSeenFor(db, deviceId, now),
     parent_numbers: parentNumbersFor(db, deviceId),
+    // Phase 11 (family/offbelay): the family's last stage, for the kid's My stage, and the hand-over.
+    off_belay: offBelayFor(db, deviceId, screen),
+    handover: handoverFor(db, deviceId),
   };
 }
 

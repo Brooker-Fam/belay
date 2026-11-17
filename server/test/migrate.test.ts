@@ -163,7 +163,7 @@ describe("migration 6 (location and the kid's side)", () => {
     ).run(T, T, T, T + 1);
     db.prepare("INSERT INTO commands (id, device_id, kind, issued_at, expires_at, issued_by, client_name) VALUES ('c-1', 'phone-1', 'lock_now', ?, ?, 'parent-1', 'Claude')").run(T, T + 1);
     migrate(db);
-    expect(db.pragma("user_version", { simple: true })).toBe(6);
+    expect(db.pragma("user_version", { simple: true })).toBe(loadMigrations().at(-1)?.version);
     expect(db.prepare("SELECT id, kind, limit_id, given_minutes, extra_id, reason, status, answered_by, withdrawn_at, seen_at FROM requests").all()).toEqual([
       { id: "request-0001", kind: "more_time", limit_id: "l-games", given_minutes: 15, extra_id: "x-1", reason: "Please", status: "approved", answered_by: "parent-1", withdrawn_at: null, seen_at: null },
     ]);

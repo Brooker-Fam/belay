@@ -849,6 +849,7 @@ export const RulesPage: FC<{ view: View; data: RulesPageData; message?: string; 
               {data.stages.map((s) => (
                 <option value={s.id} selected={phone.stage?.stage.id === s.id}>
                   {s.number}. {s.name}
+                  {s.offBelay && " (the last stage: it blocks nothing)"}
                 </option>
               ))}
             </select>
