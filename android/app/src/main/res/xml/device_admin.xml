@@ -1,6 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- A device owner doesn't need legacy uses-policies for the APIs Belay calls.
-     Declare a policy here only when a phase needs it. -->
+<!-- A device owner doesn't need legacy uses-policies for most of the APIs Belay calls.
+     Declare a policy here only when a phase needs it.
+
+     force-lock (Phase 3): DevicePolicyManager.lockNow, for "lock now" and schedules that lock
+     the screen. Android 17's first release still checks it unless the flag lock_now_coexistence
+     is on, and reads a device owner's policies from its APK again only when the phone starts, so
+     a phone updated to this Belay can lock the screen after its next restart
+     (docs/platform-notes.md S5). -->
 <device-admin>
-    <uses-policies />
+    <uses-policies>
+        <force-lock />
+    </uses-policies>
 </device-admin>

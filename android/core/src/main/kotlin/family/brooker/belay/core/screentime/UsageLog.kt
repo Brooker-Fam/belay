@@ -87,6 +87,24 @@ data class UsageLog(
         )
     }
 
+    /**
+     * The same record from [at] on: what came before is left out, and a span or gap running
+     * across [at] starts there (so an app on the screen then counts as opened then). Belay sends
+     * usage only from when the parent turned measuring on, though it counts the whole day to
+     * keep the limits; the day's report shows the time before as a gap.
+     */
+    fun since(at: Long): UsageLog {
+        if (at <= from) return this
+        val cut = minOf(at, asOf)
+        fun clip(spans: List<Span>) = spans.filter { it.to > cut }.map { if (it.from < cut) Span(cut, it.to) else it }
+        return copy(
+            from = cut,
+            apps = apps.mapValues { (_, spans) -> clip(spans) }.filterValues { it.isNotEmpty() },
+            screen = clip(screen),
+            gaps = gaps.filter { it.to > cut }.map { if (it.from < cut) it.copy(from = cut) else it },
+        )
+    }
+
     /** With a gap from [from] to [to], counted up to [to]. */
     fun withGap(from: Long, to: Long, reason: WireGapReason): UsageLog {
         if (to <= from) return this

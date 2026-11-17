@@ -55,8 +55,10 @@ import family.brooker.belay.settings.Connection
 
 /**
  * [connection] is null while it loads; [waiting] is how many outbox items wait to be sent;
- * [unsentRequests] the requests with a send still waiting. Phase 2's cards come first: a
- * pause, the apps waiting for a parent, the answers, blocked apps and the rules.
+ * [unsentRequests] the requests with a send still waiting. The kid's cards come first: a
+ * pause, today's screen time (Phase 3), the apps waiting for a parent, the answers, blocked
+ * apps, the rules, and the stage and family agreement (Phase 3). [askFor]: a limit to ask
+ * more time for at once (a time's-up notification's "Ask for more time").
  */
 @Composable
 fun MainScreen(
@@ -65,6 +67,9 @@ fun MainScreen(
     waiting: Int,
     unsentRequests: Set<String>,
     onAsk: Ask,
+    screenTime: ScreenTimeActions,
+    askFor: String?,
+    onAsked: () -> Unit,
     onConnect: () -> Unit,
     onAllowBattery: () -> Unit,
     onRelease: (() -> Unit)?,
@@ -83,13 +88,16 @@ fun MainScreen(
             }
             val kid = view.kid
             kid.plan?.pause?.let { pause -> item { PausedBanner(pause) } }
+            if (kid.screenTime != null) item { TodayCard(kid, unsentRequests, screenTime, askFor, onAsked) }
             if (kid.plan?.waiting.orEmpty().isNotEmpty()) item { WaitingCard(kid, unsentRequests, onAsk) }
-            if (kid.requests.any { !it.open }) item { AnswersCard(kid) }
+            if (kid.requests.any { it.forApp && !it.open }) item { AnswersCard(kid) }
             if (kid.plan?.blocked.orEmpty().isNotEmpty()) item { BlockedCard(kid, unsentRequests, onAsk) }
             item { RulesCard(kid) }
+            if (kid.policy?.stage != null) item { StageCard(kid) }
+            if (kid.policy?.agreement != null) item { AgreementCard(kid, unsentRequests, screenTime) }
             item { StatusCard(view) }
             item { ConnectionCard(connection, waiting, onConnect) }
-            item { CanSeeCard(Collectors.categories, connection) }
+            item { CanSeeCard(Collectors.categories(kid.policy), connection) }
             item { ChangesCard(view.changes, view.inventory) }
             item { ChecksCard(view.health, onAllowBattery) }
             item { PhoneCard(view.health, view.device) }

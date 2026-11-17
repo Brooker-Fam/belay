@@ -9,6 +9,7 @@ import family.brooker.belay.enforce.Enforcer
 import family.brooker.belay.service.BelayService
 import family.brooker.belay.store.AgentStore
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Debug builds only (this file is in src/debug). Release builds get
@@ -33,6 +34,17 @@ object DebugTools {
      */
     @Volatile
     var policyOverride: WirePolicy? = null
+
+    private val usageUpload = AtomicBoolean(false)
+
+    /**
+     * Phase 3, for ci-emulator-test.sh (DebugUsageReceiver): the next step sends today's usage
+     * at once, instead of within 15 minutes. Only what the policy's measure allows is sent.
+     */
+    fun askUsageUpload() = usageUpload.set(true)
+
+    /** Whether the step should send today's usage now; asking once sends once. */
+    fun takeUsageUpload(): Boolean = usageUpload.getAndSet(false)
 
     /** Release device owner without a factory reset. */
     fun releasePhone(context: Context): String {

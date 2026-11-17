@@ -165,22 +165,28 @@ data class Decision(
     /** Whole minutes left before a limit pauses [packageName], rounded up; null when no limit covers it. */
     fun leftMinutes(packageName: String): Int? = left[packageName]?.let(::minutesUp)
 
-    /** `enforcement.screen_time`. */
+    /**
+     * `enforcement.screen_time`, within the protocol's bounds (the server refuses a check-in
+     * that isn't): minutes at most [ScreenTimeWireLimits.MAX_STATUS_MINUTES] (a limit with
+     * plenty of extra time can have more left), at most 50 limits and the newest 20 takes.
+     */
     fun status(): WireScreenTimeStatus = WireScreenTimeStatus(
         day = day.toString(),
         measured = measured,
-        usedMinutes = if (sendMinutes) (screenMillis / MINUTE).toInt() else null,
-        limits = limits.map {
+        usedMinutes = if (sendMinutes) reported(screenMillis / MINUTE) else null,
+        limits = limits.take(ScreenTimeWireLimits.MAX_LIMITS).map {
             WireLimitStatus(
                 id = it.id,
-                used = if (sendMinutes) (it.usedMillis / MINUTE).toInt() else null,
-                left = if (sendMinutes) minutesUp(it.leftMillis) else null,
+                used = if (sendMinutes) reported(it.usedMillis / MINUTE) else null,
+                left = if (sendMinutes) reported(minutesUp(it.leftMillis).toLong()) else null,
                 state = it.state,
             )
         },
         schedule = schedules.maxByOrNull { it.until }?.let { WireScheduleNow(it.id, it.until) },
-        selfServe = selfServeToday.map { it.toWire() },
+        selfServe = selfServeToday.sortedBy { it.at }.takeLast(ScreenTimeWireLimits.MAX_STATUS_TAKES).map { it.toWire() },
     )
+
+    private fun reported(minutes: Long): Int = minutes.coerceIn(0, ScreenTimeWireLimits.MAX_STATUS_MINUTES.toLong()).toInt()
 
     /** The kid's Today screen, top first: a pause, "can't count", schedules on now, each limit, self-serve. */
     fun today(): List<KidText> = buildList {

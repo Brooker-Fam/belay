@@ -1,5 +1,6 @@
 package family.brooker.belay.core
 
+import family.brooker.belay.core.screentime.WireScreenTimeStatus
 import kotlinx.serialization.Serializable
 
 /**
@@ -164,6 +165,18 @@ data class ChromeConfig(
     }
 }
 
+/**
+ * Why Belay holds an app suspended, as short codes for its own records (Applied.reasons) and
+ * the debug state. Screen time (Phase 3) adds its own: core's screentime ReasonCode.code, like
+ * "app_limit" or "bedtime"; a pause is "paused" in both.
+ */
+object HoldReason {
+    const val WAITING = "waiting"
+    const val BLOCKED = "blocked"
+    const val NO_BROWSERS = "no_browsers"
+    const val PAUSED = "paused"
+}
+
 /** What a policy means on this phone right now. Pure: the same inputs give the same plan. */
 data class EnforcementPlan(
     val version: Int,
@@ -192,7 +205,10 @@ data class EnforcementPlan(
     val pause: WirePause?,
     /** Debugging is lifted until then, for repairs. */
     val maintenanceUntil: Long?,
-    /** When the plan next changes by the clock alone (a pause, maintenance or the recovery key's repair access ends). */
+    /**
+     * When the plan next changes by the clock alone (a pause, maintenance or the recovery key's
+     * repair access ends), or, with screen time, its next boundary (ScreenTimeEnforcement.merge).
+     */
     val nextChangeAt: Long?,
     /** Belay's own words for what the policy asks and Belay won't or can't do. */
     val problems: List<String>,
@@ -202,6 +218,10 @@ data class EnforcementPlan(
     val neverBlocked: List<String> = emptyList(),
     /** Phase 6: the update the policy offers. */
     val agentUpdate: WireAgentUpdate? = null,
+    /** Why each package in [suspend] is held ([HoldReason], and screen time's codes), in name order. */
+    val reasons: Map<String, List<String>> = emptyMap(),
+    /** Phase 3: screen time now, for the report (Decision.status); null without screen time. */
+    val screenTime: WireScreenTimeStatus? = null,
 )
 
 /**
@@ -235,6 +255,10 @@ data class Applied(
     val neverBlocked: List<String> = emptyList(),
     /** Phase 6: the update the applied policy offers, for the report's agent_update. */
     val agentUpdate: WireAgentUpdate? = null,
+    /** Why Belay holds each package in [suspended], as the plan said ([HoldReason], screen time's codes). */
+    val reasons: Map<String, List<String>> = emptyMap(),
+    /** Phase 3: screen time as of the last step, for the report's screen_time. */
+    val screenTime: WireScreenTimeStatus? = null,
 )
 
 /** What to change on the phone to get from [Applied] to an [EnforcementPlan]. */
@@ -363,12 +387,17 @@ object Enforcement {
             emptyList()
         }
 
+        // Phase 3: apps the family exempted from screen time are never paused either.
+        val exempt = policy.screenTime?.exempt.orEmpty().toSet()
         val pause = policy.pause?.takeIf { it.until == null || it.until > now }
         val paused = if (pause == null) {
             emptySet()
         } else {
             apps.values
-                .filter { it.launchable && it.packageName !in protected && it.packageName !in input.roles.pauseExempt }
+                .filter {
+                    it.launchable && it.packageName !in protected && it.packageName !in input.roles.pauseExempt &&
+                        it.packageName !in exempt
+                }
                 .mapTo(HashSet()) { it.packageName }
         }
 
@@ -392,6 +421,12 @@ object Enforcement {
         ).minOrNull()
 
         val hide = blocked + hiddenBrowsers
+        val reasons = sortedMapOf<String, MutableList<String>>()
+        fun hold(names: Collection<String>, why: String) = names.forEach { reasons.getOrPut(it) { mutableListOf() } += why }
+        hold(blocked, HoldReason.BLOCKED)
+        hold(hiddenBrowsers, HoldReason.NO_BROWSERS)
+        hold(waiting, HoldReason.WAITING)
+        hold(paused, HoldReason.PAUSED)
         return EnforcementPlan(
             version = policy.version,
             suspend = hide + waiting + paused,
@@ -412,6 +447,7 @@ object Enforcement {
             recoveryUntil = recoveryUntil,
             neverBlocked = NeverBlocked.report(protected, apps),
             agentUpdate = policy.agentUpdate,
+            reasons = reasons,
         )
     }
 
@@ -486,10 +522,11 @@ object Enforcement {
      */
     fun after(applied: Applied, plan: EnforcementPlan, changes: EnforcementChanges, outcome: ApplyOutcome, now: Long): Applied {
         val problems = (plan.problems + outcome.problems).map { it.take(MAX_PROBLEM) }.distinct().take(MAX_PROBLEMS)
+        val suspended = applied.suspended - (changes.unsuspend - outcome.failedUnsuspend) + (changes.suspend - outcome.failedSuspend)
         return Applied(
             policyVersion = plan.version,
             appliedAt = if (applied.policyVersion == plan.version && applied.appliedAt != null) applied.appliedAt else now,
-            suspended = applied.suspended - (changes.unsuspend - outcome.failedUnsuspend) + (changes.suspend - outcome.failedSuspend),
+            suspended = suspended,
             hidden = applied.hidden - (changes.unhide - outcome.failedUnhide) + (changes.hide - outcome.failedHide),
             locks = applied.locks - (changes.unlock - outcome.failedUnlock) + (changes.lock - outcome.failedLock),
             autoTime = if (changes.autoTime == null || outcome.autoTimeFailed) applied.autoTime else changes.autoTime,
@@ -501,6 +538,9 @@ object Enforcement {
             sim = applied.sim,
             neverBlocked = plan.neverBlocked,
             agentUpdate = plan.agentUpdate,
+            // A package still held only because letting it go failed keeps the reasons it had.
+            reasons = suspended.associateWith { plan.reasons[it] ?: applied.reasons[it].orEmpty() }.toSortedMap(),
+            screenTime = plan.screenTime,
         )
     }
 
@@ -548,6 +588,7 @@ object Enforcement {
             recovery = recovery,
             commands = commands.take(WireLimits.MAX_COMMAND_RESULTS),
             neverBlocked = applied.neverBlocked.take(WireLimits.MAX_NEVER_BLOCKED),
+            screenTime = applied.screenTime,
         )
     }
 }

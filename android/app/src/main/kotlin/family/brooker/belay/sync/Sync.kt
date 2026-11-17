@@ -6,7 +6,7 @@ import android.net.NetworkCapabilities
 import android.util.Log
 import family.brooker.belay.Agent
 import family.brooker.belay.Trigger
-import family.brooker.belay.core.CheckinRequest
+import family.brooker.belay.core.Checkins
 import family.brooker.belay.core.EnrollProblem
 import family.brooker.belay.core.OutboxDrain
 import family.brooker.belay.core.OutboxItem
@@ -212,7 +212,10 @@ private class SyncRun(private val app: Context) {
 
     private fun checkin(api: DeviceApi, token: String): Verdict {
         val device = DeviceStatus.read(app, HealthReader(app).read())
-        return when (val answer = api.checkin(token, CheckinRequest(device))) {
+        // Under the server's 32 KB, whatever the lists hold (core's Checkins).
+        val request = Checkins.fit(device)
+        if (request.status != device) Log.w(Agent.TAG, "check-in trimmed to ${Checkins.bytes(request)} bytes")
+        return when (val answer = api.checkin(token, request)) {
             is DeviceApi.Answer.Ok -> {
                 val skew = SyncPolicy.clockSkewMs(answer.body.serverTime, answer.sentAt, answer.receivedAt)
                 ConnectionStore.synced(app, answer.receivedAt, skew, checkin = true)
@@ -243,49 +246,75 @@ private class SyncRun(private val app: Context) {
 
     /**
      * Sends what waits, strictly in order (OutboxDrain): the server applies events and
-     * inventories as they arrive. Returns false if the server disconnected the phone.
+     * inventories as they arrive. Usage days (Phase 3) go in a lane of their own after it, so a
+     * server without `POST /usage` yet (it answers 404, which waits and tries again) holds back
+     * nothing else. Returns false if the server disconnected the phone.
      */
     private fun drain(api: DeviceApi, token: String): Boolean {
         val queue = store.queue()
         if (queue.isEmpty()) return true
-        val wait = OutboxPolicy.waitMs(queue.first().nextAttemptAt, System.currentTimeMillis())
-        if (wait != null) {
-            // Still waiting after a failure; everything behind the head waits with it.
-            SyncWork.wake(app, wait)
-            return true
-        }
-        val items = queue.map {
-            val type = when (it.type) {
-                OutboxRow.TYPE_SNAPSHOT -> OutboxType.SNAPSHOT
-                OutboxRow.TYPE_REQUEST -> OutboxType.REQUEST
-                else -> OutboxType.EVENT
+        val lanes = queue.map { OutboxItem(it.id, typeOf(it.type), it.bytes) to it.nextAttemptAt }
+            .groupBy { OutboxPolicy.lane(it.first.type) }
+            .toSortedMap()
+        // The soonest wake any lane asks for; one wake covers both (a newer wake replaces the last).
+        var wakeIn: Long? = null
+        for ((lane, items) in lanes) {
+            when (val outcome = drainLane(api, token, items, usage = lane == OutboxPolicy.lane(OutboxType.USAGE))) {
+                LaneOutcome.Disconnected -> return false
+                is LaneOutcome.Wait -> wakeIn = minOf(wakeIn ?: outcome.ms, outcome.ms)
+                LaneOutcome.Done -> {}
             }
-            OutboxItem(it.id, type, it.bytes)
         }
-        val result = OutboxDrain.run(items) { batch -> send(api, token, batch) }
+        wakeIn?.let { SyncWork.wake(app, it) }
+        return true
+    }
+
+    private sealed interface LaneOutcome {
+        data object Done : LaneOutcome
+
+        data class Wait(val ms: Long) : LaneOutcome
+
+        data object Disconnected : LaneOutcome
+    }
+
+    /** One lane, oldest first; its head waits out a backoff, and everything behind it with it. */
+    private fun drainLane(api: DeviceApi, token: String, lane: List<Pair<OutboxItem, Long>>, usage: Boolean): LaneOutcome {
+        val wait = OutboxPolicy.waitMs(lane.first().second, System.currentTimeMillis())
+        if (wait != null) return LaneOutcome.Wait(wait)
+        val result = OutboxDrain.run(lane.map { it.first }) { batch -> send(api, token, batch) }
         val finishedAt = System.currentTimeMillis()
         result.dropped.forEach {
             Log.w(Agent.TAG, "outbox: dropped item ${it.id}: ${it.reason}")
             store.markDropped(it.id, it.reason, finishedAt)
         }
-        if (result.sent.isNotEmpty()) Log.i(Agent.TAG, "sent ${result.sent.size} items in ${result.requests} requests")
-        when (val stop = result.stop) {
-            null -> {}
+        if (result.sent.isNotEmpty()) Log.i(Agent.TAG, "sent ${result.sent.size} ${if (usage) "usage days" else "items"} in ${result.requests} requests")
+        return when (val stop = result.stop) {
+            null -> LaneOutcome.Done
             is OutboxDrain.Stop.Retry -> {
                 val attempts = store.attempts(stop.ids) + 1
                 val wait = OutboxPolicy.retryWaitMs(attempts, stop.afterMs, Random.nextDouble())
                 store.markFailed(stop.ids, stop.reason, finishedAt + wait)
-                ConnectionStore.failed(app, finishedAt, stop.reason)
-                Log.w(Agent.TAG, "outbox: ${stop.reason}; trying again in ${wait / 1000} s (attempt $attempts)")
-                SyncWork.wake(app, wait)
+                // A server that doesn't take usage yet isn't a connection problem for the kid's screen.
+                if (!usage) ConnectionStore.failed(app, finishedAt, stop.reason)
+                Log.w(Agent.TAG, "outbox${if (usage) " (usage)" else ""}: ${stop.reason}; trying again in ${wait / 1000} s (attempt $attempts)")
+                LaneOutcome.Wait(wait)
             }
             is OutboxDrain.Stop.Disconnect -> {
                 disconnect(stop.reason)
-                return false
+                LaneOutcome.Disconnected
             }
-            OutboxDrain.Stop.Budget -> Sync.request(app)
+            OutboxDrain.Stop.Budget -> {
+                Sync.request(app)
+                LaneOutcome.Done
+            }
         }
-        return true
+    }
+
+    private fun typeOf(type: String): OutboxType = when (type) {
+        OutboxRow.TYPE_SNAPSHOT -> OutboxType.SNAPSHOT
+        OutboxRow.TYPE_REQUEST -> OutboxType.REQUEST
+        OutboxRow.TYPE_USAGE -> OutboxType.USAGE
+        else -> OutboxType.EVENT
     }
 
     /** One request for [batch]: a snapshot alone, events, or the kid's requests. */
@@ -307,6 +336,12 @@ private class SyncRun(private val app: Context) {
                 val payloads = store.requestPayloads(ids)
                 if (payloads.isEmpty()) return Verdict.Sent
                 api.requests(token, payloads)
+            }
+            OutboxType.USAGE -> {
+                // Gone when a newer report of the same day replaced it meanwhile.
+                val payloads = store.usagePayloads(ids)
+                if (payloads.isEmpty()) return Verdict.Sent
+                api.usage(token, payloads)
             }
         }
         return when (answer) {

@@ -24,6 +24,9 @@ import family.brooker.belay.core.Wire
 import family.brooker.belay.core.WireEvent
 import family.brooker.belay.core.WirePolicy
 import family.brooker.belay.core.WireRequest
+import family.brooker.belay.core.screentime.ScreenTimeState
+import family.brooker.belay.core.screentime.UsageLedger
+import family.brooker.belay.core.screentime.WireUsageDay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.KSerializer
@@ -33,12 +36,23 @@ import java.io.File
 /**
  * The agent's storage, on top of Room. The agent thread is the only writer of the baseline,
  * the change log, the heartbeats, what Belay applied, the kid's requests, the recovery key's
- * tries and the command log, and the only one that adds to the outbox; the sync thread marks
- * outbox items sent, failed or dropped; the long-poll and the sync thread store the policy
- * (and note an answer too big to read); the Private DNS and update threads write their own
- * rows. SQLite transactions keep all of them safe.
+ * tries, the command log and screen time's ledger and state, and the only one that adds to the
+ * outbox; the sync thread marks outbox items sent, failed or dropped; the long-poll and the sync
+ * thread store the policy (and note an answer too big to read); the Private DNS and update
+ * threads write their own rows. SQLite transactions keep all of them safe.
  */
 class AgentStore internal constructor(private val db: BelayDatabase, private val noBackupDir: File) {
+    /** Phase 3: screen time's ledger and state, each null when absent or unreadable (then made anew). */
+    data class ScreenTimeStored(val ledger: UsageLedger?, val state: ScreenTimeState?)
+
+    /** Phase 3: what an enforcement step does with screen time's row. */
+    sealed interface ScreenTimeWrite {
+        data class Save(val ledger: UsageLedger, val state: ScreenTimeState) : ScreenTimeWrite
+
+        /** The policy has no screen time: the row goes, and so does every unsent usage day. */
+        data object Clear : ScreenTimeWrite
+    }
+
     private val inventory = db.inventory()
     private val log = db.log()
     private val outbox = db.outbox()
@@ -157,6 +171,9 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
     /** The requests' JSON (WireRequests), in [ids] order. */
     fun requestPayloads(ids: List<Long>): List<String> = payloads(ids, OutboxRow.TYPE_REQUEST)
 
+    /** Phase 3: the usage days' JSON (WireUsageDays), in [ids] order. */
+    fun usagePayloads(ids: List<Long>): List<String> = payloads(ids, OutboxRow.TYPE_USAGE)
+
     private fun payloads(ids: List<Long>, type: String): List<String> =
         ids.chunked(CHUNK).flatMap { outbox.payloads(it, type) }.sortedBy { it.id }.map { it.payload }
 
@@ -176,7 +193,7 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
         db.runInTransaction {
             ids.chunked(CHUNK).forEach {
                 outbox.markItemsSent(it, at)
-                outbox.deleteSnapshots(it)
+                outbox.deleteSentLarge(it)
             }
         }
     }
@@ -196,6 +213,9 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
     fun makePendingDue() = outbox.makePendingDue()
 
     fun pendingCount(): Int = outbox.pendingCount()
+
+    /** Phase 3: usage days waiting to be sent. */
+    fun pendingUsageCount(): Int = outbox.pendingUsageCount()
 
     val pendingCountFlow: Flow<Int> get() = outbox.pendingCountFlow()
 
@@ -240,16 +260,56 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
 
     /**
      * What one enforcement step did, in one transaction: what Belay now holds, the commands it
-     * ran (Phase 10), and the requests it made or the kid sent, each queued for the server
-     * behind everything older.
+     * ran (Phase 10), the requests it made or the kid sent, each queued for the server behind
+     * everything older, and (Phase 3) screen time's ledger and state, with the [usage] days to
+     * send (each replacing an unsent report of the same day). [dropUsage]: the policy stopped
+     * measuring, so unsent usage days aren't sent.
      */
-    fun commitEnforcement(applied: Applied?, requests: List<KidRequest>, at: Long, commands: CommandLog? = null) {
+    fun commitEnforcement(
+        applied: Applied?,
+        requests: List<KidRequest>,
+        at: Long,
+        commands: CommandLog? = null,
+        screenTime: ScreenTimeWrite? = null,
+        usage: List<WireUsageDay> = emptyList(),
+        dropUsage: Boolean = false,
+    ) {
         db.runInTransaction {
             if (applied != null) {
                 enforcement.setEnforcement(EnforcementRow(applied = json.encodeToString(Applied.serializer(), applied), updatedAt = at))
             }
             if (commands != null) {
                 enforcement.setCommands(CommandsRow(log = json.encodeToString(CommandLog.serializer(), commands), updatedAt = at))
+            }
+            when (screenTime) {
+                null -> {}
+                is ScreenTimeWrite.Save -> enforcement.setScreenTime(
+                    ScreenTimeRow(
+                        ledger = json.encodeToString(UsageLedger.serializer(), screenTime.ledger),
+                        state = json.encodeToString(ScreenTimeState.serializer(), screenTime.state),
+                        updatedAt = at,
+                    ),
+                )
+                ScreenTimeWrite.Clear -> enforcement.clearScreenTime()
+            }
+            if (dropUsage || screenTime == ScreenTimeWrite.Clear) {
+                val dropped = outbox.deleteAllPendingUsage()
+                if (dropped > 0) Log.i(Agent.TAG, "screen time: $dropped unsent usage days dropped (the policy doesn't measure)")
+            }
+            if (usage.isNotEmpty()) {
+                usage.forEach { outbox.deletePendingUsage(usagePrefix(it)) }
+                outbox.insert(
+                    usage.map {
+                        OutboxRow(
+                            type = OutboxRow.TYPE_USAGE,
+                            itemId = usagePrefix(it) + at,
+                            packageName = null,
+                            payload = Wire.json.encodeToString(WireUsageDay.serializer(), it),
+                            createdAt = at,
+                        )
+                    },
+                )
+                outbox.capPendingUsage(OutboxPolicy.MAX_PENDING_USAGE)
             }
             if (requests.isNotEmpty()) {
                 enforcement.upsertRequests(
@@ -309,6 +369,20 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
 
     /** A policy answer was read. True when one too big to read was on record until now. */
     fun clearPolicyTooLarge(): Boolean = enforcement.clearPolicyFetch() > 0
+
+    // Phase 3: screen time.
+
+    /** Whether screen time has a row (without reading it). */
+    fun hasScreenTime(): Boolean = enforcement.screenTimeRows() > 0
+
+    /** Screen time's ledger and state; null when the policy has none (no row). */
+    fun screenTime(): ScreenTimeStored? = enforcement.screenTime()?.let { row ->
+        ScreenTimeStored(decode(row.ledger, UsageLedger.serializer()), decode(row.state, ScreenTimeState.serializer()))
+    }
+
+    /** For the agent thread only, between steps (the kid took self-serve minutes). False when there's no row yet. */
+    fun saveScreenTimeState(state: ScreenTimeState, at: Long): Boolean =
+        enforcement.setScreenTimeState(json.encodeToString(ScreenTimeState.serializer(), state), at) > 0
 
     private fun <T> decode(text: String, serializer: KSerializer<T>): T? = try {
         json.decodeFromString(serializer, text)
@@ -374,6 +448,9 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
 
     companion object {
         const val PHASE0_FILE = "agent-state.json"
+
+        /** The start of a usage day's outbox item id: the day and its zone, so a newer report replaces it. */
+        fun usagePrefix(day: WireUsageDay): String = "usage:${day.day}:${day.zone}:"
 
         /** Well under SQLite's limit on bound parameters. */
         private const val CHUNK = 500

@@ -292,7 +292,11 @@ export type MoreTimeRequest = z.infer<typeof MoreTimeRequest>;
 export type AgreementRequest = z.infer<typeof AgreementRequest>;
 export const RequestsRequest = z.strictObject({ requests: z.array(Request).min(1).max(LIMITS.maxRequests) });
 
-/** Phase 3: one local day of usage. Idempotent by (day, zone): the newest `as_of` wins. */
+/**
+ * Phase 3: one local day of usage. Idempotent by (day, zone): a day sent again replaces the stored
+ * one when its `as_of` is the same or newer (a complete day re-sent after the phone's clock moved
+ * has the same `as_of`, its end, and must replace it).
+ */
 export const UsageDay = z.strictObject({
   day: ymd,
   zone: text(64),
