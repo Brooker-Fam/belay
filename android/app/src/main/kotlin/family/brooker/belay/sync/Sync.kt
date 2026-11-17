@@ -12,6 +12,7 @@ import family.brooker.belay.core.OutboxDrain
 import family.brooker.belay.core.OutboxItem
 import family.brooker.belay.core.OutboxPolicy
 import family.brooker.belay.core.OutboxType
+import family.brooker.belay.core.PolicyTooLarge
 import family.brooker.belay.core.SyncPolicy
 import family.brooker.belay.core.Verdict
 import family.brooker.belay.core.WirePolicy
@@ -115,12 +116,35 @@ object Sync {
      * newer answer), and then applied in an agent step. True when it was new.
      */
     fun received(app: Context, policy: WirePolicy, via: String, sentAt: Long, at: Long): Boolean {
-        val kept = AgentStore.get(app).savePolicy(policy, sentAt, at)
-        if (kept) {
-            Log.i(Agent.TAG, "policy ${policy.version} received ($via)")
-            Agent.handle(app, Trigger.POLICY)
-        }
+        val store = AgentStore.get(app)
+        val readable = readable(app, via, step = false)
+        val kept = store.savePolicy(policy, sentAt, at)
+        if (kept) Log.i(Agent.TAG, "policy ${policy.version} received ($via)")
+        if (kept || readable) Agent.handle(app, Trigger.POLICY)
         return kept
+    }
+
+    /**
+     * The server's policy answer was too big to read (more than PolicyTooLarge.MAX_BYTES):
+     * Belay keeps enforcing the last policy it read, and the next step reports the problem
+     * (a check-in carries it). [bytes]: its Content-Length, if the server sent one.
+     */
+    fun policyTooLarge(app: Context, bytes: Long?, via: String) {
+        Log.w(Agent.TAG, "policy too big to read ($via): ${bytes ?: "more than ${PolicyTooLarge.MAX_BYTES}"} bytes; keeping the last policy")
+        if (AgentStore.get(app).notePolicyTooLarge(bytes, System.currentTimeMillis())) Agent.handle(app, Trigger.POLICY_UNREADABLE)
+    }
+
+    /**
+     * A policy answer was read again (or the server has no newer one): the problem goes. True
+     * when there was one; with [step], the agent then drops it from the report.
+     */
+    fun readable(app: Context, via: String, step: Boolean = true): Boolean {
+        val was = AgentStore.get(app).clearPolicyTooLarge()
+        if (was) {
+            Log.i(Agent.TAG, "the server's policy can be read again ($via)")
+            if (step) Agent.handle(app, Trigger.POLICY_UNREADABLE)
+        }
+        return was
     }
 
     /**
@@ -202,7 +226,18 @@ private class SyncRun(private val app: Context) {
                 Verdict.Sent
             }
             is DeviceApi.Answer.Refused -> verdictFor(answer, items = 1)
-            is DeviceApi.Answer.Failed -> Verdict.Retry(answer.reason)
+            is DeviceApi.Answer.Failed -> {
+                val tooLarge = answer.tooLarge
+                if (tooLarge != null) {
+                    // The server stored the status before it answered: the check-in went out.
+                    // Belay keeps the last policy it read, and reports this one.
+                    ConnectionStore.synced(app, System.currentTimeMillis(), null, checkin = true)
+                    Sync.policyTooLarge(app, tooLarge.bytes, "check-in")
+                    Verdict.Sent
+                } else {
+                    Verdict.Retry(answer.reason)
+                }
+            }
         }
     }
 

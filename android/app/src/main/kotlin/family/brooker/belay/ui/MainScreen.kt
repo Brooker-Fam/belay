@@ -1,5 +1,6 @@
 package family.brooker.belay.ui
 
+import android.content.Context
 import android.text.format.DateUtils
 import android.text.format.Formatter
 import androidx.compose.foundation.layout.Arrangement
@@ -43,7 +44,10 @@ import family.brooker.belay.core.DataCategory
 import family.brooker.belay.core.Detection
 import family.brooker.belay.core.Heartbeat
 import family.brooker.belay.core.PackageRecord
+import family.brooker.belay.core.UpdateRecord
+import family.brooker.belay.core.WireAgentUpdate
 import family.brooker.belay.core.WireDevice
+import family.brooker.belay.core.WireUpdateState
 import family.brooker.belay.health.Health
 import family.brooker.belay.health.HealthReader
 import family.brooker.belay.inventory.Collectors
@@ -64,6 +68,7 @@ fun MainScreen(
     onConnect: () -> Unit,
     onAllowBattery: () -> Unit,
     onRelease: (() -> Unit)?,
+    onRecovery: () -> Unit,
 ) {
     Scaffold { padding ->
         LazyColumn(
@@ -88,7 +93,7 @@ fun MainScreen(
             item { ChangesCard(view.changes, view.inventory) }
             item { ChecksCard(view.health, onAllowBattery) }
             item { PhoneCard(view.health, view.device) }
-            item { SelfCard(view.health, view.inventory[LocalContext.current.packageName]) }
+            item { SelfCard(view.health, view.inventory[LocalContext.current.packageName], view.update, kid.policy?.agentUpdate, onRecovery) }
             item { HeartbeatsCard(view.heartbeats) }
             if (onRelease != null && view.health.deviceOwner) item { ReleaseButton(onRelease) }
         }
@@ -242,6 +247,11 @@ private fun ChecksCard(health: Health, onAllowBattery: () -> Unit) {
         )
         Fact("Standby bucket", HealthReader.bucketName(health.standbyBucket))
         Fact("Background restricted", if (health.backgroundRestricted) "yes" else "no")
+        Fact(stringResource(R.string.check_other_users), health.otherUsers?.toString() ?: stringResource(R.string.unknown))
+        Fact(
+            stringResource(R.string.check_foreign_restrictions),
+            health.foreignRestrictions.joinToString(", ").ifEmpty { stringResource(R.string.none) },
+        )
     }
 }
 
@@ -278,8 +288,12 @@ private fun PhoneCard(health: Health, device: WireDevice) {
     }
 }
 
+/**
+ * About Belay: its version and where it came from, how an update a parent chose is going
+ * (Phase 6), and Recovery, for a parent whose Belay server is gone.
+ */
 @Composable
-private fun SelfCard(health: Health, self: PackageRecord?) {
+private fun SelfCard(health: Health, self: PackageRecord?, update: UpdateRecord?, offer: WireAgentUpdate?, onRecovery: () -> Unit) {
     Section(stringResource(R.string.section_self)) {
         Fact("Version", health.agentVersion + if (health.testOnly) ", debug (test-only)" else ", release")
         if (self != null) {
@@ -289,7 +303,29 @@ private fun SelfCard(health: Health, self: PackageRecord?) {
             Fact("update owner", self.installer.updateOwner ?: "none")
             Fact("package source", self.installer.packageSource?.toString() ?: "n/a")
         }
+        UpdateLine(update, offer)
+        OutlinedButton(onClick = onRecovery) { Text(stringResource(R.string.recovery_button)) }
+        Text(stringResource(R.string.recovery_button_hint), style = MaterialTheme.typography.bodySmall)
     }
+}
+
+/** Only what Belay did: an update it installed, or one the policy still offers. */
+@Composable
+private fun UpdateLine(update: UpdateRecord?, offer: WireAgentUpdate?) {
+    if (update == null) return
+    val offered = offer?.sha256 == update.sha256
+    val words = when {
+        update.state == WireUpdateState.DONE && update.installed && update.versionCode == BuildConfig.VERSION_CODE.toLong() ->
+            stringResource(R.string.parent_updated, BuildConfig.VERSION_NAME)
+        !offered -> return
+        update.state == WireUpdateState.DOWNLOADING -> stringResource(R.string.about_update_downloading)
+        update.state == WireUpdateState.CHECKING -> stringResource(R.string.about_update_checking)
+        update.state == WireUpdateState.INSTALLING -> stringResource(R.string.about_update_installing)
+        update.state == WireUpdateState.FAILED -> stringResource(R.string.about_update_failed)
+        else -> return
+    }
+    Text(words, style = MaterialTheme.typography.bodyMedium)
+    Text(formatTime(update.at), style = MaterialTheme.typography.bodySmall)
 }
 
 @Composable
@@ -365,8 +401,10 @@ private fun detectionLabel(detection: Detection): String = stringResource(
 )
 
 @Composable
-internal fun formatTime(millis: Long): String = DateUtils.formatDateTime(
-    LocalContext.current,
+internal fun formatTime(millis: Long): String = formatTime(LocalContext.current, millis)
+
+internal fun formatTime(context: Context, millis: Long): String = DateUtils.formatDateTime(
+    context,
     millis,
     DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_SHOW_TIME or DateUtils.FORMAT_ABBREV_MONTH,
 )

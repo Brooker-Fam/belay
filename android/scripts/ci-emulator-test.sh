@@ -25,6 +25,16 @@
 # With BELAY_E2E_CLI too, it checks Phase 2 enforcement: with new apps on "ask", the fixture
 # app is suspended on install and the server has a pending request for it; a parent's
 # "allow" lets it run within seconds (the long-poll), and "block" hides it.
+#
+# Phases 6 and 10, with BELAY_E2E_CLI and:
+#   BELAY_E2E_UPDATE_APK   a second debug build of Belay, from the same computer (so the same
+#                          debug key), with a higher version code and not test-only:
+#                          ./gradlew :app:assembleDebug -PbelayVersionCode=<n> -PbelayTestOnly=false
+#   BELAY_E2E_UPDATE_CODE  its version code <n>
+# the server offers it and the phone updates itself; the recovery key from the server opens
+# repair access on the phone (typed through a debug-only receiver); and remove-other-users,
+# with no other user, is reported done. Then the test-only build goes back on (adb install
+# -d), so unprovision.sh can release it.
 set -euo pipefail
 # shellcheck source-path=SCRIPTDIR source=lib.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -49,6 +59,13 @@ fi
 if [ -n "$E2E_CLI" ] && [ -z "$E2E_SERVER" ]; then
   die "BELAY_E2E_CLI needs BELAY_E2E_SERVER (and its code and status) too."
 fi
+UPDATE_APK="${BELAY_E2E_UPDATE_APK:-}"
+UPDATE_CODE="${BELAY_E2E_UPDATE_CODE:-}"
+if [ -n "$UPDATE_APK" ]; then
+  [ -n "$E2E_CLI" ] || die "BELAY_E2E_UPDATE_APK needs BELAY_E2E_CLI (and the server) too."
+  [ -f "$UPDATE_APK" ] || die "update APK not found: $UPDATE_APK"
+  [[ "$UPDATE_CODE" =~ ^[0-9]+$ ]] || die "BELAY_E2E_UPDATE_CODE must be the update APK's version code, not '$UPDATE_CODE'."
+fi
 
 find_adb
 pick_device
@@ -63,6 +80,11 @@ server_status() { bash -c "$E2E_STATUS"; }
 # Runs the server's CLI with these arguments, each quoted for bash (Phase 2 end to end).
 server_cli() {
   printf '  server: %s\n' "$*"
+  bash -c "$E2E_CLI $(printf '%q ' "$@")"
+}
+# The same, for a command whose standard output is the result: the command line goes to stderr.
+server_cli_out() {
+  printf '  server: %s\n' "$*" >&2
   bash -c "$E2E_CLI $(printf '%q ' "$@")"
 }
 # The fixture app's state for user 0, from `dumpsys package` (AOSP 17 Settings.dumpPackageLPr
@@ -96,6 +118,15 @@ wait_server() {
   diagnose
   die "the server never got $2"
 }
+# Waits until the phone reports the server's current policy version as applied (it checks
+# in when what it enforces changes).
+wait_applied() {
+  local version
+  version="$(server_status | jq -r '.phones[0].policy_version')"
+  [[ "$version" =~ ^[0-9]+$ ]] || die "the server's status has no policy_version" "$(server_status | jq -c '.phones[0]')"
+  wait_server ".enforcement.policy_version == $version" "the phone's report that it applied policy $version"
+  echo "the phone applied policy $version"
+}
 # Waits until Belay logs a line containing $1 (the log is cleared before each action).
 # grep reads from a process substitution, so its own status is the result.
 wait_log() {
@@ -111,6 +142,8 @@ diagnose() {
   state | grep -o '"heartbeats":.*' | cut -c 1-1500 || true
   echo "--- what Belay enforces:"
   state | grep -o '"enforcement":{[^}]*}' || true
+  echo "--- the update, the recovery key and commands:"
+  state | grep -oE '"(agent_update|recovery)":\{[^}]*\}|"commands":\[[^]]*\]' || true
 }
 # A summary of Belay's stored state: heartbeats, changes and outbox counts, which debug
 # builds write after every agent step (DebugTools.afterStep). Read with run-as (debug builds
@@ -126,6 +159,24 @@ state() {
   return 1
 }
 service_running() { ash dumpsys activity services "$PKG/.service.BelayService" | contains 'isForeground=true'; }
+# The version code Android has installed for Belay.
+installed_version() { ash dumpsys package "$PKG" | sed -n 's/^ *versionCode=\([0-9]*\).*/\1/p' | head -n 1; }
+# Waits up to a minute until Belay's update record (in its debug state) has all of the given texts.
+wait_record() {
+  local record _ want ok
+  for _ in $(seq 1 30); do
+    record="$(state 2>/dev/null | grep -o '"agent_update":{[^}]*}' || true)"
+    ok=1
+    for want in "$@"; do [[ "$record" == *"$want"* ]] || ok=0; done
+    if [ "$ok" = 1 ]; then
+      printf 'the phone: %s\n' "$record"
+      return 0
+    fi
+    sleep 2
+  done
+  printf -- '--- the update record: %s\n' "${record:-none}"
+  return 1
+}
 wait_boot() {
   adb wait-for-device
   for _ in $(seq 1 150); do
@@ -237,15 +288,6 @@ fi
 
 if [ -n "$E2E_CLI" ] && [ -n "$FIXTURE_V1" ]; then
   phone="$(server_status | jq -r '.phones[0].name')"
-  # Waits until the phone reports the server's current policy version as applied (it checks
-  # in when what it enforces changes).
-  wait_applied() {
-    local version
-    version="$(server_status | jq -r '.phones[0].policy_version')"
-    [[ "$version" =~ ^[0-9]+$ ]] || die "the server's status has no policy_version" "$(server_status | jq -c '.phones[0]')"
-    wait_server ".enforcement.policy_version == $version" "the phone's report that it applied policy $version"
-    echo "the phone applied policy $version"
-  }
 
   step "Phase 2: with new apps on \"ask\", a new app waits for a parent"
   server_cli policy "$phone" --new-apps ask
@@ -279,6 +321,81 @@ if [ -n "$E2E_CLI" ] && [ -n "$FIXTURE_V1" ]; then
   server_status | jq '.phones[0] | {policy_version, enforcement, requests}'
 elif [ -n "$E2E_SERVER" ]; then
   echo "BELAY_E2E_CLI or the fixture APKs not given: the Phase 2 end-to-end checks are skipped"
+fi
+
+if [ -n "$UPDATE_APK" ]; then
+  phone="$(server_status | jq -r '.phones[0].name')"
+  before="$(server_status | jq -r '.phones[0].agent_version_code')"
+  [[ "$before" =~ ^[0-9]+$ ]] || die "the server's status has no agent_version_code" "$(server_status | jq -c '.phones[0]')"
+  [ "$UPDATE_CODE" -gt "$before" ] || die "the update APK's version code $UPDATE_CODE isn't above the phone's $before"
+
+  step "Phase 6: a parent offers a newer Belay, and the phone updates itself"
+  sha="$(server_cli_out agent-add "$UPDATE_APK" --version-code "$UPDATE_CODE")"
+  [[ "$sha" =~ ^[0-9a-f]{64}$ ]] || die "agent-add should print only the APK's SHA-256, lowercase" "$sha"
+  [ "$sha" = "$(sha256_of "$UPDATE_APK")" ] || die "agent-add printed $sha, not the APK's SHA-256 $(sha256_of "$UPDATE_APK")"
+  server_cli agent-offer "$phone" "$sha"
+  # The long-poll brings the offer; Belay downloads, checks and installs it with a device
+  # owner's session; Android kills Belay and starts the new one (MY_PACKAGE_REPLACED), which
+  # checks in. The server may drop the offer once it's done: then agent_update goes too.
+  wait_server ".agent_version_code == $UPDATE_CODE and ((.enforcement.agent_update.state // \"done\") == \"done\")" \
+    "a check-in from Belay version $UPDATE_CODE" 150
+  installed="$(installed_version)"
+  [ "$installed" = "$UPDATE_CODE" ] || die "Android has Belay version '$installed' installed, not $UPDATE_CODE"
+  # The new Belay records the update as its own, done, right after it starts.
+  wait_record '"state":"done"' '"installed":true' || { diagnose; die "Belay doesn't record the update as its own, done"; }
+  for _ in $(seq 1 60); do service_running && break; sleep 1; done
+  service_running || { diagnose; die "BelayService didn't come back after the update"; }
+  server_status | jq -c '.phones[0] | {agent_version_code, agent_signing_sha256, agent_update: .enforcement.agent_update}'
+  # The signing certificate's SHA-256 the phone reports is apksigner's (platform notes I6).
+  reported="$(server_status | jq -r '.phones[0].agent_signing_sha256 // empty')"
+  signer="$(apk_signer "$UPDATE_APK" || true)"
+  if [ -n "$reported" ] && [ -n "${signer%%|*}" ]; then
+    [ "$reported" = "${signer%%|*}" ] || die "the phone reports signing certificate $reported; apksigner says ${signer%%|*}"
+    echo "signing certificate SHA-256: $reported, as apksigner prints it"
+  else
+    echo "the signing certificate wasn't compared (no agent_signing_sha256 in the status, or no apksigner here)"
+  fi
+
+  step "Phase 6: the recovery key opens repair access on the phone, with no server needed"
+  key="$(server_cli_out recovery-key "$phone")"
+  # Crockford's base32 (no I, L, O, U), in four groups of five and one of six.
+  c='[0-9A-HJKMNP-TV-Z]'
+  grouped="^$c{5}-$c{5}-$c{5}-$c{5}-$c{6}\$"
+  [[ "$key" =~ $grouped ]] || die "recovery-key should print only the grouped key (it printed ${#key} characters)"
+  # The policy now carries the key's check; the phone checks the key against its stored copy.
+  wait_applied
+  out="$(ash am broadcast -a "$PKG.DEBUG_RECOVER" -n "$PKG/.DebugRecoveryReceiver" --es key "$key")"
+  result="$(sed -n 's/^Broadcast completed: //p' <<<"$out")"
+  echo "the phone: $result"
+  version="$(sed -n 's/^result=-1, data="opened: version \([0-9]*\) until [0-9]*"$/\1/p' <<<"$result")"
+  [ -n "$version" ] || { diagnose; die "the phone didn't open repair access with the recovery key" "$result"; }
+  wait_server ".enforcement.recovery.version == $version" "the phone's report that it used recovery key version $version"
+  server_status | jq -c '.phones[0].enforcement.recovery'
+
+  step "Phase 10: a parent removes other users; with none here, the command is done"
+  seen="$(server_status | jq -c '[.phones[0].enforcement.commands[]?.id]')"
+  server_cli remove-other-users "$phone"
+  wait_server "([.enforcement.commands[]? | select(.result == \"done\") | .id] - $seen) | length > 0" "a done result for remove-other-users"
+  server_status | jq -c '.phones[0].enforcement.commands'
+
+  step "Put the test-only build back, so unprovision.sh can release Belay"
+  # The update isn't test-only (only the shell may install a test-only APK); a debuggable
+  # app can go back to a lower version over adb (-d). Belay won't install the offered
+  # version again by itself: an older one was put over it.
+  out="$(adb install -r -t -d "$APK" 2>&1 || true)"
+  printf '%s\n' "$out"
+  grep -q '^Success' <<<"$out" || die "couldn't put the test-only build back"
+  for _ in $(seq 1 60); do service_running && break; sleep 1; done
+  service_running || { diagnose; die "BelayService didn't start after the test-only build went back"; }
+  wait_server ".agent_version_code == $before" "a check-in from Belay version $before again"
+  # The server offers version $UPDATE_CODE again while the phone runs an older one; Belay
+  # records that it won't install it again. (If the server doesn't offer it, nothing changes.)
+  wait_record '"state":"failed"' '"final":true' || echo "no refusal recorded: the server may not offer the update again"
+  installed="$(installed_version)"
+  [ "$installed" = "$before" ] || { diagnose; die "Belay installed version $installed again after the test-only build went back"; }
+  echo "Belay runs version $before again and leaves version $UPDATE_CODE alone"
+elif [ -n "$E2E_CLI" ]; then
+  echo "BELAY_E2E_UPDATE_APK not given: the Phase 6 and 10 end-to-end checks are skipped"
 fi
 
 adb logcat -c

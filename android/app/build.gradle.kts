@@ -21,6 +21,15 @@ val signingProps: Properties? = signingFile.takeIf { it.isFile }?.let { f ->
     Properties().apply { f.inputStream().use { load(it) } }
 }
 
+// CI's self-update test (android/scripts/ci-emulator-test.sh) installs a second debug build of
+// Belay, built on the same computer (so with the same debug key) with a higher version code,
+// that isn't test-only: Android never lets an app install a test-only APK through a
+// PackageInstaller session (docs/platform-notes.md I5).
+//   ./gradlew :app:assembleDebug -PbelayVersionCode=4 -PbelayTestOnly=false
+// Never provision a phone with such a build: unprovision.sh only releases test-only builds.
+val belayVersionCode: Int? = providers.gradleProperty("belayVersionCode").orNull?.toInt()
+val belayTestOnly: Boolean = providers.gradleProperty("belayTestOnly").orNull?.toBooleanStrict() ?: true
+
 android {
     namespace = "family.brooker.belay"
     compileSdk = 37
@@ -30,7 +39,7 @@ android {
         applicationId = "family.brooker.belay"
         minSdk = 31
         targetSdk = 37
-        versionCode = 3
+        versionCode = belayVersionCode ?: 3
         versionName = "0.2.0-phase2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -52,6 +61,7 @@ android {
         debug {
             // src/debug/AndroidManifest.xml sets android:testOnly="true", so a debug build
             // can be released as device owner without a factory reset (unprovision.sh).
+            manifestPlaceholders["belayTestOnly"] = belayTestOnly.toString()
         }
         release {
             isMinifyEnabled = false

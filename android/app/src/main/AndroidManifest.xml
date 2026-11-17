@@ -76,6 +76,12 @@
             android:exported="false"
             android:parentActivityName=".ui.MainActivity" />
 
+        <!-- Phase 6: the recovery key, for a parent whose Belay server is gone. Only Belay opens it. -->
+        <activity
+            android:name=".ui.RecoveryActivity"
+            android:exported="false"
+            android:parentActivityName=".ui.MainActivity" />
+
         <!-- provision.sh enrolls the phone through this receiver. Exported, but only senders
              holding WRITE_SECURE_SETTINGS (the adb shell; ordinary apps can't) can reach it. -->
         <receiver
@@ -153,6 +159,13 @@
         <!-- Phase 2: Belay's own alarm for when a pause or repair time ends. -->
         <receiver
             android:name=".enforce.PolicyTimerReceiver"
+            android:exported="false" />
+
+        <!-- Phase 6: Android's answer to Belay's own update (a PackageInstaller session). Only
+             Belay's PendingIntent reaches it. A device owner installs without asking anyone,
+             so Belay declares no REQUEST_INSTALL_PACKAGES (docs/platform-notes.md I2). -->
+        <receiver
+            android:name=".update.InstallStatusReceiver"
             android:exported="false" />
 
         <!-- One of the two package broadcasts a manifest receiver still gets. Added,

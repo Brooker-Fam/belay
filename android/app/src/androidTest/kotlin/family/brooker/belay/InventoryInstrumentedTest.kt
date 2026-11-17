@@ -101,5 +101,17 @@ class InventoryInstrumentedTest {
         assertTrue(device.storageTotalBytes!! > 0)
         assertTrue(device.storageFreeBytes!! in 0..device.storageTotalBytes!!)
         assertEquals(BuildConfig.VERSION_NAME, device.agentVersionName)
+        // Phase 6: the signing certificate's SHA-256, as apksigner prints it.
+        assertTrue("agent_signing_sha256 is ${device.agentSigningSha256}", device.agentSigningSha256?.matches(Regex("[0-9a-f]{64}")) == true)
+        // Phase 10: a count of other users for a device owner, and only restrictions Belay didn't set.
+        if (device.health.deviceOwner) {
+            assertTrue((device.health.otherUsers ?: -1) >= 0)
+            val mine = context.getSystemService(android.app.admin.DevicePolicyManager::class.java)
+                .getUserRestrictions(DeviceOwnerSetup.admin(context))
+            assertTrue(device.health.foreignRestrictions.none { mine.getBoolean(it) })
+        } else {
+            assertEquals(null, device.health.otherUsers)
+        }
+        assertTrue(device.health.foreignRestrictions.size <= 20)
     }
 }

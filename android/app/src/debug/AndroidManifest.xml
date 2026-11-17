@@ -2,7 +2,22 @@
 <!-- Debug builds are test-only: they install with `adb install -t`, and
      `dpm remove-active-admin` (android/scripts/unprovision.sh) or the "Release this phone"
      button can release device owner without a factory reset. Release builds are not
-     test-only: once a release build is device owner, only a factory reset removes it. -->
+     test-only: once a release build is device owner, only a factory reset removes it.
+     belayTestOnly is "true" unless CI's self-update test builds a second debug APK with
+     -PbelayTestOnly=false: Android never lets an app install a test-only APK through a
+     session (docs/platform-notes.md I5). -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <application android:testOnly="true" />
+    <application android:testOnly="${belayTestOnly}">
+
+        <!-- ci-emulator-test.sh types the recovery key with adb (DebugRecoveryReceiver.kt).
+             Debug builds only; only senders holding WRITE_SECURE_SETTINGS (the adb shell). -->
+        <receiver
+            android:name=".DebugRecoveryReceiver"
+            android:exported="true"
+            android:permission="android.permission.WRITE_SECURE_SETTINGS">
+            <intent-filter>
+                <action android:name="family.brooker.belay.DEBUG_RECOVER" />
+            </intent-filter>
+        </receiver>
+    </application>
 </manifest>

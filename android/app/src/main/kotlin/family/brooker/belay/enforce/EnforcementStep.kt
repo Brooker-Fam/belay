@@ -11,14 +11,18 @@ import family.brooker.belay.core.ActualState
 import family.brooker.belay.core.AnsweredRequest
 import family.brooker.belay.core.Applied
 import family.brooker.belay.core.ApplyOutcome
+import family.brooker.belay.core.Commands
 import family.brooker.belay.core.Enforcement
 import family.brooker.belay.core.EnforcementChanges
 import family.brooker.belay.core.EnforcementPlan
 import family.brooker.belay.core.KidRequest
 import family.brooker.belay.core.KidRules
 import family.brooker.belay.core.PackageRecord
+import family.brooker.belay.core.PolicyTooLarge
+import family.brooker.belay.core.RecoveryRules
 import family.brooker.belay.core.Requests
 import family.brooker.belay.core.SimRules
+import family.brooker.belay.core.WireEnforcement
 import family.brooker.belay.core.WirePolicy
 import family.brooker.belay.service.WaitingNotice
 import family.brooker.belay.store.AgentStore
@@ -42,9 +46,10 @@ data class KidView(
 
 /**
  * The enforcement part of an agent step, on the agent thread, after the inventory is
- * reconciled: plan from the stored policy, apply only what changed since Belay's record,
- * make a request for each new waiting app, and record it all in one transaction.
- * Idempotent: a second run with nothing new changes nothing.
+ * reconciled: run the policy's new one-shot commands (Phase 10), plan from the stored policy
+ * (with the recovery key's repair access, Phase 6), apply only what changed since Belay's
+ * record, make a request for each new waiting app, and record it all in one transaction.
+ * Idempotent: a second run with nothing new changes nothing (a command runs once per id).
  */
 class EnforcementStep(context: Context, private val store: AgentStore) {
     private val app = context.applicationContext
@@ -61,9 +66,13 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
     fun run(inventory: Map<String, PackageRecord>, recheckAll: Boolean, recheckDns: Boolean): Result {
         val now = System.currentTimeMillis()
         val before = store.applied()
+        val reportBefore = lastReport ?: EnforcementReport.of(store, before)
+        // The server's last policy answer was too big to read: Belay keeps the last one it read.
+        val tooLarge = store.policyTooLarge()
         // With no policy, Belay enforces nothing; if it applied something before (a debug
-        // build's test policy), a policy that enforces nothing takes it back.
-        val policy = DebugTools.policyOverride ?: store.policy() ?: WirePolicy(version = 0).takeIf { before.policyVersion != null }
+        // build's test policy), a policy that enforces nothing takes it back. A first policy
+        // too big to read is reported the same way: nothing is enforced yet.
+        val policy = DebugTools.policyOverride ?: store.policy() ?: WirePolicy(version = 0).takeIf { before.policyVersion != null || tooLarge != null }
         val requests = store.requests()
         val dnsRow = store.privateDns()
         if (policy == null) {
@@ -71,6 +80,10 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
         }
 
         val owner = DeviceOwnerSetup.isDeviceOwner(app)
+        // Phase 10: one-shot commands first, once per id: removing another user changes the plan.
+        val log = store.commandLog()
+        val commandPlan = Commands.plan(policy.commands, log.doneIds, now, CommandRunner.RUNS)
+        val results = CommandRunner(app).run(commandPlan, owner, now)
         val enforcer = Enforcer(app)
         val actual = if (owner) {
             enforcer.actual(
@@ -90,6 +103,8 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
             Enforcement.Input(
                 policy, inventory, roles, applied, BuildConfig.DEBUG, Enforcer.sdkFull(), now,
                 otherUsers = PhoneFacts.otherUsers(app),
+                // Phase 6: the recovery key's repair access lifts debugging and factory reset.
+                recoveryUntil = RecoveryRules.openUntil(store.recovery(), now),
             ),
         )
         val changes = Enforcement.changes(plan, applied)
@@ -102,7 +117,11 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
         }
         // A swapped SIM card (DISALLOW_SIM_GLOBALLY only stops new eSIMs) is reported for a week.
         val sim = SimRules.next(next.sim, PhoneFacts.sim(app), now)
-        val extra = listOfNotNull(PrivateDns.problem(plan.privateDns, dnsRow), SimRules.problem(sim, now))
+        val extra = listOfNotNull(
+            PrivateDns.problem(plan.privateDns, dnsRow),
+            SimRules.problem(sim, now),
+            tooLarge?.let { PolicyTooLarge.problem(it.tooLargeBytes) },
+        )
         next = next.copy(sim = sim, problems = (next.problems + extra).distinct().take(Enforcement.MAX_PROBLEMS))
 
         // Belay asks for each new waiting app at once, so the parent sees it even if the kid
@@ -110,7 +129,7 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
         val made = Requests.toMake(plan.waiting, requests) { inventory[it]?.firstInstallTime }.mapNotNull { name ->
             inventory[name]?.let { KidRequest(UUID.randomUUID().toString(), name, it.label, null, now) }
         }
-        store.commitEnforcement(next, made, now)
+        store.commitEnforcement(next, made, now, log.record(results).takeIf { results.isNotEmpty() })
         PolicyTimer.schedule(app, plan.nextChangeAt)
         log(plan, changes, made)
         // Android's screen for a held-back app can't name it: Belay's notice does.
@@ -119,7 +138,11 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
 
         val all = made + requests
         val view = KidView(policy, plan, next, Requests.answered(all, policy), dnsRow?.setHost, labels(inventory, all, plan))
-        return Result(view, reportChanged = reportChanged(before, next))
+        // Anything in the report may have changed, here or on another thread since the last step
+        // (the update, the recovery key): compare all of it but the count of apps held back.
+        val report = EnforcementReport.of(store, next)
+        lastReport = report
+        return Result(view, reportChanged = report?.copy(suspendedCount = 0) != reportBefore?.copy(suspendedCount = 0))
     }
 
     private fun notDeviceOwner(changes: EnforcementChanges) = ApplyOutcome(
@@ -142,12 +165,6 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
         val unlocked = before.locks - after.locks
         if (unsuspended.isEmpty() && shown.isEmpty() && unlocked.isEmpty()) return
         Log.w(Agent.TAG, "enforce: no longer in effect, applying again: suspended $unsuspended, hidden $shown, locks $unlocked")
-    }
-
-    private fun reportChanged(before: Applied, after: Applied): Boolean {
-        val a = Enforcement.report(before)
-        val b = Enforcement.report(after)
-        return a?.policyVersion != b?.policyVersion || a?.problems != b?.problems
     }
 
     private fun labels(inventory: Map<String, PackageRecord>, requests: List<KidRequest>, plan: EnforcementPlan?): Map<String, String> {
@@ -173,5 +190,14 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
             made.takeIf { it.isNotEmpty() }?.let { list -> "asked for ${list.map { it.packageName }}" },
         )
         Log.i(Agent.TAG, "enforce: policy ${plan.version}: ${parts.joinToString("; ")}")
+    }
+
+    private companion object {
+        /**
+         * The report the last step in this process made. The first step after a start compares
+         * with the report from the stored state instead, so starting alone isn't a change.
+         */
+        @Volatile
+        var lastReport: WireEnforcement? = null
     }
 }

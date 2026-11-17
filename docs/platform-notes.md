@@ -65,6 +65,15 @@ relying on something new, it goes here first, with a source.
 | U3 | The usage-limit observers aren't open to Belay | Contradicted | AOSP |
 | U4 | The kid can turn usage access off, and back on | Confirmed | AOSP |
 | U5 | How usage events behave at boots, clock changes and query edges | Confirmed in source | AOSP |
+| I2 | A device owner's PackageInstaller session installs with nobody confirming; no downgrades | Confirmed | AOSP; Docs; Emulator pending (Phase 6 CI) |
+| I3 | Developer verification has no device-owner bypass | Confirmed in AOSP; Google's wording doesn't settle Belay's case | AOSP; Docs (drafts) |
+| I5 | Only the shell can install a test-only APK | Confirmed: `INSTALL_FAILED_TEST_ONLY` for every app | AOSP |
+| I6 | An APK's package, version code and signing certificates, read before installing | Confirmed | AOSP |
+| I7 | Updating itself kills Belay; `MY_PACKAGE_REPLACED` starts the new one | Confirmed | AOSP; Emulator pending (Phase 6 CI) |
+| V1 | Android's own Parental Controls profile shows as `type=profile.SUPERVISING` | Confirmed (the shell's format) | AOSP |
+| V2 | A device owner can list and remove other users and profiles | Confirmed, with one exception | AOSP; Docs; Emulator pending (Phase 10 CI) |
+| V4 | Telling the restrictions Belay set from everyone else's | Confirmed | AOSP; Docs |
+| E2 | `pm create-user` on the CI emulators | Confirmed: up to 4 users on both images | AOSP (goldfish) |
 
 "Emulator" entries were seen in CI: `ci-emulator-test.sh` passed end to end on the API 37.0
 Automated Test Device image (`aosp_atd`, required) from run 8, and on the API 37.0 Google
@@ -875,6 +884,189 @@ system APIs. `getSecondaryUsers` counts it with any other user, and `onUserAdded
 `onUserRemoved` tell Belay when one appears. Belay reports "another user or profile" plainly,
 re-applies its suspensions (which the profile's app rules can lift), and doesn't remove it:
 public APIs can't tell it apart from another user ([design](design/phase10-android-parental-controls.md)).
+From Phase 10 a parent can ask Belay to remove it (V2).
+
+## Updating Belay, other users (Phases 6 and 10)
+
+All read in AOSP `android-17.0.0_r1` on 2026-11-17 (`platform/frameworks/base` unless named;
+`device/generic/goldfish` for the emulator). Moved here from
+[the drafts](design/platform-notes-drafts.md) as they were checked again (I2, I3, V1, V2), with
+new entries. The emulator checks run in CI (`SelfUpdateInstrumentedTest`,
+`OtherUsersInstrumentedTest`, `ci-emulator-test.sh`); the Pixel's in
+[phase6-checklist.md](phase6-checklist.md).
+
+### I2. Silent installs by the device owner
+
+**Confirmed.** Verified on: AOSP; Docs; Emulator pending (Phase 6 CI).
+
+- `services/core/.../pm/PackageInstallerSession.computeUserActionRequirement`: "Device owners and
+  affiliated profile owners are allowed to silently install packages": when
+  `isInstallerDeviceOwnerOrAffiliatedProfileOwner()` (DevicePolicyManagerInternal
+  `canSilentlyInstallPackage`: the default device owner, on a user affiliated with the device;
+  the system user always is, `DeviceAdmins.isUserAffiliatedWithDeviceLocked`), no user action is
+  needed unless the session forces one. `REQUEST_INSTALL_PACKAGES` is read only for metrics, so
+  Belay doesn't declare it.
+- Downgrades: `PackageInstallerService.createSessionInternal` sets `INSTALL_ALLOW_DOWNGRADE` only
+  for debuggable Android builds or system and root callers, and
+  `PackageManagerServiceUtils.isDowngradePermitted` also needs `INSTALL_REQUEST_DOWNGRADE`, which
+  an app's session can't ask for. A phone's user build refuses an older Belay. Belay's own check
+  refuses anything not newer anyway (core's `AgentUpdates.check`).
+- The answer: `sendOnPackageInstalled` fills `EXTRA_STATUS` and `EXTRA_STATUS_MESSAGE`
+  (`PackageManager.installStatusToString`: "INSTALL_FAILED_…: <detail>") into the session's
+  IntentSender, so its PendingIntent must be mutable (Belay's is explicit, to its own receiver).
+  For a device owner's success it posts "Updated by your admin.\nGo to settings to view granted
+  permissions" (`core/res` `package_updated_device_owner`).
+- Belay's session: `MODE_FULL_INSTALL`, `setRequireUserAction(USER_ACTION_NOT_REQUIRED)`,
+  `setInstallReason(INSTALL_REASON_POLICY)`, `setAppPackageName`, `setSize`, as the
+  PackageInstaller.SessionParams reference [2026-08-03] describes them (the same words as the
+  AOSP 17 javadoc). On a `STATUS_PENDING_USER_ACTION` (never for a device owner) Belay abandons
+  the session rather than ask the kid.
+
+### I3. Developer verification and the device owner's own installs
+
+**No device-owner bypass in AOSP 17; Google's wording doesn't settle Belay's case.** Verified on:
+AOSP (re-checked); Docs (as quoted in the drafts, 2026-11-17).
+
+- `PackageInstallerSession.shouldUseVerificationService`: verification applies when the service
+  is enabled and the system names a verifier package; the only exemption in the platform is adb
+  installs while the flag `verification_service_adb` is off. Nothing for a device owner. The
+  AOSP emulator images name no verifier, so CI can't see it.
+- Google's FAQ, as the drafts quote it: "Apps distributed through your organization store, on
+  managed devices, won't need to complete the verification requirements", and "Unregistered apps
+  can only be installed or updated when the advanced flow is enabled or by using ADB." Whether an
+  adb-provisioned Belay counts as "your organization store" isn't stated.
+
+Belay's consequence: a refusal is reported word for word (I2's status message) and tried again
+after a wait (a verifier's block isn't final); the way out is `provision.sh` over adb in
+maintenance mode. Measure on the Pixel ([phase6-checklist.md](phase6-checklist.md) §2).
+
+### I5. Only the shell can install a test-only APK
+
+**Confirmed.** Verified on: AOSP.
+
+- `PackageInstallerService.createSessionInternal`: for any caller but the shell and root,
+  `INSTALL_ALLOW_TEST` is cleared unless the caller holds `INSTALL_TEST_ONLY_PACKAGE`, which is
+  `signature` (`core/res/AndroidManifest.xml`: only the platform's own apps).
+  `SessionParams.setInstallFlagAllowTest` is a hidden `@TestApi`.
+- `InstallPackageHelper` then refuses a test-only package without that flag:
+  `INSTALL_FAILED_TEST_ONLY`, "Failed to install test-only apk. Did you forget to add -t?",
+  which `installStatusToPublicStatus` makes `STATUS_FAILURE_INVALID`.
+
+Belay's consequence: debug builds are test-only (so `unprovision.sh` can release them), so a
+debug Belay can't install another debug Belay; it reports Android's words and doesn't try that
+file again. CI's update is a second debug build that isn't test-only (`-PbelayTestOnly=false`),
+and afterwards CI puts the test-only build back with `adb install -t -d`:
+`isDowngradePermitted` allows a requested downgrade over a debuggable app.
+
+### I6. What Belay reads from an APK before installing it
+
+**Confirmed.** Verified on: AOSP.
+
+- `core/java/android/content/pm/PackageManager.getPackageArchiveInfo(path, PackageInfoFlags)`:
+  with `GET_SIGNING_CERTIFICATES` (or `GET_SIGNATURES`) it parses with
+  `PARSE_COLLECT_CERTIFICATES`, which collects and verifies the APK's signatures; on any parse
+  failure it returns null.
+- `SigningInfo` (`core/java/android/content/pm/SigningInfo.java`): `getApkContentsSigners` is the
+  set that signs the APK now, without past certificates; `getSigningCertificateHistory` adds a
+  rotated key's past certificates (current last), and is null with several signers.
+- `Signature.toByteArray()` is the certificate's encoding; its SHA-256 is what `apksigner verify
+  --print-certs` prints as "certificate SHA-256 digest" (CI compares them when it can).
+
+Belay's consequence: Belay pins exactly the set from `getApkContentsSigners`, its own and the
+APK's, and reports its own as `agent_signing_sha256`. A rotated key is refused; that update goes
+over adb in maintenance mode.
+
+### I7. An update kills Belay, and `MY_PACKAGE_REPLACED` starts the new one
+
+**Confirmed.** Verified on: AOSP; Emulator pending (Phase 6 CI).
+
+- `PackageInstaller.SessionParams.setDontKillApp` only applies to `MODE_INHERIT_EXISTING`
+  sessions that add splits: "By default, all installs will result in the package's running
+  processes being killed before the install completes."
+- `services/core/.../pm/BroadcastHelper` sends `ACTION_MY_PACKAGE_REPLACED` to the updated
+  package itself after every update, as it does after `adb install -r`.
+
+Belay's consequence: Belay records "installing" before it commits, and the new Belay (started by
+`MY_PACKAGE_REPLACED`, the agent's `AGENT_UPDATED` step) sees by its version code that it's
+done. The session's answer may reach the new Belay, or nobody; ten minutes without one is a
+failure, tried again later.
+
+### V1. Android's Parental Controls on a Belay phone
+
+**Confirmed for the shell's view; Settings' part from the drafts.** Verified on: AOSP.
+
+- `services/core/.../pm/UserManagerServiceShellCommand.runList`: `cmd user list -v` prints one
+  line per user, `<n>: id=<id>, name=<name>, type=<type>, flags=…`, where the type is the user
+  type without its `android.os.usertype.` prefix. `UserManager.USER_TYPE_PROFILE_SUPERVISING` is
+  `android.os.usertype.profile.SUPERVISING`, so the supervising profile shows as
+  `type=profile.SUPERVISING`. `pm list users` is the same listing without `-v`, so the profile
+  also counts there.
+- From the drafts, not re-checked: Settings creates the profile with
+  `createProfileForUserEvenWhenDisallowed`, so `DISALLOW_ADD_USER` doesn't stop it; with no
+  supervision role holder, `SupervisionService` sets `DISALLOW_FACTORY_RESET` as its own system
+  entity (which Belay reports as a foreign restriction, V4).
+
+Belay's consequence: `provision.sh` stops with "Android's own Parental Controls are set up on
+this phone. Turn them off in Settings > Parental controls, then run this again." The entry's
+name on the Pixel is to check ([phase6-checklist.md](phase6-checklist.md) §5).
+
+### V2. Other users or profiles on a device-owner phone
+
+**Confirmed, with one exception.** Verified on: AOSP; Docs; Emulator pending (Phase 10 CI).
+
+- DevicePolicyManager reference [2026-09-16]: `getSecondaryUsers` "Called by a device owner to
+  list all secondary users on the device. Managed profiles are not considered as secondary
+  users"; `removeUser` "Called by a device owner to remove a user/profile and all associated
+  data", returning "true if the user was removed, false otherwise".
+- `services/devicepolicy/.../DevicePolicyManagerService.getSecondaryUsers` (device owner only):
+  every alive user but the system user and managed profiles, so a supervising profile, a guest,
+  a clone or a private profile is listed.
+- `removeUser` (device owner only; `checkCanExecuteOrThrowUnsafe`, which only matters where
+  removing users can be unsafe, like cars): it returns false, without removing, when
+  `DISALLOW_REMOVE_USER` (or `…_MANAGED_PROFILE`) was set by someone other than the device owner
+  (`isAdminAffectedByRestriction`); otherwise `UserManagerService.removeUserEvenWhenDisallowed`.
+  That marks the user partial and disabled at once and stops it, so the next
+  `getSecondaryUsers` no longer lists it (`getAliveUsers`).
+- `DeviceAdmins.areAllUsersAffiliatedWithDevice` still fails while one exists: Private DNS
+  changes and network logs refuse (C6, W2 in the drafts).
+
+Belay's consequence: `health.other_users` is that count, and `remove_other_users` removes each
+and is done only when none is left; otherwise the parent sees why ("Something other than Belay
+may stop users from being removed").
+
+### V4. Telling the restrictions Belay set from everyone else's
+
+**Confirmed.** Verified on: AOSP; Docs.
+
+- DevicePolicyManager reference [2026-09-16], `getUserRestrictions(admin)`: "Called by an admin
+  to get user restrictions set by themselves … The target user may have more restrictions set by
+  the system or other admin. To get all the user restrictions currently set, use
+  UserManager.getUserRestrictions()."
+- `UserManager.getUserRestrictions()` (`UserManagerService.getEffectiveUserRestrictions`): the
+  base restrictions merged with every admin's global and local ones, system entities such as
+  Android's supervision included.
+- `DevicePolicyManager.getUserRestrictions(admin)`, for a device owner: what that admin set,
+  local and global, from the policy engine (`getUserRestrictionsFromPolicyEngine`).
+- A device owner gets no default restrictions in AOSP 17: `maybeSetDefaultRestrictionsForAdminLocked`
+  only runs for managed profiles (`DISALLOW_BLUETOOTH_SHARING`, `DISALLOW_DEBUGGING_FEATURES`).
+
+Belay's consequence: `health.foreign_restrictions` is the first less the second, so a restriction
+Belay itself set (via the engine) never shows as foreign; if Belay can't read its own, it reports
+none.
+
+### E2. `pm create-user` on the CI emulators
+
+**Confirmed.** Verified on: AOSP (`device/generic/goldfish`).
+
+- `phone/overlay/frameworks/base/core/res/res/values/config.xml` sets
+  `config_multiuserMaximumUsers` to 4 (the framework's default is 1), and the ATD image's product
+  (`sdk_slim_x86_64`, `product/slim_handheld.mk`) uses the same overlay.
+- `pm create-user <name>` (`PackageManagerShellCommand.runCreateUser`) makes a full secondary user
+  and prints "Success: created user id <id>"; `UserManagerService.createUserInternal` refuses it
+  while `DISALLOW_ADD_USER` holds for the calling user.
+
+Belay's consequence: `OtherUsersInstrumentedTest` (emulators only) turns Belay's add-user lock off
+in its own test policy, makes a user, and has `remove_other_users` remove it.
 
 ---
 

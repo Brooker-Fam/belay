@@ -9,6 +9,7 @@ import family.brooker.belay.core.Applied
 import family.brooker.belay.core.Baseline
 import family.brooker.belay.core.ChangeCursor
 import family.brooker.belay.core.ChangeKind
+import family.brooker.belay.core.CommandLog
 import family.brooker.belay.core.Detection
 import family.brooker.belay.core.Heartbeat
 import family.brooker.belay.core.InventoryRequest
@@ -16,13 +17,19 @@ import family.brooker.belay.core.KidRequest
 import family.brooker.belay.core.Lock
 import family.brooker.belay.core.OutboxPolicy
 import family.brooker.belay.core.PackageRecord
+import family.brooker.belay.core.RecoveryState
+import family.brooker.belay.core.UpdateRecord
 import family.brooker.belay.core.VersionRef
 import family.brooker.belay.core.WireAppPolicy
+import family.brooker.belay.core.WireCommandOutcome
+import family.brooker.belay.core.WireCommandResult
 import family.brooker.belay.core.WireDevice
 import family.brooker.belay.core.WireHealth
 import family.brooker.belay.core.WireNewApps
 import family.brooker.belay.core.WirePolicy
+import family.brooker.belay.core.WireRecoveryUse
 import family.brooker.belay.core.WireRequest
+import family.brooker.belay.core.WireUpdateState
 import family.brooker.belay.core.toWire
 import family.brooker.belay.store.AgentStore
 import family.brooker.belay.store.BelayDatabase
@@ -226,6 +233,40 @@ class AgentStoreInstrumentedTest {
         val applied = Applied(policyVersion = 4, appliedAt = T0, suspended = setOf("com.example.a"), locks = setOf(Lock.SAFE_BOOT))
         store.commitEnforcement(applied, emptyList(), T0)
         assertEquals(applied, store.applied())
+    }
+
+    // Phases 6 and 10.
+
+    @Test
+    fun theUpdateTheRecoveryKeyAndCommandsSurviveAsWritten() {
+        assertEquals(null, store.agentUpdate())
+        assertEquals(RecoveryState(), store.recovery())
+        assertEquals(CommandLog(), store.commandLog())
+
+        val update = UpdateRecord("ab".repeat(32), versionCode = 4, versionName = "0.4.0", state = WireUpdateState.INSTALLING, at = T0, installed = true)
+        store.saveAgentUpdate(update, T0)
+        assertEquals(update, store.agentUpdate())
+
+        val recovery = RecoveryState(wrongTries = 2, lastWrongAt = T0, usedVersions = listOf(1), lastUse = WireRecoveryUse(1, T0, T0 + 1))
+        store.saveRecovery(recovery, T0)
+        assertEquals(recovery, store.recovery())
+
+        val log = CommandLog().record(listOf(WireCommandResult("command-1", WireCommandOutcome.DONE, T0)))
+        store.commitEnforcement(Applied(policyVersion = 5), emptyList(), T0, log)
+        assertEquals(log, store.commandLog())
+        assertEquals(5, store.applied().policyVersion)
+    }
+
+    @Test
+    fun aPolicyTooBigToReadIsNotedUntilOneIsRead() {
+        assertEquals(null, store.policyTooLarge())
+        assertTrue("new", store.notePolicyTooLarge(2_000_000, T0))
+        assertFalse("the same answer again isn't news", store.notePolicyTooLarge(2_000_000, T0 + 1))
+        assertTrue("a new size is", store.notePolicyTooLarge(null, T0 + 2))
+        assertEquals(null, store.policyTooLarge()?.tooLargeBytes)
+        assertTrue(store.clearPolicyTooLarge())
+        assertFalse(store.clearPolicyTooLarge())
+        assertEquals(null, store.policyTooLarge())
     }
 
     @Test
