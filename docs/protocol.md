@@ -258,9 +258,9 @@ the file and the version a parent gives it, and doesn't parse it.
 
 ## The recovery key
 
-Phase 6. If the family's server is ever lost, the recovery key opens the same repair
-access as maintenance mode, offline, for 24 hours: the `debugging` and `factory_reset`
-locks are lifted, so adb and Settings' reset work.
+Phase 6. If the family's server is ever lost, the recovery key opens repair access, offline,
+for 24 hours: the `debugging` and `factory_reset` locks are both lifted, so adb and Settings'
+reset work. (Maintenance mode, from the server, lifts only `debugging`.)
 
 - The server makes it when a parent first turns on `debugging` or `factory_reset`, or
   asks for a new one: 26 random characters of Crockford's base32 alphabet

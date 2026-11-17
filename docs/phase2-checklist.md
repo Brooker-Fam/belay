@@ -74,9 +74,9 @@ Hardening blocks factory reset and USB debugging, and can set factory reset prot
 with your Google account. **It can lock the phone for good if something goes wrong.**
 Make sure you know the parent account's password, then:
 
-1. Turn on "Block factory reset", typing the phone's name to confirm. Settings > System >
+1. Turn on "Lock factory reset", typing the phone's name to confirm. Settings > System >
    Reset options is greyed out.
-2. Turn on "Block USB debugging". `adb devices` no longer sees the phone. Maintenance mode
+2. Turn on "Lock developer options and USB debugging". `adb devices` no longer sees the phone. Maintenance mode
    for 1 hour brings it back; it goes away again on its own.
 3. Factory reset protection: add your Google account id (the parent page explains how to
    find it). Don't test a recovery-mode reset unless you're ready to sign in with that

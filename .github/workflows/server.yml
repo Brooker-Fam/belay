@@ -36,10 +36,20 @@ jobs:
       - run: npm test
       - run: npm run build
 
+  # The image is built and run on both architectures a family's server is likely to have: a PC or
+  # a VPS (amd64), and a Raspberry Pi 4 or 5 or an arm64 NAS (arm64, on GitHub's arm64 runner).
   docker:
-    name: Docker image
-    runs-on: ubuntu-latest
+    name: Docker image (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Build
@@ -49,6 +59,9 @@ jobs:
           set -euo pipefail
           docker run -d --name belay -p 8080:8080 -e BELAY_PUBLIC_URL=http://localhost:8080 belay-server:ci
           for _ in $(seq 30); do curl -fsS http://localhost:8080/healthz && break; sleep 1; done
+          # The image is this runner's architecture, and both native modules load and work in it.
+          test "$(docker exec belay uname -m)" = "$(uname -m)"
+          docker exec belay node -e 'import("@node-rs/argon2").then((a) => a.hash("made-up")).then((h) => process.exit(h.startsWith("$argon2id$") ? 0 : 1))'
           docker logs belay 2>&1 | grep -q "/setup?token="
           test "$(docker exec belay id -u)" != 0
           code=$(docker exec belay node dist/cli.js create-code "CI phone" 2>/dev/null)
@@ -64,3 +77,73 @@ jobs:
       - name: Logs
         if: always()
         run: docker logs belay || true
+
+  # What docs/server.md and docs/guide.md tell a family to do with Docker Compose: their settings
+  # outside git (.env, and docker-compose.override.yml with a tunnel instead of Caddy and the
+  # backup passphrase as a secret), an encrypted backup copied off the machine, then the machine
+  # lost and the backup restored on a new one, phones and all.
+  compose:
+    name: Compose, an encrypted backup, a restore on a new machine
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: The family's settings, outside git
+        run: |
+          set -euo pipefail
+          if docker compose config >/dev/null 2>&1; then echo "Compose ran without the server's address in .env"; exit 1; fi
+          echo BELAY_PUBLIC_URL=http://localhost:8080 > .env
+          printf '%s\n' 'a made-up passphrase, only for CI' > backup-passphrase.txt
+          sudo chown 1000 backup-passphrase.txt && sudo chmod 600 backup-passphrase.txt
+          cat > docker-compose.override.yml <<'EOF'
+          services:
+            belay:
+              ports: ["127.0.0.1:8080:8080"]
+              environment:
+                BELAY_BACKUP_PASSPHRASE_FILE: /run/secrets/belay_backup
+              secrets: [belay_backup]
+            caddy:
+              profiles: ["caddy"]
+          secrets:
+            belay_backup:
+              file: ./backup-passphrase.txt
+          EOF
+          # Git ignores all three, so `git pull` never meets the family's changes.
+          test -z "$(git status --porcelain)"
+          test "$(docker compose config --services)" = belay
+      - name: Start it, and enroll a made-up phone
+        run: |
+          set -euo pipefail
+          docker compose up -d --build
+          for _ in $(seq 60); do curl -fsS http://localhost:8080/healthz && break; sleep 1; done
+          code=$(docker compose exec -T belay node dist/cli.js create-code "CI phone" 2>/dev/null)
+          device='{"manufacturer":"Google","model":"sdk_gphone64_x86_64","android_release":"17","sdk":37,"sdk_full":"37.0","security_patch":"2026-10-05","agent_version_name":"ci","agent_version_code":1,"last_boot_at":0,"timezone":"UTC","device_time":0,"health":{"device_owner":true,"battery_exempt":true,"usage_access":true,"notifications_shown":true,"permissions":[],"standby_bucket":5,"background_restricted":false,"service_running":true,"test_only":true}}'
+          token=$(curl -fsS -H 'content-type: application/json' -d "{\"code\":\"$code\",\"device\":$device}" http://localhost:8080/api/v1/enroll | jq -r .token)
+          curl -fsS -H 'content-type: application/json' -H "authorization: Bearer $token" -d "{\"status\":$device}" http://localhost:8080/api/v1/checkin | jq -e '.policy.version == 0'
+          docker compose exec -T belay node dist/cli.js protect "CI phone"
+          # A made-up phone on a server that's thrown away at the end: its token isn't a secret.
+          { echo "PHONE_TOKEN=$token"; echo "PHONE_DEVICE=$device"; } >> "$GITHUB_ENV"
+      - name: An encrypted backup, with the passphrase from the secret, copied off the machine
+        run: |
+          set -euo pipefail
+          docker compose exec -T belay node dist/cli.js backup /data/ci-backup.db.enc --encrypt
+          docker compose exec -T belay node dist/cli.js verify-backup /data/ci-backup.db.enc | tee verify.txt
+          grep -q "Encrypted: yes, and the passphrase works." verify.txt
+          docker compose cp belay:/data/ci-backup.db.enc .
+      - name: The machine is lost, and the backup is restored on a new one
+        run: |
+          set -euo pipefail
+          docker compose down -v
+          docker compose build
+          docker compose run --rm -T belay node dist/cli.js restore - < ci-backup.db.enc
+          docker compose up -d
+          for _ in $(seq 60); do curl -fsS http://localhost:8080/healthz && break; sleep 1; done
+          docker compose exec -T belay node dist/cli.js status --json | jq -e '[.phones[].name] == ["CI phone"]'
+          # The phone's token came back with the backup: it checks in, and gets its rules, without enrolling again.
+          curl -fsS -H 'content-type: application/json' -H "authorization: Bearer $PHONE_TOKEN" -d "{\"status\":$PHONE_DEVICE}" http://localhost:8080/api/v1/checkin | jq -e '.policy.version >= 1 and .policy.apps.new_apps == "ask"'
+      - name: Logs
+        if: always()
+        run: docker compose logs belay || true
