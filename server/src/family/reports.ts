@@ -28,8 +28,25 @@ export function receiveReport(ctx: PolicyContext, deviceId: string, device: Devi
     const tell: Tell[] = [];
     noteUpdate(ctx, deviceId, device, log, tell);
     noteRecovery(ctx, deviceId, device, log, tell);
+    noteCommands(ctx, deviceId, device, log);
     return { tell };
   });
+}
+
+/**
+ * The phone's results for one-shot commands (enforcement.commands, its last 20): each command the
+ * server sent this phone gets its first result, and leaves the policy. Results for ids the server
+ * never sent this phone (a test's own command, say) are ignored.
+ */
+function noteCommands(ctx: PolicyContext, deviceId: string, device: Device, log: Log): void {
+  const { db, now } = ctx;
+  const record = db.prepare("UPDATE commands SET result = ?, result_at = ?, problem = ?, reported_at = ? WHERE device_id = ? AND id = ? AND result IS NULL");
+  const kindOf = db.prepare<[string, string], { kind: string }>("SELECT kind FROM commands WHERE device_id = ? AND id = ?");
+  for (const r of device.enforcement?.commands ?? []) {
+    if (record.run(r.result, r.at, phoneWords(r.problem), now, deviceId, r.id).changes === 1) {
+      log(`command.${r.result}`, { kind: kindOf.get(deviceId, r.id)?.kind, command: r.id });
+    }
+  }
 }
 
 /**

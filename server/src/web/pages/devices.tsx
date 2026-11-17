@@ -2,6 +2,8 @@ import type { Child, FC } from "hono/jsx";
 import type { PendingCode } from "../../device/enroll.js";
 import type { AgentFile } from "../../family/agent.js";
 import type { RecoveryState } from "../../family/recovery.js";
+import type { Command } from "../../family/commands.js";
+import { RESTRICTION_WORDS } from "../../family/android.js";
 import { type App, type Change, type Review, PERMISSION_NAMES, SOURCE_NAMES, playStoreUrl, versionText } from "../../family/apps.js";
 import { type DeviceView, patchAgeDays } from "../../family/devices.js";
 import { type AskAgain, type Decision, LIMITS, type Rules } from "../../family/policy.js";
@@ -21,7 +23,7 @@ import {
   WebCard,
   decidedByWords,
 } from "./rules.js";
-import { RecoveryCard, UpdateCard } from "./belay.js";
+import { OtherUsersCard, RecoveryCard, UpdateCard } from "./belay.js";
 import { ChangeLine } from "./timeline.js";
 
 export interface DeviceSummary {
@@ -60,6 +62,8 @@ export interface PhoneRules {
   agentFiles: AgentFile[];
   /** Phase 6: the phone's recovery key, and its last use. */
   recovery: RecoveryState;
+  /** Phase 10: the commands sent to the phone, newest first. */
+  commands: Command[];
 }
 
 /** Apps decided before the phone ever had them: each one clearable, and the AI apps' all at once. */
@@ -170,6 +174,22 @@ const Facts: FC<{ device: DeviceView; view: View }> = ({ device, view }) => {
         {h.uninstall_blocked == null ? "unknown" : h.uninstall_blocked ? "yes" : "no"}; battery exemption: {h.battery_exempt ? "yes" : "no"}; usage
         access: {h.usage_access ? "yes" : "no"}
       </dd>
+      {h.other_users != null && (
+        <>
+          <dt>Other users and profiles</dt>
+          <dd>{h.other_users === 0 ? "none" : h.other_users}</dd>
+        </>
+      )}
+      {h.foreign_restrictions && h.foreign_restrictions.length > 0 && (
+        <>
+          <dt>Restrictions Belay didn't set</dt>
+          <dd>
+            {h.foreign_restrictions.map((key) => (RESTRICTION_WORDS[key] ? `${RESTRICTION_WORDS[key]} (${key})` : key)).join(", ")}
+            <br />
+            <span class="small muted">Something else on the phone set these, such as Android's own Parental Controls or another admin app.</span>
+          </dd>
+        </>
+      )}
       <dt>Last heard from</dt>
       <dd>{device.lastSeenAt ? formatAgo(device.lastSeenAt, view.now) : "never"}</dd>
       <dt>Last app list</dt>
@@ -315,7 +335,8 @@ export const DevicePage: FC<{
           </ul>
         </Notice>
       )}
-      <Problems problems={device.problems.filter((p) => p.code !== "tampering")} />
+      <OtherUsersCard view={view} device={device} commands={phone.commands} />
+      <Problems problems={device.problems.filter((p) => p.code !== "tampering" && p.code !== "other_users")} />
 
       <h2 id="rules">Rules</h2>
       <RulesStatus view={view} device={device} />

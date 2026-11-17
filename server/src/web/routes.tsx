@@ -38,6 +38,7 @@ import { packageName } from "../device/schemas.js";
 import { type App, getApp, listApps, listChanges, markReviewed, reviewHistory, appCounts } from "../family/apps.js";
 import { getAgentFile, listAgentFiles, offerAgent, withdrawOffer } from "../family/agent.js";
 import { makePhoneRecoveryKey, recoveryState, usableKey } from "../family/recovery.js";
+import { issueCommand, listCommands } from "../family/commands.js";
 import { type DeviceView, deleteDevice, getDevice, listDevices, nameTaken, renameDevice, revokeDevice } from "../family/devices.js";
 import {
   type ChromeSettings,
@@ -119,6 +120,8 @@ const SAVED: Record<string, string> = {
   update_offered: "Offered. The phone gets it with its next rules, within seconds if it's online.",
   update_not_newer: "Offered, but the phone runs that version or a newer one already, so it won't install it.",
   update_withdrawn: "The update isn't offered any more.",
+  command_sent: "Sent. The phone removes them when it gets this, within seconds if it's online.",
+  command_waiting: "That's already waiting for the phone.",
   paused: "Paused. The phone gets it within seconds if it's online.",
   resumed: "Resumed.",
   rules: "Saved. The phone gets it within seconds if it's online.",
@@ -434,6 +437,7 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
       askAgain: askAgainSummary(db, deviceId),
       agentFiles: listAgentFiles(db),
       recovery: recoveryState(db, deviceId),
+      commands: listCommands(db, deviceId, deps.now(), { kind: "remove_other_users" }),
     };
   };
 
@@ -538,6 +542,16 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
     if (!device) return noPhone(c);
     withdrawOffer(policyContext(), device.id, asParent(c));
     return backTo(c, device, "update_withdrawn", "update");
+  });
+
+  // ── Phase 10: removing other users and profiles, a parent's action only ─
+
+  app.post("/devices/:id/remove-other-users", (c) => {
+    const device = deviceOr404(c);
+    if (!device) return noPhone(c);
+    if (device.revokedAt !== null) return showDevice(c, device, { error: "This phone is disconnected, so it wouldn't get that." }, 400);
+    const done = issueCommand(policyContext(), device.id, "remove_other_users", asParent(c));
+    return backTo(c, device, done.result.already ? "command_waiting" : "command_sent", "users");
   });
 
   app.post("/devices/:id/before-install/clear", async (c) => {

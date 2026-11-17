@@ -1,11 +1,100 @@
-/** Belay itself on a phone's page: updating it, and its recovery key (Phase 6). */
+/** Belay itself on a phone's page: updating it, its recovery key (Phase 6), and other users (Phase 10). */
 import type { FC } from "hono/jsx";
 import { type AgentFile, versionWords } from "../../family/agent.js";
+import type { Command } from "../../family/commands.js";
 import type { DeviceView, UpdateView } from "../../family/devices.js";
 import type { Rules } from "../../family/policy.js";
 import { type RecoveryState, usableKey } from "../../family/recovery.js";
 import { formatDate } from "../../time.js";
 import { Csrf, Layout, Notice, PostButton, Time, type View } from "../ui.js";
+
+/** What happened to a command, in words. */
+const CommandLine: FC<{ view: View; command: Command }> = ({ view, command }) => {
+  switch (command.state) {
+    case "waiting":
+      return (
+        <p class="small">
+          Sent <Time ms={command.issuedAt} tz={view.tz} />: waiting for the phone
+          {command.expiresAt !== null && (
+            <>
+              , until <Time ms={command.expiresAt} tz={view.tz} />
+            </>
+          )}
+          .
+        </p>
+      );
+    case "done":
+      return (
+        <p class="small">
+          <span class="status ok">Done</span>
+          {command.resultAt !== null && (
+            <>
+              {" "}
+              <Time ms={command.resultAt} tz={view.tz} />
+            </>
+          )}
+          : the phone removed every other user and profile.
+        </p>
+      );
+    case "failed":
+      return (
+        <>
+          <p class="small">The phone couldn't do it{command.resultAt !== null && <> (<Time ms={command.resultAt} tz={view.tz} />)</>}. Belay on the phone says:</p>
+          <blockquote>{command.problem ?? "nothing more"}</blockquote>
+        </>
+      );
+    case "expired":
+      return <p class="small">Not done: the phone got it after it expired, so it didn't run it.</p>;
+    case "not_done":
+      return <p class="small">Not done: the phone didn't get it within 7 days.</p>;
+    case "replaced":
+      return null;
+  }
+};
+
+/**
+ * Phase 10: another user or profile on the phone (health.other_users), and the parent's way to
+ * remove them, with the last such command's result.
+ */
+export const OtherUsersCard: FC<{ view: View; device: DeviceView; commands: Command[] }> = ({ view, device, commands }) => {
+  const others = device.facts?.health.other_users ?? 0;
+  const latest = commands.find((c) => c.state !== "replaced");
+  if (others === 0 && !latest) return null;
+  const button =
+    others > 0 && latest?.state !== "waiting" ? (
+      <>
+        <p class="small">
+          Belay can remove every other user and profile from the phone, with everything in them, Android's own Parental Controls included; Belay keeps
+          doing that job. The phone does it when it gets this, if that's within 7 days.
+        </p>
+        <PostButton
+          view={view}
+          action={`/devices/${device.id}/remove-other-users`}
+          kind="danger"
+          confirm={`Remove every other user and profile from ${device.name}? Everything in them is deleted.`}
+        >
+          Remove other users and profiles
+        </PostButton>
+      </>
+    ) : null;
+  return others > 0 ? (
+    <Notice kind="error">
+      <p id="users">
+        <strong>{others === 1 ? "Another user or profile is on this phone." : `${others} other users or profiles are on this phone.`}</strong> This usually
+        means Android's own Parental Controls were set up in Settings.
+      </p>
+      {latest && <CommandLine view={view} command={latest} />}
+      {button}
+    </Notice>
+  ) : (
+    <div class="card" id="users">
+      <p>
+        <strong>Other users and profiles:</strong> none now.
+      </p>
+      {latest && <CommandLine view={view} command={latest} />}
+    </div>
+  );
+};
 
 /** The recovery key, shown once: when a lock that can strand the phone was turned on, or a parent asked for a new one. */
 export const RecoveryKeyPage: FC<{ view: View; device: DeviceView; grouped: string; replaced: boolean; because: "hardening" | "asked" }> = ({

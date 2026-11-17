@@ -535,6 +535,18 @@ function recoveryCheck(db: DB, deviceId: string): Policy["recovery"] {
   return key && key.used_at === null ? { version: key.version, salt: key.salt, hash: key.hash } : null;
 }
 
+/**
+ * Phase 10: the one-shot commands a parent sent (family/commands.ts) that the phone hasn't
+ * reported yet. One past its expiry stays, so the phone can report it expired.
+ */
+function commandsFor(db: DB, deviceId: string): Policy["commands"] {
+  return db
+    .prepare<[string], Policy["commands"][number]>(
+      "SELECT id, kind, issued_at, expires_at FROM commands WHERE device_id = ? AND result IS NULL AND replaced_at IS NULL ORDER BY issued_at, rowid",
+    )
+    .all(deviceId);
+}
+
 /** The policy for one phone, as the device API sends it. */
 export function buildPolicy(db: DB, deviceId: string, now: number): Policy {
   const rules = getRules(db, deviceId);
@@ -555,8 +567,7 @@ export function buildPolicy(db: DB, deviceId: string, now: number): Policy {
     requests: requestAnswers(db, deviceId, now),
     agent_update: agentUpdate(db, deviceId),
     recovery: recoveryCheck(db, deviceId),
-    // Phase 10: not built yet.
-    commands: [],
+    commands: commandsFor(db, deviceId),
   };
 }
 

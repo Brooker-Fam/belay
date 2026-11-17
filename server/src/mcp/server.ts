@@ -12,7 +12,8 @@ import { audit } from "../audit.js";
 import type { Deps } from "../deps.js";
 import { type Device, PermissionCategory, packageName } from "../device/schemas.js";
 import { pendingCodes } from "../device/enroll.js";
-import { belayPermission, validPatch, validRelease, validSdkFull, validVersionName, validZone } from "../family/android.js";
+import { RESTRICTION_WORDS, USER_RESTRICTIONS, belayPermission, validPatch, validRelease, validSdkFull, validVersionName, validZone } from "../family/android.js";
+import { type CommandState, listCommands } from "../family/commands.js";
 import {
   type App,
   type Change,
@@ -122,8 +123,22 @@ function checkedFacts(f: Device) {
     else others.push({ name: p.name, granted: p.granted });
   }
   if (others.length) belayUnchecked.other_permissions = others;
-  return { model: `${f.manufacturer} ${f.model}`, release, android, securityPatch, timezone, versionName, permissions, unchecked, belayUnchecked };
+  // Phase 10: restriction keys Android defines, in plain fields; anything else is the phone's own words.
+  const foreign = f.health.foreign_restrictions ?? [];
+  const restrictions = foreign.filter((key) => USER_RESTRICTIONS.has(key)).map((key) => ({ key, ...(RESTRICTION_WORDS[key] ? { means: RESTRICTION_WORDS[key] } : {}) }));
+  const unknownRestrictions = foreign.filter((key) => !USER_RESTRICTIONS.has(key));
+  if (unknownRestrictions.length) unchecked.restrictions_belay_did_not_set = unknownRestrictions;
+  return { model: `${f.manufacturer} ${f.model}`, release, android, securityPatch, timezone, versionName, permissions, restrictions, unchecked, belayUnchecked };
 }
+
+const COMMAND_STATE_WORDS: Record<CommandState, string> = {
+  waiting: "sent, waiting for the phone",
+  done: "done: the phone removed every other user and profile",
+  failed: "the phone couldn't do it",
+  expired: "not done: the phone got it after it expired, so it didn't run it",
+  not_done: "not done: the phone didn't get it within 7 days",
+  replaced: "replaced by a newer one",
+};
 
 /** A rule change, or the server's refusal of it in plain words (too many blocked apps, rules too large…). */
 function refusedOr<T extends object>(change: () => T): T | CallToolResult {
@@ -383,6 +398,20 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
               last_restart: iso(f.last_boot_at),
               ...(facts.timezone !== undefined ? { phone_timezone: facts.timezone } : {}),
               phone_clock: skew === null || Math.abs(skew) < 10 * durations.MINUTE ? "in sync" : `${formatDuration(Math.abs(skew))} ${skew > 0 ? "ahead" : "behind"}`,
+              ...(f.health.other_users != null ? { other_users_or_profiles: f.health.other_users } : {}),
+              ...(facts.restrictions.length ? { restrictions_belay_did_not_set: facts.restrictions } : {}),
+              ...((latest) =>
+                latest
+                  ? {
+                      remove_other_users: {
+                        state: COMMAND_STATE_WORDS[latest.state],
+                        sent: iso(latest.issuedAt),
+                        ...(latest.resultAt !== null ? { phone_said_at: iso(latest.resultAt) } : {}),
+                        ...(latest.state === "failed" && latest.problem ? { untrusted: { why_belay_on_the_phone_says: latest.problem } } : {}),
+                        who_sends_it: "Only a parent, on the phone's page.",
+                      },
+                    }
+                  : {})(listCommands(db, d.id, now, { kind: "remove_other_users" }).find((c) => c.state !== "replaced")),
               belay_on_the_phone: {
                 ...(facts.versionName !== undefined ? { version: facts.versionName } : {}),
                 version_code: f.agent_version_code,

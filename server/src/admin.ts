@@ -19,6 +19,7 @@
  *                                                 stores a version of Belay; prints only its SHA-256
  *   agent-offer "<phone>" <sha256>                offers that version to the phone, as a parent would
  *   recovery-key "<phone>"                        a new recovery key for the phone; prints only the key, grouped
+ *   remove-other-users "<phone>"                  asks the phone to remove every other user and profile (Phase 10)
  *
  * Changes are logged as the server's (the activity log's "The server"). A running server sees
  * them within a second or two and passes them to the phone's long-poll. Hardening (factory
@@ -32,6 +33,7 @@ import { createEnrollmentCode } from "./device/enroll.js";
 import { packageName, sha256Hex } from "./device/schemas.js";
 import { AgentFileError, type Offer, addAgentFile, currentOffer, offerAgent, versionWords } from "./family/agent.js";
 import { type RecoveryState, makePhoneRecoveryKey, recoveryState, usableKey } from "./family/recovery.js";
+import { issueCommand, listCommands } from "./family/commands.js";
 import { appCounts, listChanges } from "./family/apps.js";
 import { type DeviceRow, findDeviceByName, listDevices, nameTaken } from "./family/devices.js";
 import { LIMITS, RuleRefused, askAgainSummary, decideApp, pausePhone, protect, resumePhone, setNewApps, type PolicyContext } from "./family/policy.js";
@@ -101,7 +103,8 @@ const USAGE = `Commands:
   resume "<phone>"
   agent-add <apk> --version-code <n> [--version-name <name>]
   agent-offer "<phone>" <sha256>
-  recovery-key "<phone>"`;
+  recovery-key "<phone>"
+  remove-other-users "<phone>"`;
 
 /** Positional arguments, and --name value (or --name=value, or a bare --name) flags. */
 function parseArgs(args: string[]): { positional: string[]; flags: Map<string, string | true> } {
@@ -214,6 +217,17 @@ async function run(argv: string[], io: CliIO): Promise<void> {
           agent_update: updateStatus(currentOffer(db, d.id), iso),
           /** Phase 6: the version of the recovery key the policy carries (null: none, or it was used), and its last use. */
           recovery: recoveryStatus(recoveryState(db, d.id), iso),
+          /** Phase 10: the commands sent to the phone lately, newest first, with what the phone reported. */
+          commands: listCommands(db, d.id, now).map((c) => ({
+            id: c.id,
+            kind: c.kind,
+            issued_at: iso(c.issuedAt),
+            expires_at: iso(c.expiresAt),
+            state: c.state,
+            result: c.result,
+            at: iso(c.resultAt),
+            problem: c.problem,
+          })),
           /** The kid's requests: waiting ones, and the last 30 days'. */
           requests: recentRequests(db, now, { deviceId: d.id }).map((r) => ({ package: r.package, status: r.status, reason: r.reason })),
           recent_changes: listChanges(db, { deviceId: d.id, includeSystem: true, limit: 20 }).map((c) => ({
@@ -317,6 +331,18 @@ async function run(argv: string[], io: CliIO): Promise<void> {
       if (!existed) audit(db, now, server, "agent.added", { detail: { version_code: file.versionCode, version_name: file.versionName ?? undefined, sha256: file.sha256, size: file.size } });
       io.out(file.sha256);
       io.err(`${existed ? "Already on the server" : "Added"}: Belay ${versionWords(file)}, ${file.size} bytes. To offer it to a phone: agent-offer "<phone>" ${file.sha256}`);
+      return;
+    }
+    case "remove-other-users": {
+      const row = phone();
+      if (row.revoked_at !== null) throw new CliError(`${row.name} is disconnected, so it wouldn't get that.`);
+      const done = issueCommand(ctx, row.id, "remove_other_users", server);
+      const until = iso(done.result.command.expiresAt) ?? "";
+      io.out(
+        done.result.already
+          ? `${row.name}: already asked to remove other users and profiles; waiting for the phone, until ${until}.`
+          : `${row.name}: the phone removes every other user and profile when it gets its rules (rules version ${done.version}), if that's by ${until}.`,
+      );
       return;
     }
     case "recovery-key": {

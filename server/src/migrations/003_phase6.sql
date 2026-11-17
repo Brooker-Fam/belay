@@ -128,3 +128,21 @@ CREATE TABLE recovery_keys (
   use_reported_at INTEGER,                  -- when the server heard
   PRIMARY KEY (device_id, version)
 ) STRICT;
+
+-- Phase 10: one-shot commands a parent sends a phone (the policy's commands), and what the
+-- phone reported (enforcement.commands). Each stays in the policy until the phone reports it;
+-- after expires_at the phone doesn't run it, and reports it expired.
+CREATE TABLE commands (
+  id TEXT PRIMARY KEY,                      -- the server's UUID: the phone runs each id once
+  device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK (kind IN ('remove_other_users')),
+  issued_at INTEGER NOT NULL,
+  expires_at INTEGER,                       -- NULL: no limit
+  issued_by TEXT REFERENCES parents(id) ON DELETE SET NULL,  -- NULL: the server's CLI
+  result TEXT CHECK (result IN ('done', 'failed', 'expired')),  -- NULL until the phone reports it
+  result_at INTEGER,                        -- the phone's clock
+  problem TEXT,                             -- the phone's words when it failed: untrusted
+  reported_at INTEGER,                      -- when the server heard
+  replaced_at INTEGER                       -- a newer one of its kind took its place before a result
+) STRICT;
+CREATE INDEX commands_device ON commands(device_id, issued_at);

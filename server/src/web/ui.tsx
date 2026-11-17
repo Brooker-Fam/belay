@@ -106,7 +106,7 @@ export const Problems: FC<{ problems: Problem[] }> = ({ problems }) =>
   problems.length ? (
     <ul class="problems">
       {problems.map((p) => (
-        <li class={p.code === "tampering" || p.code === "signing_changed" ? "tamper" : undefined}>{p.text}</li>
+        <li class={p.code === "tampering" || p.code === "signing_changed" || p.code === "other_users" ? "tamper" : undefined}>{p.text}</li>
       ))}
     </ul>
   ) : null;

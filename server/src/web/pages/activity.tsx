@@ -142,6 +142,14 @@ function what(e: AuditEntry): string {
       return `made a new recovery key${device}`;
     case "recovery.used":
       return "had its recovery key typed in, opening repair access for 24 hours";
+    case "command.issued":
+      return `asked the phone to remove every other user and profile${device}`;
+    case "command.done":
+      return "removed every other user and profile, as a parent asked";
+    case "command.failed":
+      return "couldn't remove the other users and profiles";
+    case "command.expired":
+      return "got a parent's request to remove other users too late, so didn't run it";
     default:
       if (e.action === "ai.read") return `read ${str(d.what) || "data"}${device}`;
       return e.action;

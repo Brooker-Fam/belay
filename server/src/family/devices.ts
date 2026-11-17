@@ -85,7 +85,8 @@ export interface Problem {
     | "signing_changed"
     | "update_failed"
     | "update_silent"
-    | "recovery_used";
+    | "recovery_used"
+    | "other_users";
   text: string;
   /** For phone_reported: what Belay on the phone said, as it said it. It comes from the kid's phone: untrusted. */
   fromPhone?: string;
@@ -232,6 +233,14 @@ export function problemsOf(row: DeviceRow, facts: Device | null, settings: Setti
     problems.push({ code: "recovery_used", text: `The recovery key was used on the phone ${formatAgo(row.recovery_used_at, now)}, so it won't work again: make a new one on the phone's page` });
   }
   const tampering: Problem[] = [];
+  // Phase 10: Belay counts the users and profiles besides the kid's own; it can't see what kind they are.
+  const others = facts?.health.other_users ?? 0;
+  if (others > 0) {
+    tampering.push({
+      code: "other_users",
+      text: `${others === 1 ? "Another user or profile is" : `${others} other users or profiles are`} on this phone. This usually means Android's own Parental Controls were set up in Settings`,
+    });
+  }
   if (signingChanged(row, facts)) {
     tampering.push({
       code: "signing_changed",
