@@ -119,8 +119,8 @@ export const SettingsPage: FC<{
       <h2>AI access</h2>
       <div class="card">
         <p>
-          Connect Claude or another MCP client to <code>{mcpUrl}</code>. It can read what you allow above and mark apps reviewed. In this version it
-          can't change anything on a phone.
+          Connect Claude or another MCP client to <code>{mcpUrl}</code>. It can read what you allow above, mark apps reviewed, block an app and
+          pause a phone. Anything that loosens a rule is only a proposal until a parent approves it on the Proposals page.
         </p>
         <h3>Connected apps</h3>
         {apps.length === 0 && <p class="muted">None.</p>}

@@ -88,8 +88,9 @@ notifications to web apps on the Home Screen: open the parent page in Safari, ch
 Add to Home Screen, open Belay from the Home Screen, and turn them on there (iOS 16.4 or
 later).
 
-**When:** when a phone sends a new request (one notice for the requests in one call). Not
-again when a request is sent a second time.
+**When:** when a phone sends a new request (one notice for the requests in one call), and
+when an AI app proposes a change. Not again when a request is sent a second time, or the
+same change is proposed again while it waits.
 
 **What is sent, and to whom:**
 
@@ -99,10 +100,11 @@ again when a request is sent a second time.
   (`*.notify.windows.com`) for Edge. The push service passes it to the browser. The server
   accepts no other address when a browser subscribes, sends to no other host, and never
   follows a redirect.
-- The notice is the phone's name and the app's name, like
-  `Sam's phone: "Chatter Box" is waiting for you`, and which page to open. It is encrypted
-  for that browser (RFC 8291, `aes128gcm`): only the browser can read it, not the push
-  service.
+- The notice is the phone's name and the app's name or the proposed change, like
+  `Sam's phone: "Chatter Box" is waiting for you` or
+  `Sam's phone: Claude proposes resuming the paused phone`, and which page to open
+  (Requests or Proposals). It is encrypted for that browser (RFC 8291, `aes128gcm`): only
+  the browser can read it, not the push service.
 - The push service does see the browser's subscription address, when each notice is sent
   and how long it is, the server's VAPID public key, and a token signed with it (RFC 8292)
   that names the push service, expires within 12 hours, and contains the server's address
