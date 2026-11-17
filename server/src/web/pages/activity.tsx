@@ -67,7 +67,7 @@ function what(e: AuditEntry): string {
     case "token.revoked":
       return `revoked the personal access token "${str(d.name)}"`;
     default:
-      if (e.action.startsWith("ai.read.")) return `read ${str(d.what) || e.action.slice("ai.read.".length)}${device}`;
+      if (e.action === "ai.read") return `read ${str(d.what) || "data"}${device}`;
       return e.action;
   }
 }

@@ -3,6 +3,8 @@ import { routePath } from "hono/route";
 import type { Deps } from "./deps.js";
 import { deviceRoutes } from "./device/routes.js";
 import type { Bindings } from "./http.js";
+import { mcpRoutes } from "./mcp/routes.js";
+import { oauthRoutes } from "./oauth/routes.js";
 import { loadAssets } from "./web/assets.js";
 import { webRoutes } from "./web/routes.js";
 
@@ -13,6 +15,8 @@ export function createApp(deps: Deps): Hono<{ Bindings: Bindings }> {
   app.get("/healthz", (c) => c.json({ ok: true }));
   assets.mount(app);
   app.route("/api/v1", deviceRoutes(deps));
+  app.route("/", oauthRoutes(deps, assets));
+  app.route("/", mcpRoutes(deps));
   // The parent pages last: their middleware covers every path the routes above don't answer.
   app.route("/", webRoutes(deps, assets));
 
