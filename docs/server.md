@@ -360,7 +360,7 @@ Off until a parent sets a limit or a schedule, or turns measuring on: until then
 `screen_time` is `null`, and the phone counts nothing. The phone counts and enforces by
 itself, offline too; the server keeps the rules and what the phone reports.
 
-- **Rules** (a phone's Rules tab): daily limits (one app, a group, or a daily total of every
+- **Rules** (a phone's Screen-time rules tab): daily limits (one app, a group, or a daily total of every
   app), school, bedtime and custom schedules, apps never counted or paused, self-serve minutes
   the kid may take without asking, what happens when Belay can't count (pause the apps with a
   limit, the default, or keep them open), the warning before a limit or schedule, extra time
@@ -498,7 +498,8 @@ rules are kept for next time.
   refused; whom the kid can call (any number, or only contacts); quiet times (during bedtime and
   school schedules, only parents ring); and whether Belay keeps a record of calls.
 - **Contacts** (at most 500, each with a name the kid sees, at most 60 characters, and 1 to 5
-  numbers in E.164, each one contact's): whether they can call and text, and whether they're a
+  numbers in E.164, each one contact's): whether they can call and text (texts aren't managed
+  yet: the phone ignores that part until Phase 5's texts are built), and whether they're a
   parent, who always rings and is on the kid's emergency card. The page warns when a number on
   the emergency card isn't a contact, with a button to add it as a parent. Belay keeps contacts
   in its own storage on the phone; it never writes them into Android's Contacts.
