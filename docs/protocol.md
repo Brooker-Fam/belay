@@ -30,6 +30,7 @@ schemas in `server/src/device/schemas.ts`. Change all three together.
 | `GET /api/v1/agent/<sha256>.apk` | (no body; the answer is at most 100 MB) |
 | `POST /api/v1/usage` | 256 KB, at most 31 days (Phase 3) |
 | `POST /api/v1/locations` | 64 KB, at most 200 fixes and 200 place events (Phase 4) |
+| `POST /api/v1/calls` | 128 KB, at most 500 records (Phase 5) |
 
 Errors: `{"error": "<code>", "error_description": "<words>"}` with
 
@@ -280,6 +281,47 @@ in `periodic` mode, for one of the phone's places as the policy has them now; a 
 how many). `accepted` counts every item in the call, kept, already kept or dropped: none of
 them needs sending again. A fix marked `mock` is kept, and shown as made up.
 
+## `POST /api/v1/calls`
+
+Phase 5. Call records, only while the policy's `calls.log` is on.
+
+```json
+{ "calls": [ { …CallRecord… } ] }
+```
+→ `200 {"server_time", "accepted"}`. Idempotent by each record's `id`.
+
+## Calls rules (Phase 5, both sides)
+
+- **Off until a parent turns it on.** With `calls` null, Belay isn't the dialer and nothing
+  about calls changes. With `calls` set, Belay makes itself the default dialer
+  (`setDefaultDialerApplication`) and runs its own dial pad, contacts, recent calls,
+  incoming-call and in-call screens; it places every call with `TelecomManager.placeCall`.
+- **Always allowed, in code** (`:core`, never the policy): 911, every number Android reports
+  as an emergency number (`isEmergencyNumber`) and 988, in and out, in every mode, stage,
+  pause and schedule; contacts with `parent` ring too. Telecom sends emergency calls to the
+  preloaded dialer, which is never hidden, suspended or disabled.
+- **After an emergency contact:** for 2 hours after a call to an emergency number or 988,
+  or a text to 988, every incoming call rings, so a dispatcher or the 988 line can call back
+  from any number.
+- **Incoming:** `mode: open` lets everyone ring. `mode: contacts` lets contacts with `calls`
+  ring; other callers follow `unknown`, callers with no caller id follow `withheld`
+  (`reject`, `voicemail` or `ring`). A number that failed carrier verification counts as
+  unknown. With `quiet`, only always-allowed numbers and parents ring during a bedtime or
+  school schedule (Phase 3). A refused call never rings.
+- **Outgoing:** `outgoing: contacts` allows only contacts with `calls` and the
+  always-allowed numbers; `any` allows any number.
+- **If Belay breaks,** Telecom falls back to the preloaded dialer with no filtering, on
+  purpose: a phone that can't take calls is worse. Belay reports "Calls are going through the
+  phone's own app" (`enforcement.calls.problem`).
+- **Records** (`log`): when, direction, duration, outcome, and the contact, or the number for
+  a caller who isn't one. Calls with emergency numbers, 988 or the family's private numbers
+  are never recorded or sent.
+- **Contacts** live in the policy and in Belay's own storage; Belay never writes them into
+  Android's Contacts. A `contact` request is the kid asking for one; a parent approves it.
+- Only a parent turns calls on or off or changes who may call; an AI client may only
+  propose (it would loosen or change who reaches the kid), and reads records only with the
+  `calls` scope on (off by default).
+
 ## Location rules (Phase 4, both sides)
 
 - **Off by default.** With `location` null or `mode: off`, Belay holds no location
@@ -518,6 +560,8 @@ server decides whether a change tightens or loosens.
 | `ai_reads` | string[] | Phase 7: the data categories the AI app may read |
 | `help_seen` | `[{request_id, at, by?}]` | Phase 7: the last 30 days |
 | `parent_numbers` | `[{name, number}]` | Phase 7: at most 4; `number` in E.164, `name` at most 40 characters |
+| `calls` | `{mode: "open"\|"contacts", unknown, withheld: "reject"\|"voicemail"\|"ring", outgoing: "contacts"\|"any", quiet, log}`? | Phase 5; null: Belay isn't the dialer |
+| `contacts` | `[{id, name, numbers: [E.164], calls, texts, parent}]` | Phase 5: at most 500; `name` at most 60 characters, at most 5 numbers |
 
 The `commands` kinds gain `locate_now` (Phase 4).
 
@@ -556,12 +600,13 @@ The answers in `requests` gain `minutes?` (Phase 3: an approved `more_time`).
 | Field | Type | |
 |---|---|---|
 | `id` | string | UUID made on the phone |
-| `kind` | `app`, Phase 3: `more_time` `agreement`, Phase 7: `help` `talk` (`talk` needs `reason`) | |
+| `kind` | `app`, Phase 3: `more_time` `agreement`, Phase 7: `help` `talk` (`talk` needs `reason`), Phase 5: `contact` | |
 | `package` | string (app), string? (more_time: the app the kid was in) | |
 | `label` | string (app only) | untrusted |
 | `limit_id`, `minutes` | string, int (more_time only: 5 to 240) | |
 | `version`, `answer` | int, `agree`\|`talk` (agreement only) | |
 | `location` | Fix? (help only) | Phase 7: only when the kid chose to share it |
+| `contact_name`, `contact_number` | string, E.164 (contact only) | Phase 5: the kid's words: untrusted |
 | `withdrawn_at` | int? | Phase 7: withdraws a pending request |
 | `reason` | string? | the kid's own words, at most 500 characters: untrusted |
 | `asked_at` | int | |
@@ -581,6 +626,11 @@ The answers in `requests` gain `minutes?` (Phase 3: an approved `more_time`).
 | `screen_time` | `{day, measured, used_minutes?, limits: [{id, used?, left?, state: "open"\|"used_up"\|"extra"}], schedule?: {id, until}, self_serve: [{limit_id, package?, minutes, at}]}`? | Phase 3: the phone's view now; minutes left out when `measure` is off (`used` rounds down, `left` up) |
 | `network_log` | `{enabled, paused}`? | Phase 3, later |
 | `location` | `{permission, location_on, last_fix_at?, problem?}`? | Phase 4: null while location is off |
+| `calls` | `{dialer, problem?}`? | Phase 5: whether Belay is the default dialer |
+
+**CallRecord** (phone → server, Phase 5): `{id, at, direction: "in"|"out", contact_id?, number?,
+duration_s, outcome: "answered"|"missed"|"rejected"|"voicemail"|"not_placed", reason?:
+"unknown"|"withheld"|"quiet"|"not_allowed"}`; `number` (E.164) only when `contact_id` is null.
 
 **Fix** (phone → server, Phase 4)
 

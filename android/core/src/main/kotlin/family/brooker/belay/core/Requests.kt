@@ -277,6 +277,13 @@ object Requests {
             reason = cleanReason(request.reason),
             askedAt = request.askedAt,
         )
+        // Phase 5 (the phone side builds it; the contract is here already).
+        WireRequestKind.CONTACT -> WireRequest(
+            id = request.id,
+            kind = WireRequestKind.CONTACT,
+            reason = cleanReason(request.reason),
+            askedAt = request.askedAt,
+        )
     }.copy(withdrawnAt = request.withdrawnAt)
 
     /** The outbox item id for this send of [request]: unique per send, ordered by revision. */

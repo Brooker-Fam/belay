@@ -37,6 +37,10 @@ export const LIMITS = {
   maxPlaces: 20,
   /** Phase 7. */
   maxParentNumbers: 4,
+  /** Phase 5: `POST /api/v1/calls`, and the approved contacts. */
+  callsBytes: 128 * 1024,
+  maxCalls: 500,
+  maxContacts: 500,
 } as const;
 
 const time = z.int().min(0);
@@ -230,6 +234,8 @@ export const Enforcement = z.strictObject({
       problem: text(LIMITS.maxProblem).nullish(),
     })
     .nullish(),
+  /** Phase 5: whether Belay is the default dialer; null while the policy's calls is null. */
+  calls: z.strictObject({ dialer: z.boolean(), problem: text(LIMITS.maxProblem).nullish() }).nullish(),
 });
 export type Enforcement = z.infer<typeof Enforcement>;
 
@@ -343,6 +349,31 @@ export const TalkRequest = z.strictObject({
   id: clientId,
   kind: z.literal("talk"),
   reason: text(LIMITS.maxReason).min(1),
+  asked_at: time,
+  withdrawn_at: time.nullish(),
+});
+
+// ── Phase 5, calls (docs/protocol.md): not accepted by the routes yet ───────
+
+/** One call's metadata; `number` only for a caller who isn't a contact. */
+export const CallRecord = z.strictObject({
+  id: clientId,
+  at: time,
+  direction: z.enum(["in", "out"]),
+  contact_id: ruleId.nullish(),
+  number: e164.nullish(),
+  duration_s: z.int().min(0).max(86_400),
+  outcome: z.enum(["answered", "missed", "rejected", "voicemail", "not_placed"]),
+  reason: z.enum(["unknown", "withheld", "quiet", "not_allowed"]).nullish(),
+});
+export const CallsRequest = z.strictObject({ calls: z.array(CallRecord).min(1).max(LIMITS.maxCalls) });
+/** Phase 5: "Please add this contact". The name and the reason are the kid's words. */
+export const ContactRequest = z.strictObject({
+  id: clientId,
+  kind: z.literal("contact"),
+  contact_name: text(60).min(1),
+  contact_number: e164,
+  reason: text(LIMITS.maxReason).nullish(),
   asked_at: time,
   withdrawn_at: time.nullish(),
 });
@@ -600,5 +631,30 @@ export const Policy = z.strictObject({
   help_seen: z.array(z.strictObject({ request_id: clientId, at: time, by: text(60).nullable() })).max(200),
   /** Phase 7: the numbers on the phone's emergency card. */
   parent_numbers: z.array(z.strictObject({ name: text(40), number: e164 })).max(LIMITS.maxParentNumbers),
+  // Phase 5: optional until the server builds them; the phone reads a missing one as "leave calls alone".
+  calls: z
+    .strictObject({
+      mode: z.enum(["open", "contacts"]),
+      unknown: z.enum(["reject", "voicemail", "ring"]),
+      withheld: z.enum(["reject", "voicemail", "ring"]),
+      outgoing: z.enum(["contacts", "any"]),
+      quiet: z.boolean(),
+      log: z.boolean(),
+    })
+    .nullable()
+    .optional(),
+  contacts: z
+    .array(
+      z.strictObject({
+        id: ruleId,
+        name: text(60),
+        numbers: z.array(e164).min(1).max(5),
+        calls: z.boolean(),
+        texts: z.boolean(),
+        parent: z.boolean(),
+      }),
+    )
+    .max(LIMITS.maxContacts)
+    .optional(),
 });
 export type Policy = z.infer<typeof Policy>;

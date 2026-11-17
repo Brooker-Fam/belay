@@ -1,5 +1,8 @@
 package family.brooker.belay.core
 
+import family.brooker.belay.core.calls.WireCalls
+import family.brooker.belay.core.calls.WireCallsStatus
+import family.brooker.belay.core.calls.WireContact
 import family.brooker.belay.core.location.WireFix
 import family.brooker.belay.core.location.WireLocation
 import family.brooker.belay.core.location.WireLocationStatus
@@ -169,6 +172,8 @@ data class WireEnforcement(
     @SerialName("network_log") val networkLog: WireNetworkLogStatus? = null,
     /** Phase 4: whether Belay can take a fix; null while location is off. */
     val location: WireLocationStatus? = null,
+    /** Phase 5: whether Belay is the default dialer; null while the policy's calls is null. */
+    val calls: WireCallsStatus? = null,
 )
 
 /** Phase 6: where an update is. */
@@ -434,6 +439,10 @@ data class WirePolicy(
     @SerialName("help_seen") val helpSeen: List<WireHelpSeen> = emptyList(),
     /** Phase 7: numbers on the emergency card, until Phase 5's contacts exist; at most 4. */
     @SerialName("parent_numbers") val parentNumbers: List<WireParentNumber> = emptyList(),
+    /** Phase 5: null, Belay isn't the dialer and nothing about calls changes. */
+    val calls: WireCalls? = null,
+    /** Phase 5: the approved contacts, at most 500; `parent` ones are on the emergency card too. */
+    val contacts: List<WireContact> = emptyList(),
 )
 
 /** Phase 7: a parent saw the kid's help request. */
@@ -476,6 +485,9 @@ enum class WireRequestKind {
 
     /** Phase 7: "I'd like to talk about…": changes no rule. */
     @SerialName("talk") TALK,
+
+    /** Phase 5: please add this contact: [WireRequest.contactName], [WireRequest.contactNumber], why. */
+    @SerialName("contact") CONTACT,
 }
 
 /**
@@ -507,6 +519,10 @@ data class WireRequest(
     val location: WireFix? = null,
     /** Phase 7: the kid withdrew it while it was pending. */
     @SerialName("withdrawn_at") val withdrawnAt: Long? = null,
+    /** contact: the name the kid gave, at most 60 characters: untrusted. */
+    @SerialName("contact_name") val contactName: String? = null,
+    /** contact: the number, E.164. */
+    @SerialName("contact_number") val contactNumber: String? = null,
 )
 
 @Serializable
