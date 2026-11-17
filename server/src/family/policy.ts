@@ -12,6 +12,7 @@
 import { type Actor, audit } from "../audit.js";
 import type { DB } from "../db.js";
 import { Policy } from "../device/schemas.js";
+import { deviceFacts } from "./devices.js";
 
 // ── Names ────────────────────────────────────────────────────────────────
 
@@ -100,22 +101,60 @@ export const SAFE_CHROME: ChromeSettings = {
   url_blocklist: [],
 };
 
+/** Why the phone never blocks an app. */
+type NeverBlockedRole = "belay" | "android" | "calls" | "dialer" | "texting" | "keyboard" | "home" | "emergency" | "system_ui" | "settings";
+
 /**
  * Never blocked, whatever the policy says, so 911 and 988 always work (docs/protocol.md,
- * "Enforcement rules"). The phone ignores a block on these and others it knows (the default
- * dialer and SMS app, the home screen); the server refuses the ones it can name.
+ * "Enforcement rules"). The phone works out its own list (the default dialer and texting app,
+ * the keyboard, the home screen…) and reports it in `enforcement.never_blocked`; the server
+ * refuses to block those, and these well-known ones on any phone, before its first report too.
  */
-export const NEVER_BLOCKED = new Set([
-  "family.brooker.belay",
-  "com.android.phone",
-  "com.android.server.telecom",
-  "com.google.android.dialer",
-  "com.google.android.apps.messaging",
-  "com.android.settings",
-  "com.android.systemui",
-  "com.android.emergency",
-  "com.google.android.apps.nexuslauncher",
+export const NEVER_BLOCKED: ReadonlyMap<string, NeverBlockedRole> = new Map<string, NeverBlockedRole>([
+  ["family.brooker.belay", "belay"],
+  ["android", "android"],
+  ["com.android.phone", "calls"],
+  ["com.android.server.telecom", "calls"],
+  ["com.android.providers.telephony", "calls"],
+  ["com.google.android.ims", "calls"],
+  ["com.shannon.imsservice", "calls"],
+  ["com.google.android.dialer", "dialer"],
+  ["com.android.dialer", "dialer"],
+  ["com.samsung.android.dialer", "dialer"],
+  ["com.android.incallui", "dialer"],
+  ["com.samsung.android.incallui", "dialer"],
+  ["com.google.android.apps.messaging", "texting"],
+  ["com.android.messaging", "texting"],
+  ["com.android.mms", "texting"],
+  ["com.samsung.android.messaging", "texting"],
+  ["com.google.android.inputmethod.latin", "keyboard"],
+  ["com.android.inputmethod.latin", "keyboard"],
+  ["com.samsung.android.honeyboard", "keyboard"],
+  ["com.google.android.apps.nexuslauncher", "home"],
+  ["com.android.launcher3", "home"],
+  ["com.sec.android.app.launcher", "home"],
+  ["com.android.emergency", "emergency"],
+  ["com.google.android.apps.safetyhub", "emergency"],
+  ["com.android.cellbroadcastreceiver", "emergency"],
+  ["com.android.cellbroadcastreceiver.module", "emergency"],
+  ["com.google.android.cellbroadcastreceiver", "emergency"],
+  ["com.android.systemui", "system_ui"],
+  ["com.android.settings", "settings"],
 ]);
+
+const NEVER_BLOCKED_WHY: Record<NeverBlockedRole | "reported", string> = {
+  belay: "Belay never blocks itself.",
+  android: "The phone never blocks Android itself.",
+  calls: "The phone never blocks what places calls and texts: 911 and 988 must always work.",
+  dialer: "The phone never blocks its dialer: 911 and 988 must always work.",
+  texting: "The phone never blocks its texting app: texting 988 must always work.",
+  keyboard: "The phone never blocks its keyboard: texting 988 needs one.",
+  home: "The phone never blocks its home screen: it's the way to calls and texts.",
+  emergency: "The phone never blocks its emergency and safety apps: 911 and 988 must always work.",
+  system_ui: "The phone never blocks System UI: it shows calls and the lock screen.",
+  settings: "The phone never blocks Settings.",
+  reported: "The phone says it never blocks this app: it's one the phone needs, like its dialer, texting app or keyboard, so 911 and 988 always work.",
+};
 
 export const LIMITS = {
   pauseNote: 500,
@@ -126,7 +165,26 @@ export const LIMITS = {
   maxFrpAccounts: 5,
   maxUrlPatterns: 200,
   urlPattern: 500,
+  /**
+   * The largest policy the server makes. The phone takes up to 1 MiB; a policy it refused
+   * would cut off every later change, a parent's too.
+   */
+  maxPolicyBytes: 256 * 1024,
+  /** Apps blocked or allowed before the phone ever reported them, per phone. */
+  maxPreDecisions: 500,
+  /** Of those, the most AI apps may have blocked. */
+  maxPreBlocksByAi: 50,
 } as const;
+
+/**
+ * A change the server won't make, with the reason in plain words for the parent page, MCP and
+ * the CLI. Thrown inside the change's transaction, so nothing of it is kept.
+ */
+export class RuleRefused extends Error {
+  override name = "RuleRefused";
+}
+
+export const TOO_LARGE = `That change would make this phone's rules too large to send (over ${LIMITS.maxPolicyBytes / 1024} KB). Clear some apps under "Blocked before install" on the phone's page, or shorten Chrome's lists of sites, then try again.`;
 
 // ── Stored rules ─────────────────────────────────────────────────────────
 
@@ -134,6 +192,8 @@ export interface Pause {
   /** Null: until a parent resumes it. */
   until: number | null;
   note: string | null;
+  /** When this pause was set or last changed (null: before the server kept it), so a proposal to resume knows which pause it meant. */
+  setAt: number | null;
 }
 
 export interface Rules {
@@ -151,6 +211,10 @@ export interface Rules {
   maintenanceUntil: number | null;
   frpAccounts: string[];
   supportMessage: string | null;
+  /** When new apps first waited for a parent (null: never). Only then is every app already on the phone allowed. */
+  askFirstAt: number | null;
+  /** When `newApps` last changed: since then, under "allow", apps installed ran without asking. */
+  newAppsAt: number | null;
 }
 
 interface PolicyRow {
@@ -162,6 +226,7 @@ interface PolicyRow {
   paused: number;
   pause_until: number | null;
   pause_note: string | null;
+  pause_set_at: number | null;
   restrictions: string;
   private_dns: string | null;
   chrome: string | null;
@@ -169,6 +234,8 @@ interface PolicyRow {
   maintenance_until: number | null;
   frp_accounts: string;
   support_message: string | null;
+  ask_first_at: number | null;
+  new_apps_at: number | null;
 }
 
 function parseJson(text: string | null): unknown {
@@ -199,6 +266,8 @@ export function defaultRules(): Rules {
     maintenanceUntil: null,
     frpAccounts: [],
     supportMessage: null,
+    askFirstAt: null,
+    newAppsAt: null,
   };
 }
 
@@ -217,7 +286,7 @@ export function getRules(db: DB, deviceId: string): Rules {
     changedAt: row.changed_at,
     protectedAt: row.protected_at,
     newApps: row.new_apps,
-    pause: row.paused === 1 ? { until: row.pause_until, note: row.pause_note } : null,
+    pause: row.paused === 1 ? { until: row.pause_until, note: row.pause_note, setAt: row.pause_set_at } : null,
     restrictions,
     privateDns: row.private_dns,
     chrome: row.chrome !== null && chrome.success ? chrome.data : null,
@@ -225,19 +294,22 @@ export function getRules(db: DB, deviceId: string): Rules {
     maintenanceUntil: row.maintenance_until,
     frpAccounts: Array.isArray(frp) ? frp.filter((a): a is string => typeof a === "string") : [],
     supportMessage: row.support_message,
+    askFirstAt: row.ask_first_at,
+    newAppsAt: row.new_apps_at,
   };
 }
 
 function saveRules(db: DB, deviceId: string, rules: Rules, now: number): void {
   db.prepare(
-    `INSERT INTO policies (device_id, version, changed_at, protected_at, new_apps, paused, pause_until, pause_note, restrictions,
-       private_dns, chrome, hide_browsers, maintenance_until, frp_accounts, support_message)
-     VALUES (@device_id, 0, @now, @protected_at, @new_apps, @paused, @pause_until, @pause_note, @restrictions,
-       @private_dns, @chrome, @hide_browsers, @maintenance_until, @frp_accounts, @support_message)
+    `INSERT INTO policies (device_id, version, changed_at, protected_at, new_apps, paused, pause_until, pause_note, pause_set_at, restrictions,
+       private_dns, chrome, hide_browsers, maintenance_until, frp_accounts, support_message, ask_first_at, new_apps_at)
+     VALUES (@device_id, 0, @now, @protected_at, @new_apps, @paused, @pause_until, @pause_note, @pause_set_at, @restrictions,
+       @private_dns, @chrome, @hide_browsers, @maintenance_until, @frp_accounts, @support_message, @ask_first_at, @new_apps_at)
      ON CONFLICT (device_id) DO UPDATE SET protected_at = excluded.protected_at, new_apps = excluded.new_apps, paused = excluded.paused,
-       pause_until = excluded.pause_until, pause_note = excluded.pause_note, restrictions = excluded.restrictions,
+       pause_until = excluded.pause_until, pause_note = excluded.pause_note, pause_set_at = excluded.pause_set_at, restrictions = excluded.restrictions,
        private_dns = excluded.private_dns, chrome = excluded.chrome, hide_browsers = excluded.hide_browsers,
-       maintenance_until = excluded.maintenance_until, frp_accounts = excluded.frp_accounts, support_message = excluded.support_message`,
+       maintenance_until = excluded.maintenance_until, frp_accounts = excluded.frp_accounts, support_message = excluded.support_message,
+       ask_first_at = excluded.ask_first_at, new_apps_at = excluded.new_apps_at`,
   ).run({
     device_id: deviceId,
     now,
@@ -246,6 +318,7 @@ function saveRules(db: DB, deviceId: string, rules: Rules, now: number): void {
     paused: rules.pause ? 1 : 0,
     pause_until: rules.pause?.until ?? null,
     pause_note: rules.pause?.note ?? null,
+    pause_set_at: rules.pause?.setAt ?? null,
     restrictions: JSON.stringify(Object.fromEntries(RESTRICTIONS.filter((r) => rules.restrictions[r]).map((r) => [r, true]))),
     private_dns: rules.privateDns,
     chrome: rules.chrome ? JSON.stringify(rules.chrome) : null,
@@ -253,6 +326,8 @@ function saveRules(db: DB, deviceId: string, rules: Rules, now: number): void {
     maintenance_until: rules.maintenanceUntil,
     frp_accounts: JSON.stringify(rules.frpAccounts),
     support_message: rules.supportMessage,
+    ask_first_at: rules.askFirstAt,
+    new_apps_at: rules.newAppsAt,
   });
 }
 
@@ -341,8 +416,64 @@ export function decisionHistory(db: DB, deviceId: string, pkg: string): Decision
     .map(toDecision);
 }
 
-export function neverBlocked(pkg: string): boolean {
-  return NEVER_BLOCKED.has(pkg);
+/** The packages this phone said, in its latest report, that it never blocks. */
+function reportedNeverBlocked(db: DB, deviceId: string): ReadonlySet<string> {
+  return new Set(deviceFacts(db, deviceId)?.enforcement?.never_blocked ?? []);
+}
+
+/**
+ * For each app, why this phone never blocks it (so the server won't either), in words, or null
+ * when it can be blocked. Reads the phone's report once, for a list of apps.
+ */
+export function neverBlockedOn(db: DB, deviceId: string): (pkg: string) => string | null {
+  const reported = reportedNeverBlocked(db, deviceId);
+  return (pkg) => {
+    const role = NEVER_BLOCKED.get(pkg);
+    if (role) return NEVER_BLOCKED_WHY[role];
+    return reported.has(pkg) ? NEVER_BLOCKED_WHY.reported : null;
+  };
+}
+
+/** Why this phone never blocks the app, in words, or null when it can be blocked. */
+export function neverBlockedReason(db: DB, deviceId: string, pkg: string): string | null {
+  return neverBlockedOn(db, deviceId)(pkg);
+}
+
+/** Whether the phone has ever reported this app (it's in its app list, now or before a removal). */
+function reported(db: DB, deviceId: string, pkg: string): boolean {
+  return !!db.prepare("SELECT 1 FROM apps WHERE device_id = ? AND package = ?").get(deviceId, pkg);
+}
+
+/**
+ * Decisions about apps the phone has never reported: blocked (or allowed) before they were
+ * installed, newest first. Each one is in every policy the phone gets, so there's a limit on
+ * them (LIMITS.maxPreDecisions), and the parent page lists them under "Blocked before install".
+ */
+export function preDecisions(db: DB, deviceId: string): (Decision & { state: AppState })[] {
+  return db
+    .prepare<[string, string], DecisionRow>(
+      `${DECISION_SELECT} WHERE d.device_id = ? AND d.id IN (SELECT MAX(id) FROM app_decisions WHERE device_id = ? GROUP BY package)
+         AND d.state != 'undecided' AND NOT EXISTS (SELECT 1 FROM apps a WHERE a.device_id = d.device_id AND a.package = d.package)
+       ORDER BY d.decided_at DESC, d.id DESC`,
+    )
+    .all(deviceId, deviceId)
+    .flatMap((r) => (r.state === "undecided" ? [] : [{ ...toDecision(r), state: r.state }]));
+}
+
+/** Refuses a new decision about an app the phone never reported, past the limits. */
+function checkPreDecisionLimits(db: DB, deviceId: string, pkg: string, who: Changer): void {
+  if (reported(db, deviceId, pkg) || currentDecision(db, deviceId, pkg)) return;
+  const pre = preDecisions(db, deviceId);
+  if (who.kind === "ai" && pre.filter((d) => d.decidedBy === "ai").length >= LIMITS.maxPreBlocksByAi) {
+    throw new RuleRefused(
+      `AI apps have already blocked ${LIMITS.maxPreBlocksByAi} apps that aren't on this phone, the most Belay keeps. A parent can clear them on the phone's page, under "Blocked before install". Apps on the phone can still be blocked.`,
+    );
+  }
+  if (pre.length >= LIMITS.maxPreDecisions) {
+    throw new RuleRefused(
+      `This phone already has ${LIMITS.maxPreDecisions} apps blocked or allowed before they were installed, the most Belay keeps. Clear some on the phone's page, under "Blocked before install". Apps on the phone can still be blocked.`,
+    );
+  }
 }
 
 // ── The policy the phone gets ────────────────────────────────────────────
@@ -362,7 +493,7 @@ function requestAnswers(db: DB, deviceId: string, now: number): Policy["requests
       { id: string; status: Policy["requests"][number]["status"]; note: string | null; answered_at: number | null; answered_by: string | null }
     >(
       `SELECT r.id, r.status, r.note, r.answered_at, p.name AS answered_by FROM requests r LEFT JOIN parents p ON p.id = r.answered_by
-       WHERE r.device_id = ? AND (r.status = 'pending' OR r.received_at >= ? OR r.answered_at >= ?)
+       WHERE r.device_id = ? AND r.status != 'superseded' AND (r.status = 'pending' OR r.received_at >= ? OR r.answered_at >= ?)
        ORDER BY r.received_at DESC, r.rowid DESC LIMIT ?`,
     )
     .all(deviceId, since, since, MAX_POLICY_REQUESTS)
@@ -373,6 +504,47 @@ function requestAnswers(db: DB, deviceId: string, now: number): Policy["requests
       answered_at: r.answered_at,
       answered_by: r.answered_by?.slice(0, 60) ?? null,
     }));
+}
+
+/**
+ * Phase 6: the version of Belay a parent offered this phone (family/agent.ts), while the phone
+ * runs an older one; Android refuses to install an older version over a newer one anyway.
+ */
+function agentUpdate(db: DB, deviceId: string): Policy["agent_update"] {
+  const offer = db
+    .prepare<[string], { sha256: string; size: number; version_code: number; version_name: string | null }>(
+      "SELECT f.sha256, f.size, f.version_code, f.version_name FROM agent_offers o JOIN agent_files f ON f.sha256 = o.sha256 WHERE o.device_id = ?",
+    )
+    .get(deviceId);
+  if (!offer) return null;
+  const running = deviceFacts(db, deviceId)?.agent_version_code;
+  if (running !== undefined && running >= offer.version_code) return null;
+  return { version_code: offer.version_code, version_name: offer.version_name, sha256: offer.sha256, size: offer.size };
+}
+
+/**
+ * Phase 6: the check for the phone's recovery key (family/recovery.ts), never the key: the newest
+ * one, until the phone reports it used.
+ */
+function recoveryCheck(db: DB, deviceId: string): Policy["recovery"] {
+  const key = db
+    .prepare<[string], { version: number; salt: string; hash: string; used_at: number | null }>(
+      "SELECT version, salt, hash, used_at FROM recovery_keys WHERE device_id = ? ORDER BY version DESC LIMIT 1",
+    )
+    .get(deviceId);
+  return key && key.used_at === null ? { version: key.version, salt: key.salt, hash: key.hash } : null;
+}
+
+/**
+ * Phase 10: the one-shot commands a parent sent (family/commands.ts) that the phone hasn't
+ * reported yet. One past its expiry stays, so the phone can report it expired.
+ */
+function commandsFor(db: DB, deviceId: string): Policy["commands"] {
+  return db
+    .prepare<[string], Policy["commands"][number]>(
+      "SELECT id, kind, issued_at, expires_at FROM commands WHERE device_id = ? AND result IS NULL AND replaced_at IS NULL ORDER BY issued_at, rowid",
+    )
+    .all(deviceId);
 }
 
 /** The policy for one phone, as the device API sends it. */
@@ -393,10 +565,9 @@ export function buildPolicy(db: DB, deviceId: string, now: number): Policy {
     frp_accounts: [...rules.frpAccounts],
     support_message: rules.supportMessage,
     requests: requestAnswers(db, deviceId, now),
-    // Phase 6 and 10: not built yet.
-    agent_update: null,
-    recovery: null,
-    commands: [],
+    agent_update: agentUpdate(db, deviceId),
+    recovery: recoveryCheck(db, deviceId),
+    commands: commandsFor(db, deviceId),
   };
 }
 
@@ -404,6 +575,11 @@ export function buildPolicy(db: DB, deviceId: string, now: number): Policy {
 function content(db: DB, deviceId: string, now: number): string {
   const { version: _version, issued_at: _issued, ...rest } = buildPolicy(db, deviceId, now);
   return JSON.stringify(rest);
+}
+
+/** The size of the policy's JSON, as sent, with this content, version and time. */
+function policyBytes(contentJson: string, version: number, issuedAt: number): number {
+  return Buffer.byteLength(contentJson) - 1 + `{"version":${version},"issued_at":${issuedAt},`.length;
 }
 
 // ── Changing it ──────────────────────────────────────────────────────────
@@ -428,9 +604,19 @@ export interface Changed<T> {
   changed: boolean;
 }
 
-type Log = (action: string, detail?: Record<string, unknown>) => void;
+export type Log = (action: string, detail?: Record<string, unknown>) => void;
 
-function mutate<T>(ctx: PolicyContext, deviceId: string, actor: Changer, change: (rules: Rules, log: Log) => T): Changed<T> {
+/**
+ * A change to what one phone gets from the other parts of the family's rules (Phase 6's update
+ * and recovery key, Phase 10's commands, what the phone itself reports), the way the rules here
+ * change: in one transaction, in the activity log, with the version bumped when what the phone
+ * would see changed. A phone's own report is never refused.
+ */
+export function changePolicy<T>(ctx: PolicyContext, deviceId: string, actor: Actor, change: (log: Log) => T): Changed<T> {
+  return mutate(ctx, deviceId, actor, (_rules, log) => change(log));
+}
+
+function mutate<T>(ctx: PolicyContext, deviceId: string, actor: Actor, change: (rules: Rules, log: Log) => T): Changed<T> {
   const { db, now } = ctx;
   const outcome = db.transaction((): Changed<T> => {
     const before = content(db, deviceId, now);
@@ -440,12 +626,17 @@ function mutate<T>(ctx: PolicyContext, deviceId: string, actor: Changer, change:
     const result = change(rules, (action, detail) => entries.push([action, detail]));
     const rulesChanged = JSON.stringify(rules) !== JSON.stringify(stored);
     if (rulesChanged) saveRules(db, deviceId, rules, now);
-    const changed = content(db, deviceId, now) !== before;
+    const after = content(db, deviceId, now);
+    const changed = after !== before;
     // A decision or an answer alone still needs the row, for the version.
     if (changed && !rulesChanged) saveRules(db, deviceId, rules, now);
     let version = stored.version;
     if (changed) {
       version += 1;
+      // Never more than the phone can take. A change that makes it smaller always goes through.
+      if (actor.kind !== "phone" && policyBytes(after, version, now) > LIMITS.maxPolicyBytes && Buffer.byteLength(after) > Buffer.byteLength(before)) {
+        throw new RuleRefused(TOO_LARGE);
+      }
       db.prepare("UPDATE policies SET version = ?, changed_at = ? WHERE device_id = ?").run(version, now, deviceId);
     }
     for (const [action, detail] of entries) audit(db, now, actor, action, { deviceId, detail: { ...detail, ...(changed ? { version } : {}) } });
@@ -486,18 +677,90 @@ function appLabel(db: DB, deviceId: string, pkg: string): string | null {
   );
 }
 
-/**
- * Records every user app on the phone without a decision as allowed, so turning on "ask"
- * doesn't stop anything the kid already has (docs/protocol.md).
- */
-function grandfather(db: DB, now: number, deviceId: string, who: Changer): number {
+/** User apps on the phone without a decision: what "ask" holds back. */
+function undecidedUserApps(db: DB, deviceId: string): { package: string; label: string; install_seen_at: number }[] {
   const decided = currentDecisions(db, deviceId);
-  const apps = db
-    .prepare<[string], { package: string }>("SELECT package FROM apps WHERE device_id = ? AND present = 1 AND system = 0 ORDER BY package")
+  return db
+    .prepare<[string], { package: string; label: string; install_seen_at: number }>(
+      "SELECT package, label, install_seen_at FROM apps WHERE device_id = ? AND present = 1 AND system = 0 ORDER BY label COLLATE NOCASE, package",
+    )
     .all(deviceId)
     .filter((a) => !decided.has(a.package));
-  for (const a of apps) insertDecision(db, now, { deviceId, pkg: a.package, state: "allowed", by: "grandfathered", parentId: parentOf(who) });
-  return apps.length;
+}
+
+export interface AppRef {
+  package: string;
+  /** From the app's developer: untrusted. */
+  label: string;
+}
+
+/**
+ * What turning "ask" on again leaves for a parent to choose: the apps without a decision that
+ * were installed while new apps were allowed (they've been running), and those from before (they
+ * were waiting for a parent). Null when new apps already ask, or never asked before: the first
+ * time, every app already on the phone is allowed.
+ */
+export interface AskAgain {
+  /** When new apps were allowed. */
+  since: number | null;
+  installedMeanwhile: AppRef[];
+  waitingBefore: AppRef[];
+}
+
+function askAgainOf(db: DB, deviceId: string, rules: Pick<Rules, "newApps" | "askFirstAt" | "newAppsAt">): AskAgain | null {
+  if (rules.newApps === "ask" || rules.askFirstAt === null) return null;
+  const since = rules.newAppsAt;
+  const apps = undecidedUserApps(db, deviceId);
+  const ref = (a: { package: string; label: string }): AppRef => ({ package: a.package, label: a.label });
+  return {
+    since,
+    // One recorded at the very moment of the switch counts as from before: by default it waits.
+    installedMeanwhile: apps.filter((a) => since === null || a.install_seen_at > since).map(ref),
+    waitingBefore: apps.filter((a) => since !== null && a.install_seen_at <= since).map(ref),
+  };
+}
+
+export function askAgainSummary(db: DB, deviceId: string): AskAgain | null {
+  return askAgainOf(db, deviceId, getRules(db, deviceId));
+}
+
+export interface AskTurnedOn {
+  /** The first time new apps ask: every user app already on the phone was allowed. */
+  firstTime: boolean;
+  /** Apps allowed as "ask" turned on: all of them the first time; later, the ones chosen. */
+  grandfathered: number;
+  /** Later times: the apps that wait for a parent now (not chosen, or waiting before). */
+  stillWaiting: number;
+}
+
+/**
+ * Turns "ask" on (the caller sets `rules.newApps`). The first time, every user app already on
+ * the phone is recorded as allowed ("grandfathered"), so nothing the kid has stops working by
+ * surprise. Later, only the apps in `allow` are (by default, those installed while new apps
+ * were allowed); the apps that were waiting before stay waiting unless they're chosen too.
+ */
+function turnAskOn(ctx: PolicyContext, deviceId: string, rules: Rules, who: Person, allow?: readonly string[]): AskTurnedOn {
+  const { db, now } = ctx;
+  const again = askAgainOf(db, deviceId, rules);
+  if (!again) {
+    rules.askFirstAt ??= now;
+    const apps = undecidedUserApps(db, deviceId);
+    for (const a of apps) insertDecision(db, now, { deviceId, pkg: a.package, state: "allowed", by: "grandfathered", parentId: parentOf(who) });
+    return { firstTime: true, grandfathered: apps.length, stillWaiting: 0 };
+  }
+  const chosen = new Set(allow ?? again.installedMeanwhile.map((a) => a.package));
+  let grandfathered = 0;
+  for (const a of again.installedMeanwhile.filter((x) => chosen.has(x.package))) {
+    insertDecision(db, now, { deviceId, pkg: a.package, state: "allowed", by: "grandfathered", parentId: parentOf(who) });
+    grandfathered++;
+  }
+  // A waiting app a parent chooses now is approved like any other, and so is the kid's request for it.
+  for (const a of again.waitingBefore.filter((x) => chosen.has(x.package))) {
+    insertDecision(db, now, { deviceId, pkg: a.package, state: "allowed", by: decidedBy(who), parentId: parentOf(who) });
+    approveOpenRequests(db, now, deviceId, a.package, who, null);
+    grandfathered++;
+  }
+  return { firstTime: false, grandfathered, stillWaiting: again.installedMeanwhile.length + again.waitingBefore.length - grandfathered };
 }
 
 /** Marks the kid's open requests for this app approved: the app runs now, so the answer says so. */
@@ -512,38 +775,44 @@ function approveOpenRequests(db: DB, now: number, deviceId: string, pkg: string,
 
 const clean = (text: string | null | undefined, max: number): string | null => text?.trim().slice(0, max) || null;
 
-export function setNewApps(ctx: PolicyContext, deviceId: string, mode: "allow" | "ask", who: Person): Changed<{ grandfathered: number }> {
+/**
+ * Whether new apps wait for a parent. Turning "ask" on again later allows only the apps in
+ * `allow`, which defaults to the ones installed while new apps were allowed (see turnAskOn).
+ */
+export function setNewApps(ctx: PolicyContext, deviceId: string, mode: "allow" | "ask", who: Person, opts: { allow?: readonly string[] } = {}): Changed<AskTurnedOn> {
   onlyPeople(who);
   return mutate(ctx, deviceId, who, (rules, log) => {
-    if (rules.newApps === mode) return { grandfathered: 0 };
-    const grandfathered = mode === "ask" ? grandfather(ctx.db, ctx.now, deviceId, who) : 0;
+    if (rules.newApps === mode) return { firstTime: false, grandfathered: 0, stillWaiting: 0 };
+    const outcome = mode === "ask" ? turnAskOn(ctx, deviceId, rules, who, opts.allow) : { firstTime: false, grandfathered: 0, stillWaiting: 0 };
     rules.newApps = mode;
-    log("policy.new_apps", { mode, grandfathered });
-    return { grandfathered };
+    rules.newAppsAt = ctx.now;
+    log("policy.new_apps", mode === "ask" ? { mode, grandfathered: outcome.grandfathered, first_time: outcome.firstTime, still_waiting: outcome.stillWaiting } : { mode });
+    return outcome;
   });
 }
 
 /**
- * Turns protection on in one step: new apps ask (and every user app already on the phone is
- * allowed), the safe restrictions, the CleanBrowsing Family filter and Chrome's safe
- * defaults. A filter or Chrome settings the parent already chose are kept. Accounts, the SIM
- * and hardening are separate switches.
+ * Turns protection on in one step: new apps ask (the first time, every user app already on the
+ * phone is allowed; later, the ones installed while new apps were allowed), the safe
+ * restrictions, the CleanBrowsing Family filter and Chrome's safe defaults. A filter or Chrome
+ * settings the parent already chose are kept. Accounts, the SIM and hardening are separate.
  */
-export function protect(ctx: PolicyContext, deviceId: string, who: Person): Changed<{ grandfathered: number; alreadyOn: boolean }> {
+export function protect(ctx: PolicyContext, deviceId: string, who: Person): Changed<AskTurnedOn & { alreadyOn: boolean }> {
   onlyPeople(who);
   return mutate(ctx, deviceId, who, (rules, log) => {
     const alreadyOn = rules.protectedAt !== null;
     rules.protectedAt ??= ctx.now;
-    let grandfathered = 0;
+    let outcome: AskTurnedOn = { firstTime: false, grandfathered: 0, stillWaiting: 0 };
     if (rules.newApps !== "ask") {
-      grandfathered = grandfather(ctx.db, ctx.now, deviceId, who);
+      outcome = turnAskOn(ctx, deviceId, rules, who);
       rules.newApps = "ask";
+      rules.newAppsAt = ctx.now;
     }
     for (const r of SAFE_RESTRICTIONS) rules.restrictions[r] = true;
     rules.privateDns ??= DNS_FILTERS.cleanbrowsing.host;
     rules.chrome ??= { ...SAFE_CHROME };
-    log("policy.protected", { grandfathered });
-    return { grandfathered, alreadyOn };
+    log("policy.protected", { grandfathered: outcome.grandfathered, ...(outcome.stillWaiting ? { still_waiting: outcome.stillWaiting } : {}) });
+    return { ...outcome, alreadyOn };
   });
 }
 
@@ -552,7 +821,9 @@ export function unprotect(ctx: PolicyContext, deviceId: string, who: Person): Ch
   onlyPeople(who);
   return mutate(ctx, deviceId, who, (rules, log) => {
     const blank = defaultRules();
-    Object.assign(rules, { ...blank, version: rules.version, changedAt: rules.changedAt, supportMessage: rules.supportMessage });
+    // New apps run without asking from now; that new apps asked before is remembered.
+    const newAppsAt = rules.newApps === blank.newApps ? rules.newAppsAt : ctx.now;
+    Object.assign(rules, { ...blank, version: rules.version, changedAt: rules.changedAt, supportMessage: rules.supportMessage, askFirstAt: rules.askFirstAt, newAppsAt });
     log("policy.unprotected");
     return null;
   });
@@ -562,8 +833,8 @@ export type DecideResult = Changed<{ before: Decision | null; label: string | nu
 
 /**
  * Allows or blocks one app, or clears its decision. An AI app may only block. Allowing an
- * app also approves the kid's open requests for it. Blocking a package the phone never
- * blocks throws: callers check neverBlocked first.
+ * app also approves the kid's open requests for it. Blocking an app the phone never blocks
+ * is refused (RuleRefused), for parents too, with the reason.
  */
 export function decideApp(
   ctx: PolicyContext,
@@ -574,9 +845,11 @@ export function decideApp(
   opts: { note?: string | null; proposalId?: string | null } = {},
 ): DecideResult {
   if (who.kind === "ai" && state !== "blocked") throw new Error("An AI app can only block apps; anything else is a proposal");
-  if (state === "blocked" && neverBlocked(pkg)) throw new Error(`${pkg} is never blocked`);
+  const never = state === "blocked" ? neverBlockedReason(ctx.db, deviceId, pkg) : null;
+  if (never) throw new RuleRefused(never);
   return mutate(ctx, deviceId, who, (_rules, log) => {
     const { db, now } = ctx;
+    if (state !== "undecided") checkPreDecisionLimits(db, deviceId, pkg, who);
     const before = currentDecision(db, deviceId, pkg);
     const note = clean(opts.note, LIMITS.decisionNote);
     insertDecision(db, now, {
@@ -602,8 +875,27 @@ export function decideApp(
 }
 
 /**
+ * Clears decisions about apps the phone has never reported ("Blocked before install"): one app,
+ * or every one whose decision an AI app made. They leave the policy, instead of staying in it
+ * as allowed the way Unblock would. A person's action: AI apps only add blocks.
+ */
+export function clearPreDecisions(ctx: PolicyContext, deviceId: string, which: { package: string } | { byAi: true }, who: Person): Changed<{ cleared: string[] }> {
+  onlyPeople(who);
+  return mutate(ctx, deviceId, who, (_rules, log) => {
+    const { db, now } = ctx;
+    const clearing = preDecisions(db, deviceId).filter((d) => ("package" in which ? d.package === which.package : d.decidedBy === "ai"));
+    for (const d of clearing) insertDecision(db, now, { deviceId, pkg: d.package, state: "undecided", by: decidedBy(who), parentId: parentOf(who) });
+    if ("package" in which && clearing.length) log("app.undecided", { package: which.package, before_install: true });
+    else if (clearing.length) log("apps.pre_blocks_cleared", { count: clearing.length });
+    return { cleared: clearing.map((d) => d.package) };
+  });
+}
+
+/**
  * Pauses the phone: every app but the never-blocked ones is suspended until then (null: until
- * a parent resumes it). An AI app can only make a pause longer, never shorter.
+ * a parent resumes it). An AI app can only make a pause longer, never shorter, and its note,
+ * which the kid sees, only goes with a pause it sets or lengthens: against a pause at least as
+ * long, nothing changes (`kept`).
  */
 export function pausePhone(
   ctx: PolicyContext,
@@ -615,14 +907,20 @@ export function pausePhone(
     const current = activePause(rules, ctx.now);
     const minutes = input.minutes === null ? null : Math.min(Math.max(1, Math.round(input.minutes)), LIMITS.maxPauseMinutes);
     let until = minutes === null ? null : ctx.now + minutes * 60_000;
-    let kept = false;
-    if (who.kind === "ai" && current && (current.until === null || (until !== null && current.until > until))) {
+    const kept = who.kind === "ai" && current !== null && (current.until === null || (until !== null && current.until >= until));
+    const given = input.note !== undefined && input.note !== null ? clean(input.note, LIMITS.pauseNote) : undefined;
+    let note: string | null;
+    let setAt: number | null = ctx.now;
+    if (kept) {
       until = current.until;
-      kept = true;
+      note = current.note;
+      setAt = current.setAt;
+    } else {
+      // Without a note of its own, an AI app's longer pause keeps the note there is.
+      note = given !== undefined ? given : who.kind === "ai" ? (current?.note ?? null) : null;
     }
-    const note = input.note !== undefined && input.note !== null ? clean(input.note, LIMITS.pauseNote) : who.kind === "ai" ? (current?.note ?? null) : null;
-    rules.pause = { until, note };
-    log("phone.paused", { until, minutes, note: note ?? undefined });
+    rules.pause = { until, note, setAt };
+    log("phone.paused", { until, minutes, note: note ?? undefined, ...(kept ? { kept: true } : {}) });
     return { until, kept };
   });
 }
@@ -753,10 +1051,14 @@ export function answerRequest(
   onlyPeople(who);
   return mutate(ctx, deviceId, who, (_rules, log) => {
     const { db, now } = ctx;
-    const row = db
-      .prepare<[string, string], { package: string; label: string; status: string }>("SELECT package, label, status FROM requests WHERE device_id = ? AND id = ?")
-      .get(deviceId, requestId);
-    if (!row) return null;
+    const find = db.prepare<[string, string], { id: string; package: string; label: string; status: string; superseded_by: string | null }>(
+      "SELECT id, package, label, status, superseded_by FROM requests WHERE device_id = ? AND id = ?",
+    );
+    let row = find.get(deviceId, requestId);
+    // Asked again since (a page from before): the answer goes to the request that took its place.
+    for (let hops = 0; row?.status === "superseded" && row.superseded_by !== null && hops < 50; hops++) row = find.get(deviceId, row.superseded_by);
+    if (!row || row.status === "superseded") return null;
+    requestId = row.id;
     const note = clean(noteText, LIMITS.answerNote);
     db.prepare("UPDATE requests SET status = ?, note = ?, answered_by = ?, answered_at = ? WHERE device_id = ? AND id = ?").run(
       answer,

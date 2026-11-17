@@ -132,12 +132,22 @@ const PHONE_WORDS: Partial<Record<Problem["code"], (n: number, longestSilence: n
   no_app_list: (n) => `${a(n)} ${n === 1 ? "hasn't" : "haven't"} sent ${its(n)} app list`,
   rules_not_applied: (n) => `${a(n)} ${n === 1 ? "hasn't" : "haven't"} applied ${its(n)} rules`,
   phone_reported: (n) => `Belay on ${a(n)} reported a problem`,
+  signing_changed: (n) => `Belay on ${a(n)} is signed with a different key`,
+  update_failed: (n) => `Belay couldn't update on ${a(n)}`,
+  update_silent: (n) => `${a(n)} went quiet after updating Belay`,
+  recovery_used: (n) => `the recovery key was used on ${a(n)}: make a new one`,
+  other_users: (n) => `another user or profile is on ${a(n)}`,
 };
 
 const PHONE_ORDER: Problem["code"][] = [
+  "other_users",
+  "signing_changed",
+  "recovery_used",
   "not_device_owner",
   "uninstall_allowed",
+  "update_silent",
   "silent",
+  "update_failed",
   "rules_not_applied",
   "service_stopped",
   "permission_missing",

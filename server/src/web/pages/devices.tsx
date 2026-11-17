@@ -1,8 +1,12 @@
 import type { Child, FC } from "hono/jsx";
 import type { PendingCode } from "../../device/enroll.js";
+import type { AgentFile } from "../../family/agent.js";
+import type { RecoveryState } from "../../family/recovery.js";
+import type { Command } from "../../family/commands.js";
+import { RESTRICTION_WORDS } from "../../family/android.js";
 import { type App, type Change, type Review, PERMISSION_NAMES, SOURCE_NAMES, playStoreUrl, versionText } from "../../family/apps.js";
 import { type DeviceView, patchAgeDays } from "../../family/devices.js";
-import { type Decision, LIMITS, type Rules } from "../../family/policy.js";
+import { type AskAgain, type Decision, LIMITS, type Rules } from "../../family/policy.js";
 import type { RequestView } from "../../family/requests.js";
 import { formatAgo, formatDate, formatDuration } from "../../time.js";
 import { Csrf, Layout, Notice, PermissionChips, PostButton, Problems, StatusBadge, Time, type View } from "../ui.js";
@@ -19,6 +23,7 @@ import {
   WebCard,
   decidedByWords,
 } from "./rules.js";
+import { OtherUsersCard, RecoveryCard, UpdateCard } from "./belay.js";
 import { ChangeLine } from "./timeline.js";
 
 export interface DeviceSummary {
@@ -36,6 +41,8 @@ export interface AppRule {
   decision: Decision | null;
   /** False for the apps Belay never blocks (the phone app, texting, Belay...). */
   canBlock: boolean;
+  /** Why the phone never blocks it, when it doesn't. */
+  neverWhy: string | null;
 }
 
 export interface PhoneRules {
@@ -47,7 +54,57 @@ export interface PhoneRules {
   openRequests: RequestView[];
   /** Of those, the ones for apps the server doesn't know on the phone yet. */
   requestsForUnknownApps: RequestView[];
+  /** Decisions about apps the phone has never reported: blocked (or allowed) before install. */
+  beforeInstall: (Decision & { state: "allowed" | "blocked" })[];
+  /** When new apps run without asking now, but asked before: what switching back leaves to choose. */
+  askAgain: AskAgain | null;
+  /** Phase 6: the versions of Belay on the server, newest first, to offer the phone. */
+  agentFiles: AgentFile[];
+  /** Phase 6: the phone's recovery key, and its last use. */
+  recovery: RecoveryState;
+  /** Phase 10: the commands sent to the phone, newest first. */
+  commands: Command[];
 }
+
+/** Apps decided before the phone ever had them: each one clearable, and the AI apps' all at once. */
+const BeforeInstall: FC<{ view: View; device: DeviceView; decisions: PhoneRules["beforeInstall"] }> = ({ view, device, decisions }) => {
+  const byAi = decisions.filter((d) => d.decidedBy === "ai").length;
+  const action = `/devices/${device.id}/before-install/clear`;
+  return (
+    <>
+      <h3 id="before-install">Blocked before install</h3>
+      <div class="card">
+        <p class="muted small">
+          Apps that aren't on the phone, decided ahead of time: if one is installed, the phone {decisions.some((d) => d.state === "allowed") ? "blocks it, or lets it run" : "blocks it"}.
+          Each one is part of the rules the phone gets, so Belay keeps at most {LIMITS.maxPreDecisions}, and AI apps may add at most {LIMITS.maxPreBlocksByAi}.
+          Clearing one removes its decision.
+        </p>
+        {byAi > 0 && (
+          <p>
+            <PostButton view={view} action={action} fields={{ ai: "1" }} kind="quiet" confirm={`Clear the ${byAi} app${byAi === 1 ? "" : "s"} AI apps blocked before install?`}>
+              Clear the ones AI apps added ({byAi})
+            </PostButton>
+          </p>
+        )}
+        {decisions.map((d) => (
+          <div class="row spread">
+            <span>
+              <span class="pkg">{d.package}</span>
+              <br />
+              <span class="small muted">
+                {d.state} {decidedByWords(d)}, <Time ms={d.decidedAt} tz={view.tz} />
+              </span>
+              {d.note && <blockquote>{d.note}</blockquote>}
+            </span>
+            <PostButton view={view} action={action} fields={{ package: d.package }} kind="quiet">
+              Clear
+            </PostButton>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+};
 
 const RuleChip: FC<{ rule: AppRule }> = ({ rule }) =>
   rule.state === "allowed" ? (
@@ -117,6 +174,22 @@ const Facts: FC<{ device: DeviceView; view: View }> = ({ device, view }) => {
         {h.uninstall_blocked == null ? "unknown" : h.uninstall_blocked ? "yes" : "no"}; battery exemption: {h.battery_exempt ? "yes" : "no"}; usage
         access: {h.usage_access ? "yes" : "no"}
       </dd>
+      {h.other_users != null && (
+        <>
+          <dt>Other users and profiles</dt>
+          <dd>{h.other_users === 0 ? "none" : h.other_users}</dd>
+        </>
+      )}
+      {h.foreign_restrictions && h.foreign_restrictions.length > 0 && (
+        <>
+          <dt>Restrictions Belay didn't set</dt>
+          <dd>
+            {h.foreign_restrictions.map((key) => (RESTRICTION_WORDS[key] ? `${RESTRICTION_WORDS[key]} (${key})` : key)).join(", ")}
+            <br />
+            <span class="small muted">Something else on the phone set these, such as Android's own Parental Controls or another admin app.</span>
+          </dd>
+        </>
+      )}
       <dt>Last heard from</dt>
       <dd>{device.lastSeenAt ? formatAgo(device.lastSeenAt, view.now) : "never"}</dd>
       <dt>Last app list</dt>
@@ -262,11 +335,12 @@ export const DevicePage: FC<{
           </ul>
         </Notice>
       )}
-      <Problems problems={device.problems.filter((p) => p.code !== "tampering")} />
+      <OtherUsersCard view={view} device={device} commands={phone.commands} />
+      <Problems problems={device.problems.filter((p) => p.code !== "tampering" && p.code !== "other_users")} />
 
       <h2 id="rules">Rules</h2>
       <RulesStatus view={view} device={device} />
-      <ProtectionCard view={view} device={device} rules={phone.rules} undecidedApps={phone.undecidedApps} />
+      <ProtectionCard view={view} device={device} rules={phone.rules} undecidedApps={phone.undecidedApps} askAgain={phone.askAgain} />
       <h3 id="pause">Pause</h3>
       <PauseCard view={view} device={device} rules={phone.rules} />
       <h3 id="new-apps">New apps</h3>
@@ -331,6 +405,7 @@ export const DevicePage: FC<{
           </div>
         )}
       </form>
+      {phone.beforeInstall.length > 0 && <BeforeInstall view={view} device={device} decisions={phone.beforeInstall} />}
 
       <h2 id="web">Web</h2>
       <WebCard view={view} device={device} rules={phone.rules} />
@@ -345,6 +420,10 @@ export const DevicePage: FC<{
 
       <h2 id="hardening">Hardening</h2>
       <HardeningCard view={view} device={device} rules={phone.rules} />
+      <RecoveryCard view={view} device={device} rules={phone.rules} recovery={phone.recovery} />
+
+      <h2 id="update">Updating Belay</h2>
+      <UpdateCard view={view} device={device} files={phone.agentFiles} />
 
       <h2>This phone</h2>
       <div class="card">
@@ -411,7 +490,7 @@ const STATE_WORDS: Record<AppRule["state"], string> = {
   runs: "Runs: there's no decision, and new apps run without asking",
 };
 
-const ANSWER_WORDS: Record<RequestView["status"], string> = { pending: "Waiting for you", approved: "Approved", declined: "Declined", talk: "Let's talk" };
+const ANSWER_WORDS: Record<RequestView["status"], string> = { pending: "Waiting for you", approved: "Approved", declined: "Declined", talk: "Let's talk", superseded: "Asked again" };
 
 /** The app's rule, its history, and the kid's requests for it. */
 const AppRuleCard: FC<{ view: View; device: DeviceView; app: App; rule: AppRule; history: Decision[]; requests: RequestView[] }> = ({
@@ -437,7 +516,7 @@ const AppRuleCard: FC<{ view: View; device: DeviceView; app: App; rule: AppRule;
           )}
         </p>
         {rule.decision?.note && <blockquote>{rule.decision.note}</blockquote>}
-        {!rule.canBlock && <p class="muted small">Belay never blocks this app, so 911 and 988 always work.</p>}
+        {rule.neverWhy !== null && <p class="muted small">{rule.neverWhy}</p>}
         {open && (
           <>
             <form id={`answer-${open.id}`} method="post" action={`/devices/${device.id}/requests/${open.id}/answer`}>

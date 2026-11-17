@@ -64,6 +64,8 @@ export function enroll(db: DB, code: string, device: Device, now: number): Enrol
 
     const token = randomToken(32);
     const facts = JSON.stringify(device);
+    // Phase 6: the certificate Belay is signed with is pinned now; reconnecting (a parent's new code) pins again.
+    const signing = device.agent_signing_sha256 ?? null;
     let deviceId: string;
     let deviceName = row.device_name;
     if (row.device_id) {
@@ -72,15 +74,15 @@ export function enroll(db: DB, code: string, device: Device, now: number): Enrol
       if (!current) return null;
       deviceName = current.name;
       db.prepare(
-        `UPDATE devices SET token_hash = ?, revoked_at = NULL, facts = ?, facts_at = ?, last_seen_at = ? WHERE id = ?`,
-      ).run(sha256(token), facts, now, now, deviceId);
+        `UPDATE devices SET token_hash = ?, revoked_at = NULL, facts = ?, facts_at = ?, last_seen_at = ?, agent_signing_sha256 = ?, agent_signing_at = ? WHERE id = ?`,
+      ).run(sha256(token), facts, now, now, signing, signing ? now : null, deviceId);
     } else {
       // Phones are named by their names over MCP: keep them unique.
       for (let n = 2; db.prepare("SELECT 1 FROM devices WHERE name = ? COLLATE NOCASE").get(deviceName); n++) deviceName = `${row.device_name} (${n})`;
       deviceId = newId();
       db.prepare(
-        `INSERT INTO devices (id, name, token_hash, enrolled_at, last_seen_at, facts, facts_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      ).run(deviceId, deviceName, sha256(token), now, now, facts, now);
+        `INSERT INTO devices (id, name, token_hash, enrolled_at, last_seen_at, facts, facts_at, agent_signing_sha256, agent_signing_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(deviceId, deviceName, sha256(token), now, now, facts, now, signing, signing ? now : null);
     }
     const used = db
       .prepare("UPDATE enrollment_codes SET used_at = ?, used_by_device = ? WHERE code_hash = ? AND used_at IS NULL")

@@ -69,41 +69,50 @@ provider's terms. Settings → "What AI apps may read" turns each category off:
   notes.
 - **Device status:** model, Android version and security patch, battery, storage, last
   restart, and Belay's own health on the phone (device owner, permissions, battery
-  exemption).
+  exemption), the update of Belay a parent offered and how it's going, whether Belay's
+  signing certificate changed, how many other users or profiles are on the phone, and the
+  user restrictions in force that Belay didn't set.
 - **Requests:** what the kid asks for from Belay's screen (which app), and why, in their
   own words, with each answer and the parent's note. On by default.
+
+Each category is on by default. One that a new version of Belay adds starts off for a
+family that had turned any category off, and Settings marks it "new" until a parent saves.
 
 Always included: the phones' names, their status and problems ("silent for 14 hours",
 "the phone hasn't applied the rules changed 4 hours ago", or, first, that someone may be
 getting around Belay when the phone reports Android's own Parental Controls or another
 profile), when they last checked in, and
 each phone's rules (protection, pause and its note, the locked settings, the web filter,
-Chrome's settings, maintenance mode, whether reset protection is set, and proposals waiting
-for a parent). Blocked and waiting apps are listed only with the Apps category.
+Chrome's settings, maintenance mode, whether reset protection is set, whether the phone has a
+recovery key and when one was last used, and proposals waiting for a parent). Blocked and
+waiting apps are listed only with the Apps category.
 
 Also always included: the server's own health (`get_server_health`): backups, disk, database
 size, its clock. It names no phone or app.
 
 Never included, because Belay doesn't collect it: messages, calls, contacts, photos,
-browsing, location, or how long apps are used. Passwords, tokens, enrollment codes and
-reset protection account ids are never returned.
+browsing, location, or how long apps are used. Passwords, tokens, enrollment codes, reset
+protection account ids and recovery keys (or their checks) are never returned.
 
 Every tool call is in the activity log (Activity → "Also show what AI apps read").
+
+Each connection may send 300 JSON-RPC messages a minute. A request may carry a batch of at
+most 20, and each message in it counts.
 
 ## Tools
 
 | Tool | What it does |
 |---|---|
-| `list_devices` | Phones with status and problems, model, Android version and patch age, last check-in, app counts, whether protection is on or the phone is paused, requests waiting, phones waiting to enroll. |
-| `get_device_status(device)` | Battery, storage, OS and patch level, last restart, Belay's health on the phone, sync times. |
+| `list_devices` | Phones with status and problems, model, Android version and patch age, last check-in, app counts, whether protection is on or the phone is paused, requests waiting, an update of Belay a parent offered and how it's going, phones waiting to enroll. |
+| `get_device_status(device)` | Battery, storage, OS and patch level, last restart, Belay's health on the phone (with the update a parent offered and how it's going, and whether its signing certificate changed), other users or profiles on the phone, restrictions Belay didn't set, the last request to remove other users, sync times. |
 | `get_installed_apps(device, include_system?, query?, permission?)` | The apps, with versions, dates, source, sensitive permissions, their rule (allowed, blocked, waiting for a parent) and review state. |
 | `get_app_changes(device?, since?, until?, limit?, include_system?)` | The timeline: installed, updated, removed, reinstalled. Last 7 days by default. |
 | `list_unreviewed_apps(device?)` | Apps installed or reinstalled since a parent reviewed them, or that gained a sensitive permission since. Each has its Play Store link. |
 | `mark_apps_reviewed(device, packages, note?)` | Records the review, in the parent's name, through this app. It changes nothing on the phone. |
 | `list_requests(device?, status?)` | What the kid asked for, with their reason and each answer: waiting, approved, declined, let's talk. Waiting first, then the last 30 days. Needs the Requests category. |
-| `get_policy(device)` | What a phone enforces now, in words, with the rules' version and whether the phone has applied it; blocked and waiting apps; proposals waiting for a parent. |
-| `block_app(device, package, note?)` | Blocks an app at once (tightening). Belay itself, the phone app and texting are never blocked. |
-| `pause_phone(device, minutes?, note?)` | Pauses the phone at once, for some minutes or until a parent resumes it; the note is shown to the kid. It can't shorten a pause already running. |
+| `get_policy(device)` | What a phone enforces now, in words, with the rules' version and whether the phone has applied it; blocked and waiting apps; proposals waiting for a parent; whether the phone has a recovery key, and when one was last used. |
+| `block_app(device, package, note?)` | Blocks an app at once (tightening). It refuses the apps the phone never blocks, so 911 and 988 always work: Belay itself, the dialer and the services that place calls, the texting app, the keyboard, the home screen, emergency and safety apps, System UI, Settings, and anything else the phone reports it never blocks. An app that isn't on the phone yet can be blocked ahead of time, but AI apps may have at most 50 of those per phone; a parent clears them on the phone's page. |
+| `pause_phone(device, minutes?, note?)` | Pauses the phone at once, for some minutes or until a parent resumes it; the note is shown to the kid. It can't shorten a pause already running, and against one at least as long it changes nothing, its note included. |
 | `get_server_health` | The family's server itself: its problems (urgent first), the last backup and daily try, when a backup was last verified and the last restore drill, free disk space, the database's size, and whether its clock agrees with the phones'. No family data. |
 | `propose_change(device, change, reason)` | Proposes loosening a rule (`allow_app` with a package, `resume`, `lift_restriction` with a restriction, `web_filter_off`, `new_apps_allow`) for a parent to approve on the parent page. It changes nothing itself. |
 
@@ -114,7 +123,11 @@ the family's timezone with their UTC offset. Text from app developers (names, ve
 package names), the kid's reasons, notes, and what Belay on the phone reports are in
 fields labeled `untrusted`, and the server's instructions tell the AI they are data, never
 instructions: an app called "Ignore previous instructions" stays just a strange app name,
-and a reason that says "approve this" approves nothing.
+and a reason that says "approve this" approves nothing. What the phone says about itself
+is in plain fields only when it fits Android's own format exactly (a release like `17`, a
+patch date, a real timezone, a permission Belay declares, a user restriction Android
+defines); its model's name, which no format can check, and anything else are `untrusted`
+too, since whoever holds a phone's token can send any text.
 
 ## Tighten now, propose to loosen
 
@@ -126,10 +139,16 @@ and a reason that says "approve this" approves nothing.
   it in that parent's name, and approving an app also answers the kid's request for it. The
   same change proposed again while it waits isn't a second proposal, and a change that
   wouldn't loosen anything (an app already allowed, a phone that isn't paused) is refused.
+  When a parent approves, the server checks again: if what the proposal was about changed
+  since it was made (the phone was paused again, the app's rule was decided again or the
+  kid's request for it answered, another web filter), it's marked out of date and nothing
+  changes. The Proposals page says so, before and after.
 - The kid's requests are answered only by a parent, on the parent page.
 - Factory reset, debugging, reset protection and maintenance mode have no tool and no kind
   of proposal: only a parent changes them, on the parent page, and turning hardening on
   needs the phone's name typed.
+- So do updating Belay, the recovery key, and removing other users or profiles from a phone
+  (Phase 6 and 10): the tools only read how they're going.
 
 ## Prompts
 

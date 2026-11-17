@@ -1,13 +1,17 @@
 /** The device API: what the agent on the phone calls (docs/protocol.md). No CORS, no cookies. */
+import { createReadStream } from "node:fs";
+import { Readable } from "node:stream";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { audit } from "../audit.js";
 import { normalizeCode, sha256 } from "../crypto.js";
 import type { Deps } from "../deps.js";
+import { offeredFile } from "../family/agent.js";
 import { buildPolicy, policyVersion } from "../family/policy.js";
+import { receiveReport } from "../family/reports.js";
 import { saveRequests } from "../family/requests.js";
-import { bearerToken, clientAddress, readJson, type Bindings } from "../http.js";
-import { notifyParents, requestNotice } from "../push.js";
+import { bearerToken, clientAddress, parseRange, readJson, type Bindings } from "../http.js";
+import { notifyParents, recoveryUsedNotice, requestNotice, updateFailedNotice } from "../push.js";
 import type { Verdict } from "../ratelimit.js";
 import { applyEvents, applyInventory } from "./apps.js";
 import { enroll } from "./enroll.js";
@@ -42,13 +46,26 @@ function blocked(...verdicts: Verdict[]): number | null {
 }
 
 const isPolicyPoll = (method: string, path: string) => method === "GET" && path.endsWith("/policy");
+const isDownload = (path: string) => /\/agent\/[^/]*$/.test(path);
 
 export function deviceRoutes(deps: Deps): Hono<DeviceEnv> {
   const { db, limits } = deps;
   const app = new Hono<DeviceEnv>();
 
-  const saveFacts = (deviceId: string, device: Device, now: number) => {
-    db.prepare("UPDATE devices SET facts = ?, facts_at = ?, last_seen_at = ? WHERE id = ?").run(JSON.stringify(device), now, now, deviceId);
+  const saveFacts = (phone: PhoneRow, device: Device, now: number) => {
+    const done = receiveReport(
+      {
+        db,
+        now,
+        changed: (id) => {
+          deps.waiters.changed(id);
+        },
+      },
+      phone.id,
+      device,
+    );
+    // Once per update offered: the report's news, in the server's words.
+    for (const tell of done.result.tell) notifyParents(deps, tell.kind === "update_failed" ? updateFailedNotice(phone, tell.version) : recoveryUsedNotice(phone));
   };
 
   app.post("/enroll", limit(LIMITS.enrollBytes), async (c) => {
@@ -81,7 +98,7 @@ export function deviceRoutes(deps: Deps): Hono<DeviceEnv> {
       ? db.prepare<[string], PhoneRow>("SELECT id, name FROM devices WHERE token_hash = ? AND revoked_at IS NULL").get(sha256(token))
       : undefined;
     if (!phone) return fail(401, "invalid_token", "This phone isn't connected to Belay. A parent can reconnect it from the parent page.");
-    const limiter = isPolicyPoll(c.req.method, c.req.path) ? limits.policyPerPhone : limits.devicePerPhone;
+    const limiter = isPolicyPoll(c.req.method, c.req.path) ? limits.policyPerPhone : isDownload(c.req.path) ? limits.agentPerPhone : limits.devicePerPhone;
     const verdict = limiter.hit(phone.id);
     if (!verdict.ok) return fail(429, "rate_limited", "Too many requests", verdict.retryAfterSeconds);
     c.set("phone", phone);
@@ -92,7 +109,7 @@ export function deviceRoutes(deps: Deps): Hono<DeviceEnv> {
     const body = await readJson(c, CheckinRequest);
     if (!body.ok) return fail(400, "invalid_request", body.description);
     const now = deps.now();
-    saveFacts(c.var.phone.id, body.value.status, now);
+    saveFacts(c.var.phone, body.value.status, now);
     db.prepare("UPDATE devices SET last_checkin_at = ? WHERE id = ?").run(now, c.var.phone.id);
     return c.json({ server_time: now, policy: buildPolicy(db, c.var.phone.id, now) });
   });
@@ -101,7 +118,7 @@ export function deviceRoutes(deps: Deps): Hono<DeviceEnv> {
     const body = await readJson(c, InventoryRequest);
     if (!body.ok) return fail(400, "invalid_request", body.description);
     const now = deps.now();
-    saveFacts(c.var.phone.id, body.value.device, now);
+    saveFacts(c.var.phone, body.value.device, now);
     const result = applyInventory(db, c.var.phone.id, body.value, now);
     return c.json({ server_time: now, duplicate: result.duplicate, backfilled: result.backfilled });
   });
@@ -149,12 +166,50 @@ export function deviceRoutes(deps: Deps): Hono<DeviceEnv> {
     db.prepare("UPDATE devices SET last_seen_at = ? WHERE id = ?").run(now, phone.id);
     const saved = saveRequests(db, phone.id, body.value.requests, now);
     for (const r of saved.created) {
-      audit(db, now, { kind: "phone", deviceId: phone.id }, "request.made", { detail: { package: r.package, label: r.label } });
+      audit(db, now, { kind: "phone", deviceId: phone.id }, "request.made", { detail: { package: r.package, label: r.label, ...(r.again ? { again: true } : {}) } });
     }
     // A few notices an hour per phone at most: a burst of requests still shows on the parent page.
-    if (saved.created.length && limits.noticesPerPhone.hit(phone.id).ok) notifyParents(deps, requestNotice(phone.name, saved.created.map((r) => r.label)));
+    // Asking again for an app already waiting isn't news.
+    const fresh = saved.created.filter((r) => !r.again);
+    if (fresh.length && limits.noticesPerPhone.hit(phone.id).ok) notifyParents(deps, requestNotice(phone.name, fresh.map((r) => r.label)));
     if (saved.refused) return fail(429, "rate_limited", "Too many requests are waiting for a parent already", 3600);
     return c.json({ server_time: now, accepted: saved.accepted });
+  });
+
+  /**
+   * Phase 6: the version of Belay a parent offered this phone, streamed from the store, with
+   * single byte ranges so a download over cellular can resume. Any other file is a 404, even one
+   * the server has: only the one the policy offers this phone now.
+   */
+  app.get("/agent/:file", async (c) => {
+    const sha256 = /^([0-9a-f]{64})\.apk$/.exec(c.req.param("file"))?.[1];
+    const phone = c.var.phone;
+    const now = deps.now();
+    const file = sha256 ? await offeredFile(db, deps.config.agentsDir, phone.id, sha256) : null;
+    if (!sha256 || !file) return fail(404, "not_found", "That isn't the version of Belay offered to this phone");
+    db.prepare("UPDATE devices SET last_seen_at = ? WHERE id = ?").run(now, phone.id);
+    const etag = `"${sha256}"`;
+    const headers = new Headers({
+      "content-type": "application/vnd.android.package-archive",
+      "accept-ranges": "bytes",
+      etag,
+      "cache-control": "private, no-store",
+    });
+    // If-Range with another validator: the file changed, so send it all (it can't here: its name is its hash).
+    const ifRange = c.req.header("if-range");
+    const range = ifRange !== undefined && ifRange !== etag ? null : parseRange(c.req.header("range"), file.size);
+    if (range === "unsatisfiable") {
+      headers.set("content-range", `bytes */${file.size}`);
+      headers.set("content-type", "application/json");
+      return new Response(JSON.stringify({ error: "invalid_request", error_description: "That range isn't in the file" }), { status: 416, headers });
+    }
+    const { start, end } = range ?? { start: 0, end: file.size - 1 };
+    headers.set("content-length", String(end - start + 1));
+    if (range) headers.set("content-range", `bytes ${start}-${end}/${file.size}`);
+    const status = range ? 206 : 200;
+    if (c.req.method === "HEAD") return new Response(null, { status, headers });
+    const body = Readable.toWeb(createReadStream(file.path, { start, end })) as ReadableStream<Uint8Array>;
+    return new Response(body, { status, headers });
   });
 
   app.all("*", () => fail(404, "not_found", "No such endpoint"));

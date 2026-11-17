@@ -66,7 +66,7 @@ home network; see docs/platform-notes.md.)
 | Variable | Default | What |
 |---|---|---|
 | `BELAY_PUBLIC_URL` | (required) | The public origin, like `https://belay.example.org`: no path. Phones, QR codes, OAuth and MCP use it. Plain `http` is refused except for localhost and private addresses, for testing. |
-| `BELAY_DATA_DIR` | `/data` in the image, `./data` otherwise | Where `belay.db` lives. |
+| `BELAY_DATA_DIR` | `/data` in the image, `./data` otherwise | Where `belay.db` lives, and `agents/`: the versions of Belay added for updates. |
 | `BELAY_HOST` | `0.0.0.0` in the image, `127.0.0.1` otherwise | Address to listen on. |
 | `BELAY_PORT` | `8080` | Port to listen on. |
 | `BELAY_TRUST_PROXY` | off | `1` when exactly one reverse proxy (Caddy, a tunnel) is in front: client addresses for rate limits then come from the last `X-Forwarded-For` entry. Leave it off if clients can reach the server directly, or they could pretend to be anyone. |
@@ -155,13 +155,92 @@ docker compose exec belay node dist/cli.js pause "Sam's phone" --minutes 30     
 docker compose exec belay node dist/cli.js resume "Sam's phone"
 ```
 
+The first time `--new-apps ask` (or `protect`) turns asking on, every user app already on the
+phone is allowed. Later, after new apps were allowed for a while, it allows the apps
+installed meanwhile and leaves the ones that were waiting before waiting, as the parent page
+does by default. `--allow-waiting` allows those too; `--hold-new` keeps the apps installed
+meanwhile waiting as well.
+
+And for Belay itself on a phone (Phase 6 and 10), each a parent's action, never an AI app's:
+
+```bash
+docker compose exec -T belay node dist/cli.js agent-add - --version-code 4 --version-name 0.4.0 < belay-0.4.0.apk   # prints the SHA-256
+docker compose exec belay node dist/cli.js agent-offer "Sam's phone" <sha256>   # offer that version to the phone
+docker compose exec belay node dist/cli.js recovery-key "Sam's phone"           # a new recovery key: shown only now
+docker compose exec belay node dist/cli.js remove-other-users "Sam's phone"     # remove every other user and profile
+```
+
 They're logged as the server's ("The server" on the Activity page), and a running server
 passes them to the phone within a second or two. `status --json` gives each phone's
-`policy_version` (the server's), `enforcement` (what the phone last said it applied, or
-`null`) and `requests` (`[{package, status, reason}]`). Hardening (factory reset, debugging,
-reset protection) can only be turned on on the parent page.
+`policy_version` (the server's), `enforcement` (what the phone last said it applied, exactly
+as it sent it, or `null`), `requests` (`[{package, status, reason}]`), `agent_version_code`
+and `agent_signing_sha256` (as the phone reported them), `agent_update` (the offer, and what
+the phone said about it), `recovery` (`{version, last_used}`: the key version the policy
+carries, or `null`) and `commands` (the latest, with their results). Hardening (factory reset,
+debugging, reset protection) can only be turned on on the parent page.
+
+For scripts: `agent-add` prints only the APK's SHA-256 (lowercase) on stdout, and
+`recovery-key` prints only the key, grouped like `7KD2M-8Q4ZX-1HNP3-RT6VW-B9CF0G`; everything
+else goes to stderr. Both exit 1 with a reason on stderr when they can't.
 
 Outside Docker, use `npm run cli -- <command>` from `server/`.
+
+## Updating Belay
+
+Phase 6 updates Belay on the phones from this server, so a phone whose debugging is locked
+doesn't need a computer and maintenance mode for each new version.
+
+1. Build the release APK on the family's computer (`android/scripts/build-release.sh`); the
+   signing key never leaves it ([signing.md](signing.md)).
+2. Add it: `agent-add <apk> --version-code <n> [--version-name <name>]`, with the version code
+   and name from `android/app/build.gradle.kts` (or `-` to read the APK from stdin, as
+   above). The server streams it into `agents/<sha256>.apk` in its data directory (written to
+   a temporary file while it's hashed, at most 100 MB, then renamed) and records the version
+   you give it. It doesn't parse the APK beyond checking that it starts like a zip file.
+3. Offer it to a phone: on the phone's page (Updating Belay), or `agent-offer`. The policy then
+   carries `agent_update`, while the phone runs an older version code; the page warns when the
+   phone already runs that version or a newer one, which Android won't replace.
+4. The phone downloads it (`GET /api/v1/agent/<sha256>.apk`, only the file offered to that
+   phone, resumable), checks that it's Belay, newer, and signed with the same certificate,
+   and installs it. The phone's page shows each step it reports. If it fails, the parents get
+   a notice, the page shows what Belay on the phone said, and the phone can still be updated
+   over adb in maintenance mode. A phone that goes quiet within an hour of updating is
+   flagged.
+
+The server pins the first signing certificate each phone reports (`agent_signing_sha256`); a
+different one later shows as a sign of tampering. Reconnecting a phone with a new code pins
+again. Android doesn't install an older version over a newer one, so a version with a problem
+is fixed with a newer one.
+
+Backups hold the database, not the APK files: keep each release APK on the family's computer,
+where it was built, and add it again after a restore if a phone still needs it.
+
+## The recovery key
+
+If this server is ever lost, a phone with factory reset or debugging locked could be stuck:
+Belay keeps both locked offline, and a factory reset from recovery mode then needs the
+parent's Google account. The recovery key gets around that: typed on the phone (Belay's screen,
+About Belay, then Recovery), it lifts both locks for 24 hours, with no server, so the phone can
+be repaired or reset from Settings. It works once.
+
+- The server makes one the first time a parent turns on factory reset or debugging for a
+  phone that has none, and shows it once: print it, or keep it in a password manager. The
+  phone's page has "Make a new recovery key" (the earlier one stops working once the phone has
+  the new check), and so does `recovery-key`, with or without the locks on.
+- The policy carries only a check of the key (a salted SHA-256, `recovery` in
+  docs/protocol.md); the server keeps only that check too, never the key.
+- When the phone reports a use, the server records it, the parents get a notice ("The recovery
+  key was used on Sam's phone"), and the phone's page asks for a new key.
+- AI apps see only whether a phone has a key, and when one was last used.
+
+## Other users and profiles (Phase 10)
+
+Android's own Parental Controls, in Settings, add a hidden profile, even though Belay locks
+adding users. Belay on the phone counts the users and profiles besides the kid's own, and the
+phone's page says so at the top, with "Remove other users and profiles": the phone removes
+every one, with everything in it, when it gets that, if that's within 7 days. The page shows
+whether it was done, couldn't be, or expired. It also lists the user restrictions in force that
+Belay didn't set.
 
 ## Backups
 

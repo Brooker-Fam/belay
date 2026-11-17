@@ -213,18 +213,48 @@ describe("POST /api/v1/requests", () => {
     expect((await deviceCall(t, "x".repeat(43), "requests", { requests: [request("request-0001")] })).status).toBe(401);
   });
 
-  it("refuses a flood: a phone can't have more than 200 waiting", async () => {
+  it("refuses a flood: a phone can't have more than 200 apps waiting", async () => {
     const { t, phone } = await setup();
-    const batch = (from: number) => Array.from({ length: 100 }, (_, i) => request(`request-${String(from + i).padStart(4, "0")}`));
+    const id = (n: number) => `request-${String(n).padStart(4, "0")}`;
+    const batch = (from: number) => Array.from({ length: 100 }, (_, i) => request(id(from + i), { package: `com.example.app${from + i}` }));
     expect((await deviceCall(t, phone.token, "requests", { requests: batch(0) })).status).toBe(200);
     expect((await deviceCall(t, phone.token, "requests", { requests: batch(100) })).status).toBe(200);
-    const flood = await deviceCall(t, phone.token, "requests", { requests: [request("request-0200")] });
+    const flood = await deviceCall(t, phone.token, "requests", { requests: [request("request-0200", { package: "com.example.app200" })] });
     expect(flood.status).toBe(429);
     expect(await flood.json()).toMatchObject({ error: "rate_limited" });
     expect(Number(flood.headers.get("retry-after"))).toBe(3600);
     // Sending one it has again still works, so a reason can still change.
-    expect((await deviceCall(t, phone.token, "requests", { requests: [request("request-0001", { reason: "Please" })] })).status).toBe(200);
+    expect((await deviceCall(t, phone.token, "requests", { requests: [request("request-0001", { package: "com.example.app1", reason: "Please" })] })).status).toBe(200);
+    // So does asking again for an app that's waiting: it takes the old request's place.
+    expect((await deviceCall(t, phone.token, "requests", { requests: [request("request-0201", { package: "com.example.app7" })] })).status).toBe(200);
     expect(listRequests(t.deps.db, { limit: 1000 })).toHaveLength(200);
+  });
+
+  it("asking again for an app already waiting takes the old request's place, so one app can't use up the limit", async () => {
+    const { t, phone } = await setup();
+    // What the agent sends after each reinstall of the same app: a new id, the same package.
+    for (let i = 0; i < 250; i++) {
+      const res = await deviceCall(t, phone.token, "requests", { requests: [request(`reinstall-${String(i).padStart(4, "0")}`, { asked_at: T0 + i, ...(i === 0 ? { reason: "For the class project" } : {}) })] });
+      expect(res.status).toBe(200);
+      if (i % 100 === 99) t.advance(61_000);
+    }
+    expect(listRequests(t.deps.db, { limit: 1000 })).toEqual([expect.objectContaining({ id: "reinstall-0249", status: "pending", reason: "For the class project" })]);
+    expect(getRequest(t.deps.db, phone.deviceId, "reinstall-0000")).toMatchObject({ status: "superseded" });
+    // Requests for other apps still go through.
+    expect((await deviceCall(t, phone.token, "requests", { requests: [request("request-other-1", { package: "com.example.maps" })] })).status).toBe(200);
+    // Only the newest is in the policy's answers; the old ids are gone from them.
+    const policy = Policy.parse(((await (await deviceCall(t, phone.token, "checkin", { status: device() })).json()) as { policy: unknown }).policy);
+    expect(policy.requests.map((r) => r.id).sort()).toEqual(["reinstall-0249", "request-other-1"]);
+  });
+
+  it("an answer to a request asked again since goes to the one that took its place", async () => {
+    const { t, phone, ctx, sam } = await setup();
+    await deviceCall(t, phone.token, "requests", { requests: [request("request-0001")] });
+    await deviceCall(t, phone.token, "requests", { requests: [request("request-0002")] });
+    const done = answerRequest(ctx(), phone.deviceId, "request-0001", "declined", sam, "Not yet");
+    expect(done.result).toMatchObject({ package: "com.example.chat" });
+    expect(getRequest(t.deps.db, phone.deviceId, "request-0002")).toMatchObject({ status: "declined", note: "Not yet" });
+    expect(getRequest(t.deps.db, phone.deviceId, "request-0001")?.status).toBe("superseded");
   });
 });
 

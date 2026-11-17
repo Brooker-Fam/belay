@@ -966,6 +966,11 @@ value changes, so after a reinstall Belay sets "not hidden" and then "hidden" ag
   `dpm set-device-owner`, so Belay sets it itself.
 - **`DISALLOW_SIM_GLOBALLY` only blocks downloading eSIMs.** A physical SIM swap isn't
   blocked; Belay reports a changed SIM instead (opaque ids, never the number).
+- `UserManager` declares 85 restriction keys (`DISALLOW_`, `ENSURE_` and `ALLOW_` constants,
+  hidden ones included; 73 in the public API 37 stubs), in
+  `core/java/android/os/UserManager.java`. The server knows them all
+  (`server/src/family/android.ts`), so a key the phone reports in
+  `health.foreign_restrictions` that isn't one of them reaches an AI only as untrusted text.
 
 ### C5. The unknown-sources restrictions and adb
 

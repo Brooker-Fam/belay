@@ -118,12 +118,13 @@ changes, tests and the family's decisions. Build order: Phase 2; then Phase 10's
 and Phase 6's self-update and recovery key; then Phase 3 with Phase 7's core; Phase 4;
 Phase 5 (calls, then texts); Phases 8, 9 and 11 when they're needed.
 
-**In progress:** Phase 6's self-update, recovery key, backups and health checks, Phase 10's
-removal of another user or profile, and the fixes from a security review of the Phase 2
-server; the contract is in [docs/protocol.md](docs/protocol.md). Phase 3's phone side is built
-(the engine in `:core`, and the app: counting, enforcing, notices, lock now, uploads and the
-kid's screens; [phase3-checklist.md](docs/phase3-checklist.md) is for the Pixel); its server
-side is next. Network logging comes after.
+**Built since Phase 2** (on `main`, checked end to end in CI on the Android 17 emulator): Phase 6's
+self-update, recovery key, backups and health checks, Phase 10's removal of another user or
+profile, and the fixes from a security review of the Phase 2 server. **In progress:** Phase 3,
+whose contract is in [docs/protocol.md](docs/protocol.md): its phone side is built (the engine in
+`:core`, and the app: counting, enforcing, notices, lock now, uploads and the kid's screens;
+[phase3-checklist.md](docs/phase3-checklist.md) is for the Pixel), and its server side is next.
+Network logging comes after.
 
 ### Phase 3: screen time, schedules and stages ([design](docs/design/phase3-screen-time.md))
 
@@ -153,7 +154,15 @@ side is next. Network logging comes after.
   transcripts, in tiers the family picks. Being the default SMS app (SMS/MMS only) remains the
   option for approved-contacts-only texting.
 
-### Phase 6: reliability and operations ([design](docs/design/phase6-reliability.md))
+### Phase 6: reliability and operations ([design](docs/design/phase6-reliability.md)) (built)
+
+Built, and run end to end in CI: a parent offers a newer Belay with `agent-add` and `agent-offer`,
+and the phone downloads, checks and installs it by itself; the recovery key opens repair access
+with no server; daily backups, encryption, `verify-backup`, `restore` and a restore drill; server
+health problems, `/healthz?strict=1` and an opt-in daily summary. **Still open:**
+[docs/phase6-checklist.md](docs/phase6-checklist.md) on the Pixel, with a release build (CI's
+self-update uses a non-test-only debug build: platform notes, I5).
+
 
 - Self-update from the family's server: the parent uploads an APK signed on their own computer and
   approves it; the phone checks the hash, version and its own signing certificate before a silent
@@ -180,7 +189,12 @@ side is next. Network logging comes after.
   its own developer account; `family.brooker.belay` itself never changes. Later, an optional
   server for a few families who trust its operator, every query scoped to one family.
 
-### Phase 10: living with Android's own parental controls ([design](docs/design/phase10-android-parental-controls.md))
+### Phase 10: living with Android's own parental controls ([design](docs/design/phase10-android-parental-controls.md)) (built)
+
+Built: Belay reports other users and restrictions it didn't set, puts lifted suspensions back,
+and a parent can remove another user or profile from the phone's page (`remove_other_users`).
+**Still open:** setting up Android's own Parental Controls on the real Pixel.
+
 
 - Android 17's built-in Parental Controls create a hidden supervising profile even when adding
   users is blocked; while it exists, Belay can't change Private DNS or read network logs, and its

@@ -2,7 +2,7 @@
 import type { DB } from "../db.js";
 import type { Device, Enforcement } from "../device/schemas.js";
 import type { Settings } from "../settings.js";
-import { formatDuration } from "../time.js";
+import { formatAgo, formatDuration } from "../time.js";
 
 export interface DeviceRow {
   id: string;
@@ -21,10 +21,48 @@ export interface DeviceRow {
   /** The server's policy version and when it changed (from policies; null without rules). */
   policy_version: number | null;
   policy_changed_at: number | null;
+  /** Phase 6: the first signing certificate the phone reported (pinned). */
+  agent_signing_sha256: string | null;
+  agent_signing_at: number | null;
+  /** Phase 6: the update offered to the phone (agent_offers, agent_files), if any. */
+  update_version_code: number | null;
+  update_version_name: string | null;
+  update_offered_at: number | null;
+  update_state: UpdateView["state"];
+  update_problem: string | null;
+  update_state_at: number | null;
+  update_installing_at: number | null;
+  update_done_at: number | null;
+  /** Phase 6: when the phone's newest recovery key was used, by the phone's clock (null: not used, or none). */
+  recovery_used_at: number | null;
 }
 
-const DEVICE_SELECT = `SELECT d.*, p.version AS policy_version, p.changed_at AS policy_changed_at
-  FROM devices d LEFT JOIN policies p ON p.device_id = d.id`;
+const DEVICE_SELECT = `SELECT d.*, p.version AS policy_version, p.changed_at AS policy_changed_at,
+    f.version_code AS update_version_code, f.version_name AS update_version_name, o.offered_at AS update_offered_at, o.state AS update_state,
+    o.problem AS update_problem, o.state_at AS update_state_at, o.installing_at AS update_installing_at, o.done_at AS update_done_at,
+    (SELECT k.used_at FROM recovery_keys k WHERE k.device_id = d.id ORDER BY k.version DESC LIMIT 1) AS recovery_used_at
+  FROM devices d LEFT JOIN policies p ON p.device_id = d.id
+  LEFT JOIN agent_offers o ON o.device_id = d.id LEFT JOIN agent_files f ON f.sha256 = o.sha256`;
+
+/** Phase 6: the update a parent offered the phone, and what the phone last said about it. */
+export interface UpdateView {
+  versionCode: number;
+  versionName: string | null;
+  /** "0.4.0 (version 4)" */
+  words: string;
+  offeredAt: number;
+  state: "downloading" | "checking" | "installing" | "failed" | "done" | null;
+  /** The phone's words when it failed: untrusted. */
+  problem: string | null;
+  stateAt: number | null;
+  installingAt: number | null;
+  /** When the phone first ran this version or a newer one. */
+  doneAt: number | null;
+}
+
+/** How long after an update the server watches for silence, and how much silence then is a problem. */
+export const UPDATE_WATCH_MS = 3_600_000;
+export const UPDATE_SILENCE_MS = 30 * 60_000;
 
 /** Something about a phone a parent should know, in plain words. */
 export interface Problem {
@@ -43,7 +81,12 @@ export interface Problem {
     | "no_app_list"
     | "rules_not_applied"
     | "phone_reported"
-    | "tampering";
+    | "tampering"
+    | "signing_changed"
+    | "update_failed"
+    | "update_silent"
+    | "recovery_used"
+    | "other_users";
   text: string;
   /** For phone_reported: what Belay on the phone said, as it said it. It comes from the kid's phone: untrusted. */
   fromPhone?: string;
@@ -69,8 +112,33 @@ export interface DeviceView {
   policyAskedAt: number | null;
   /** What the phone last said it enforces (its latest check-in or app list), or null. */
   enforcement: Enforcement | null;
+  /** Phase 6: the update offered to the phone, if any. */
+  update: UpdateView | null;
+  /** Phase 6: the signing certificate pinned for the phone, and whether it reports another one now. */
+  signing: { pinned: string | null; pinnedAt: number | null; reported: string | null; changed: boolean };
   status: DeviceStatus;
   problems: Problem[];
+}
+
+function updateOf(row: DeviceRow): UpdateView | null {
+  if (row.update_version_code === null || row.update_offered_at === null) return null;
+  return {
+    versionCode: row.update_version_code,
+    versionName: row.update_version_name,
+    words: row.update_version_name ? `${row.update_version_name} (version ${row.update_version_code})` : `version ${row.update_version_code}`,
+    offeredAt: row.update_offered_at,
+    state: row.update_state,
+    problem: row.update_problem,
+    stateAt: row.update_state_at,
+    installingAt: row.update_installing_at,
+    doneAt: row.update_done_at,
+  };
+}
+
+/** A different certificate than the one pinned: someone may have put another build of Belay on the phone. */
+function signingChanged(row: DeviceRow, facts: Device | null): boolean {
+  const reported = facts?.agent_signing_sha256 ?? null;
+  return row.agent_signing_sha256 !== null && reported !== null && reported !== row.agent_signing_sha256;
 }
 
 /** Belay's own runtime permissions it can't work without (others, like CAMERA for enrolling, are optional). */
@@ -98,6 +166,11 @@ function parseFacts(json: string | null): Device | null {
   } catch {
     return null;
   }
+}
+
+/** What the phone said in its latest check-in or app list (or when it enrolled), or null. */
+export function deviceFacts(db: DB, deviceId: string): Device | null {
+  return parseFacts(db.prepare<[string], { facts: string | null }>("SELECT facts FROM devices WHERE id = ?").get(deviceId)?.facts ?? null);
 }
 
 export function problemsOf(row: DeviceRow, facts: Device | null, settings: Settings, now: number): Problem[] {
@@ -142,7 +215,38 @@ export function problemsOf(row: DeviceRow, facts: Device | null, settings: Setti
           : `The phone hasn't applied the rules changed ${ago} ago`,
     });
   }
+  // Phase 6: the update offered to the phone.
+  const update = updateOf(row);
+  const running = facts?.agent_version_code ?? null;
+  if (update && update.doneAt === null && update.state === "failed" && (running === null || running < update.versionCode)) {
+    problems.push({ code: "update_failed", text: `Belay couldn't update to ${update.words}; it can still be updated over adb in maintenance mode` });
+  }
+  const updatedAt = update ? (update.doneAt ?? update.installingAt) : null;
+  if (update && updatedAt !== null && row.last_seen_at !== null && row.last_seen_at - updatedAt <= UPDATE_WATCH_MS && now - row.last_seen_at > UPDATE_SILENCE_MS) {
+    problems.push({
+      code: "update_silent",
+      text: `The phone went quiet within an hour of updating Belay to ${update.words}, and hasn't been heard from for ${formatDuration(now - row.last_seen_at)}. If the new version doesn't start, update it over adb in maintenance mode`,
+    });
+  }
+  // Phase 6: the recovery key works once; after a use, the phone needs a new one.
+  if (row.recovery_used_at !== null) {
+    problems.push({ code: "recovery_used", text: `The recovery key was used on the phone ${formatAgo(row.recovery_used_at, now)}, so it won't work again: make a new one on the phone's page` });
+  }
   const tampering: Problem[] = [];
+  // Phase 10: Belay counts the users and profiles besides the kid's own; it can't see what kind they are.
+  const others = facts?.health.other_users ?? 0;
+  if (others > 0) {
+    tampering.push({
+      code: "other_users",
+      text: `${others === 1 ? "Another user or profile is" : `${others} other users or profiles are`} on this phone. This usually means Android's own Parental Controls were set up in Settings`,
+    });
+  }
+  if (signingChanged(row, facts)) {
+    tampering.push({
+      code: "signing_changed",
+      text: "Belay on the phone is signed with a different key than when it was set up. Someone may have replaced it with another build of Belay",
+    });
+  }
   for (const said of facts?.enforcement?.problems ?? []) {
     if (TAMPERING.test(said)) tampering.push({ code: "tampering", text: `Someone may be getting around Belay. Belay on the phone says: ${said}`, fromPhone: said });
     else problems.push({ code: "phone_reported", text: `Belay on the phone says: ${said}`, fromPhone: said });
@@ -175,6 +279,8 @@ export function toView(row: DeviceRow, settings: Settings, now: number): DeviceV
     policyHave: row.policy_have,
     policyAskedAt: row.policy_asked_at,
     enforcement: facts?.enforcement ?? null,
+    update: updateOf(row),
+    signing: { pinned: row.agent_signing_sha256, pinnedAt: row.agent_signing_at, reported: facts?.agent_signing_sha256 ?? null, changed: signingChanged(row, facts) },
     status: statusOf(problems),
     problems,
   };

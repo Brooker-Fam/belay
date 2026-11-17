@@ -108,6 +108,7 @@ pre { background: var(--chip); padding: 10px 12px; border-radius: 8px; overflow-
 .applist .app:last-child { border-bottom: none; }
 .applist .name { font-weight: 600; word-break: break-word; }
 .pkg { color: var(--muted); font-size: 0.8rem; word-break: break-all; }
+.digest { word-break: break-all; }
 .day { margin-top: 18px; }
 .day h2 { font-size: 1rem; color: var(--muted); margin: 0 0 6px; }
 .change { display: grid; grid-template-columns: 5.5rem 1fr; gap: 4px 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }

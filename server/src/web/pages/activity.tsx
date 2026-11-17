@@ -19,6 +19,9 @@ function who(e: AuditEntry): string {
 
 const str = (v: unknown): string => (typeof v === "string" || typeof v === "number" ? String(v) : "");
 
+/** "0.4.0 (version 4)" from an entry's version_name and version_code. */
+const version = (d: Record<string, unknown>): string => (str(d.version_name) ? `${str(d.version_name)} (version ${str(d.version_code)})` : `version ${str(d.version_code)}`);
+
 function what(e: AuditEntry): string {
   const d = e.detail ?? {};
   const device = e.deviceName ? ` (${e.deviceName})` : "";
@@ -80,7 +83,7 @@ function what(e: AuditEntry): string {
     case "push.unsubscribed":
       return `turned off notifications on ${str(d.browser) || "a browser"}`;
     case "request.made":
-      return `asked for ${str(d.label) || str(d.package) || "an app"}`;
+      return `asked for ${str(d.label) || str(d.package) || "an app"}${d.again === true ? " again" : ""}`;
     case "request.answered": {
       const answer = { approved: "approved", declined: "declined", talk: `said "let's talk" about` }[str(d.answer)] ?? "answered";
       return `${answer} the request for ${str(d.label) || str(d.package) || "an app"}${device}${str(d.note) ? `, noting: "${str(d.note)}"` : ""}`;
@@ -89,8 +92,11 @@ function what(e: AuditEntry): string {
     case "app.blocked":
     case "app.undecided": {
       const verb = e.action === "app.allowed" ? "allowed" : e.action === "app.blocked" ? "blocked" : "cleared the decision on";
-      return `${verb} ${str(d.label) || str(d.package) || "an app"}${device}${str(d.proposal) ? " (an AI app's proposal)" : ""}${str(d.note) ? `, noting: "${str(d.note)}"` : ""}`;
+      const ahead = d.before_install === true ? " (not on the phone)" : "";
+      return `${verb} ${str(d.label) || str(d.package) || "an app"}${ahead}${device}${str(d.proposal) ? " (an AI app's proposal)" : ""}${str(d.note) ? `, noting: "${str(d.note)}"` : ""}`;
     }
+    case "apps.pre_blocks_cleared":
+      return `cleared ${str(d.count) || "the"} app${d.count === 1 ? "" : "s"} AI apps blocked before install${device}`;
     case "policy.protected":
       return `turned protection on${device}`;
     case "policy.unprotected":
@@ -98,6 +104,7 @@ function what(e: AuditEntry): string {
     case "policy.new_apps":
       return d.mode === "ask" ? `made new apps wait for a parent's approval${device}` : `let new apps run without asking${device}`;
     case "phone.paused":
+      if (d.kept === true) return `asked to pause the phone${device}, which was already paused at least that long: nothing changed`;
       return `paused the phone${device}${typeof d.until === "number" ? "" : " until a parent resumes it"}`;
     case "phone.resumed":
       return `resumed the phone${device}`;
@@ -119,6 +126,30 @@ function what(e: AuditEntry): string {
       return `approved ${str(d.client) || "an AI app"}'s proposal: ${str(d.change)}${device}`;
     case "proposal.rejected":
       return `rejected ${str(d.client) || "an AI app"}'s proposal: ${str(d.change)}${device}`;
+    case "proposal.outdated":
+      return `approved ${str(d.client) || "an AI app"}'s proposal, but it was out of date, so nothing changed: ${str(d.change)}${device}`;
+    case "agent.added":
+      return `added Belay ${version(d)} to the server`;
+    case "agent.offered":
+      return `offered Belay ${version(d)}${device}`;
+    case "agent.withdrawn":
+      return `stopped offering Belay ${version(d)}${device}`;
+    case "agent.update_failed":
+      return `couldn't install Belay ${version(d)}`;
+    case "agent.updated":
+      return `updated Belay to ${version(d)}`;
+    case "recovery.made":
+      return `made a new recovery key${device}`;
+    case "recovery.used":
+      return "had its recovery key typed in, opening repair access for 24 hours";
+    case "command.issued":
+      return `asked the phone to remove every other user and profile${device}`;
+    case "command.done":
+      return "removed every other user and profile, as a parent asked";
+    case "command.failed":
+      return "couldn't remove the other users and profiles";
+    case "command.expired":
+      return "got a parent's request to remove other users too late, so didn't run it";
     default:
       if (e.action === "ai.read") return `read ${str(d.what) || "data"}${device}`;
       return e.action;
