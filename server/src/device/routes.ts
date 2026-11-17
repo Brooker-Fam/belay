@@ -11,7 +11,7 @@ import { buildPolicy, policyVersion } from "../family/policy.js";
 import { receiveReport } from "../family/reports.js";
 import { saveRequests } from "../family/requests.js";
 import { bearerToken, clientAddress, parseRange, readJson, type Bindings } from "../http.js";
-import { notifyParents, requestNotice, updateFailedNotice } from "../push.js";
+import { notifyParents, recoveryUsedNotice, requestNotice, updateFailedNotice } from "../push.js";
 import type { Verdict } from "../ratelimit.js";
 import { applyEvents, applyInventory } from "./apps.js";
 import { enroll } from "./enroll.js";
@@ -65,7 +65,7 @@ export function deviceRoutes(deps: Deps): Hono<DeviceEnv> {
       device,
     );
     // Once per update offered: the report's news, in the server's words.
-    for (const tell of done.result.tell) notifyParents(deps, updateFailedNotice(phone, tell.version));
+    for (const tell of done.result.tell) notifyParents(deps, tell.kind === "update_failed" ? updateFailedNotice(phone, tell.version) : recoveryUsedNotice(phone));
   };
 
   app.post("/enroll", limit(LIMITS.enrollBytes), async (c) => {

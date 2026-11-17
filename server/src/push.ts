@@ -346,6 +346,11 @@ export function updateFailedNotice(phone: { id: string; name: string }, version:
   return { title: "Belay", body: `${oneLine(phone.name, 60)}: Belay couldn't update to ${oneLine(version, 70)}. The phone's page says why.`, url: `/devices/${phone.id}` };
 }
 
+/** "The recovery key was used on Sam's phone". */
+export function recoveryUsedNotice(phone: { id: string; name: string }): Notice {
+  return { title: "Belay", body: `The recovery key was used on ${oneLine(phone.name, 60)}. Make a new one on the phone's page.`, url: `/devices/${phone.id}` };
+}
+
 /** `Sam's phone: Claude proposes allowing "Chatter Box"`. */
 export function proposalNotice(deviceName: string, clientName: string, what: string): Notice {
   return { title: "Belay", body: `${oneLine(deviceName, 60)}: ${oneLine(clientName, 40)} proposes ${oneLine(what, 90)}`, url: "/proposals" };

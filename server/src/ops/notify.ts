@@ -135,10 +135,12 @@ const PHONE_WORDS: Partial<Record<Problem["code"], (n: number, longestSilence: n
   signing_changed: (n) => `Belay on ${a(n)} is signed with a different key`,
   update_failed: (n) => `Belay couldn't update on ${a(n)}`,
   update_silent: (n) => `${a(n)} went quiet after updating Belay`,
+  recovery_used: (n) => `the recovery key was used on ${a(n)}: make a new one`,
 };
 
 const PHONE_ORDER: Problem["code"][] = [
   "signing_changed",
+  "recovery_used",
   "not_device_owner",
   "uninstall_allowed",
   "update_silent",

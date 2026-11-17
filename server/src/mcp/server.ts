@@ -49,6 +49,7 @@ import {
   type Rules,
 } from "../family/policy.js";
 import { LIFTABLE, PROPOSAL_KINDS, changeWords, createProposal, listProposals, nothingToLoosen, type ProposalChange } from "../family/proposals.js";
+import { recoveryState, usableKey } from "../family/recovery.js";
 import { pendingRequestCount, recentRequests, type StoredRequestStatus } from "../family/requests.js";
 import { registerOpsTools } from "../ops/mcp.js";
 import { notifyParents, proposalNotice } from "../push.js";
@@ -686,6 +687,8 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
           factory_reset_locked: rules.restrictions.factory_reset,
           debugging_locked: rules.restrictions.debugging,
           reset_protection_accounts: rules.frpAccounts.length,
+          // Whether there's a key and when one was last used: never the key, its check or its version.
+          recovery_key: ((state) => ({ exists: usableKey(state), last_used: iso(state.lastUse?.usedAt) }))(recoveryState(db, row.id)),
         },
         ...(rules.supportMessage ? { untrusted: { message_on_blocked_app_screens: rules.supportMessage } } : {}),
         apps,

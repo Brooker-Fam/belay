@@ -1,6 +1,7 @@
 import type { Child, FC } from "hono/jsx";
 import type { PendingCode } from "../../device/enroll.js";
 import type { AgentFile } from "../../family/agent.js";
+import type { RecoveryState } from "../../family/recovery.js";
 import { type App, type Change, type Review, PERMISSION_NAMES, SOURCE_NAMES, playStoreUrl, versionText } from "../../family/apps.js";
 import { type DeviceView, patchAgeDays } from "../../family/devices.js";
 import { type AskAgain, type Decision, LIMITS, type Rules } from "../../family/policy.js";
@@ -20,7 +21,7 @@ import {
   WebCard,
   decidedByWords,
 } from "./rules.js";
-import { UpdateCard } from "./belay.js";
+import { RecoveryCard, UpdateCard } from "./belay.js";
 import { ChangeLine } from "./timeline.js";
 
 export interface DeviceSummary {
@@ -57,6 +58,8 @@ export interface PhoneRules {
   askAgain: AskAgain | null;
   /** Phase 6: the versions of Belay on the server, newest first, to offer the phone. */
   agentFiles: AgentFile[];
+  /** Phase 6: the phone's recovery key, and its last use. */
+  recovery: RecoveryState;
 }
 
 /** Apps decided before the phone ever had them: each one clearable, and the AI apps' all at once. */
@@ -396,6 +399,7 @@ export const DevicePage: FC<{
 
       <h2 id="hardening">Hardening</h2>
       <HardeningCard view={view} device={device} rules={phone.rules} />
+      <RecoveryCard view={view} device={device} rules={phone.rules} recovery={phone.recovery} />
 
       <h2 id="update">Updating Belay</h2>
       <UpdateCard view={view} device={device} files={phone.agentFiles} />

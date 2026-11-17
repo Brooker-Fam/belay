@@ -12,7 +12,7 @@ import { cleanText } from "../text.js";
 import { changePolicy, type Changed, type Log, type PolicyContext } from "./policy.js";
 
 /** Something the parents hear about at once. The words are the server's, never the phone's. */
-export type Tell = { kind: "update_failed"; version: string };
+export type Tell = { kind: "update_failed"; version: string } | { kind: "recovery_used" };
 
 /** The phone's words, kept as the phone said them, less what hides or reorders text: untrusted. */
 const phoneWords = (text: string | null | undefined): string | null => (text ? cleanText(text, LIMITS.maxProblem) || null : null);
@@ -27,8 +27,25 @@ export function receiveReport(ctx: PolicyContext, deviceId: string, device: Devi
     }
     const tell: Tell[] = [];
     noteUpdate(ctx, deviceId, device, log, tell);
+    noteRecovery(ctx, deviceId, device, log, tell);
     return { tell };
   });
+}
+
+/**
+ * The recovery key was used on the phone (enforcement.recovery): the use is recorded once, the
+ * key's check leaves the policy if it was the phone's newest key, and the parents hear about it.
+ * A version the server never made is ignored.
+ */
+function noteRecovery(ctx: PolicyContext, deviceId: string, device: Device, log: Log, tell: Tell[]): void {
+  const use = device.enforcement?.recovery;
+  if (!use) return;
+  const { db, now } = ctx;
+  const key = db.prepare<[string, number], { used_at: number | null }>("SELECT used_at FROM recovery_keys WHERE device_id = ? AND version = ?").get(deviceId, use.version);
+  if (!key || key.used_at !== null) return;
+  db.prepare("UPDATE recovery_keys SET used_at = ?, open_until = ?, use_reported_at = ? WHERE device_id = ? AND version = ?").run(use.used_at, use.until, now, deviceId, use.version);
+  log("recovery.used", { key_version: use.version, used_at: use.used_at, until: use.until });
+  tell.push({ kind: "recovery_used" });
 }
 
 interface OfferRow {

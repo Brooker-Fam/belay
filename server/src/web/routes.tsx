@@ -37,6 +37,7 @@ import { cancelCode, createEnrollmentCode, pendingCodes } from "../device/enroll
 import { packageName } from "../device/schemas.js";
 import { type App, getApp, listApps, listChanges, markReviewed, reviewHistory, appCounts } from "../family/apps.js";
 import { getAgentFile, listAgentFiles, offerAgent, withdrawOffer } from "../family/agent.js";
+import { makePhoneRecoveryKey, recoveryState, usableKey } from "../family/recovery.js";
 import { type DeviceView, deleteDevice, getDevice, listDevices, nameTaken, renameDevice, revokeDevice } from "../family/devices.js";
 import {
   type ChromeSettings,
@@ -81,6 +82,7 @@ import type { Assets } from "./assets.js";
 import { ActivityPage } from "./pages/activity.js";
 import { AddPage, CodePage } from "./pages/add.js";
 import { InvitePage, LoginPage, MessagePage, SetupPage } from "./pages/auth.js";
+import { RecoveryKeyPage } from "./pages/belay.js";
 import { type AppRule, AppPage, DevicePage, DevicesPage, type PhoneRules } from "./pages/devices.js";
 import { ProposalsPage, RequestsPage } from "./pages/requests.js";
 import { AskAgainPage, MAINTENANCE_HOURS, PAUSE_MINUTES } from "./pages/rules.js";
@@ -431,6 +433,7 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
       beforeInstall: preDecisions(db, deviceId),
       askAgain: askAgainSummary(db, deviceId),
       agentFiles: listAgentFiles(db),
+      recovery: recoveryState(db, deviceId),
     };
   };
 
@@ -616,8 +619,22 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
     if (tightens && first(body, "confirm").toLowerCase() !== device.name.trim().toLowerCase()) {
       return showDevice(c, device, { error: `These can lock the phone for good. To turn them on, type the phone's name, ${device.name}, in the box.` }, 400);
     }
-    setHardening(policyContext(), device.id, { factoryReset, debugging, frpAccounts: accounts.ids }, asParent(c));
+    // Phase 6: turning on a lock that can strand the phone makes its recovery key, in the same request, if it has none to use.
+    const locking = (factoryReset && !rules.restrictions.factory_reset) || (debugging && !rules.restrictions.debugging);
+    const made = db.transaction(() => {
+      setHardening(policyContext(), device.id, { factoryReset, debugging, frpAccounts: accounts.ids }, asParent(c));
+      return locking && !usableKey(recoveryState(db, device.id)) ? makePhoneRecoveryKey(policyContext(), device.id, asParent(c)).result : null;
+    })();
+    if (made) return render(c, <RecoveryKeyPage view={view(c)} device={device} grouped={made.grouped} replaced={made.replaced} because="hardening" />);
     return backTo(c, device, "rules", "hardening");
+  });
+
+  app.post("/devices/:id/recovery-key", (c) => {
+    const device = deviceOr404(c);
+    if (!device) return noPhone(c);
+    if (device.revokedAt !== null) return showDevice(c, device, { error: "This phone is disconnected, so a new key wouldn't reach it." }, 400);
+    const made = makePhoneRecoveryKey(policyContext(), device.id, asParent(c)).result;
+    return render(c, <RecoveryKeyPage view={view(c)} device={device} grouped={made.grouped} replaced={made.replaced} because="asked" />);
   });
 
   app.post("/devices/:id/maintenance", async (c) => {

@@ -522,6 +522,19 @@ function agentUpdate(db: DB, deviceId: string): Policy["agent_update"] {
   return { version_code: offer.version_code, version_name: offer.version_name, sha256: offer.sha256, size: offer.size };
 }
 
+/**
+ * Phase 6: the check for the phone's recovery key (family/recovery.ts), never the key: the newest
+ * one, until the phone reports it used.
+ */
+function recoveryCheck(db: DB, deviceId: string): Policy["recovery"] {
+  const key = db
+    .prepare<[string], { version: number; salt: string; hash: string; used_at: number | null }>(
+      "SELECT version, salt, hash, used_at FROM recovery_keys WHERE device_id = ? ORDER BY version DESC LIMIT 1",
+    )
+    .get(deviceId);
+  return key && key.used_at === null ? { version: key.version, salt: key.salt, hash: key.hash } : null;
+}
+
 /** The policy for one phone, as the device API sends it. */
 export function buildPolicy(db: DB, deviceId: string, now: number): Policy {
   const rules = getRules(db, deviceId);
@@ -541,8 +554,8 @@ export function buildPolicy(db: DB, deviceId: string, now: number): Policy {
     support_message: rules.supportMessage,
     requests: requestAnswers(db, deviceId, now),
     agent_update: agentUpdate(db, deviceId),
-    // Phase 6 and 10: not built yet.
-    recovery: null,
+    recovery: recoveryCheck(db, deviceId),
+    // Phase 10: not built yet.
     commands: [],
   };
 }

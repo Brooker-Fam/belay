@@ -2,7 +2,7 @@
 import type { DB } from "../db.js";
 import type { Device, Enforcement } from "../device/schemas.js";
 import type { Settings } from "../settings.js";
-import { formatDuration } from "../time.js";
+import { formatAgo, formatDuration } from "../time.js";
 
 export interface DeviceRow {
   id: string;
@@ -33,11 +33,14 @@ export interface DeviceRow {
   update_state_at: number | null;
   update_installing_at: number | null;
   update_done_at: number | null;
+  /** Phase 6: when the phone's newest recovery key was used, by the phone's clock (null: not used, or none). */
+  recovery_used_at: number | null;
 }
 
 const DEVICE_SELECT = `SELECT d.*, p.version AS policy_version, p.changed_at AS policy_changed_at,
     f.version_code AS update_version_code, f.version_name AS update_version_name, o.offered_at AS update_offered_at, o.state AS update_state,
-    o.problem AS update_problem, o.state_at AS update_state_at, o.installing_at AS update_installing_at, o.done_at AS update_done_at
+    o.problem AS update_problem, o.state_at AS update_state_at, o.installing_at AS update_installing_at, o.done_at AS update_done_at,
+    (SELECT k.used_at FROM recovery_keys k WHERE k.device_id = d.id ORDER BY k.version DESC LIMIT 1) AS recovery_used_at
   FROM devices d LEFT JOIN policies p ON p.device_id = d.id
   LEFT JOIN agent_offers o ON o.device_id = d.id LEFT JOIN agent_files f ON f.sha256 = o.sha256`;
 
@@ -81,7 +84,8 @@ export interface Problem {
     | "tampering"
     | "signing_changed"
     | "update_failed"
-    | "update_silent";
+    | "update_silent"
+    | "recovery_used";
   text: string;
   /** For phone_reported: what Belay on the phone said, as it said it. It comes from the kid's phone: untrusted. */
   fromPhone?: string;
@@ -222,6 +226,10 @@ export function problemsOf(row: DeviceRow, facts: Device | null, settings: Setti
       code: "update_silent",
       text: `The phone went quiet within an hour of updating Belay to ${update.words}, and hasn't been heard from for ${formatDuration(now - row.last_seen_at)}. If the new version doesn't start, update it over adb in maintenance mode`,
     });
+  }
+  // Phase 6: the recovery key works once; after a use, the phone needs a new one.
+  if (row.recovery_used_at !== null) {
+    problems.push({ code: "recovery_used", text: `The recovery key was used on the phone ${formatAgo(row.recovery_used_at, now)}, so it won't work again: make a new one on the phone's page` });
   }
   const tampering: Problem[] = [];
   if (signingChanged(row, facts)) {

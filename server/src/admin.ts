@@ -18,6 +18,7 @@
  *   agent-add <apk> --version-code <n> [--version-name <name>]
  *                                                 stores a version of Belay; prints only its SHA-256
  *   agent-offer "<phone>" <sha256>                offers that version to the phone, as a parent would
+ *   recovery-key "<phone>"                        a new recovery key for the phone; prints only the key, grouped
  *
  * Changes are logged as the server's (the activity log's "The server"). A running server sees
  * them within a second or two and passes them to the phone's long-poll. Hardening (factory
@@ -30,6 +31,7 @@ import type { DB } from "./db.js";
 import { createEnrollmentCode } from "./device/enroll.js";
 import { packageName, sha256Hex } from "./device/schemas.js";
 import { AgentFileError, type Offer, addAgentFile, currentOffer, offerAgent, versionWords } from "./family/agent.js";
+import { type RecoveryState, makePhoneRecoveryKey, recoveryState, usableKey } from "./family/recovery.js";
 import { appCounts, listChanges } from "./family/apps.js";
 import { type DeviceRow, findDeviceByName, listDevices, nameTaken } from "./family/devices.js";
 import { LIMITS, RuleRefused, askAgainSummary, decideApp, pausePhone, protect, resumePhone, setNewApps, type PolicyContext } from "./family/policy.js";
@@ -70,6 +72,14 @@ function updateStatus(offer: Offer | null, iso: (ms: number | null) => string | 
   };
 }
 
+/** status --json's recovery: never the key or its check. */
+function recoveryStatus(state: RecoveryState, iso: (ms: number | null) => string | null) {
+  return {
+    version: usableKey(state) ? (state.current?.version ?? null) : null,
+    last_used: state.lastUse ? { version: state.lastUse.version, used_at: iso(state.lastUse.usedAt), until: iso(state.lastUse.until) } : null,
+  };
+}
+
 /** "Of the apps without a decision, 1 is allowed and 2 wait for a parent." */
 function askAgainWords(r: { grandfathered: number; stillWaiting: number }): string {
   return `Of the apps without a decision, ${r.grandfathered} ${r.grandfathered === 1 ? "is" : "are"} allowed and ${r.stillWaiting} ${r.stillWaiting === 1 ? "waits" : "wait"} for a parent.`;
@@ -90,7 +100,8 @@ const USAGE = `Commands:
   pause "<phone>" [--minutes N] [--note text]
   resume "<phone>"
   agent-add <apk> --version-code <n> [--version-name <name>]
-  agent-offer "<phone>" <sha256>`;
+  agent-offer "<phone>" <sha256>
+  recovery-key "<phone>"`;
 
 /** Positional arguments, and --name value (or --name=value, or a bare --name) flags. */
 function parseArgs(args: string[]): { positional: string[]; flags: Map<string, string | true> } {
@@ -201,6 +212,8 @@ async function run(argv: string[], io: CliIO): Promise<void> {
           agent_signing_sha256: d.facts?.agent_signing_sha256 ?? null,
           /** Phase 6: the update offered to the phone, if any, and how it's going. */
           agent_update: updateStatus(currentOffer(db, d.id), iso),
+          /** Phase 6: the version of the recovery key the policy carries (null: none, or it was used), and its last use. */
+          recovery: recoveryStatus(recoveryState(db, d.id), iso),
           /** The kid's requests: waiting ones, and the last 30 days'. */
           requests: recentRequests(db, now, { deviceId: d.id }).map((r) => ({ package: r.package, status: r.status, reason: r.reason })),
           recent_changes: listChanges(db, { deviceId: d.id, includeSystem: true, limit: 20 }).map((c) => ({
@@ -304,6 +317,18 @@ async function run(argv: string[], io: CliIO): Promise<void> {
       if (!existed) audit(db, now, server, "agent.added", { detail: { version_code: file.versionCode, version_name: file.versionName ?? undefined, sha256: file.sha256, size: file.size } });
       io.out(file.sha256);
       io.err(`${existed ? "Already on the server" : "Added"}: Belay ${versionWords(file)}, ${file.size} bytes. To offer it to a phone: agent-offer "<phone>" ${file.sha256}`);
+      return;
+    }
+    case "recovery-key": {
+      // Its only line on stdout is the key, grouped, for scripts; the rest goes to stderr.
+      const row = phone();
+      if (row.revoked_at !== null) throw new CliError(`${row.name} is disconnected, so a new key wouldn't reach it.`);
+      const done = makePhoneRecoveryKey(ctx, row.id, server);
+      io.out(done.result.grouped);
+      io.err(
+        `Recovery key version ${done.result.version} for ${row.name} (rules version ${done.version}). It's shown only now: print it, or keep it in a password manager.` +
+          (done.result.replaced ? " The earlier key stops working once the phone has this one." : ""),
+      );
       return;
     }
     case "agent-offer": {

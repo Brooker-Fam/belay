@@ -138,6 +138,10 @@ function what(e: AuditEntry): string {
       return `couldn't install Belay ${version(d)}`;
     case "agent.updated":
       return `updated Belay to ${version(d)}`;
+    case "recovery.made":
+      return `made a new recovery key${device}`;
+    case "recovery.used":
+      return "had its recovery key typed in, opening repair access for 24 hours";
     default:
       if (e.action === "ai.read") return `read ${str(d.what) || "data"}${device}`;
       return e.action;

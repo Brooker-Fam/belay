@@ -112,3 +112,19 @@ CREATE TABLE agent_offers (
 -- Reconnecting a phone with a new code pins again.
 ALTER TABLE devices ADD COLUMN agent_signing_sha256 TEXT;
 ALTER TABLE devices ADD COLUMN agent_signing_at INTEGER;
+
+-- Phase 6: each phone's recovery keys (docs/protocol.md, "The recovery key"). The newest one is
+-- the phone's key; the policy carries its check until the phone reports it used. The key itself
+-- is shown once and never stored.
+CREATE TABLE recovery_keys (
+  device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  version INTEGER NOT NULL,                 -- 1, 2, …: a new key has the next one
+  salt TEXT NOT NULL,                       -- 16 random bytes, hex
+  hash TEXT NOT NULL,                       -- SHA-256 of the salt and the key (family/recovery.ts)
+  created_at INTEGER NOT NULL,
+  created_by TEXT REFERENCES parents(id) ON DELETE SET NULL,  -- NULL: the server's CLI
+  used_at INTEGER,                          -- when the phone says it was used (the phone's clock)
+  open_until INTEGER,                       -- the repair access it opened lasts until then (the phone's clock)
+  use_reported_at INTEGER,                  -- when the server heard
+  PRIMARY KEY (device_id, version)
+) STRICT;

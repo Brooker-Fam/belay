@@ -1,9 +1,87 @@
-/** Belay itself on a phone's page: updating it (Phase 6). */
+/** Belay itself on a phone's page: updating it, and its recovery key (Phase 6). */
 import type { FC } from "hono/jsx";
 import { type AgentFile, versionWords } from "../../family/agent.js";
 import type { DeviceView, UpdateView } from "../../family/devices.js";
+import type { Rules } from "../../family/policy.js";
+import { type RecoveryState, usableKey } from "../../family/recovery.js";
 import { formatDate } from "../../time.js";
-import { Csrf, Notice, PostButton, Time, type View } from "../ui.js";
+import { Csrf, Layout, Notice, PostButton, Time, type View } from "../ui.js";
+
+/** The recovery key, shown once: when a lock that can strand the phone was turned on, or a parent asked for a new one. */
+export const RecoveryKeyPage: FC<{ view: View; device: DeviceView; grouped: string; replaced: boolean; because: "hardening" | "asked" }> = ({
+  view,
+  device,
+  grouped,
+  replaced,
+  because,
+}) => (
+  <Layout view={view} title="Recovery key">
+    <h1>Recovery key for {device.name}</h1>
+    {because === "hardening" && <Notice>Saved. Locking that can strand the phone, so here's its recovery key.</Notice>}
+    <Notice kind="warn">It's shown only now. Print it, or keep it in a password manager.</Notice>
+    <pre id="secret" class="code">
+      {grouped}
+    </pre>
+    <p>
+      <button type="button" class="quiet" data-copy="secret" hidden>
+        Copy
+      </button>
+    </p>
+    <p>
+      If this server is ever lost, typing this key in Belay on the phone (About Belay, then Recovery) lifts the factory reset and debugging locks for
+      24 hours, without the server, so the phone can be repaired. It works once; then make a new one on the phone's page.
+    </p>
+    <p class="muted">
+      The phone gets only a check of this key, never the key, within seconds if it's online.
+      {replaced && " The earlier key stops working once the phone has this one."} Belay keeps only the check too.
+    </p>
+    <p>
+      <a href={`/devices/${device.id}#hardening`}>Back to {device.name}</a>
+    </p>
+  </Layout>
+);
+
+/** Whether the phone has a recovery key, when it was last used, and the button for a new one. */
+export const RecoveryCard: FC<{ view: View; device: DeviceView; rules: Rules; recovery: RecoveryState }> = ({ view, device, rules, recovery }) => {
+  const locked = rules.restrictions.factory_reset || rules.restrictions.debugging;
+  const used = recovery.current?.usedAt != null;
+  return (
+    <div class="card">
+      <p>
+        <strong>Recovery key.</strong> If this server is ever lost, the recovery key typed on the phone lifts the factory reset and debugging locks for
+        24 hours, with no server, so the phone can be repaired. It works once.
+      </p>
+      {used && recovery.lastUse && recovery.lastUse.version === recovery.current?.version ? (
+        <Notice kind="warn">
+          The recovery key was used on the phone, <Time ms={recovery.lastUse.usedAt} tz={view.tz} /> by its clock, opening repair access until{" "}
+          <Time ms={recovery.lastUse.until} tz={view.tz} />. It won't work again: make a new one.
+        </Notice>
+      ) : usableKey(recovery) && recovery.current ? (
+        <p class="small">
+          This phone has one, made <Time ms={recovery.current.createdAt} tz={view.tz} />
+          {recovery.current.createdBy ? ` by ${recovery.current.createdBy}` : " with the server's admin command"}. Keep it printed or in a password manager.
+        </p>
+      ) : locked ? (
+        <Notice kind="warn">There's no recovery key for this phone yet. Make one now: it's how the phone can be repaired if this server is lost.</Notice>
+      ) : (
+        <p class="muted small">Turning on a lock above makes one for this phone. You can make one now too.</p>
+      )}
+      {recovery.lastUse && recovery.lastUse.version !== recovery.current?.version && (
+        <p class="muted small">
+          An earlier key was used <Time ms={recovery.lastUse.usedAt} tz={view.tz} />.
+        </p>
+      )}
+      <PostButton
+        view={view}
+        action={`/devices/${device.id}/recovery-key`}
+        kind="quiet"
+        confirm={usableKey(recovery) ? `Make a new recovery key for ${device.name}? The old one stops working.` : undefined}
+      >
+        Make a new recovery key
+      </PostButton>
+    </div>
+  );
+};
 
 const STATE_WORDS: Record<NonNullable<UpdateView["state"]>, string> = {
   downloading: "The phone is downloading it.",
