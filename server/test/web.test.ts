@@ -140,6 +140,13 @@ describe("CSRF", () => {
     expect((await get(t, "/settings", a.cookie)).status).toBe(200);
   });
 
+  it("refuses a form too large to be one", async () => {
+    const t = testServer();
+    await signIn(t);
+    const res = await postForm(t, "/login", { username: "sam", password: "x".repeat(70_000) });
+    expect(res.status).toBe(413);
+  });
+
   it("refuses a sign-in posted from another site", async () => {
     const t = testServer();
     await signIn(t);

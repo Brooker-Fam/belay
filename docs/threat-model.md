@@ -16,7 +16,7 @@ Don't hand a Phase 1 phone to a kid as if it were locked down.
 | Force-stop Belay or clear its data | Settings doesn't allow it for a device owner. | Already closed. |
 | Turn off Belay's notification, usage access or battery exemption | Reported plainly on the parent page ("Usage access for Belay is turned off"). | Phase 2 locks the settings that matter; Phase 3 needs usage access. |
 | Airplane mode, or no data | The phone goes quiet; after the silent threshold (12 hours by default) it's reported. Changes are queued and sent later. | By design: silence is a signal, not proof. |
-| Change the clock | Reported ("the phone's clock is 3 days behind"). The server orders changes by when it received them, so a wrong clock can't hide one. | Phase 2: `DISALLOW_CONFIG_DATE_TIME` and the auto-time policy. |
+| Change the clock | Reported ("the phone's clock is 3 days behind"). New apps still show as new to review: the server uses its own clock for that, and applies changes in the order they arrive. The timeline places changes by the phone's clock, so they can land on the wrong day. | Phase 2: `DISALLOW_CONFIG_DATE_TIME` and the auto-time policy. |
 | Safe mode | Third-party apps don't run; the phone goes quiet and is reported. | Phase 2: `DISALLOW_SAFE_BOOT`. |
 | Add another user or a private space | Not reported in Phase 1. Private Space is already blocked on device-owner phones. | Phase 2: `DISALLOW_ADD_USER`, `DISALLOW_USER_SWITCH`. |
 | A VPN or proxy app to get around filtering | Reported as an installed app. | Phase 2: `DISALLOW_CONFIG_VPN`, `DISALLOW_CONFIG_PRIVATE_DNS`, and the DNS filter blocks VPN sites. |

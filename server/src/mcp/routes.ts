@@ -8,8 +8,6 @@ import { canonicalResource, mcpUrl, resourceMetadataUrl } from "../oauth/routes.
 import { SCOPE, grantForAccessToken, touchGrant } from "../oauth/store.js";
 import { buildMcpServer } from "./server.js";
 
-const MAX_BODY = 256 * 1024;
-
 export function mcpRoutes(deps: Deps): Hono<{ Bindings: Bindings }> {
   const { db, config } = deps;
   const app = new Hono<{ Bindings: Bindings }>();
@@ -45,8 +43,6 @@ export function mcpRoutes(deps: Deps): Hono<{ Bindings: Bindings }> {
       c.header("Retry-After", String(verdict.retryAfterSeconds));
       return c.json({ jsonrpc: "2.0", id: null, error: { code: -32000, message: "Too many requests; wait a moment" } }, 429);
     }
-    const length = Number(c.req.header("content-length") ?? 0);
-    if (length > MAX_BODY) return c.json({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "Request too large" } }, 413);
     touchGrant(db, grant.id, now);
 
     const server = buildMcpServer(deps, { parentId: grant.parentId, parentName: grant.parentName, clientName: grant.clientName });

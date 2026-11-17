@@ -1,5 +1,6 @@
 /** The parent pages: server-rendered, no SPA, working without JavaScript. */
 import { type Context, Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { createMiddleware } from "hono/factory";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
@@ -131,6 +132,7 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
   const message = (c: WebContext, title: string, text: string, status: ContentfulStatusCode = 200, link?: { href: string; label: string }) =>
     render(c, <MessagePage view={view(c)} title={title} message={text} link={link} />, status);
 
+  app.use("*", bodyLimit({ maxSize: 64 * 1024, onError: (c) => c.text("That form is too large.", 413) }));
   app.use(
     "*",
     createMiddleware<WebEnv>(async (c, next) => {

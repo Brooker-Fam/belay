@@ -30,9 +30,10 @@ export class RateLimiter {
     return { ok: false, retryAfterSeconds: Math.max(1, Math.ceil((oldest + this.windowMs - this.now()) / 1000)) };
   }
 
-  /** Counts a hit, and says whether it was within the limit. */
+  /** Counts a hit, and says whether it was within the limit. A refused hit isn't counted. */
   hit(key: string): Verdict {
     const verdict = this.check(key);
+    if (!verdict.ok) return verdict;
     const list = this.hits.get(key) ?? [];
     list.push(this.now());
     this.hits.delete(key);

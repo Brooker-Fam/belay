@@ -75,6 +75,8 @@ export function enroll(db: DB, code: string, device: Device, now: number): Enrol
         `UPDATE devices SET token_hash = ?, revoked_at = NULL, facts = ?, facts_at = ?, last_seen_at = ? WHERE id = ?`,
       ).run(sha256(token), facts, now, now, deviceId);
     } else {
+      // Phones are named by their names over MCP: keep them unique.
+      for (let n = 2; db.prepare("SELECT 1 FROM devices WHERE name = ? COLLATE NOCASE").get(deviceName); n++) deviceName = `${row.device_name} (${n})`;
       deviceId = newId();
       db.prepare(
         `INSERT INTO devices (id, name, token_hash, enrolled_at, last_seen_at, facts, facts_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,

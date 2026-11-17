@@ -95,6 +95,15 @@ describe("enrollment", () => {
     expect(form.status).toBe(400);
   });
 
+  it("keeps phone names unique when two codes were made with the same name", async () => {
+    const t = testServer();
+    const first = createEnrollmentCode(t.deps.db, t.now(), { deviceName: "Test phone", createdBy: null });
+    const second = createEnrollmentCode(t.deps.db, t.now(), { deviceName: "Test phone", createdBy: null });
+    await post(t, "/api/v1/enroll", { code: first.code, device: device() });
+    const res = await post(t, "/api/v1/enroll", { code: second.code, device: device() });
+    expect(await res.json()).toMatchObject({ device_name: "Test phone (2)" });
+  });
+
   it("reconnects a phone under its old record, keeping its history", async () => {
     const t = testServer();
     const first = await enrollPhone(t, "Test phone");
