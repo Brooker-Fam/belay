@@ -94,6 +94,16 @@
     <string name="paused_note">Your parent says: “%1$s”</string>
     <string name="paused_still_work">Apps are paused, but the phone app and your texting app still work, and so does Belay. Belay never blocks calling or texting 911 or 988.</string>
 
+    <!-- A quiet notification when a new app starts waiting. %1$s is the app's name. -->
+    <string name="waiting_channel_name">Apps waiting for your parent</string>
+    <string name="waiting_channel_description">Tells you when a new app is paused until your parent says yes.</string>
+    <string name="waiting_notice_title">Waiting for your parent</string>
+    <string name="waiting_notice_one">%1$s is paused until your parent says yes. Tap to tell them why you want it.</string>
+    <plurals name="waiting_notice_many">
+        <item quantity="one">%d new app is paused until your parent says yes. Tap to tell them why you want it.</item>
+        <item quantity="other">%d new apps are paused until your parent says yes. Tap to tell them why you want them.</item>
+    </plurals>
+
     <string name="section_waiting">Waiting for your parent</string>
     <string name="waiting_intro">These apps are new, so they stay paused until your parent says yes. You can tell your parent why you want each one.</string>
     <string name="waiting_asked">Belay already asked your parent for you.</string>

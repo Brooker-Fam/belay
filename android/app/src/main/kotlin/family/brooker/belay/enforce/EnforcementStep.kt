@@ -20,6 +20,7 @@ import family.brooker.belay.core.PackageRecord
 import family.brooker.belay.core.Requests
 import family.brooker.belay.core.SimRules
 import family.brooker.belay.core.WirePolicy
+import family.brooker.belay.service.WaitingNotice
 import family.brooker.belay.store.AgentStore
 import java.util.UUID
 
@@ -112,6 +113,9 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
         store.commitEnforcement(next, made, now)
         PolicyTimer.schedule(app, plan.nextChangeAt)
         log(plan, changes, made)
+        // Android's screen for a held-back app can't name it: Belay's notice does.
+        if (owner && made.isNotEmpty()) WaitingNotice.show(app, made.map { it.label })
+        if (plan.waiting.isEmpty()) WaitingNotice.cancel(app)
 
         val all = made + requests
         val view = KidView(policy, plan, next, Requests.answered(all, policy), dnsRow?.setHost, labels(inventory, all, plan))

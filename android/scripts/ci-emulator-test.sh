@@ -161,9 +161,11 @@ service_running || die "BelayService isn't running in the foreground"
 ash dumpsys activity services "$PKG/.service.BelayAdminService" | contains 'ServiceRecord' ||
   die "Android didn't bind BelayAdminService (the DeviceAdminService)"
 echo "DeviceAdminService bound by the system"
-record="$(ash dumpsys notification --noredact | grep -F "pkg=$PKG " || true)"
+# The managed notice is notification id 1 (ManagedNotice.NOTIFICATION_ID); Phase 2 can also
+# show "Waiting for your parent" (id 2).
+record="$(ash dumpsys notification --noredact | grep -F "pkg=$PKG " | grep -F " id=1 " || true)"
 record="${record%%$'\n'*}"
-[ -n "$record" ] || die "no notification from $PKG"
+[ -n "$record" ] || die "no managed notice (notification id 1) from $PKG"
 printf '%s\n' "$record"
 # FLAG_NO_DISMISS (hidden, 0x2000): Android 14+ keeps a device owner's ongoing notice
 # undismissable. Android 17's dumpsys prints the flags by name; older versions in hex.
