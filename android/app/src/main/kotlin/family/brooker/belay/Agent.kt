@@ -17,6 +17,7 @@ import family.brooker.belay.service.BelayService
 import family.brooker.belay.settings.ConnectionStore
 import family.brooker.belay.store.AgentStore
 import family.brooker.belay.store.StateDump
+import family.brooker.belay.sync.PolicyPoll
 import family.brooker.belay.sync.Sync
 import family.brooker.belay.sync.SyncWork
 import family.brooker.belay.work.WatchdogWorker
@@ -128,6 +129,8 @@ object Agent {
                 publish(store, health, device ?: readDevice(), outcome.baseline.inventory, enforcement.view)
                 DebugTools.afterStep(app) { StateDump.json(store, connection) }
                 Sync.request(app, checkin = trigger.checkin || enforcement.reportChanged)
+                // A new connection: the long-poll asks the new server at once.
+                if (trigger == Trigger.ENROLLED) PolicyPoll.kick()
             } catch (t: Throwable) {
                 Log.e(TAG, "agent step failed (${trigger.label})", t)
             } finally {

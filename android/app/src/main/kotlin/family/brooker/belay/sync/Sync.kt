@@ -5,6 +5,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.util.Log
 import family.brooker.belay.Agent
+import family.brooker.belay.Trigger
 import family.brooker.belay.core.CheckinRequest
 import family.brooker.belay.core.EnrollProblem
 import family.brooker.belay.core.OutboxDrain
@@ -13,6 +14,7 @@ import family.brooker.belay.core.OutboxPolicy
 import family.brooker.belay.core.OutboxType
 import family.brooker.belay.core.SyncPolicy
 import family.brooker.belay.core.Verdict
+import family.brooker.belay.core.WirePolicy
 import family.brooker.belay.enroll.Enroller
 import family.brooker.belay.health.DeviceStatus
 import family.brooker.belay.health.HealthReader
@@ -30,7 +32,8 @@ import kotlin.random.Random
 /**
  * Talks to the family's server, on its own thread so network waits never hold up the
  * agent's reconcile thread. Enrollment runs here too, so it never overlaps a sync.
- * Every call is idempotent on the server, so sending again is always safe.
+ * Every call is idempotent on the server, so sending again is always safe. The policy
+ * long-poll runs on its own thread too ([PolicyPoll]); a check-in's policy is its fallback.
  */
 object Sync {
     private val executor = Executors.newSingleThreadExecutor { r -> Thread(r, "belay-sync") }
@@ -95,6 +98,35 @@ object Sync {
         Log.e(Agent.TAG, "sync failed", t)
         Report(connected = true, checkinFailed = checkin)
     }
+
+    /**
+     * The parent removed this phone on the server (or its token is lost): stop syncing. From
+     * the sync thread or the long-poll. The phone keeps enforcing the last policy it got.
+     */
+    fun disconnect(app: Context, reason: String) {
+        Log.w(Agent.TAG, "disconnected from the server: $reason")
+        ConnectionStore.disconnected(app, System.currentTimeMillis(), reason)
+        SyncWork.stop(app)
+    }
+
+    /**
+     * A policy from the server: kept if it replaces the stored one (core's PolicyRules), and
+     * then applied in an agent step. True when it was new.
+     */
+    fun received(app: Context, policy: WirePolicy, fromLongPoll: Boolean, at: Long): Boolean {
+        val kept = AgentStore.get(app).savePolicy(policy, fromLongPoll, at)
+        if (kept) {
+            Log.i(Agent.TAG, "policy ${policy.version} received (${if (fromLongPoll) "long-poll" else "check-in"})")
+            Agent.handle(app, Trigger.POLICY)
+        }
+        return kept
+    }
+
+    fun online(app: Context): Boolean {
+        val connectivity = app.getSystemService(ConnectivityManager::class.java) ?: return true
+        val capabilities = connectivity.getNetworkCapabilities(connectivity.activeNetwork) ?: return false
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
 }
 
 /** One pass: check in if due, then the outbox, oldest first. */
@@ -110,7 +142,7 @@ private class SyncRun(private val app: Context) {
             return Sync.Report(connected = false)
         }
         val checkinDue = checkinWanted || SyncPolicy.checkinDue(connection.lastCheckinAt, System.currentTimeMillis())
-        if (!online()) {
+        if (!Sync.online(app)) {
             // Not a failure: WorkManager runs the sync once there is a network.
             if (store.pendingCount() > 0) SyncWork.wake(app, 0)
             return Sync.Report(connected = true, checkinFailed = checkinDue)
@@ -143,6 +175,8 @@ private class SyncRun(private val app: Context) {
                 val skew = SyncPolicy.clockSkewMs(answer.body.serverTime, answer.sentAt, answer.receivedAt)
                 ConnectionStore.synced(app, answer.receivedAt, skew, checkin = true)
                 Log.i(Agent.TAG, "checked in (clock skew ${skew / 1000} s)")
+                // The long-poll's fallback: the answer carries the server's current policy.
+                Sync.received(app, answer.body.policy, fromLongPoll = false, at = answer.receivedAt)
                 Verdict.Sent
             }
             is DeviceApi.Answer.Refused -> verdictFor(answer, items = 1)
@@ -164,7 +198,12 @@ private class SyncRun(private val app: Context) {
             return true
         }
         val items = queue.map {
-            OutboxItem(it.id, if (it.type == OutboxRow.TYPE_SNAPSHOT) OutboxType.SNAPSHOT else OutboxType.EVENT, it.bytes)
+            val type = when (it.type) {
+                OutboxRow.TYPE_SNAPSHOT -> OutboxType.SNAPSHOT
+                OutboxRow.TYPE_REQUEST -> OutboxType.REQUEST
+                else -> OutboxType.EVENT
+            }
+            OutboxItem(it.id, type, it.bytes)
         }
         val result = OutboxDrain.run(items) { batch -> send(api, token, batch) }
         val finishedAt = System.currentTimeMillis()
@@ -192,17 +231,26 @@ private class SyncRun(private val app: Context) {
         return true
     }
 
-    /** One request for [batch]: a snapshot alone, or events. */
+    /** One request for [batch]: a snapshot alone, events, or the kid's requests. */
     private fun send(api: DeviceApi, token: String, batch: List<OutboxItem>): Verdict {
         val ids = batch.map { it.id }
-        val answer = if (batch.first().type == OutboxType.SNAPSHOT) {
-            // Gone when a newer snapshot replaced it meanwhile: nothing to send.
-            val payload = store.payload(ids.single()) ?: return Verdict.Sent
-            api.inventory(token, payload)
-        } else {
-            val payloads = store.eventPayloads(ids)
-            if (payloads.isEmpty()) return Verdict.Sent
-            api.events(token, payloads)
+        val answer = when (batch.first().type) {
+            OutboxType.SNAPSHOT -> {
+                // Gone when a newer snapshot replaced it meanwhile: nothing to send.
+                val payload = store.payload(ids.single()) ?: return Verdict.Sent
+                api.inventory(token, payload)
+            }
+            OutboxType.EVENT -> {
+                val payloads = store.eventPayloads(ids)
+                if (payloads.isEmpty()) return Verdict.Sent
+                api.events(token, payloads)
+            }
+            OutboxType.REQUEST -> {
+                // Gone when a newer send of the same request replaced it meanwhile.
+                val payloads = store.requestPayloads(ids)
+                if (payloads.isEmpty()) return Verdict.Sent
+                api.requests(token, payloads)
+            }
         }
         return when (answer) {
             is DeviceApi.Answer.Ok -> {
@@ -230,16 +278,5 @@ private class SyncRun(private val app: Context) {
         is Verdict.Disconnect -> verdict.reason
     }
 
-    /** The parent removed this phone on the server (or its token is lost): stop syncing. */
-    private fun disconnect(reason: String) {
-        Log.w(Agent.TAG, "disconnected from the server: $reason")
-        ConnectionStore.disconnected(app, System.currentTimeMillis(), reason)
-        SyncWork.stop(app)
-    }
-
-    private fun online(): Boolean {
-        val connectivity = app.getSystemService(ConnectivityManager::class.java) ?: return true
-        val capabilities = connectivity.getNetworkCapabilities(connectivity.activeNetwork) ?: return false
-        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-    }
+    private fun disconnect(reason: String) = Sync.disconnect(app, reason)
 }

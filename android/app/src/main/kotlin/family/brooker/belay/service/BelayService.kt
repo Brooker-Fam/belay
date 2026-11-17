@@ -10,12 +10,15 @@ import android.util.Log
 import family.brooker.belay.Agent
 import family.brooker.belay.DeviceOwnerSetup
 import family.brooker.belay.Trigger
+import family.brooker.belay.sync.PolicyPoll
 
 /**
  * The always-on foreground service, type systemExempted (allowed for device owners). Its
  * notification is the managed notice. It keeps a live process for the runtime package
- * receiver (PackageWatcher, registered per process), as BelayAdminService also does.
- * Started at boot, right after provisioning, and by the periodic check if it ever stops.
+ * receiver (PackageWatcher, registered per process), as BelayAdminService also does, and
+ * (Phase 2) owns the policy long-poll ([PolicyPoll]): a process with a foreground service
+ * keeps its network access in Doze. Started at boot, right after provisioning, and by the
+ * periodic check if it ever stops.
  */
 class BelayService : Service() {
     override fun onCreate() {
@@ -41,6 +44,7 @@ class BelayService : Service() {
             return
         }
         runningSince = System.currentTimeMillis()
+        PolicyPoll.start(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -50,6 +54,7 @@ class BelayService : Service() {
     }
 
     override fun onDestroy() {
+        if (runningSince != null) PolicyPoll.stop(this)
         runningSince = null
         super.onDestroy()
     }
