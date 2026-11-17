@@ -378,6 +378,9 @@ describe("Belay's signing certificate", () => {
     expect(view()?.signing).toMatchObject({ pinned: A, reported: B, changed: true });
     const html = await (await get(t, `/devices/${enrolled.device_id}`, sam.cookie)).text();
     expect(html).toContain('<li class="tamper">Belay on the phone is signed with a different key than when it was set up.');
+    // Whole, so a parent can compare it with what apksigner prints.
+    expect(html).toContain(`<code class="digest">${A}</code>`);
+    expect(html).toContain(`The phone now reports another one: <code class="digest">${B}</code>.`);
     const status = await mcpCall(t, sam.parent.id, "get_device_status", { device: "CI phone" });
     expect(status.belay_on_the_phone.signing).toBe("different from the certificate it was set up with: someone may have replaced Belay with another build");
     expect(status.problems[0]).toContain("signed with a different key");

@@ -272,12 +272,13 @@ export const UpdateCard: FC<{ view: View; device: DeviceView; files: AgentFile[]
       )}
       {device.signing.pinned !== null && (
         <p class="muted small">
-          Belay's signing certificate (SHA-256) <code>{device.signing.pinned.slice(0, 16)}…</code>, since <Time ms={device.signing.pinnedAt ?? device.enrolledAt} tz={view.tz} />.
+          Belay's signing certificate (SHA-256, as <code>apksigner verify --print-certs</code> shows it): <code class="digest">{device.signing.pinned}</code>, since{" "}
+          <Time ms={device.signing.pinnedAt ?? device.enrolledAt} tz={view.tz} />.
           {device.signing.changed && device.signing.reported !== null && (
             <>
               {" "}
               <strong>
-                The phone now reports another one, <code>{device.signing.reported.slice(0, 16)}…</code>.
+                The phone now reports another one: <code class="digest">{device.signing.reported}</code>.
               </strong>
             </>
           )}
