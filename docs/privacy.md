@@ -75,6 +75,10 @@ depends on the policy's `measure`, which only a parent sets (never an AI app):
 - The kid's requests gain two kinds: more time (how many minutes, for which limit and app,
   and their own words if they write some) and their answer to the family agreement ("I agree"
   or "I want to talk about it", and their words).
+- On the server: a usage day sent while measuring is off isn't kept, and the time of the
+  apps the phone never blocks isn't kept even if a phone sends it. AI apps read usage only
+  with Settings' "Screen time" category on, and the stage, the family agreement and the kid's
+  answers to it only with "Stage and agreement"; the more-time requests are under "Requests".
 
 Not collected: what's on the screen, what's typed, websites, notifications, or anything inside
 an app. Network logging (which domains apps look up) is a later part of Phase 3, off by
@@ -141,11 +145,12 @@ sends outside the family's server, and the parent page says so where you choose 
 
 - **Parents,** on the parent page, with their own accounts.
 - **AI apps a parent connects** (like Claude), through MCP, and only the categories the
-  parents allow in Settings: apps, device status, and (from Phase 2) requests, the kid's own
-  words, all on by default (a category added in an upgrade starts off for a family that had
-  turned one off, and Settings marks it new). The server's own health (its backups, disk and
-  clock) is open to them too; it holds no family data. What an AI app reads goes to its provider under that
-  provider's terms. [mcp.md](mcp.md#what-reaches-the-ai-provider) lists exactly what that
+  parents allow in Settings: apps, device status, (from Phase 2) requests, the kid's own
+  words, and (from Phase 3) screen time, and the stage and agreement, all on by default (a
+  category added in an upgrade starts off for a family that had turned one off, and Settings
+  marks it new). The server's own health (its backups, disk and clock) is open to them too;
+  it holds no family data. What an AI app reads goes to its provider under that provider's
+  terms. [mcp.md](mcp.md#what-reaches-the-ai-provider) lists exactly what that
   is. Every read is in the activity log.
 
 ## What the kid sees (Phase 2)
@@ -202,10 +207,14 @@ sends outside the family's server, and the parent page says so where you choose 
 ## How long it's kept
 
 Until a parent deletes it. Deleting a disconnected phone on its page deletes everything
-recorded about it: its apps, changes and reviews. The server's daily backups still hold it
-until they age out, 14 days later, as do any copies the family made. Expired sessions,
-codes and tokens are deleted automatically. The activity log is kept so parents can see what
-happened.
+recorded about it: its apps, changes and reviews, and from Phase 3 its screen time, rules,
+requests and agreement. The server's daily backups still hold it until they age out, 14 days
+later, as do any copies the family made. Expired sessions, codes and tokens are deleted
+automatically. The activity log is kept so parents can see what happened.
+
+Screen time (Phase 3) doesn't wait for a parent: the server keeps each day 13 months by
+default (the family chooses 1 to 36 in Settings), then deletes it, with the extra time given
+that day. Turning measuring off stops new days; the ones kept stay until they age out.
 
 ## Respecting the kid
 

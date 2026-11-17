@@ -22,7 +22,7 @@ schemas in `server/src/device/schemas.ts`. Change all three together.
 | Endpoint | Body limit |
 |---|---|
 | `POST /api/v1/enroll` | 16 KB |
-| `POST /api/v1/checkin` | 32 KB |
+| `POST /api/v1/checkin` | 64 KB (32 KB before Phase 3) |
 | `POST /api/v1/inventory` | 4 MB, at most 5000 packages |
 | `POST /api/v1/events` | 512 KB, at most 1000 events |
 | `GET /api/v1/policy` | (no body) |
@@ -171,7 +171,20 @@ waiting per phone; past that, new ones are answered `429`.
 Phase 3 makes Request a union on `kind`: `app`, `more_time` (more minutes for a limit
 today) and `agreement` (the kid's answer to the family agreement). Only a parent answers;
 an approved `more_time` answer carries the `minutes` given, and the policy's
-`screen_time.extra` gets them. Until the server builds Phase 3 it accepts only `app`.
+`screen_time.extra` gets them. What the server does with them:
+
+- A new `more_time` request for a limit that has one waiting takes its place, like an app's,
+  with the kid's earlier reason until they write another; a new `agreement` answer takes the
+  place of any that's waiting. At most 60 `more_time` requests can wait per phone; past that,
+  new ones are answered `429`.
+- `agree` waits for no one: it's answered `approved` as it arrives, and the policy's
+  `agreement.kid_agreed_at` becomes its `asked_at` (the newest answer to a version decides).
+  `talk` waits for a parent like any request.
+- A parent gives 15, 30 or 60 minutes (1 to 240 from the server's command line), which may
+  not be what was asked. Approving adds an `extra` entry for the request's limit (all its
+  apps) on the phone's current day, in `screen_time.zone` from `day_starts`, with the
+  request's id in `request_id`; answering again replaces it. The policy's `extra` holds
+  yesterday's and today's entries.
 
 ## `POST /api/v1/usage`
 
@@ -199,6 +212,13 @@ The phone sends only what it counted since the policy's `measure` turned on (the
 that first day before is a gap), and drops days it hasn't sent yet when `measure` goes off.
 Usage days wait in their own lane of the outbox, so a server without this endpoint (`404`,
 retried later) holds back nothing else.
+
+The server keeps a day only while the phone's rules measure: a day sent while `measure` is
+off is answered `200`, counted in `accepted`, and dropped, as is one whose `day` isn't a
+real date. It leaves out of `apps` every app it never blocks (the phone's `never_blocked`,
+and the well-known dialers, texting apps and emergency apps), even if a phone sends one.
+`accepted` counts the days the phone can stop sending, kept or not. Days are deleted after
+the family's retention (13 months by default).
 
 ## `GET /api/v1/agent/<sha256>.apk`
 
@@ -322,7 +342,11 @@ server decides whether a change tightens or loosens.
   The phone runs it after applying the rest of the policy, so a pause sent with it suspends
   the apps first. A phone updated to a Belay that can lock reads that permission at its next
   restart (platform notes S5): until then the result is `failed`, "Android lets Belay lock the
-  screen only after the phone restarts once with this version of Belay."
+  screen only after the phone restarts once with this version of Belay." The server sends it
+  with `expires_at` 10 minutes on, and with a pause of 5 to 240 minutes when a parent or an AI
+  client locks the phone (the command line's `lock-now` sends the lock alone, expiring after
+  its `--minutes`); a new one replaces one still waiting. The parent sees a failed one's
+  `problem` word for word.
 - **The report:** `enforcement.screen_time` changes every minute the phone is used, but the
   phone checks in early only when something other than the minutes changed (a limit used up,
   a schedule starting, usage access, a self-serve take); the 2-hourly check-in carries the

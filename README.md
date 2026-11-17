@@ -53,7 +53,6 @@ OK?", with a web page as the fallback.
   If usage access is turned off, apps with a limit pause (or stay open, as the family
   chooses) and the kid is told how to turn it back on. Only while a parent has measuring on,
   each day's usage goes to the server; "What your parent can see" says so the moment it's on.
-  The server's Phase 3 (rules pages, MCP tools, usage storage) is next.
 - **`server/`: the family's server.** Node and SQLite in one Docker image. The device API,
   the parent pages (phones and their health, apps with "new" badges and reviews, the
   timeline, adding a phone, settings, the activity log), and OAuth 2.1 plus MCP for Claude.
@@ -61,7 +60,14 @@ OK?", with a web page as the fallback.
   block per app, pause, web filter and Chrome, locked settings, maintenance, hardening), the
   kid's requests, AI proposals, and end-to-end encrypted Web Push to parents' browsers. Over
   MCP, an AI client can block an app or pause the phone; anything that loosens is only a
-  proposal a parent approves on the parent page.
+  proposal a parent approves on the parent page. **Phase 3:** each phone's screen-time rules
+  (limits, schedules, exempt apps, self-serve, and measuring, which only a parent turns on),
+  stages the family writes and moves a phone through, the family agreement, the kid's
+  requests for more time (answered with 15, 30 or 60 minutes), lock now, and each phone's
+  screen time by the hour and by day, drawn on the server with a table beside each chart.
+  Usage is kept 13 months by default. Over MCP, an AI client reads screen time, locks the
+  phone and tightens the rules; the server decides whether a change only tightens, and
+  anything else, or a move to another stage, is a proposal.
 - **Phase 6, so far: backups that are proven to restore, and health monitoring.** The server
   backs itself up every day (the newest 14 kept, encrypted with the family's passphrase if
   they set one); `verify-backup` proves a backup restores, `restore` puts one back, and the
