@@ -305,8 +305,9 @@ in `periodic` mode, for one of the phone's places as the policy has them now; a 
 `help` fix always. Everything else is dropped and counted (the phone's Location page says
 how many). `accepted` counts every item in the call, kept, already kept or dropped: none of
 them needs sending again. A fix marked `mock` is kept, and shown as made up. The server shows
-and orders fixes (and picks the latest) by their `at`, but never later than 5 minutes after it
-got them: a phone whose clock is ahead can't keep a fix on top. Both times are kept.
+and orders fixes (and picks the latest) and place events by their `at`, but never later than 5
+minutes after it got them: a phone whose clock is ahead can't keep a fix or an arrival on top.
+Both times are kept.
 
 The server keeps at most 600 new fixes and place events an hour per phone, of any reason
 (lost-mode and help fixes too): past that, the call is answered `429` with `Retry-After`, and

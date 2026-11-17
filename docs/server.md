@@ -401,7 +401,8 @@ Only a parent changes any of it, there or with the CLI; AI apps can't, and can't
   (the phone's own receiver: private, slower indoors) or Android's combined provider (faster
   and indoors too, but on a Pixel it's Google's location service that answers).
 - **Where the phone is:** the last fix (by the phone's clock, but never more than 5 minutes after
-  the server got it, so a fix dated in the future doesn't stay on top), described by the
+  the server got it, so a fix dated in the future doesn't stay on top; arrivals and departures
+  are shown and ordered the same way), described by the
   family's places ("At School, within 40 m", "1.2 km from Home"), worked out on the server, with
   how old and how accurate it is,
   and **Open in a map**, a plain link to OpenStreetMap (or Google Maps, in Settings) that only

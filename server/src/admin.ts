@@ -384,7 +384,7 @@ async function run(argv: string[], io: CliIO): Promise<void> {
             command_id: f.commandId,
             mock: f.mock,
           })),
-          /** Phase 4: arrivals and departures, newest first, at most 50 (times as the phone sent them). */
+          /** Phase 4: arrivals and departures, newest first, at most 50 (the phone's times, but never more than 5 minutes after the server got them). */
           place_events: listPlaceEvents(db, d.id, { limit: STATUS_FIXES }).map((e) => ({ id: e.id, place_id: e.placeId, place_name: e.placeName, kind: e.kind, at: e.at, fix_id: e.fixId })),
           /** Phase 7: the policy's help_seen, parent_numbers and ai_reads. */
           help_seen: helpSeenFor(db, d.id, now),

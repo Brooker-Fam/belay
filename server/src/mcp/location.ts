@@ -205,7 +205,8 @@ export function registerLocationTools(server: McpServer, deps: Deps, caller: Cal
       if (end === null) return refusal("to must be a date like 2026-11-10 or a date and time like 2026-11-10T15:00.");
       if (end <= start) return refusal("to must be after from.");
       if (end - start > MAX_DAYS * durations.DAY) return refusal(`Ask for at most ${MAX_DAYS} days at a time.`);
-      const events = listPlaceEvents(db, row.id, { from: start, to: end, limit: 500 });
+      // Up to now: with no `to`, also the few minutes a phone's clock may be ahead (an event's time is never later than that).
+      const events = listPlaceEvents(db, row.id, { from: start, ...(to ? { to: end } : {}), limit: 500 });
       logRead(`arrivals and departures from ${iso(start) ?? ""} to ${iso(end) ?? ""}`, row.id);
       const s = locationSettings(db, row.id);
       return result({
