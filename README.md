@@ -49,8 +49,10 @@ OK?", with a web page as the fallback.
 4. **Transparent to the kid.** Nothing is monitored in secret. The phone always says it's
    managed and lists exactly what the parent can see, generated from the code that collects it.
 5. **Private by default.** All data stays on the family's server. No analytics, telemetry,
-   ads, crash reporting, Firebase, Google Play services or ML Kit. The server never calls
-   an AI or a third-party API: the parent's own MCP client is the only AI.
+   ads, crash reporting, Firebase, Google Play services or ML Kit. The server never sends
+   family data in readable form to anyone and never calls an AI: the parent's own MCP
+   client is the only AI. (Push notifications to a parent's browser are end-to-end
+   encrypted.)
 6. **Silence is a signal.** A phone that stops checking in, stops being device owner or
    loses a permission is reported plainly.
 7. **Built to loosen.** Rules relax as the kid shows they can handle it, and every

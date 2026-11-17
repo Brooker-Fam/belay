@@ -21,8 +21,11 @@ exists; [ROADMAP.md](ROADMAP.md) says what's next.
    (`inventory/Collectors.kt`, `core/DataCategory.kt`).
 5. **Private by default.** All data stays on the family's server. No analytics, telemetry,
    ads or crash-reporting SDKs; no Firebase, Google Play services or ML Kit in the agent.
-   The server never calls an AI or a third-party API. Settings decide which data
-   categories AI clients may read.
+   The server never sends family data in readable form to anyone, and never calls an AI:
+   the parent's own MCP client is the only AI. Its only outbound requests are reading an
+   allowlisted AI client's public metadata document (no family data) and end-to-end
+   encrypted push to a parent's own browser. Settings decide which data categories AI
+   clients may read.
 6. **Silence is a signal.** A phone that stops checking in, stops being device owner or
    loses a permission is reported plainly ("silent for 14 hours").
 7. **Built to loosen.** Rules relax as the kid shows they can handle it. Keep per-app
@@ -64,7 +67,8 @@ exists; [ROADMAP.md](ROADMAP.md) says what's next.
   `server/src/migrations/NNN_name.sql`, never edit an applied one); every parent or AI
   action goes through `audit()`; MCP results put developer- or kid-written text under
   `untrusted`; the server makes no outbound requests except the allowlisted client
-  metadata documents in `oauth/clients.ts`.
+  metadata documents in `oauth/clients.ts` and encrypted Web Push to allowlisted push
+  services.
 - **A new kind of data** needs a collector and `DataCategory` on the phone, an AI scope in
   `server/src/settings.ts`, and a line in [docs/privacy.md](docs/privacy.md).
 - **Small, reviewable commits.** Keep the README true as you go.

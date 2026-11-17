@@ -56,9 +56,20 @@ allows it, and only while that screen is open. Camera frames are never stored or
   are no analytics, telemetry, ads or crash-reporting SDKs, in the agent or the server.
 - **In backups** the family makes ([server.md](server.md#backups)).
 
-The phone only talks to the family's server. The server's only outbound request is reading
-the public client metadata document of an allowlisted AI client (claude.ai's) when a
-parent connects it; that request carries no family data.
+The phone only talks to the family's server. The server never sends family data in readable
+form to anyone, and makes only two kinds of outbound request:
+
+- reading the public client metadata document of an allowlisted AI client (claude.ai's)
+  when a parent connects it, with no family data in the request;
+- from Phase 2, push notifications to a parent's own browser, if that parent turned them
+  on. They're end-to-end encrypted (Web Push): the browser's push service (Google, Apple or
+  Mozilla) carries them but can't read them. It only sees that a notification was sent.
+
+From Phase 2, when a parent turns protection on, the phone uses a filtering DNS service so
+adult sites don't load: CleanBrowsing Family by default (AdGuard Family, a host of your
+own, or none are the alternatives). Filtering works by sending the phone's DNS lookups,
+the names of the sites it opens, to that service. That's the one thing the phone itself
+sends outside the family's server, and the parent page says so where you choose the filter.
 
 ## Who can see it
 
