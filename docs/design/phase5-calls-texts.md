@@ -1,8 +1,11 @@
 # Phase 5: calls and texts
 
-**Status: design.** Nothing here is built. Android facts cite
-[platform-notes-drafts.md](platform-notes-drafts.md) by id. The texts half depends on a Pixel test
-(T8) before it's decided.
+**Status: calls built, texts a design.** The calls half is built as Phase 5 (README, "What
+exists"; [protocol.md](../protocol.md), "Calls rules"); where the build differs from this design,
+the protocol and the code are right. Android facts cite
+[platform-notes-drafts.md](platform-notes-drafts.md) by id; the calls ones (T1 to T6) moved to
+[platform-notes.md](../platform-notes.md#calls-phase-5), next to T10 to T16. The texts half depends
+on a Pixel test (T8) before it's decided.
 
 ## Goals
 

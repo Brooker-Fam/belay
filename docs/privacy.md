@@ -127,10 +127,17 @@ app. Call records only while a parent also turns on "Keep a record of calls" (`l
 
 Never what anyone says, and never a call with 911, an emergency number, 988 or one of the
 family's private numbers: the phone doesn't record those at all, and the server drops any record
-of one it gets (it also treats 988's full number, 1-800-273-8255, as 988). "Please add this
-contact": the name the kid gives, the number and why. The contacts themselves, and the private
-and blocked numbers, are the family's own choices, on the server and in Belay's own storage on
-the phone; Belay never writes them into Android's Contacts, and doesn't read Android's call log.
+of one it gets (it also treats 988's full number, 1-800-273-8255, as 988). For 2 hours after the
+kid calls 911 or 988 (or taps one of Belay's buttons to text them), every caller rings, so they
+can call back; a call that rings only because of that is never sent either, since its record
+would tell. "Please add this contact": the name the kid gives, the number and why. The contacts
+themselves, and the private and blocked numbers, are the family's own choices, on the server and
+in Belay's own storage on the phone (the blocked ones also on Android's own block list while
+Belay is the phone app); Belay never writes them into Android's Contacts. While calls is on,
+Belay reads Android's call log on the phone, and never keeps or sends what it reads there: to
+notice a call to 911 or 988 made without Belay (which starts those 2 hours), and to show the kid
+their calls with 911, 988 and the private numbers in Belay's recent calls, for as long as
+Android's own log has them.
 
 **Not collected in Phase 1:** messages, calls, contacts, photos, files, browsing, searches,
 location (Phase 4 adds it, off by default), what's on the screen, or how long apps are used. Later phases add some of these
@@ -154,7 +161,8 @@ and some (location, network logs) off by default for AI.
   is offline). When a parent turns location off, the ones not sent yet are dropped.
 - Phase 7: a help or talk request at once; a shared fix as soon as Belay has it.
 - Phase 5: each call record after the call, only while the phone's rules record calls; a contact
-  request at once. Records the server gets while it doesn't record calls are dropped, and only
+  request at once. When a parent turns recording or calls off, the phone drops the records it
+  hasn't sent yet. Records the server gets while it doesn't record calls are dropped, and only
   counted.
 
 The camera is used only to scan the enrollment QR code, only if the person scanning
@@ -173,6 +181,12 @@ allows it, and only while that screen is open. Camera frames are never stored or
   event that was sent is deleted from the phone at once, and all of it goes when location is
   turned off. Phase 7's "What Belay told your parent" is the phone's own list of the checks it
   ran for the last 30 days (when, and the AI app's name if one was used; no coordinates).
+  Phase 5 keeps Belay's own recent calls, the last 30 days (at most 500): when, which way, how
+  long, what happened and why, and the contact or the number; never a call with 911, an
+  emergency number, 988 or a private number. They're the kid's recent calls, kept whether or not
+  calls are recorded, and deleted, with any records not sent yet, when calls is turned off. When
+  the kid last called 911 or 988 (or tapped a button to text them) is kept only for the 2 hours
+  every caller rings, and never sent.
 - **On the family's server:** one SQLite database in `/data`, on a machine the family
   controls ([server.md](server.md)). Nothing goes to Belay's authors or anyone else. There
   are no analytics, telemetry, ads or crash-reporting SDKs, in the agent or the server.
@@ -310,15 +324,24 @@ sends outside the family's server, and the parent page says so where you choose 
 
 ## What the kid sees (Phase 5)
 
-- **Belay as the phone app** once a parent turns calls on, with the contacts the parents approved,
-  and two buttons that are always there: 911, and 988 to call or text for crisis support.
-- **Who can call them and whom they can call**, from the policy's rules and contacts, and "Ask to
-  add a contact" (a name, the number and why), with the parent's answer under My requests.
+- **Belay as the phone app** once a parent turns calls on: a dial pad, the contacts the parents
+  approved, recent calls, and Belay's own screens for a call that rings and a call going on, with
+  two buttons that are always there: "Emergency (911)", and "988: Call or text for crisis
+  support", which says that 988 is free and private and that Belay never tells anyone the kid
+  called or texted.
+- **Who can call them and whom they can call**, in plain words from the policy's rules and
+  contacts ("Calls from other numbers don't ring.", "911 and 988 always work. For 2 hours after
+  you call 911 or 988, anyone can call you back."), and "Ask to add a contact" (a name, the number
+  and why), with the parent's answer under My requests.
 - **What your parent can see** gains "Your calls" only while calls are recorded: who they call and
   who calls them, when, and for how long; not what anyone says; never 911 or 988. It loses it when
-  recording stops.
+  recording stops. "How the phone and Belay are doing" adds whether Belay is the phone's calling
+  app.
 - A call the rules refused never rings; Belay's recent calls say why ("Missed: number not in your
-  contacts").
+  contacts"). Calls with 911, 988 and the private numbers show there, marked "only on this phone",
+  only while the phone's own call history has them.
+- When Belay isn't the phone's calling app (it broke, or Android refused), its screen says so:
+  "calls go through the phone's own app. Your parent can see this."
 
 These are the phone's words and screens ([protocol.md](protocol.md), "Calls rules"); the server
 sends the rules and contacts they're built from, and nothing else about calls.

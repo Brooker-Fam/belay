@@ -1,5 +1,8 @@
 package family.brooker.belay.store
 
+import android.content.Context
+import family.brooker.belay.calls.CallFlow
+import family.brooker.belay.calls.Dialer
 import family.brooker.belay.core.AppChange
 import family.brooker.belay.core.HandoverPlan
 import family.brooker.belay.core.Heartbeat
@@ -7,11 +10,13 @@ import family.brooker.belay.core.Reconcile
 import family.brooker.belay.core.UpdateRecord
 import family.brooker.belay.core.WireCommandResult
 import family.brooker.belay.core.WireRecoveryUse
+import family.brooker.belay.core.calls.WireCallsStatus
 import family.brooker.belay.core.location.WireLocationStatus
 import family.brooker.belay.core.screentime.WireScreenTimeStatus
 import family.brooker.belay.settings.Connection
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -23,13 +28,14 @@ import kotlinx.serialization.json.putJsonObject
  * requests it made, without the kid's words, (Phases 6 and 10) the update, the recovery
  * key's tries and use, and the commands' results, (Phase 3) why each app is held and
  * screen time's count and state, (Phase 4) location's report and what it wants, without where the
- * phone is, (Phase 7) whether each request was taken back or seen, and (Phase 11) the hand-over:
- * when the policy asked for it, what Belay did about reset protection, and whether it still holds
- * any of the hand-over's locks. Debug builds write it after every step (DebugTools.afterStep), for
- * android/scripts/ci-emulator-test.sh.
+ * phone is, (Phase 7) whether each request was taken back or seen, (Phase 5) the dialer, the
+ * block list Belay keeps and how it decided the last calls, without numbers, and (Phase 11) the
+ * hand-over: when the policy asked for it, what Belay did about reset protection, and whether it
+ * still holds any of the hand-over's locks. Debug builds write it after every step
+ * (DebugTools.afterStep), for android/scripts/ci-emulator-test.sh.
  */
 object StateDump {
-    fun json(store: AgentStore, connection: Connection): String = buildJsonObject {
+    fun json(context: Context, store: AgentStore, connection: Connection): String = buildJsonObject {
         put(
             "heartbeats",
             JsonArray(store.recentHeartbeats(Reconcile.MAX_HEARTBEATS).asReversed().map { Json.encodeToJsonElement(Heartbeat.serializer(), it) }),
@@ -133,5 +139,47 @@ object StateDump {
             put("unsent", store.pendingLocationCount())
             put("told", store.told().size)
         }
+        // Phase 5: the dialer and how Belay decided the last calls, without anyone's number but the
+        // parent's own blocked list, and never when the kid last called 911 or 988.
+        putJsonObject("calls") { callsDump(this, store, context) }
     }.toString()
+
+    private fun callsDump(out: JsonObjectBuilder, store: AgentStore, context: Context) {
+        val state = store.callsState()
+        out.put("on", store.policy()?.calls != null)
+        out.put("default_dialer", Dialer.defaultDialer(context))
+        out.put("is_dialer", Dialer.isDialer(context))
+        out.put("components_enabled", Dialer.componentsEnabled(context))
+        out.put("dialer_before", state?.dialerBefore)
+        state?.report?.let { out.put("report", Json.encodeToJsonElement(WireCallsStatus.serializer(), it)) }
+        out.put("blocked_by_belay", JsonArray(state?.blockedByBelay.orEmpty().sorted().map(::JsonPrimitive)))
+        out.put("call_phone_denied", JsonArray(state?.callPhoneDenied.orEmpty().sorted().map(::JsonPrimitive)))
+        out.put("ringing", CallFlow.ringing)
+        out.put(
+            "now",
+            JsonArray(
+                CallFlow.summary().map { call ->
+                    buildJsonObject { call.forEach { (k, v) -> put(k, v) } }
+                },
+            ),
+        )
+        out.put(
+            "decided",
+            JsonArray(
+                CallFlow.decisions().map {
+                    buildJsonObject {
+                        put("at", it.at)
+                        put("action", it.action.name.lowercase())
+                        put("because", it.because?.name?.lowercase())
+                        put("reason", it.reason?.name?.lowercase())
+                        put("contact_id", it.contactId)
+                        put("rang", it.rang)
+                        put("screened", it.screened)
+                    }
+                },
+            ),
+        )
+        out.put("recent", store.calls().size)
+        out.put("unsent", store.pendingCallCount())
+    }
 }

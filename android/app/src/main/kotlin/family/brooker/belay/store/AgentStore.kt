@@ -24,6 +24,10 @@ import family.brooker.belay.core.Wire
 import family.brooker.belay.core.WireEvent
 import family.brooker.belay.core.WirePolicy
 import family.brooker.belay.core.WireRequest
+import family.brooker.belay.core.calls.CallEntry
+import family.brooker.belay.core.calls.CallRecords
+import family.brooker.belay.core.calls.CallsState
+import family.brooker.belay.core.calls.WireCallRecord
 import family.brooker.belay.core.kid.Told
 import family.brooker.belay.core.location.LocationState
 import family.brooker.belay.core.location.ToldEntry
@@ -69,6 +73,16 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
         val told: List<ToldEntry> = emptyList(),
         /** Location went off: unsent fixes and place events aren't sent. */
         val dropUnsent: Boolean = false,
+    )
+
+    /** Phase 5: what an enforcement step does with calls' row and Belay's own call records. */
+    data class CallsWrite(
+        /** Null: the row goes (calls is off, and nothing of Belay's is left to undo). */
+        val state: CallsState?,
+        /** `log` is off: unsent call records aren't sent. */
+        val dropUnsent: Boolean = false,
+        /** Calls went off: Belay's own recent calls go too. */
+        val clearRecents: Boolean = false,
     )
 
     private val inventory = db.inventory()
@@ -199,6 +213,10 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
             rows.filter { it.type == OutboxRow.TYPE_PLACE_EVENT }.map { it.payload }
     }
 
+    /** Phase 5: the call records' JSON (WireCallRecords), in [ids] order. */
+    fun callPayloads(ids: List<Long>): List<String> =
+        ids.chunked(CHUNK).flatMap { outbox.callPayloads(it) }.sortedBy { it.id }.map { it.payload }
+
     private fun payloads(ids: List<Long>, type: String): List<String> =
         ids.chunked(CHUNK).flatMap { outbox.payloads(it, type) }.sortedBy { it.id }.map { it.payload }
 
@@ -244,6 +262,9 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
 
     /** Phase 4: fixes and place events waiting to be sent. */
     fun pendingLocationCount(): Int = outbox.pendingLocationCount()
+
+    /** Phase 5: call records waiting to be sent. */
+    fun pendingCallCount(): Int = outbox.pendingCallCount()
 
     val pendingCountFlow: Flow<Int> get() = outbox.pendingCountFlow()
 
@@ -303,9 +324,11 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
         usage: List<WireUsageDay> = emptyList(),
         dropUsage: Boolean = false,
         location: LocationWrite? = null,
+        calls: CallsWrite? = null,
     ) {
         db.runInTransaction {
             if (location != null) writeLocation(location, at)
+            if (calls != null) writeCalls(calls, at)
             if (applied != null) {
                 enforcement.setEnforcement(EnforcementRow(applied = json.encodeToString(Applied.serializer(), applied), updatedAt = at))
             }
@@ -397,6 +420,60 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
             enforcement.upsertTold(write.told.map { ToldRow(it.id, Told.lastAt(it), json.encodeToString(ToldEntry.serializer(), it)) })
         }
         enforcement.pruneTold(Told.keepFrom(at))
+    }
+
+    /** Phase 5, inside commitEnforcement's transaction. */
+    private fun writeCalls(write: CallsWrite, at: Long) {
+        val state = write.state
+        if (state == null) {
+            enforcement.clearCallsState()
+        } else {
+            enforcement.setCallsState(CallsStateRow(state = json.encodeToString(CallsState.serializer(), state), updatedAt = at))
+        }
+        if (write.dropUnsent) {
+            val dropped = outbox.deleteAllPendingCalls()
+            if (dropped > 0) Log.i(Agent.TAG, "calls: $dropped unsent call records dropped (the policy doesn't log calls)")
+        }
+        if (write.clearRecents) enforcement.clearCalls()
+    }
+
+    /** Phase 5: calls' state; null before calls was ever on (or after it went off and was undone). */
+    fun callsState(): CallsState? = enforcement.callsState()?.let { decode(it.state, CallsState.serializer()) }
+
+    /** For the agent thread only, between steps (a call to 911 or 988 opened the callback window). */
+    fun saveCallsState(state: CallsState, at: Long) =
+        enforcement.setCallsState(CallsStateRow(state = json.encodeToString(CallsState.serializer(), state), updatedAt = at))
+
+    /** Phase 5: Belay's own recent calls, the newest first. */
+    fun calls(limit: Int = CallRecords.MAX_KEPT): List<CallEntry> =
+        enforcement.calls(limit).mapNotNull { decode(it.entry, CallEntry.serializer()) }
+
+    /**
+     * Phase 5, the agent thread: a call that ended. [entry] goes in Belay's own recent calls (null:
+     * one it must never keep, core's CallRecords), and [record] to the outbox (only with `log`).
+     */
+    fun commitCall(entry: CallEntry?, record: WireCallRecord?, at: Long) {
+        if (entry == null && record == null) return
+        db.runInTransaction {
+            if (entry != null) {
+                enforcement.upsertCalls(listOf(CallRow(entry.id, entry.at, json.encodeToString(CallEntry.serializer(), entry))))
+                enforcement.pruneCalls(at - CallRecords.KEEP_MS, CallRecords.MAX_KEPT)
+            }
+            if (record != null) {
+                outbox.insert(
+                    listOf(
+                        OutboxRow(
+                            type = OutboxRow.TYPE_CALL,
+                            itemId = "call:${record.id}",
+                            packageName = null,
+                            payload = Wire.json.encodeToString(WireCallRecord.serializer(), record),
+                            createdAt = at,
+                        ),
+                    ),
+                )
+                outbox.capPendingCalls(OutboxPolicy.MAX_PENDING_CALLS)
+            }
+        }
     }
 
     /** Phase 4: location's state; null while location is off and nothing is being shared (no row). */

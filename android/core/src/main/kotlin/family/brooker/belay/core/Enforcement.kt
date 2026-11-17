@@ -1,5 +1,6 @@
 package family.brooker.belay.core
 
+import family.brooker.belay.core.calls.WireCallsStatus
 import family.brooker.belay.core.location.LocationRules
 import family.brooker.belay.core.location.WireLocationStatus
 import family.brooker.belay.core.screentime.WireScreenTimeStatus
@@ -650,6 +651,7 @@ object Enforcement {
         recovery: WireRecoveryUse? = null,
         commands: List<WireCommandResult> = emptyList(),
         location: WireLocationStatus? = null,
+        calls: WireCallsStatus? = null,
     ): WireEnforcement? {
         val version = applied.policyVersion ?: return null
         return WireEnforcement(
@@ -664,6 +666,8 @@ object Enforcement {
             screenTime = applied.screenTime,
             // Phase 4: whether Belay can take a fix; null while location is off.
             location = location,
+            // Phase 5: whether Belay is the default dialer; null while calls is off.
+            calls = calls,
         )
     }
 }
