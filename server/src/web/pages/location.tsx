@@ -370,12 +370,26 @@ export const LocationPage: FC<{ view: View; data: LocationPageData; message?: st
         {data.places.map((p) => (
           <div class="rule">
             <div class="row spread">
-              <strong>{p.name}</strong>
+              <span>
+                <strong>{p.name}</strong>
+                <br />
+                <span class="small muted">
+                  within {p.radiusM} m of <span class="coords">{`${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`}</span>
+                  {p.notify.length > 0 &&
+                    ` · tells you when the phone ${p.notify.includes("arrive") && p.notify.includes("leave") ? "arrives and leaves" : p.notify.includes("arrive") ? "arrives" : "leaves"}`}
+                </span>
+              </span>
               <PostButton view={view} action={`/devices/${device.id}/location/places/${p.id}/remove`} kind="danger" confirm={`Remove ${p.name}?`}>
-                Remove
+                Remove<span class="sr-only"> {p.name}</span>
               </PostButton>
             </div>
-            <PlaceForm view={view} device={device} place={p} canUseFix={data.latest !== null} />
+            {/* Folded away, as a contact's form is on the Calls tab: open, each place was a screenful on a phone. */}
+            <details>
+              <summary>
+                Change<span class="sr-only"> {p.name}</span>
+              </summary>
+              <PlaceForm view={view} device={device} place={p} canUseFix={data.latest !== null} />
+            </details>
           </div>
         ))}
         {data.places.length < LOCATION_LIMITS.maxPlaces && (

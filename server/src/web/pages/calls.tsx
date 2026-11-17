@@ -351,16 +351,26 @@ export const CallsPage: FC<{ view: View; data: CallsPageData; message?: string; 
         {data.contacts.map((c) => (
           <div class="rule">
             <div class="row spread">
-              <strong>{c.name}</strong>
-              <span class="small muted">
-                {c.parent ? "parent · " : ""}
-                {c.calls ? "calls" : "no calls"} · {c.texts ? "texts" : "no texts"}
+              <span>
+                <strong>{c.name}</strong>{" "}
+                <span class="small muted">
+                  {c.parent ? "parent · " : ""}
+                  {c.calls ? "calls" : "no calls"} · {c.texts ? "texts" : "no texts"}
+                </span>
+                <br />
+                <span class="pkg">{c.numbers.join(", ")}</span>
               </span>
               <PostButton view={view} action={`/devices/${device.id}/calls/contacts/${c.id}/remove`} kind="danger" confirm={`Remove ${c.name}?`}>
-                Remove
+                Remove<span class="sr-only"> {c.name}</span>
               </PostButton>
             </div>
-            <ContactForm view={view} device={device} contact={c} />
+            {/* Folded away: five fields a contact, open, made the list hard to read on a phone. */}
+            <details>
+              <summary>
+                Change<span class="sr-only"> {c.name}</span>
+              </summary>
+              <ContactForm view={view} device={device} contact={c} />
+            </details>
           </div>
         ))}
         {data.contacts.length < CALL_LIMITS.maxContacts && (
