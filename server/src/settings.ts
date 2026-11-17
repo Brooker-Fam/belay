@@ -5,7 +5,7 @@ import { isValidTimeZone } from "./time.js";
 /**
  * Data categories AI clients may read, decided on the Settings page. Their ids are the phone's
  * data categories (the policy's `ai_reads` lists the ones that are on, for the kid's screen). All
- * on by default except location, which starts off for every family.
+ * on by default except location and calls, which start off for every family.
  */
 export const AI_SCOPES = {
   apps: "Apps: installed apps, their permissions, app changes and reviews",
@@ -14,11 +14,15 @@ export const AI_SCOPES = {
   screen_time: "Screen time: how long each app is used each day, when the phone is used, and the time left today",
   agreement: "Stage and agreement: the phone's stage, the family agreement, and the kid's answers to it",
   location: "Location: where the phone is (each check, and the fixes Belay shares), the family's places, and arrivals and departures",
+  calls: "Calls: who the kid calls and who calls them, when and for how long, and the numbers of contacts and of callers who aren't one (never 911, 988 or private numbers)",
 } as const;
 export type AiScope = keyof typeof AI_SCOPES;
 
-/** Off by default for every family, whatever it chose before: AI apps never see where the phone is unless a parent says so. */
-export const OFF_BY_DEFAULT: readonly AiScope[] = ["location"];
+/**
+ * Off by default for every family, whatever it chose before: AI apps never see where the phone is,
+ * or who calls the kid (other people's numbers too), unless a parent says so.
+ */
+export const OFF_BY_DEFAULT: readonly AiScope[] = ["location", "calls"];
 
 /** Phase 4: how long the server keeps where the phone was, in days (the hourly clean-up deletes the rest). */
 export interface LocationRetention {
@@ -74,19 +78,24 @@ export interface Settings {
   mapSite: MapSite;
   /** Phase 7: the family's numbers for every phone's emergency card (a phone may have its own instead). */
   parentNumbers: ParentNumber[];
+  /** Phase 5: how many days of call records the server keeps; older ones are deleted. */
+  callDays: number;
 }
 
 export const USAGE_MONTHS = { default: 13, min: 1, max: 36 } as const;
+/** Phase 5: call records' retention, in days. */
+export const CALL_DAYS = { default: 90, min: 1, max: 365 } as const;
 
 export const DEFAULT_SETTINGS: Settings = {
   timezone: "UTC",
   silentHours: 12,
-  aiScopes: { apps: true, device_status: true, requests: true, screen_time: true, agreement: true, location: false },
+  aiScopes: { apps: true, device_status: true, requests: true, screen_time: true, agreement: true, location: false, calls: false },
   newAiScopes: [],
   usageMonths: USAGE_MONTHS.default,
   locationDays: { periodic: LOCATION_DAYS.periodic.default, checks: LOCATION_DAYS.checks.default, placeEvents: LOCATION_DAYS.placeEvents.default, lostAfter: LOCATION_DAYS.lostAfter.default },
   mapSite: "openstreetmap",
   parentNumbers: [],
+  callDays: CALL_DAYS.default,
 };
 
 const SCOPE_KEYS = Object.keys(AI_SCOPES) as AiScope[];
@@ -109,6 +118,7 @@ function write(db: DB, key: string, value: unknown): void {
 }
 
 const validMonths = (n: unknown): n is number => typeof n === "number" && Number.isInteger(n) && n >= USAGE_MONTHS.min && n <= USAGE_MONTHS.max;
+const validCallDays = (n: unknown): n is number => typeof n === "number" && Number.isInteger(n) && n >= CALL_DAYS.min && n <= CALL_DAYS.max;
 const validDays = (key: keyof LocationRetention, n: unknown): n is number =>
   typeof n === "number" && Number.isInteger(n) && n >= LOCATION_DAYS[key].min && n <= LOCATION_DAYS[key].max;
 const RETENTION_KEYS = Object.keys(LOCATION_DAYS) as (keyof LocationRetention)[];
@@ -141,6 +151,7 @@ export function getSettings(db: DB): Settings {
   const usageMonths = read(db, "usage_months");
   const locationDays = read(db, "location_days");
   const mapSite = read(db, "map_site");
+  const callDays = read(db, "call_days");
   const days = locationDays && typeof locationDays === "object" ? (locationDays as Partial<Record<keyof LocationRetention, unknown>>) : {};
   const stored = read(db, "ai_scopes");
   const scopes = stored && typeof stored === "object" ? (stored as Partial<Record<AiScope, unknown>>) : undefined;
@@ -165,6 +176,7 @@ export function getSettings(db: DB): Settings {
     ) as unknown as LocationRetention,
     mapSite: typeof mapSite === "string" && mapSite in MAP_SITES ? (mapSite as MapSite) : DEFAULT_SETTINGS.mapSite,
     parentNumbers: parentNumbersFrom(read(db, "parent_numbers")),
+    callDays: validCallDays(callDays) ? callDays : DEFAULT_SETTINGS.callDays,
   };
 }
 
@@ -182,6 +194,7 @@ export interface SettingsChange {
   locationDays?: Partial<LocationRetention>;
   mapSite?: MapSite;
   parentNumbers?: ParentNumber[];
+  callDays?: number;
 }
 
 export function updateSettings(db: DB, change: SettingsChange): Settings {
@@ -203,6 +216,10 @@ export function updateSettings(db: DB, change: SettingsChange): Settings {
   if (change.mapSite !== undefined) {
     if (!(change.mapSite in MAP_SITES)) throw new Error(`Unknown map site: ${change.mapSite}`);
     write(db, "map_site", change.mapSite);
+  }
+  if (change.callDays !== undefined) {
+    if (!validCallDays(change.callDays)) throw new Error(`Keep call records ${CALL_DAYS.min} to ${CALL_DAYS.max} days`);
+    write(db, "call_days", change.callDays);
   }
   if (change.parentNumbers !== undefined) {
     const problem = parentNumbersProblem(change.parentNumbers);

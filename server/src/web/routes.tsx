@@ -70,7 +70,8 @@ import {
   validHostname,
   type PolicyContext,
 } from "../family/policy.js";
-import { approveProposal, listProposals, outdatedBecause, pendingProposalCount, rejectProposal, screenTimeWords } from "../family/proposals.js";
+import { approveProposal, callsWords, listProposals, outdatedBecause, pendingProposalCount, rejectProposal, screenTimeWords } from "../family/proposals.js";
+import { callSettings, contactWithNumber, hasNumber } from "../family/calls/store.js";
 import { listAppRequests, pendingRequestCount, recentAppRequests, recentRequests, unseenHelp } from "../family/requests.js";
 import { phoneHelp } from "../family/kidside.js";
 import { changeFamilySettings } from "../family/kidside-changes.js";
@@ -81,9 +82,10 @@ import { serverHealth } from "../ops/health.js";
 import { getDigest } from "../ops/notify.js";
 import { opsWebRoutes } from "../ops/web.js";
 import { browserName, listSubscriptions, removeSubscription, saveSubscription, sendNotice, subscriptionProblem, vapidKeys } from "../push.js";
-import { AI_SCOPES, type AiScope, LOCATION_DAYS, type LocationRetention, MAP_SITES, type MapSite, USAGE_MONTHS, getSettings, updateSettings } from "../settings.js";
+import { AI_SCOPES, type AiScope, CALL_DAYS, LOCATION_DAYS, type LocationRetention, MAP_SITES, type MapSite, USAGE_MONTHS, getSettings, updateSettings } from "../settings.js";
 import { isValidTimeZone } from "../time.js";
 import type { Assets } from "./assets.js";
+import { callsWebRoutes } from "./calls.js";
 import { locationWebRoutes, whereFor } from "./location.js";
 import { screenTimeWebRoutes } from "./screentime.js";
 import { ActivityPage } from "./pages/activity.js";
@@ -141,6 +143,8 @@ const SAVED: Record<string, string> = {
   answer_other_approved: "Answered. They'll see your answer on the phone.",
   answer_other_declined: "Declined. They'll see your answer on the phone.",
   answer_other_talk: "They'll see on the phone that you want to talk about it.",
+  answer_contact: "Approved, and they're a contact now. The phone gets it within seconds if it's online, and they'll see your answer there.",
+  answer_contact_existing: "Approved. That number was a contact already, so no one else was added. They'll see your answer on the phone.",
   proposal_approved: "Approved. The change is on its way to the phone.",
   proposal_rejected: "Rejected. Nothing changed.",
   digest: "Daily summary saved.",
@@ -758,17 +762,35 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
     if (answer !== "approved" && answer !== "declined" && answer !== "talk") return message(c, "Choose an answer", "Approve, Decline or Let's talk.", 400);
     if (give && !(MORE_TIME_CHOICES as readonly number[]).includes(Number(give))) return message(c, "Choose how much time", "15, 30 or 60 minutes.", 400);
     if (note.length > LIMITS.answerNote) return message(c, "That note is too long", `Keep it under ${LIMITS.answerNote} characters.`, 400);
-    const done = answerRequest(policyContext(), device.id, c.req.param("requestId"), answer, asParent(c), note || null, give ? { minutes: Number(give) } : {});
+    // Phase 5: a contact request's form says the name and what the contact may do (a box left unticked is off).
+    const contact = first(body, "contact_form") === "1" ? { name: first(body, "contact_name"), calls: first(body, "contact_calls") === "1", texts: first(body, "contact_texts") === "1" } : undefined;
+    let done: ReturnType<typeof answerRequest>;
+    try {
+      done = answerRequest(policyContext(), device.id, c.req.param("requestId"), answer, asParent(c), note || null, { ...(give ? { minutes: Number(give) } : {}), ...(contact ? { contact } : {}) });
+    } catch (error) {
+      if (error instanceof RuleRefused && first(body, "back") === "requests") return requestsPage(c, { error: `Nothing changed. ${error.message}` }, 400);
+      throw error;
+    }
     if (!done.result) return message(c, "No such request", "It may have been deleted with its phone.", 404, { href: "/requests", label: "Back to requests" });
-    const saved = done.result.kind === "app" ? `answer_${answer}` : done.result.kind === "more_time" && answer === "approved" ? "answer_more_time" : `answer_other_${answer}`;
+    const saved =
+      done.result.kind === "app"
+        ? `answer_${answer}`
+        : done.result.kind === "more_time" && answer === "approved"
+          ? "answer_more_time"
+          : done.result.kind === "contact" && answer === "approved" && done.result.contact
+            ? done.result.contact.existing
+              ? "answer_contact_existing"
+              : "answer_contact"
+            : `answer_other_${answer}`;
     const back = first(body, "back");
     if (back === "requests") return c.redirect(`/requests?saved=${saved}`);
     if (back === "app" && done.result.package) return c.redirect(`/devices/${device.id}/apps/${encodeURIComponent(done.result.package)}?saved=${saved}`);
     if (back === "screen-time") return c.redirect(`/devices/${device.id}/screen-time?saved=${saved}`);
+    if (back === "calls") return c.redirect(`/devices/${device.id}/calls?saved=${saved}#requests`);
     return backTo(c, device, saved, "apps");
   });
 
-  app.get("/requests", (c) => {
+  const requestsPage = (c: WebContext, extra: { error?: string } = {}, status: ContentfulStatusCode = 200) => {
     const now = deps.now();
     const phones = listDevices(db, getSettings(db), now).length;
     const known = new Set(
@@ -797,10 +819,19 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
         limitName={limitName}
         kidNumber={(deviceId) => phoneHelp(db, deviceId).kidNumber}
         where={whereFor(deps)}
-        message={SAVED[c.req.query("saved") ?? ""]}
+        contacts={{
+          existing: (deviceId, number) => contactWithNumber(db, deviceId, number)?.name ?? null,
+          blocked: (deviceId, number) => hasNumber(db, deviceId, "blocked", number),
+          callsOn: (deviceId) => callSettings(db, deviceId)?.enabled === true,
+        }}
+        message={extra.error ? undefined : SAVED[c.req.query("saved") ?? ""]}
+        error={extra.error}
       />,
+      status,
     );
-  });
+  };
+
+  app.get("/requests", (c) => requestsPage(c));
 
   const proposalsPage = (c: WebContext, extra: { message?: string; error?: string } = {}, status: ContentfulStatusCode = 200) => {
     const now = deps.now();
@@ -811,9 +842,17 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
         return why ? [[p.id, why] as const] : [];
       }),
     );
-    // Phase 3: a screen-time proposal's every change, with the apps' names on its phone.
+    // Phase 3: a screen-time proposal's every change, with the apps' names on its phone; Phase 5: a calls proposal's.
     const details = new Map(
-      proposals.flatMap((p) => (p.change.kind === "screen_time" && p.status === "pending" ? [[p.id, screenTimeWords(p.change, phoneLabels(db, p.deviceId))] as const] : [])),
+      proposals.flatMap((p) =>
+        p.status !== "pending"
+          ? []
+          : p.change.kind === "screen_time"
+            ? [[p.id, screenTimeWords(p.change, phoneLabels(db, p.deviceId))] as const]
+            : p.change.kind === "calls"
+              ? [[p.id, callsWords(p.change)] as const]
+              : [],
+      ),
     );
     return render(
       c,
@@ -980,12 +1019,26 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
     }
     const site = first(body, "map_site");
     if (site !== "" && !(site in MAP_SITES)) return settingsPage(c, { error: "Choose OpenStreetMap or Google Maps for map links." }, 400);
+    // Phase 5: how long call records are kept (left out: as it is).
+    const callDaysText = first(body, "call_days");
+    const callDays = callDaysText === "" ? undefined : Number(callDaysText);
+    if (callDays !== undefined && (!Number.isInteger(callDays) || callDays < CALL_DAYS.min || callDays > CALL_DAYS.max)) {
+      return settingsPage(c, { error: `Keep call records ${CALL_DAYS.min} to ${CALL_DAYS.max} days.` }, 400);
+    }
     const chosen = new Set(all(body, "ai_scope"));
     const aiScopes = Object.fromEntries(Object.keys(AI_SCOPES).map((k) => [k, chosen.has(k)])) as Record<AiScope, boolean>;
     // What AI apps may read is the policy's ai_reads, for the kid's screen: each phone's policy follows.
     changeFamilySettings(
       policyContext(),
-      { timezone, silentHours, aiScopes, locationDays, ...(usageMonths !== undefined ? { usageMonths } : {}), ...(site !== "" ? { mapSite: site as MapSite } : {}) },
+      {
+        timezone,
+        silentHours,
+        aiScopes,
+        locationDays,
+        ...(usageMonths !== undefined ? { usageMonths } : {}),
+        ...(site !== "" ? { mapSite: site as MapSite } : {}),
+        ...(callDays !== undefined ? { callDays } : {}),
+      },
       asParent(c),
     );
     return c.redirect("/settings?saved=settings");
@@ -1133,6 +1186,8 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
   app.route("/", screenTimeWebRoutes(deps, { view, message }));
   // Phases 4 and 7: a phone's Location and help tab, and marking a help request seen (web/location.tsx).
   app.route("/", locationWebRoutes(deps, { view, message }));
+  // Phase 5: a phone's Calls tab (web/calls.tsx).
+  app.route("/", callsWebRoutes(deps, { view, message }));
 
   app.get("/activity", (c) => {
     const includeReads = c.req.query("reads") === "1";

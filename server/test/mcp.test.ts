@@ -73,13 +73,16 @@ describe("the MCP server", () => {
     expect(client.getServerVersion()?.name).toBe("belay");
   });
 
-  it("annotates its tools: reads are read-only, blocking, pausing, locking and screen-time changes change the phone, the rest only record", async () => {
+  it("annotates its tools: reads are read-only, blocking, pausing, locking, screen-time and calls changes change the phone, the rest only record", async () => {
     const { client } = await family();
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "block_app",
+      "change_calls",
       "change_screen_time",
       "get_app_changes",
+      "get_calls",
+      "get_contacts",
       "get_device_status",
       "get_installed_apps",
       "get_location",
@@ -97,7 +100,7 @@ describe("the MCP server", () => {
       "pause_phone",
       "propose_change",
     ]);
-    const changes = ["block_app", "pause_phone", "lock_phone", "change_screen_time"];
+    const changes = ["block_app", "pause_phone", "lock_phone", "change_screen_time", "change_calls"];
     // locate_now sends the phone a check (the kid sees a notice), and changes no rule.
     const writes = ["mark_apps_reviewed", "propose_change", "locate_now", ...changes];
     for (const tool of tools) {

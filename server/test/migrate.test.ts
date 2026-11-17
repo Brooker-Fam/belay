@@ -58,6 +58,7 @@ describe("migration 3", () => {
       { id: "request-0005", status: "declined", superseded_by: null, reason: null },
     ]);
     expect(db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'requests' ORDER BY name").all()).toEqual([
+      { name: "requests_contact" },
       { name: "requests_kind" },
       { name: "requests_package" },
       { name: "requests_received" },
@@ -162,7 +163,10 @@ describe("migration 6 (location and the kid's side)", () => {
       "INSERT INTO requests (device_id, id, kind, limit_id, minutes, given_minutes, extra_id, reason, asked_at, received_at, updated_at, status, answered_by, answered_at) VALUES ('phone-1', 'request-0001', 'more_time', 'l-games', 15, 15, 'x-1', 'Please', ?, ?, ?, 'approved', 'parent-1', ?)",
     ).run(T, T, T, T + 1);
     db.prepare("INSERT INTO commands (id, device_id, kind, issued_at, expires_at, issued_by, client_name) VALUES ('c-1', 'phone-1', 'lock_now', ?, ?, 'parent-1', 'Claude')").run(T, T + 1);
-    migrate(db);
+    migrate(
+      db,
+      loadMigrations().filter((m) => m.version <= 6),
+    );
     expect(db.pragma("user_version", { simple: true })).toBe(6);
     expect(db.prepare("SELECT id, kind, limit_id, given_minutes, extra_id, reason, status, answered_by, withdrawn_at, seen_at FROM requests").all()).toEqual([
       { id: "request-0001", kind: "more_time", limit_id: "l-games", given_minutes: 15, extra_id: "x-1", reason: "Please", status: "approved", answered_by: "parent-1", withdrawn_at: null, seen_at: null },
@@ -193,6 +197,54 @@ describe("migration 6 (location and the kid's side)", () => {
     db.prepare("INSERT INTO phone_help (device_id, kid_number, changed_at) VALUES ('phone-1', '+15555550123', 0)").run();
     db.prepare("DELETE FROM devices WHERE id = 'phone-1'").run();
     for (const table of ["requests", "commands", "location_settings", "places", "fixes", "place_events", "phone_help"]) {
+      expect(db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get(), table).toEqual({ n: 0 });
+    }
+  });
+});
+
+describe("migration 7 (calls)", () => {
+  it("keeps requests and proposals, takes the contact request and calls proposals, and everything of calls goes with its phone", () => {
+    const db = phase3();
+    migrate(
+      db,
+      loadMigrations().filter((m) => m.version <= 6),
+    );
+    db.prepare("INSERT INTO requests (device_id, id, kind, reason, status, seen_at, seen_by, asked_at, received_at, updated_at) VALUES ('phone-1', 'request-0001', 'help', 'Lost', 'approved', ?, 'parent-1', 0, 0, 0)").run(T);
+    db.prepare("INSERT INTO requests (device_id, id, kind, reason, status, withdrawn_at, asked_at, received_at, updated_at) VALUES ('phone-1', 'request-0002', 'talk', 'Curfew', 'withdrawn', 5, 0, 0, 0)").run();
+    db.prepare("INSERT INTO proposals (id, device_id, kind, payload, reason, client_name, created_at, status, outdated_why) VALUES ('p-1', 'phone-1', 'screen_time', '{}', 'x', 'Claude', 0, 'outdated', 'It changed')").run();
+    migrate(db);
+    expect(db.pragma("user_version", { simple: true })).toBe(7);
+    expect(db.prepare("SELECT id, kind, reason, status, seen_at, seen_by, withdrawn_at, contact_name, contact_number, contact_id FROM requests ORDER BY id").all()).toEqual([
+      { id: "request-0001", kind: "help", reason: "Lost", status: "approved", seen_at: T, seen_by: "parent-1", withdrawn_at: null, contact_name: null, contact_number: null, contact_id: null },
+      { id: "request-0002", kind: "talk", reason: "Curfew", status: "withdrawn", seen_at: null, seen_by: null, withdrawn_at: 5, contact_name: null, contact_number: null, contact_id: null },
+    ]);
+    expect(db.prepare("SELECT id, kind, status, outdated_why FROM proposals").all()).toEqual([{ id: "p-1", kind: "screen_time", status: "outdated", outdated_why: "It changed" }]);
+
+    const request = db.prepare("INSERT INTO requests (device_id, id, kind, contact_name, contact_number, asked_at, received_at, updated_at) VALUES ('phone-1', ?, 'contact', ?, ?, 0, 0, 0)");
+    request.run("request-0003", "Coach Lee", "+15555550142");
+    expect(() => request.run("request-0004", null, "+15555550142")).toThrow(/CHECK/);
+    expect(() => request.run("request-0005", "Coach", null)).toThrow(/CHECK/);
+    db.prepare("INSERT INTO proposals (id, device_id, kind, payload, reason, client_name, created_at) VALUES ('p-2', 'phone-1', 'calls', '{}', 'x', 'Claude', 0)").run();
+    expect(() => db.prepare("INSERT INTO proposals (id, device_id, kind, reason, client_name, created_at) VALUES ('p-3', 'phone-1', 'texts', 'x', 'Claude', 0)").run()).toThrow(/CHECK/);
+
+    db.prepare("INSERT INTO call_settings (device_id, enabled, mode, changed_at) VALUES ('phone-1', 1, 'contacts', 0)").run();
+    expect(() => db.prepare("UPDATE call_settings SET unknown = 'maybe'").run()).toThrow(/CHECK/);
+    db.prepare("INSERT INTO contacts (device_id, id, name, created_at, updated_at) VALUES ('phone-1', 'c-1', 'Mom', 0, 0)").run();
+    db.prepare("INSERT INTO contact_numbers (device_id, contact_id, number, position) VALUES ('phone-1', 'c-1', '+15555550100', 0)").run();
+    // A number is one contact's; removing a contact takes its numbers.
+    db.prepare("INSERT INTO contacts (device_id, id, name, created_at, updated_at) VALUES ('phone-1', 'c-2', 'Dad', 0, 0)").run();
+    expect(() => db.prepare("INSERT INTO contact_numbers (device_id, contact_id, number, position) VALUES ('phone-1', 'c-2', '+15555550100', 0)").run()).toThrow(/UNIQUE|PRIMARY/);
+    db.prepare("INSERT INTO contact_numbers (device_id, contact_id, number, position) VALUES ('phone-1', 'c-2', '+15555550101', 0)").run();
+    db.prepare("DELETE FROM contacts WHERE id = 'c-2'").run();
+    expect(db.prepare("SELECT number FROM contact_numbers").all()).toEqual([{ number: "+15555550100" }]);
+    db.prepare("INSERT INTO call_numbers (device_id, kind, number, added_at) VALUES ('phone-1', 'blocked', '+15555550199', 0)").run();
+    expect(() => db.prepare("INSERT INTO call_numbers (device_id, kind, number, added_at) VALUES ('phone-1', 'allowed', '+15555550199', 0)").run()).toThrow(/CHECK/);
+    db.prepare("INSERT INTO call_records (device_id, id, at, direction, number, duration_s, outcome, reason, received_at) VALUES ('phone-1', 'call-00000001', 0, 'in', '+15555550199', 0, 'rejected', 'unknown', 0)").run();
+    expect(() =>
+      db.prepare("INSERT INTO call_records (device_id, id, at, direction, contact_id, number, duration_s, outcome, received_at) VALUES ('phone-1', 'call-00000002', 0, 'in', 'c-1', '+15555550100', 0, 'answered', 0)").run(),
+    ).toThrow(/CHECK/);
+    db.prepare("DELETE FROM devices WHERE id = 'phone-1'").run();
+    for (const table of ["requests", "proposals", "call_settings", "contacts", "contact_numbers", "call_numbers", "call_records"]) {
       expect(db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get(), table).toEqual({ n: 0 });
     }
   });

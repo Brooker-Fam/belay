@@ -447,6 +447,20 @@ data class WirePolicy(
     @SerialName("private_numbers") val privateNumbers: List<String> = emptyList(),
     /** Phase 5: E.164 numbers a parent blocked; Belay adds them to Android's block list as the dialer. */
     @SerialName("blocked_numbers") val blockedNumbers: List<String> = emptyList(),
+    /** Phase 11: a parent is handing the phone over to the kid; the phone shows what happens next. */
+    val handover: WireHandover? = null,
+)
+
+/**
+ * Phase 11: the hand-over (docs/protocol.md, "Off belay"). Its effects are ordinary policy fields
+ * the server already sets (restrictions lifted, `frp_accounts` empty, Play's accounts free); this
+ * tells the phone to show the kid the hand-over screen: back up, then reset from Settings.
+ */
+@Serializable
+data class WireHandover(
+    val at: Long,
+    /** The parent's name. */
+    val by: String? = null,
 )
 
 /** Phase 7: a parent saw the kid's help request. */

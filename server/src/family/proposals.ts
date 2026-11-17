@@ -5,7 +5,8 @@
  *
  * There is no kind of proposal for hardening (factory reset, debugging, reset protection) or
  * maintenance mode, and lift_restriction never covers factory_reset or debugging: AI apps
- * can't touch them, even as a proposal.
+ * can't touch them, even as a proposal. Nor for turning calls on or off, recording them, or the
+ * private numbers (Phase 5): a calls proposal's patch never holds them.
  */
 import { audit } from "../audit.js";
 import { newId } from "../crypto.js";
@@ -26,6 +27,17 @@ import {
   setWeb,
   type PolicyContext,
 } from "./policy.js";
+import { applyCallsPatch } from "./calls/changes.js";
+import { classifyCallsChange } from "./calls/classify.js";
+import {
+  type CallsPatch,
+  alreadyApplied as callsAlreadyApplied,
+  applyPatch as applyCallsPatchTo,
+  emptyPatch as emptyCallsPatch,
+  patchSides as callsPatchSides,
+  sideOf as callsSideOf,
+} from "./calls/patch.js";
+import { callChangeSentence } from "./calls/words.js";
 import { moveToStage, setPhoneRules } from "./screentime/changes.js";
 import { classifyScreenTimeChange, type RuleChange } from "./screentime/classify.js";
 import { type RulesPatch, applyPatch, emptyPatch, patchSides } from "./screentime/patch.js";
@@ -35,9 +47,9 @@ import { type Labels, changeSentence, packageNames } from "./screentime/words.js
 /** Proposals waiting for a parent, per phone, before an AI app must wait for the parent to look. */
 export const MAX_PENDING_PROPOSALS = 20;
 
-/** What propose_change takes. Screen time's proposals come from change_screen_time instead. */
+/** What propose_change takes. Screen time's proposals come from change_screen_time instead, and calls' from change_calls. */
 export const PROPOSAL_KINDS = ["allow_app", "resume", "lift_restriction", "web_filter_off", "new_apps_allow"] as const;
-export type ProposalKind = (typeof PROPOSAL_KINDS)[number] | "screen_time" | "move_stage";
+export type ProposalKind = (typeof PROPOSAL_KINDS)[number] | "screen_time" | "move_stage" | "calls";
 
 /** The locks an AI app may propose lifting: never factory reset or debugging. */
 export const LIFTABLE = [...SAFE_RESTRICTIONS, ...LOCK_RESTRICTIONS] as const;
@@ -52,7 +64,9 @@ export type ProposalChange =
   /** Phase 3: a change to a phone's screen-time rules that doesn't only tighten. */
   | { kind: "screen_time"; patch: RulesPatch }
   /** Phase 3: moving a phone to another stage, which is always a parent's. */
-  | { kind: "move_stage"; stageId: string; stageName: string };
+  | { kind: "move_stage"; stageId: string; stageName: string }
+  /** Phase 5: a change to a phone's calls that doesn't only tighten (never on or off, recording or private numbers). */
+  | { kind: "calls"; patch: CallsPatch };
 
 /** "outdated": a parent tried to approve it, but what it was about had changed since, so nothing was applied. */
 export type ProposalStatus = "pending" | "approved" | "rejected" | "outdated";
@@ -143,6 +157,12 @@ function changeOf(r: Pick<ProposalRow, "kind" | "package" | "restriction" | "pay
       const p = payloadOf(r.payload);
       return { kind: "move_stage", stageId: typeof p.stage_id === "string" ? p.stage_id : "", stageName: typeof p.stage_name === "string" ? p.stage_name : "" };
     }
+    case "calls": {
+      // The stored JSON, read leniently: a patch that doesn't read changes nothing.
+      const patch = payloadOf(r.payload).patch as Record<string, unknown> | undefined;
+      const ok = !!patch && typeof patch.rules === "object" && patch.rules !== null && Array.isArray(patch.contacts) && Array.isArray(patch.blocked);
+      return { kind: "calls", patch: ok ? (patch as unknown as CallsPatch) : { rules: {}, contacts: [], blocked: [] } };
+    }
     default:
       return { kind: r.kind };
   }
@@ -150,9 +170,15 @@ function changeOf(r: Pick<ProposalRow, "kind" | "package" | "restriction" | "pay
 
 /** What the change stores in its row besides its kind. */
 function payloadFor(change: ProposalChange): string | null {
-  if (change.kind === "screen_time") return canonical({ patch: change.patch });
+  if (change.kind === "screen_time" || change.kind === "calls") return canonical({ patch: change.patch });
   if (change.kind === "move_stage") return canonical({ stage_id: change.stageId, stage_name: change.stageName });
   return null;
+}
+
+/** Phase 5: a calls proposal's changes in the parents' words, with their effect. */
+export function callsWords(change: Extract<ProposalChange, { kind: "calls" }>): { effect: "tightens" | "loosens" | "neither"; words: string }[] {
+  const { before, after } = callsPatchSides(change.patch);
+  return classifyCallsChange(before, after).changes.map((c) => ({ effect: c.effect, words: callChangeSentence(c) }));
 }
 
 /** A screen-time proposal's changes, as classifyScreenTimeChange finds them in its parts. */
@@ -205,6 +231,13 @@ export function changeWords(change: ProposalChange, label: string | null, labels
       const name = `"${oneLine(change.stageName, 60)}"`;
       return { title: `Move to the stage ${name}`, gerund: `moving the phone to the stage ${name}` };
     }
+    case "calls": {
+      const words = callsWords(change).map((c) => c.words);
+      const first = oneLine(words[0] ?? "a change", 120);
+      const lower = first.charAt(0).toLowerCase() + first.slice(1);
+      const more = words.length > 1 ? ` (and ${words.length - 1} more change${words.length === 2 ? "" : "s"})` : "";
+      return { title: `Change calls: ${lower}${more}`, gerund: `changing calls: ${lower}${more}` };
+    }
     case "allow_app": {
       const name = label ? `"${oneLine(label, 60)}"` : change.package;
       return { title: `Allow ${name}`, gerund: `allowing ${name}` };
@@ -248,6 +281,9 @@ export function nothingToLoosen(db: DB, deviceId: string, change: ProposalChange
       if (!getStage(db, change.stageId)) return "That stage was deleted.";
       return phoneRules(db, deviceId).stage?.stage.id === change.stageId ? "The phone is already on that stage." : null;
     }
+    case "calls":
+      if (emptyCallsPatch(change.patch)) return "It changes nothing.";
+      return callsAlreadyApplied(callsSideOf(db, deviceId), change.patch) ? "The phone's calls are already like that." : null;
   }
 }
 
@@ -312,6 +348,11 @@ export function outdatedBecause(db: DB, proposal: Proposal, now: number): string
   if (then?.kind === "move_stage" && change.kind === "move_stage") {
     const stage = phoneRules(db, proposal.deviceId).stage;
     if ((stage?.stage.id ?? null) !== then.stage_id || (stage?.since ?? null) !== then.since) return "The phone's stage changed after this was proposed.";
+  }
+  // Calls: each part it changes must still be as it was; the rest may have changed.
+  if (change.kind === "calls") {
+    const applied = applyCallsPatchTo(callsSideOf(db, proposal.deviceId), change.patch);
+    if ("outdated" in applied) return applied.outdated;
   }
   return null;
 }
@@ -436,6 +477,9 @@ export function approveProposal(ctx: PolicyContext, id: string, parentId: string
       }
       case "move_stage":
         moveToStage(ctx, proposal.deviceId, change.stageId, parent, { proposalId: proposal.id });
+        break;
+      case "calls":
+        applyCallsPatch(ctx, proposal.deviceId, change.patch, parent, { proposalId: proposal.id });
         break;
     }
     db.prepare("UPDATE proposals SET status = 'approved', decided_by = ?, decided_at = ? WHERE id = ?").run(parentId, now, id);

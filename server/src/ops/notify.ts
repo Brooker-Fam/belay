@@ -140,6 +140,7 @@ const PHONE_WORDS: Partial<Record<Problem["code"], (n: number, longestSilence: n
   other_users: (n) => `another user or profile is on ${a(n)}`,
   location_permission: (n) => `Belay is missing location permission on ${a(n)}`,
   location_off: (n) => `location is turned off on ${a(n)}`,
+  calls_not_dialer: (n) => `calls are going through the phone's own app on ${a(n)}`,
 };
 
 const PHONE_ORDER: Problem["code"][] = [
@@ -156,6 +157,7 @@ const PHONE_ORDER: Problem["code"][] = [
   "permission_missing",
   "location_permission",
   "location_off",
+  "calls_not_dialer",
   "screen_time_unmeasured",
   "usage_access_off",
   "notifications_off",
