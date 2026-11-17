@@ -379,6 +379,10 @@ Only a parent changes any of it, there or with the CLI; AI apps can't, and can't
 - **Lost mode:** "This phone is lost": the lock screen shows the parent's message and a number,
   location stays on, the phone shares where it is every 5 minutes and locks its screen once,
   in any mode. Turning it off puts everything back.
+- **Turning location off** (or lost mode, or a help request's shared fix, ending) takes Belay's
+  location permission away, and Android restarts Belay when an app loses a permission it was
+  granted ([platform-notes.md](platform-notes.md), L7): expect the phone to reconnect a moment
+  later.
 - **Help and the emergency card:** the kid's own number, for **Call** beside a help request (it
   stays on the server: the phone never gets it, and AI apps never see it); and the numbers on
   the kid's emergency card, the family's from Settings or the phone's own, at most 4.

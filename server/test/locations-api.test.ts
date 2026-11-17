@@ -95,6 +95,25 @@ describe("POST /api/v1/locations", () => {
     expect(checkAnswer(t.deps.db, phone.deviceId, check)).toMatchObject({ id: answer.id, commandId: check, reason: "on_demand" });
   });
 
+  it("a check the server never issued (the phone's own test) is fine: its result is ignored, and its fix dropped and counted, never a 400", async () => {
+    const { t, phone, ctx, parent, locations } = await family();
+    setLocation(ctx(), phone.deviceId, { mode: "on_demand", keepOn: true }, parent);
+    const real = locateNow(ctx(), phone.deviceId, parent).result.command;
+    const test = "test-locate-0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0";
+    const checkin = await deviceCall(t, phone.token, "checkin", {
+      status: device({ enforcement: { policy_version: 1, commands: [{ id: test, result: "done", at: t.now() }], location: { permission: true, location_on: true, last_fix_at: t.now() } } }),
+    });
+    expect(checkin.status).toBe(200);
+    expect(t.deps.db.prepare("SELECT id, result FROM commands").all()).toEqual([{ id: real, result: null }]);
+    const res = await locations({ fixes: [fix({ reason: "on_demand", command_id: test })], place_events: [] });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ server_time: t.now(), accepted: 1 });
+    expect(kept(t, phone.deviceId)).toEqual([]);
+    expect(locationSettings(t.deps.db, phone.deviceId)?.dropped).toBe(1);
+    // The real check is still waiting for its own fix.
+    expect(checkAnswer(t.deps.db, phone.deviceId, real)).toBeNull();
+  });
+
   it("a lost-mode fix and one the kid shared with help are always kept; a lost fix after lost mode ends is kept like its others", async () => {
     const { t, phone, ctx, parent, locations } = await family();
     const help = fix({ reason: "help" });
