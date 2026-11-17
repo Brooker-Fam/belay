@@ -37,6 +37,19 @@ object DataCategories {
             "When the phone last restarted, and how many times it has started",
             "The battery level and whether it's charging, and how much storage is free",
             "The phone's time zone, and its clock, to check that the time is right",
+            "Which of your parent's rules Belay is using, how many apps it's holding back, " +
+                "and anything it couldn't do",
+        ),
+    )
+
+    /** Phase 2: what the kid asks a parent for, from Belay's screen. */
+    val REQUESTS = DataCategory(
+        id = "requests",
+        title = "What you ask for, and what you write about why",
+        details = listOf(
+            "Which apps you ask your parent for, and when. When a new app waits for your " +
+                "parent, Belay asks for it right away.",
+            "What you write in \"Why I want it\", if you write something",
         ),
     )
 }

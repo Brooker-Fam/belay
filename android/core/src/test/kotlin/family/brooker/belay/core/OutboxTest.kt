@@ -15,6 +15,7 @@ import kotlin.test.assertTrue
 class OutboxTest {
     private fun event(id: Long, bytes: Int = 400) = OutboxItem(id, OutboxType.EVENT, bytes)
     private fun snapshot(id: Long) = OutboxItem(id, OutboxType.SNAPSHOT, 200_000)
+    private fun request(id: Long, bytes: Int = 300) = OutboxItem(id, OutboxType.REQUEST, bytes)
 
     /** A fake server: records each request's ids and answers with [answer]. */
     private class Server(val answer: (List<OutboxItem>) -> Verdict = { Verdict.Sent }) {
@@ -134,6 +135,26 @@ class OutboxTest {
         assertEquals(2, OutboxPolicy.batchSize(queue, from = 0))
         assertEquals(1, OutboxPolicy.batchSize(queue, from = 2))
         assertEquals(1, OutboxPolicy.batchSize(queue, from = 3))
+    }
+
+    @Test
+    fun `requests go together up to their own limits, and never with events`() {
+        val requests = (1L..150L).map { request(it) }
+        assertEquals(WireLimits.MAX_REQUESTS_PER_REQUEST, OutboxPolicy.batchSize(requests))
+        val mixed = listOf(event(1), request(2), request(3), event(4))
+        assertEquals(1, OutboxPolicy.batchSize(mixed, from = 0))
+        assertEquals(2, OutboxPolicy.batchSize(mixed, from = 1))
+        // 15 bytes of wrapper, then the requests and the commas between them.
+        val big = (1L..3L).map { request(it, bytes = 40_000) }
+        assertEquals(2, OutboxPolicy.batchSize(big))
+        assertTrue(15 + 2 * 40_000 + 1 <= OutboxPolicy.MAX_REQUESTS_BODY_BYTES)
+    }
+
+    @Test
+    fun `a request for a new app goes after the event that reported its install`() {
+        val server = Server()
+        OutboxDrain.run(listOf(event(1), request(2), snapshot(3), request(4)), send = server::send)
+        assertEquals(listOf(listOf(1L), listOf(2L), listOf(3L), listOf(4L)), server.requests)
     }
 
     // The drain: nothing overtakes anything older.
