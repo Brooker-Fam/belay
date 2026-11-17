@@ -22,7 +22,7 @@ no monthly fee and no company that can change or disappear. A parent mostly mana
 asking Claude (or any MCP client) things like "what did they install this week, and is it
 OK?", with a web page as the fallback.
 
-## What exists today (Phases 1 and 2, and parts of 3, 4, 6, 7, 8, 10 and 11)
+## What exists today (Phases 1 and 2, and parts of 3, 4, 5, 6, 7, 8, 10 and 11)
 
 - **`android/`: the device-owner agent.** Provisioned over adb, it becomes device owner and
   blocks its own uninstall. It always shows "This phone is managed by your parent", and its
@@ -97,6 +97,18 @@ OK?", with a web page as the fallback.
   phone which data the parents' AI app may read, and the numbers for its emergency card.
   Over MCP, an AI client reads location only if a parent turns that on (it starts off), may
   check where the phone is (the kid sees every check), and never changes any of it.
+- **Phase 5 on the server: calls.** Calls are off until a parent turns them on, on the
+  phone's Calls page; then the phone's policy makes Belay its phone app. The family decides who
+  can call (anyone, or only contacts, and what happens to callers who aren't contacts or have no
+  caller ID), whom the kid can call, quiet times at bedtime and school, and whether calls are
+  recorded; the contacts (parents always ring and are on the kid's emergency card), private
+  numbers Belay never records, and blocked numbers. 911, every emergency number and 988 always
+  work, in the phone's own code: the server refuses to block one and never keeps a record of
+  one. Recent calls (only while recorded, 90 days by default) have "Add as contact" and "Block";
+  the kid's "Please add this contact" comes to the Requests page. Over MCP, an AI client reads
+  calls and other people's numbers only if a parent turns that on (it starts off), may tighten
+  the rules, and proposes anything else; it never turns calls on, records them or answers a
+  request.
 - **Phase 6, so far: backups that are proven to restore, and health monitoring.** The server
   backs itself up every day (the newest 14 kept, encrypted with the family's passphrase if
   they set one); `verify-backup` proves a backup restores, `restore` puts one back, and the

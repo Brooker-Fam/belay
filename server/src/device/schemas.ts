@@ -353,7 +353,7 @@ export const TalkRequest = z.strictObject({
   withdrawn_at: time.nullish(),
 });
 
-// ── Phase 5, calls (docs/protocol.md): not accepted by the routes yet ───────
+// ── Phase 5, calls (docs/protocol.md) ──────────────────────────────────────
 
 /** One call's metadata; `number` only for a caller who isn't a contact. */
 export const CallRecord = z.strictObject({
@@ -366,6 +366,7 @@ export const CallRecord = z.strictObject({
   outcome: z.enum(["answered", "missed", "rejected", "voicemail", "not_placed"]),
   reason: z.enum(["unknown", "withheld", "quiet", "not_allowed"]).nullish(),
 });
+export type CallRecord = z.infer<typeof CallRecord>;
 export const CallsRequest = z.strictObject({ calls: z.array(CallRecord).min(1).max(LIMITS.maxCalls) });
 /** Phase 5: "Please add this contact". The name and the reason are the kid's words. */
 export const ContactRequest = z.strictObject({
@@ -383,13 +384,14 @@ export const ContactRequest = z.strictObject({
  * pending request's reason (and a help request's shared fix); with `withdrawn_at`, it withdraws
  * a pending one (Phase 7).
  */
-export const Request = z.discriminatedUnion("kind", [AppRequest, MoreTimeRequest, AgreementRequest, HelpRequest, TalkRequest]);
+export const Request = z.discriminatedUnion("kind", [AppRequest, MoreTimeRequest, AgreementRequest, HelpRequest, TalkRequest, ContactRequest]);
 export type Request = z.infer<typeof Request>;
 export type AppRequest = z.infer<typeof AppRequest>;
 export type MoreTimeRequest = z.infer<typeof MoreTimeRequest>;
 export type AgreementRequest = z.infer<typeof AgreementRequest>;
 export type HelpRequest = z.infer<typeof HelpRequest>;
 export type TalkRequest = z.infer<typeof TalkRequest>;
+export type ContactRequest = z.infer<typeof ContactRequest>;
 export type PlaceEvent = z.infer<typeof PlaceEvent>;
 export type LocationsRequest = z.infer<typeof LocationsRequest>;
 export const RequestsRequest = z.strictObject({ requests: z.array(Request).min(1).max(LIMITS.maxRequests) });
@@ -631,7 +633,7 @@ export const Policy = z.strictObject({
   help_seen: z.array(z.strictObject({ request_id: clientId, at: time, by: text(60).nullable() })).max(200),
   /** Phase 7: the numbers on the phone's emergency card. */
   parent_numbers: z.array(z.strictObject({ name: text(40), number: e164 })).max(LIMITS.maxParentNumbers),
-  // Phase 5: optional until the server builds them; the phone reads a missing one as "leave calls alone".
+  /** Phase 5: null until a parent turns calls on (and again once they turn them off): Belay isn't the dialer. */
   calls: z
     .strictObject({
       mode: z.enum(["open", "contacts"]),
@@ -641,8 +643,8 @@ export const Policy = z.strictObject({
       quiet: z.boolean(),
       log: z.boolean(),
     })
-    .nullable()
-    .optional(),
+    .nullable(),
+  /** Phase 5: the contacts a parent approved; `parent` ones always ring and are on the emergency card. */
   contacts: z
     .array(
       z.strictObject({
@@ -654,12 +656,11 @@ export const Policy = z.strictObject({
         parent: z.boolean(),
       }),
     )
-    .max(LIMITS.maxContacts)
-    .optional(),
+    .max(LIMITS.maxContacts),
   /** Phase 5: numbers Belay never records or reads, beyond 988 and emergency numbers. */
-  private_numbers: z.array(e164).max(50).optional(),
+  private_numbers: z.array(e164).max(50),
   /** Phase 5: numbers a parent blocked (Android's block list, set by Belay as the dialer). */
-  blocked_numbers: z.array(e164).max(500).optional(),
+  blocked_numbers: z.array(e164).max(500),
   /** Phase 11: a parent is handing the phone over (family/offbelay): the phone shows the kid what happens next. */
   handover: z.strictObject({ at: time, by: text(60).nullable() }).nullable(),
   /**

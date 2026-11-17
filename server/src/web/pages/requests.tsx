@@ -2,7 +2,7 @@
 import type { FC } from "hono/jsx";
 import { LIMITS, MORE_TIME_CHOICES } from "../../family/policy.js";
 import { changeWords, type Proposal } from "../../family/proposals.js";
-import { STATUS_WORDS, type AgreementAnswerView, type AppRequestView, type MoreTimeView, type RequestView, type TalkView, needsHelp } from "../../family/requests.js";
+import { STATUS_WORDS, type AgreementAnswerView, type AppRequestView, type ContactRequestView, type MoreTimeView, type RequestView, type TalkView, needsHelp } from "../../family/requests.js";
 import { Csrf, Layout, Notice, Time, type View } from "../ui.js";
 import { FixLine, HelpCard, type Where } from "./help.js";
 
@@ -47,8 +47,82 @@ function subject(r: RequestView, limitName: LimitNames): string {
       return r.seenAt !== null ? `Needed help: seen${r.seenBy ? ` by ${r.seenBy}` : ""}` : "Needed help";
     case "talk":
       return "Would like to talk";
+    case "contact":
+      return `Add ${r.contactName} (${r.contactNumber}) as a contact`;
   }
 }
+
+/** Phase 5: what the parent page knows about a contact request's number on its phone. */
+export interface ContactFacts {
+  /** The contact that has the number already, if one does. */
+  existing: (deviceId: string, number: string) => string | null;
+  blocked: (deviceId: string, number: string) => boolean;
+  callsOn: (deviceId: string) => boolean;
+}
+
+/** "Please add this contact": the kid's name for them (editable) and number, with calls and texts to choose. */
+const OpenContact: FC<{ view: View; request: ContactRequestView; showDevice: boolean; facts: ContactFacts }> = ({ view, request, showDevice, facts }) => {
+  const existing = facts.existing(request.deviceId, request.contactNumber);
+  return (
+    <div class="card">
+      <div class="row spread">
+        <strong>Add a contact</strong>
+        <span class="chip waiting">{STATUS_WORDS[request.status]}</span>
+      </div>
+      <p class="small">
+        {showDevice && <>{request.deviceName} · </>}
+        Asked <Time ms={Math.min(request.askedAt, request.receivedAt)} tz={view.tz} />
+        {request.status === "talk" && " · you said let's talk"}
+      </p>
+      <p>
+        <span class="small muted">The name they gave:</span> <span class="kid">{request.contactName}</span> · <span class="pkg">{request.contactNumber}</span>
+      </p>
+      <Reason request={request} />
+      {existing !== null && <Notice kind="warn">That number is already a contact: {existing}. Approving adds no one else.</Notice>}
+      {existing === null && facts.blocked(request.deviceId, request.contactNumber) && <Notice kind="warn">That number is blocked on this phone. Approving unblocks it.</Notice>}
+      {!facts.callsOn(request.deviceId) && (
+        <p class="small muted">
+          Calls are off on this phone: the contact is kept for when you turn them on, on the <a href={`/devices/${request.deviceId}/calls`}>Calls tab</a>.
+        </p>
+      )}
+      <form class="stack" method="post" action={`/devices/${request.deviceId}/requests/${request.id}/answer`}>
+        <Csrf view={view} />
+        <input type="hidden" name="back" value="requests" />
+        {existing === null && (
+          <>
+            <label for={`name-${request.id}`}>The contact's name, as the kid sees it</label>
+            <input id={`name-${request.id}`} type="text" name="contact_name" maxlength={60} value={request.contactName} />
+            <div class="row">
+              <label class="check">
+                <input type="checkbox" name="contact_calls" value="1" checked /> Can call and be called
+              </label>
+              <label class="check">
+                <input type="checkbox" name="contact_texts" value="1" checked /> Can text
+              </label>
+            </div>
+            <input type="hidden" name="contact_form" value="1" />
+          </>
+        )}
+        <label for={`note-${request.id}`}>Your answer, shown on the phone (optional)</label>
+        <textarea id={`note-${request.id}`} name="note" maxlength={LIMITS.answerNote}>
+          {request.note ?? ""}
+        </textarea>
+        <div class="row">
+          <button type="submit" name="answer" value="approved">
+            Approve
+          </button>
+          <button type="submit" name="answer" value="talk" class="quiet">
+            Let's talk
+          </button>
+          <button type="submit" name="answer" value="declined" class="quiet">
+            Decline
+          </button>
+        </div>
+        <p class="muted small">Approving adds them to the phone's contacts. Declining or "let's talk" adds no one.</p>
+      </form>
+    </div>
+  );
+};
 
 /** "Talk to my parent": the kid's words, and "Let's talk" or "Got it", with a note. */
 const OpenTalk: FC<{ view: View; request: TalkView; showDevice: boolean }> = ({ view, request, showDevice }) => (
@@ -206,9 +280,11 @@ export const RequestsPage: FC<{
   kidNumber: (deviceId: string) => string | null;
   /** Phase 4: where a help request's shared fix was, in words. */
   where: Where;
+  /** Phase 5: what's known about a contact request's number. */
+  contacts: ContactFacts;
   message?: string;
   error?: string;
-}> = ({ view, requests, phones, known, limitName, kidNumber, where, message, error }) => {
+}> = ({ view, requests, phones, known, limitName, kidNumber, where, contacts, message, error }) => {
   const help = requests.filter(needsHelp);
   const open = requests.filter((r) => r.kind !== "help" && (r.status === "pending" || r.status === "talk"));
   const answered = requests.filter((r) => !needsHelp(r) && (r.status === "approved" || r.status === "declined" || r.status === "withdrawn"));
@@ -220,8 +296,8 @@ export const RequestsPage: FC<{
     <Layout view={view} title="Requests">
       <h1>Requests</h1>
       <p class="muted">
-        What the kid asked for from Belay's screen on their phone: help, a talk, apps, more time, and what they think of the family agreement. They
-        see your answer, and your note, there.
+        What the kid asked for from Belay's screen on their phone: help, a talk, apps, more time, contacts, and what they think of the family
+        agreement. They see your answer, and your note, there.
       </p>
       {message && <Notice>{message}</Notice>}
       {error && <Notice kind="error">{error}</Notice>}
@@ -243,6 +319,8 @@ export const RequestsPage: FC<{
           <OpenTalk view={view} request={r} showDevice={phones > 1} />
         ) : r.kind === "agreement" ? (
           <OpenAgreement view={view} request={r} showDevice={phones > 1} />
+        ) : r.kind === "contact" ? (
+          <OpenContact view={view} request={r} showDevice={phones > 1} facts={contacts} />
         ) : null,
       )}
       {answered.length > 0 && (

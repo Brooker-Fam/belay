@@ -15,6 +15,8 @@ import { newId } from "../crypto.js";
 import type { DB } from "../db.js";
 import { Policy } from "../device/schemas.js";
 import { oneLine } from "../text.js";
+import { addRequestedContact } from "./calls/approve.js";
+import { callsFor, contactsFor, numbersOf } from "./calls/store.js";
 import { deviceFacts } from "./devices.js";
 import { aiReadsFor, helpSeenFor, parentNumbersFor } from "./kidside.js";
 import { locationFor } from "./location/store.js";
@@ -603,6 +605,11 @@ export function buildPolicy(db: DB, deviceId: string, now: number): Policy {
     ai_reads: aiReadsFor(db),
     help_seen: helpSeenFor(db, deviceId, now),
     parent_numbers: parentNumbersFor(db, deviceId),
+    // Phase 5 (family/calls): calls only once a parent turns them on; the lists always.
+    calls: callsFor(db, deviceId),
+    contacts: contactsFor(db, deviceId),
+    private_numbers: numbersOf(db, deviceId, "private"),
+    blocked_numbers: numbersOf(db, deviceId, "blocked"),
     // Phase 11 (family/offbelay): the family's last stage, for the kid's My stage, and the hand-over.
     off_belay: offBelayFor(db, deviceId, screen),
     handover: handoverFor(db, deviceId),
@@ -1184,7 +1191,7 @@ export type Answer = "approved" | "declined" | "talk";
 export const MORE_TIME_CHOICES = [15, 30, 60] as const;
 
 export interface Answered {
-  kind: "app" | "more_time" | "agreement" | "talk";
+  kind: "app" | "more_time" | "agreement" | "talk" | "contact";
   /** app: the app; more_time: the app the kid was in, if any. */
   package: string | null;
   label: string | null;
@@ -1193,6 +1200,15 @@ export interface Answered {
   /** more_time, approved: the minutes given, for the phone's day `day`. */
   minutes: number | null;
   day: string | null;
+  /** contact, approved (Phase 5): the contact it added, or the one that had the number already. */
+  contact: { id: string; name: string; existing: boolean; unblocked: string[] } | null;
+}
+
+/** Phase 5: what a parent chose when approving a contact request: the name (the kid's words unless they wrote their own), and what the contact may do. */
+export interface ContactAnswer {
+  name?: string;
+  calls?: boolean;
+  texts?: boolean;
 }
 
 /**
@@ -1203,7 +1219,8 @@ export interface Answered {
  * the limit as they are. The kid's answer to the agreement, and "Talk to my parent", only need a
  * parent's word: "let's talk", or that they saw it. A help request isn't answered: a parent marks
  * it seen (family/kidside-changes.ts), so answering one is refused, as is answering one the kid
- * withdrew.
+ * withdrew. Approving "Please add this contact" (Phase 5) adds the contact, with the calls and
+ * texts the parent chose (family/calls/approve.ts); answering it again later adds no other.
  */
 export function answerRequest(
   ctx: PolicyContext,
@@ -1212,15 +1229,28 @@ export function answerRequest(
   answer: Answer,
   who: Person,
   noteText: string | null,
-  opts: { minutes?: number } = {},
+  opts: { minutes?: number; contact?: ContactAnswer } = {},
 ): Changed<Answered | null> {
   onlyPeople(who);
   return mutate(ctx, deviceId, who, (_rules, log) => {
     const { db, now } = ctx;
     const find = db.prepare<
       [string, string],
-      { id: string; kind: Answered["kind"] | "help"; package: string | null; label: string | null; status: string; superseded_by: string | null; limit_id: string | null; extra_id: string | null; agreement_version: number | null }
-    >("SELECT id, kind, package, label, status, superseded_by, limit_id, extra_id, agreement_version FROM requests WHERE device_id = ? AND id = ?");
+      {
+        id: string;
+        kind: Answered["kind"] | "help";
+        package: string | null;
+        label: string | null;
+        status: string;
+        superseded_by: string | null;
+        limit_id: string | null;
+        extra_id: string | null;
+        agreement_version: number | null;
+        contact_name: string | null;
+        contact_number: string | null;
+        contact_id: string | null;
+      }
+    >("SELECT id, kind, package, label, status, superseded_by, limit_id, extra_id, agreement_version, contact_name, contact_number, contact_id FROM requests WHERE device_id = ? AND id = ?");
     let found = find.get(deviceId, requestId);
     // Asked again since (a page from before): the answer goes to the request that took its place.
     for (let hops = 0; found?.status === "superseded" && found.superseded_by !== null && hops < 50; hops++) found = find.get(deviceId, found.superseded_by);
@@ -1258,6 +1288,22 @@ export function answerRequest(
       insertDecision(db, now, { deviceId, pkg: row.package, state: "allowed", by: decidedBy(who), parentId: parentOf(who), note });
       approveOpenRequests(db, now, deviceId, row.package, who, note);
     }
+    // Phase 5: the first approval adds the contact; one approved before already did (or named the one that had the number).
+    let contact: Answered["contact"] = null;
+    if (row.kind === "contact" && answer === "approved" && row.contact_number !== null && row.contact_id === null) {
+      const chosen = opts.contact ?? {};
+      const made = addRequestedContact(
+        db,
+        deviceId,
+        { requestId, name: chosen.name?.trim() || (row.contact_name ?? ""), number: row.contact_number, calls: chosen.calls ?? true, texts: chosen.texts ?? true },
+        now,
+        { parentId: parentOf(who), clientName: null },
+      );
+      if ("problem" in made) throw new RuleRefused(made.problem);
+      db.prepare("UPDATE requests SET contact_id = ? WHERE device_id = ? AND id = ?").run(made.contactId, deviceId, requestId);
+      contact = { id: made.contactId, name: made.name, existing: made.existing, unblocked: made.unblocked };
+      if (!made.existing) log("calls.changed", { changes: made.changes, ...(made.unblocked.length ? { unblocked: made.unblocked } : {}), request: requestId });
+    }
     const limit = row.kind === "more_time" ? (row.limit_id === "*" ? "every limit" : (phoneRules(db, deviceId).rules.limits.find((l) => l.id === row.limit_id)?.name ?? "a limit")) : undefined;
     log("request.answered", {
       answer,
@@ -1265,9 +1311,10 @@ export function answerRequest(
       ...(limit !== undefined ? { limit } : {}),
       ...(minutes !== null ? { minutes, day } : {}),
       ...(row.kind === "agreement" ? { agreement_version: row.agreement_version ?? undefined } : {}),
+      ...(row.kind === "contact" ? { contact: contact?.name ?? row.contact_name ?? undefined, ...(contact?.existing ? { existing: true } : {}) } : {}),
       note: note ?? undefined,
     });
-    return { kind: row.kind, package: row.package, label: row.label, status: row.status, minutes, day };
+    return { kind: row.kind, package: row.package, label: row.label, status: row.status, minutes, day, contact };
   });
 }
 

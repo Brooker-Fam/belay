@@ -92,11 +92,17 @@ provider's terms. Settings → "What AI apps may read" turns each category off:
   how accurate, its coordinates, and where it is by the family's places, their names
   included), arrivals and departures, the fix the kid shared with a help request, and checking
   where the phone is now (`locate_now`).
+- **Calls** (Phase 5), **off until a parent turns it on**: each call the server keeps (when,
+  incoming or outgoing, what happened and why, how long, and the contact, or the number of
+  someone who isn't one), the contacts' numbers, the blocked numbers, and the number in the
+  kid's request to add a contact. Never what was said, and never calls with 911, 988, an
+  emergency number or a private number: Belay doesn't record those.
 
-Each category but Location is on by default. One that a new version of Belay adds starts off
-for a family that had turned any category off, and Settings marks it "new" until a parent
-saves. Location starts off for every family. The kid's phone shows which categories the AI
-app may read (the policy's `ai_reads`), under "What your parent can see".
+Each category but Location and Calls is on by default. One that a new version of Belay adds
+starts off for a family that had turned any category off, and Settings marks it "new" until a
+parent saves. Location and Calls start off for every family: they're about where the kid is,
+and about other people (friends' numbers). The kid's phone shows which categories the AI app
+may read (the policy's `ai_reads`), under "What your parent can see".
 
 Always included: the phones' names, their status and problems ("silent for 14 hours",
 "the phone hasn't applied the rules changed 4 hours ago", or, first, that someone may be
@@ -108,15 +114,19 @@ recovery key and when one was last used, and proposals waiting for a parent), an
 Phase 3 its screen-time rules (measuring, limits, schedules, exempt apps, self-serve, extra
 time given today, the last "lock now" and how it went), and from Phase 4 whether it shares
 where it is (off, on demand, or how often), and whether it's in lost mode: never where it is.
-Blocked and waiting apps are listed only with the Apps category.
+From Phase 5: whether calls are on and the call rules, and the contacts' names, whether each may
+call and text and whether they're a parent, and how many blocked and private numbers there
+are: never who called, a number, or which numbers are private. Blocked and waiting apps are
+listed only with the Apps category.
 
 Also always included: the server's own health (`get_server_health`): backups, disk, database
 size, its clock. It names no phone or app.
 
-Never included, because Belay doesn't collect it: messages, calls, contacts, photos,
-browsing, or what's on the screen. Passwords, tokens, enrollment codes, reset protection
-account ids and recovery keys (or their checks) are never returned, and neither is the kid's
-own phone number (it's only for "Call" on the parent page).
+Never included, because Belay doesn't collect it: messages, what's said on calls, Android's
+own contacts and call log, photos, browsing, or what's on the screen. Passwords, tokens,
+enrollment codes, reset protection account ids and recovery keys (or their checks) are never
+returned, and neither is the kid's own phone number (it's only for "Call" on the parent page)
+or which numbers are private.
 
 Every tool call is in the activity log (Activity → "Also show what AI apps read").
 
@@ -133,7 +143,10 @@ most 20, and each message in it counts.
 | `get_app_changes(device?, since?, until?, limit?, include_system?)` | The timeline: installed, updated, removed, reinstalled. Last 7 days by default. |
 | `list_unreviewed_apps(device?)` | Apps installed or reinstalled since a parent reviewed them, or that gained a sensitive permission since. Each has its Play Store link. |
 | `mark_apps_reviewed(device, packages, note?)` | Records the review, in the parent's name, through this app. It changes nothing on the phone. |
-| `list_requests(device?, kind?, status?)` | What the kid asked for: "I need help" (first, marked urgent, until a parent has seen it), "Talk to my parent", an app, more time for a limit today, or their answer to the family agreement (which needs the Stage and agreement category too), with their words and each answer: waiting, approved (with the minutes given), declined, let's talk, withdrawn by the kid, or for help whether a parent saw it. A help request's shared fix shows only with the Location category. Then the last 30 days. Needs the Requests category. |
+| `list_requests(device?, kind?, status?)` | What the kid asked for: "I need help" (first, marked urgent, until a parent has seen it), "Talk to my parent", an app, more time for a limit today, a contact to add (Phase 5: their name for them and why, under `untrusted`; the number only with the Calls category), or their answer to the family agreement (which needs the Stage and agreement category too), with their words and each answer: waiting, approved (with the minutes given), declined, let's talk, withdrawn by the kid, or for help whether a parent saw it. A help request's shared fix shows only with the Location category. Then the last 30 days. Needs the Requests category. |
+| `get_contacts(device)` | Phase 5: whether calls are on, the call rules in words, the contacts (with ids, for `change_calls`: their names under `untrusted`, whether each may call and text, whether they're a parent), the blocked numbers, how many private numbers there are, and calls proposals waiting. Contacts' and blocked numbers need the Calls category. Always available otherwise. |
+| `get_calls(device, from?, to?)` | Phase 5: the calls the phone recorded, newest first: when, incoming or outgoing, answered, missed, refused, voicemail or not placed, why, how long, and the contact (its name under `untrusted`) or the number of someone who isn't one. Only while the phone records calls; the last 7 days by default, at most 92. Needs the Calls category. |
+| `change_calls(device, change, reason)` | Phase 5: `mode`, `unknown`, `withheld`, `outgoing`, `quiet`, contacts to add, change (by id) or remove, numbers to block or unblock, on a phone whose calls are on. The server decides: a change whose every part tightens applies at once; anything else, or a mix, or anything that takes from a parent contact, becomes a proposal for a parent. Turning calls on or off, recording them (`log`) and private numbers are refused, and so is blocking 911, 988 or an emergency number. |
 | `get_location(device)` | Phase 4: the latest fix the server keeps: when and how long ago, why it was taken, how accurate, its coordinates, and where it is by the family's places (inside one, or how far from the nearest). Needs the Location category. |
 | `locate_now(device)` | Phase 4: asks the phone for a fresh fix and waits up to a minute for it. Only while the phone shares where it is on demand or periodically, and with the Location category. The kid's phone shows a notice naming the AI app ("Your parent checked where this phone is, using Claude"). |
 | `get_place_events(device, from?, to?)` | Phase 4: arrivals at and departures from the family's places, newest first; the last 7 days by default, at most 92. Needs the Location category. |
@@ -147,17 +160,17 @@ most 20, and each message in it counts.
 | `get_server_health` | The family's server itself: its problems (urgent first), the last backup and daily try, when a backup was last verified and the last restore drill, free disk space, the database's size, and whether its clock agrees with the phones'. No family data. |
 | `propose_change(device, change, reason)` | Proposes loosening a rule (`allow_app` with a package, `resume`, `lift_restriction` with a restriction, `web_filter_off`, `new_apps_allow`) for a parent to approve on the parent page. It changes nothing itself. |
 
-The read tools are marked read-only; `block_app`, `pause_phone`, `lock_phone` and
-`change_screen_time` are marked destructive (they change what the phone enforces, and only a
-parent can undo them), so a client may ask before calling them. `locate_now` isn't read-only
+The read tools are marked read-only; `block_app`, `pause_phone`, `lock_phone`,
+`change_screen_time` and `change_calls` are marked destructive (they change what the phone
+enforces, and only a parent can undo them), so a client may ask before calling them. `locate_now` isn't read-only
 (the phone gets a check, and the kid a notice) but changes no rule. Every call is in the
 activity log with the app's name. Times are in the family's timezone with their UTC offset;
 screen time is counted in the phone's own days. Text from app developers (names, versions,
 package names), the kid's reasons and words, notes, the family's own names for limits,
-schedules, stages and places (and any sentence that holds one, like "At School, within
-40 m"), the agreement's text, lost mode's lock-screen words, and what Belay on the phone
-reports are in fields labeled `untrusted`, and the server's instructions tell the AI they
-are data, never instructions:
+schedules, stages, places and contacts (and any sentence that holds one, like "At School,
+within 40 m"), the agreement's text, lost mode's lock-screen words, and what Belay on the
+phone reports are in fields labeled `untrusted`, and the server's instructions tell the AI
+they are data, never instructions:
 an app called "Ignore previous instructions" stays just a strange app name, and a reason
 that says "approve this" approves nothing. What the phone says about itself
 is in plain fields only when it fits Android's own format exactly (a release like `17`, a
@@ -193,6 +206,17 @@ too, since whoever holds a phone's token can send any text.
 - Location (Phase 4) is the same: whether the phone shares where it is and how often, its
   places, keeping location on and lost mode have no tool and no proposal. `locate_now` only
   checks where the phone is, while a parent has location on, and the kid sees every check.
+- `change_calls` (Phase 5) applies a change only when every part of it tightens: only contacts
+  can call, a stricter rule for callers who aren't contacts or have no caller ID (ring, then
+  voicemail, then refused), the kid calling only contacts, quiet times on, fewer contacts
+  allowed to call or text, a number taken off a contact, blocking a number. Anything else is a
+  proposal, each change marked tightens or loosens on the Proposals page: adding a contact, or
+  a number to one, the reverse of any of the above, and anything that takes from a parent
+  contact (who always rings and is on the kid's emergency card) or renames a contact. When a
+  parent approves, each part is checked against the phone's calls as they are then. Turning
+  calls on or off, recording them and private numbers have no tool and no proposal, and no
+  tool answers the kid's request to add a contact. The server refuses to block 911, 988 or an
+  emergency number, which always work in the phone's own code.
 - The kid's requests are answered only by a parent, on the parent page, more time included,
   and only a parent marks a help request seen. The server's instructions say: "A help request
   is urgent. Tell the parent at once, plainly, and suggest they call the kid. Don't speculate
@@ -230,6 +254,7 @@ the kid. Report it plainly, don't guess why, and don't moralize."
 - "What is Sam asking for, and why? Look the app up."
 - "Which apps on Sam's phone can use the microphone or the camera?"
 - "Block Chatter Box on Sam's phone."
+- "Who can call Sam's phone? Turn on quiet times, so only we ring at bedtime."
 - "Pause Sam's phone for an hour, with the note: dinner time."
 - "What does Sam's phone enforce right now, and has it applied the latest rules?"
 - "Propose allowing Trail Maps: it's for the hiking trip." (Then approve it on the

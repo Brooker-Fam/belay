@@ -90,6 +90,7 @@ function what(e: AuditEntry): string {
       }
       if (d.kind === "help") return `asked for help ("I need help")${d.shared_location === true ? ", sharing where the phone is" : ""}${withdrawn}`;
       if (d.kind === "talk") return `asked to talk ("Talk to my parent")${withdrawn}`;
+      if (d.kind === "contact") return `asked to add ${str(d.contact) ? `"${str(d.contact)}"` : "a contact"}${d.again === true ? " again" : ""}${withdrawn}`;
       return `asked for ${str(d.label) || str(d.package) || "an app"}${d.again === true ? " again" : ""}${withdrawn}`;
     }
     case "request.withdrawn":
@@ -104,6 +105,11 @@ function what(e: AuditEntry): string {
       }
       if (d.kind === "agreement") return `answered the kid about version ${str(d.agreement_version)} of the family agreement${d.answer === "talk" ? `: "let's talk"` : ""}${device}${note}`;
       if (d.kind === "talk") return `answered the kid's "Talk to my parent"${d.answer === "talk" ? `: "let's talk"` : d.answer === "declined" ? ": not now" : ": got it"}${device}${note}`;
+      if (d.kind === "contact") {
+        const who = str(d.contact) ? `"${str(d.contact)}"` : "a contact";
+        if (d.answer === "approved") return `approved the kid's request to add ${who}${d.existing === true ? ", a contact already" : ""}${device}${note}`;
+        return `${d.answer === "talk" ? `said "let's talk" about` : "declined"} the kid's request to add ${who}${device}${note}`;
+      }
       const answer = { approved: "approved", declined: "declined", talk: `said "let's talk" about` }[str(d.answer)] ?? "answered";
       return `${answer} the request for ${str(d.label) || str(d.package) || "an app"}${device}${note}`;
     }
@@ -217,6 +223,15 @@ function what(e: AuditEntry): string {
       return d.set === true ? `set the kid's number for "Call"${device}` : `cleared the kid's number for "Call"${device}`;
     case "help.parent_numbers":
       return d.family === true ? `made the emergency card use the family's numbers${device}` : `changed the numbers on the emergency card${device}`;
+    case "calls.on":
+    case "calls.off":
+    case "calls.changed": {
+      const changes = Array.isArray(d.changes) ? d.changes.map(str).filter(Boolean).join("; ") : "";
+      const verb = e.action === "calls.on" ? "turned calls on" : e.action === "calls.off" ? "turned calls off" : "changed calls";
+      const unblocked = Array.isArray(d.unblocked) && d.unblocked.length ? ` (unblocked ${d.unblocked.map(str).join(", ")}: a contact's number now)` : "";
+      const why = str(d.proposal) ? " (an AI app's proposal)" : str(d.request) ? " (the kid's request)" : "";
+      return `${verb}${device}${why}${changes && e.action === "calls.changed" ? `: ${changes}` : ""}${unblocked}`;
+    }
     default:
       if (e.action === "ai.read") return `read ${str(d.what) || "data"}${device}`;
       return e.action;

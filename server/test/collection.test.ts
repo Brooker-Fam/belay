@@ -70,7 +70,7 @@ async function family() {
 describe("what the server keeps about a phone", () => {
   it("lists exactly what each category's stop deletes, and what stays", async () => {
     const { t, phone } = await family();
-    const [apps, screen, location, requests] = keptAbout(t.deps.db, phone.deviceId, t.now());
+    const [apps, screen, location, , requests] = keptAbout(t.deps.db, phone.deviceId, t.now());
     expect(apps).toMatchObject({
       category: "apps",
       goes: [

@@ -5,8 +5,8 @@
  * kept of it, after a confirmation that lists exactly what goes. Only a person does it (the parent
  * page), never an AI app, and it's in the activity log with what went.
  *
- * Stopping is a switch where the phone has one: screen time's measuring, and location (with lost
- * mode and keeping location on). The phone always sends its app list and app changes while Belay
+ * Stopping is a switch where the phone has one: screen time's measuring, location (with lost mode
+ * and keeping location on), and recording calls (Phase 5). The phone always sends its app list and app changes while Belay
  * is on it (its rules work from them), and the kid can always ask for things ("I need help" must
  * always reach a parent), so for those two what goes is what's kept now. A request the kid's phone
  * still shows keeps a bare record (that it was asked, and the answer, without anyone's words), so
@@ -14,17 +14,19 @@
  * parent has seen, stay as they are.
  *
  * Every table with a phone's rows belongs to one of these, or to RECORDS (tested), so a new kind
- * of data can't be left out. Phase 5's calls join with their own category.
+ * of data can't be left out.
  */
 import { createHash } from "node:crypto";
 import type { DB } from "../db.js";
+import { setCalls } from "./calls/changes.js";
+import { callSettings, listContacts, listNumbers } from "./calls/store.js";
 import { setLocation, setLost } from "./location/changes.js";
 import { listPlaces, locationSettings } from "./location/store.js";
 import { type Changed, type Person, type PolicyContext, RuleRefused, changePolicy } from "./policy.js";
 import { setPhoneSettings } from "./screentime/changes.js";
 import { phoneRules } from "./screentime/rules.js";
 
-export const COLLECTED = ["apps", "screen_time", "location", "requests"] as const;
+export const COLLECTED = ["apps", "screen_time", "location", "calls", "requests"] as const;
 export type Collected = (typeof COLLECTED)[number];
 
 /** The tables each category's rows are in (location's checks are the phone's locate_now commands). */
@@ -32,6 +34,7 @@ export const COLLECTED_TABLES: Record<Collected, readonly string[]> = {
   apps: ["apps", "app_events", "snapshots", "reviews"],
   screen_time: ["usage_days", "usage_apps"],
   location: ["fixes", "place_events", "places"],
+  calls: ["call_records"],
   requests: ["requests"],
 };
 
@@ -52,6 +55,11 @@ export const RECORDS: readonly string[] = [
   "agreements",
   "location_settings",
   "phone_help",
+  // Phase 5: the calls rules, the contacts a parent approved, and the private and blocked numbers.
+  "call_settings",
+  "contacts",
+  "contact_numbers",
+  "call_numbers",
   "handovers",
   "enrollment_codes",
   "audit_log",
@@ -67,6 +75,7 @@ export const COLLECTED_TITLES: Record<Collected, string> = {
   apps: "Apps",
   screen_time: "Screen time",
   location: "Where the phone is",
+  calls: "Calls",
   requests: "Requests",
 };
 
@@ -94,6 +103,9 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 const REMOVED_APPS = `apps AS a WHERE a.device_id = ? AND a.present = 0 AND NOT EXISTS (
   SELECT 1 FROM app_decisions d WHERE d.device_id = a.device_id AND d.package = a.package AND d.state != 'undecided'
     AND d.id = (SELECT MAX(id) FROM app_decisions WHERE device_id = a.device_id AND package = a.package))`;
+
+/** A request with the kid's own words: why they asked, or (Phase 5) the name they gave a contact. */
+const KID_WORDS = "(reason IS NOT NULL OR (kind = 'contact' AND contact_name IS NOT contact_number))";
 
 /** Requests that stay as they are: waiting for a parent, or a help request no parent has seen. */
 const KEPT_REQUEST = "(status = 'pending' OR (kind = 'help' AND seen_at IS NULL AND status IN ('pending', 'withdrawn')))";
@@ -165,10 +177,29 @@ function locationKept(db: DB, deviceId: string): Omit<Kept, "fingerprint"> {
   };
 }
 
+function callsKept(db: DB, deviceId: string): Omit<Kept, "fingerprint"> {
+  const records = count(db, "call_records WHERE device_id = ?", deviceId);
+  const s = callSettings(db, deviceId);
+  const rules = listContacts(db, deviceId).length + listNumbers(db, deviceId, "private").length + listNumbers(db, deviceId, "blocked").length;
+  return {
+    category: "calls",
+    title: COLLECTED_TITLES.calls,
+    goes: records ? [`${plural(records, "call record")}: who called whom, when, for how long, and what happened`] : [],
+    stopping: s?.log
+      ? "Recording calls turns off: the phone stops sending who calls and who is called."
+      : "Calls aren't recorded: the phone doesn't send who calls and who is called.",
+    stays: [
+      ...(s?.enabled ? ["Calls stay on, with their rules: Belay as the phone app still decides who rings."] : []),
+      ...(rules ? ["The contacts, and the private and blocked numbers: they're this phone's rules."] : []),
+    ],
+    anything: records > 0 || s?.log === true,
+  };
+}
+
 function requestsKept(db: DB, deviceId: string, now: number): Omit<Kept, "fingerprint"> {
   const recent = now - PHONE_KEEPS_REQUESTS_MS;
   const closed = `requests WHERE device_id = ? AND NOT ${KEPT_REQUEST}`;
-  const words = count(db, `${closed} AND reason IS NOT NULL`, deviceId);
+  const words = count(db, `${closed} AND ${KID_WORDS}`, deviceId);
   const notes = count(db, `${closed} AND note IS NOT NULL`, deviceId);
   const old = count(db, `${closed} AND received_at < ? AND asked_at < ?`, deviceId, recent, recent);
   const bare = count(db, `${closed} AND (received_at >= ? OR asked_at >= ?)`, deviceId, recent, recent);
@@ -207,7 +238,9 @@ export function keptFor(db: DB, deviceId: string, category: Collected, now: numb
         ? screenTimeKept(db, deviceId)
         : category === "location"
           ? locationKept(db, deviceId)
-          : requestsKept(db, deviceId, now);
+          : category === "calls"
+            ? callsKept(db, deviceId)
+            : requestsKept(db, deviceId, now);
   return { ...kept, fingerprint: fingerprintOf(kept) };
 }
 
@@ -244,16 +277,23 @@ function deleteLocation(db: DB, deviceId: string): Deleted {
   };
 }
 
+function deleteCalls(db: DB, deviceId: string): Deleted {
+  return { call_records: db.prepare("DELETE FROM call_records WHERE device_id = ?").run(deviceId).changes };
+}
+
 function deleteRequests(db: DB, deviceId: string, now: number): Deleted {
   const recent = now - PHONE_KEEPS_REQUESTS_MS;
   const closed = `device_id = ? AND NOT ${KEPT_REQUEST}`;
-  const words = count(db, `requests WHERE ${closed} AND reason IS NOT NULL`, deviceId);
+  const words = count(db, `requests WHERE ${closed} AND ${KID_WORDS}`, deviceId);
   const notes = count(db, `requests WHERE ${closed} AND note IS NOT NULL`, deviceId);
   const shared = db.prepare(`DELETE FROM fixes WHERE device_id = ? AND reason = 'help' AND request_id IN (SELECT id FROM requests WHERE ${closed})`).run(deviceId, deviceId).changes;
   const old = db.prepare(`DELETE FROM requests WHERE ${closed} AND received_at < ? AND asked_at < ?`).run(deviceId, recent, recent).changes;
   // The rest the kid's phone still shows: a bare record (what was asked, when, and the answer), so
-  // it still shows the answer and doesn't offer it as waiting again.
-  db.prepare(`UPDATE requests SET reason = NULL, note = NULL WHERE ${closed}`).run(deviceId);
+  // it still shows the answer and doesn't offer it as waiting again. A contact request needs a
+  // name: its number, which (like an app's package) is what was asked, not the kid's words.
+  db.prepare(
+    `UPDATE requests SET reason = NULL, note = NULL, contact_name = CASE WHEN kind = 'contact' THEN contact_number ELSE contact_name END WHERE ${closed}`,
+  ).run(deviceId);
   return { words, notes, shared_fixes: shared, old_requests: old };
 }
 
@@ -276,6 +316,7 @@ export function stopCollecting(ctx: PolicyContext, deviceId: string, category: C
       if (s?.lost) setLost(ctx, deviceId, null, who);
       if (s && (s.mode !== "off" || s.keepOn)) setLocation(ctx, deviceId, { mode: "off", keepOn: false }, who);
     }
+    if (category === "calls" && callSettings(db, deviceId)?.log) setCalls(ctx, deviceId, { log: false }, who);
     return changePolicy(ctx, deviceId, who, (log) => {
       const deleted =
         category === "apps"
@@ -284,7 +325,9 @@ export function stopCollecting(ctx: PolicyContext, deviceId: string, category: C
             ? deleteScreenTime(db, deviceId)
             : category === "location"
               ? deleteLocation(db, deviceId)
-              : deleteRequests(db, deviceId, now);
+              : category === "calls"
+                ? deleteCalls(db, deviceId)
+                : deleteRequests(db, deviceId, now);
       log("collection.stopped", { category, deleted });
       return { deleted };
     });
