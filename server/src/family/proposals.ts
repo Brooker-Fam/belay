@@ -41,7 +41,17 @@ export type ProposalChange =
   | { kind: "web_filter_off" }
   | { kind: "new_apps_allow" };
 
-export type ProposalStatus = "pending" | "approved" | "rejected";
+/** "outdated": a parent tried to approve it, but what it was about had changed since, so nothing was applied. */
+export type ProposalStatus = "pending" | "approved" | "rejected" | "outdated";
+
+/**
+ * What a proposal was about when it was made, to tell when a parent approves it whether that
+ * changed since: the app's latest decision, the pause in force, the web filter.
+ */
+type Context =
+  | { kind: "allow_app"; decision: number }
+  | { kind: "resume"; until: number | null; note: string | null; set_at: number | null }
+  | { kind: "web_filter_off"; private_dns: string | null };
 
 export interface Proposal {
   id: string;
@@ -59,6 +69,9 @@ export interface Proposal {
   status: ProposalStatus;
   decidedBy: string | null;
   decidedAt: number | null;
+  /** For "outdated": what changed, in words. */
+  outdatedWhy: string | null;
+  context: Context | null;
 }
 
 interface ProposalRow {
@@ -76,6 +89,17 @@ interface ProposalRow {
   status: ProposalStatus;
   decided_by_name: string | null;
   decided_at: number | null;
+  outdated_why: string | null;
+  context: string | null;
+}
+
+function parseContext(json: string | null): Context | null {
+  if (!json) return null;
+  try {
+    return JSON.parse(json) as Context;
+  } catch {
+    return null;
+  }
 }
 
 const isLiftable = (value: string | null): value is Liftable => (LIFTABLE as readonly (string | null)[]).includes(value);
@@ -105,13 +129,15 @@ function toProposal(r: ProposalRow): Proposal {
     status: r.status,
     decidedBy: r.decided_by_name,
     decidedAt: r.decided_at,
+    outdatedWhy: r.outdated_why,
+    context: parseContext(r.context),
   };
 }
 
 const SELECT = `SELECT x.id, x.device_id, d.name AS device_name, x.kind, x.package, x.restriction,
     COALESCE((SELECT a.label FROM apps a WHERE a.device_id = x.device_id AND a.package = x.package),
              (SELECT r.label FROM requests r WHERE r.device_id = x.device_id AND r.package = x.package ORDER BY r.received_at DESC LIMIT 1)) AS label,
-    x.reason, x.client_name, p.name AS parent_name, x.created_at, x.status, q.name AS decided_by_name, x.decided_at
+    x.reason, x.client_name, p.name AS parent_name, x.created_at, x.status, q.name AS decided_by_name, x.decided_at, x.outdated_why, x.context
   FROM proposals x JOIN devices d ON d.id = x.device_id
   LEFT JOIN parents p ON p.id = x.parent_id LEFT JOIN parents q ON q.id = x.decided_by`;
 
@@ -155,6 +181,58 @@ export function nothingToLoosen(db: DB, deviceId: string, change: ProposalChange
   }
 }
 
+/** The newest decision about one app on the phone (0: none). */
+function latestDecisionId(db: DB, deviceId: string, pkg: string): number {
+  return db.prepare<[string, string], { id: number | null }>("SELECT MAX(id) AS id FROM app_decisions WHERE device_id = ? AND package = ?").get(deviceId, pkg)?.id ?? 0;
+}
+
+/** What the change is about, now. */
+function contextOf(db: DB, deviceId: string, change: ProposalChange, now: number): Context | null {
+  switch (change.kind) {
+    case "allow_app":
+      return { kind: "allow_app", decision: latestDecisionId(db, deviceId, change.package) };
+    case "resume": {
+      const pause = activePause(getRules(db, deviceId), now);
+      return pause ? { kind: "resume", until: pause.until, note: pause.note, set_at: pause.setAt } : null;
+    }
+    case "web_filter_off":
+      return { kind: "web_filter_off", private_dns: getRules(db, deviceId).privateDns };
+    default:
+      return null;
+  }
+}
+
+/**
+ * Why approving the proposal now wouldn't do what it said when it was made, or null: it
+ * wouldn't loosen anything any more, or what it was about changed since (a different pause, the
+ * app's rule decided again, the kid's request for it answered, another web filter).
+ */
+export function outdatedBecause(db: DB, proposal: Proposal, now: number): string | null {
+  const nothing = nothingToLoosen(db, proposal.deviceId, proposal.change, now);
+  if (nothing) return nothing;
+  const then = proposal.context;
+  const change = proposal.change;
+  if (then?.kind === "allow_app" && change.kind === "allow_app") {
+    if (latestDecisionId(db, proposal.deviceId, change.package) !== then.decision) return "The app's rule changed after this was proposed.";
+    const answered = db
+      .prepare<[string, string, number], { n: number }>(
+        "SELECT COUNT(*) AS n FROM requests WHERE device_id = ? AND package = ? AND answered_at > ? AND status IN ('declined', 'talk')",
+      )
+      .get(proposal.deviceId, change.package, proposal.createdAt);
+    if (answered?.n) return "A parent answered the kid's request for this app after this was proposed.";
+  }
+  if (then?.kind === "resume" && change.kind === "resume") {
+    const current = contextOf(db, proposal.deviceId, change, now);
+    if (current?.kind === "resume" && (current.until !== then.until || current.note !== then.note || current.set_at !== then.set_at)) {
+      return "The phone was paused again after this was proposed: it's a different pause now.";
+    }
+  }
+  if (then?.kind === "web_filter_off" && change.kind === "web_filter_off" && getRules(db, proposal.deviceId).privateDns !== then.private_dns) {
+    return "The web filter changed after this was proposed.";
+  }
+  return null;
+}
+
 /**
  * Records an AI app's proposal, in the activity log too. The same change still waiting is
  * returned instead of a second one.
@@ -177,10 +255,11 @@ export function createProposal(
       .get(deviceId, change.kind, pkg, restriction);
     const id = same?.id ?? newId();
     if (!same) {
+      const context = contextOf(db, deviceId, change, now);
       db.prepare(
-        `INSERT INTO proposals (id, device_id, kind, package, restriction, reason, client_name, parent_id, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).run(id, deviceId, change.kind, pkg, restriction, reason.trim().slice(0, 1000), by.clientName, by.parentId, now);
+        `INSERT INTO proposals (id, device_id, kind, package, restriction, reason, client_name, parent_id, created_at, context)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(id, deviceId, change.kind, pkg, restriction, reason.trim().slice(0, 1000), by.clientName, by.parentId, now, context ? JSON.stringify(context) : null);
     }
     const proposal = getProposal(db, id);
     if (!proposal) throw new Error("proposal vanished");
@@ -223,20 +302,30 @@ export function pendingProposalCount(db: DB): number {
   return db.prepare<[], { n: number }>("SELECT COUNT(*) AS n FROM proposals WHERE status = 'pending'").get()?.n ?? 0;
 }
 
-export type Decided = { ok: true; proposal: Proposal } | { ok: false; reason: string };
+export type Decided = { ok: true; proposal: Proposal } | { ok: false; reason: string; outdated?: boolean };
 
 /**
  * A parent approves a proposal: the change is applied in their name, with their note (for an
- * app, the note goes with the kid's request's answer too).
+ * app, the note goes with the kid's request's answer too). One that's out of date
+ * (outdatedBecause) is marked so instead, and nothing changes.
  */
 export function approveProposal(ctx: PolicyContext, id: string, parentId: string, note: string | null = null): Decided {
   const { db, now } = ctx;
   return db.transaction((): Decided => {
     const proposal = getProposal(db, id);
     if (!proposal) return { ok: false, reason: "There's no such proposal." };
-    if (proposal.status !== "pending") return { ok: false, reason: `It was already ${proposal.status}.` };
+    if (proposal.status !== "pending") return { ok: false, reason: `It was already ${proposal.status === "outdated" ? "out of date" : proposal.status}.` };
     const parent = { kind: "parent", parentId } as const;
     const change = proposal.change;
+    const why = outdatedBecause(db, proposal, now);
+    if (why) {
+      db.prepare("UPDATE proposals SET status = 'outdated', decided_by = ?, decided_at = ?, outdated_why = ? WHERE id = ?").run(parentId, now, why, id);
+      audit(db, now, parent, "proposal.outdated", {
+        deviceId: proposal.deviceId,
+        detail: { change: changeWords(change, proposal.label).title, client: proposal.clientName, why },
+      });
+      return { ok: false, outdated: true, reason: why };
+    }
     switch (change.kind) {
       case "allow_app":
         decideApp(ctx, proposal.deviceId, change.package, "allowed", parent, { note, proposalId: proposal.id });

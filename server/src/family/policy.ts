@@ -192,6 +192,8 @@ export interface Pause {
   /** Null: until a parent resumes it. */
   until: number | null;
   note: string | null;
+  /** When this pause was set or last changed (null: before the server kept it), so a proposal to resume knows which pause it meant. */
+  setAt: number | null;
 }
 
 export interface Rules {
@@ -220,6 +222,7 @@ interface PolicyRow {
   paused: number;
   pause_until: number | null;
   pause_note: string | null;
+  pause_set_at: number | null;
   restrictions: string;
   private_dns: string | null;
   chrome: string | null;
@@ -275,7 +278,7 @@ export function getRules(db: DB, deviceId: string): Rules {
     changedAt: row.changed_at,
     protectedAt: row.protected_at,
     newApps: row.new_apps,
-    pause: row.paused === 1 ? { until: row.pause_until, note: row.pause_note } : null,
+    pause: row.paused === 1 ? { until: row.pause_until, note: row.pause_note, setAt: row.pause_set_at } : null,
     restrictions,
     privateDns: row.private_dns,
     chrome: row.chrome !== null && chrome.success ? chrome.data : null,
@@ -288,12 +291,12 @@ export function getRules(db: DB, deviceId: string): Rules {
 
 function saveRules(db: DB, deviceId: string, rules: Rules, now: number): void {
   db.prepare(
-    `INSERT INTO policies (device_id, version, changed_at, protected_at, new_apps, paused, pause_until, pause_note, restrictions,
+    `INSERT INTO policies (device_id, version, changed_at, protected_at, new_apps, paused, pause_until, pause_note, pause_set_at, restrictions,
        private_dns, chrome, hide_browsers, maintenance_until, frp_accounts, support_message)
-     VALUES (@device_id, 0, @now, @protected_at, @new_apps, @paused, @pause_until, @pause_note, @restrictions,
+     VALUES (@device_id, 0, @now, @protected_at, @new_apps, @paused, @pause_until, @pause_note, @pause_set_at, @restrictions,
        @private_dns, @chrome, @hide_browsers, @maintenance_until, @frp_accounts, @support_message)
      ON CONFLICT (device_id) DO UPDATE SET protected_at = excluded.protected_at, new_apps = excluded.new_apps, paused = excluded.paused,
-       pause_until = excluded.pause_until, pause_note = excluded.pause_note, restrictions = excluded.restrictions,
+       pause_until = excluded.pause_until, pause_note = excluded.pause_note, pause_set_at = excluded.pause_set_at, restrictions = excluded.restrictions,
        private_dns = excluded.private_dns, chrome = excluded.chrome, hide_browsers = excluded.hide_browsers,
        maintenance_until = excluded.maintenance_until, frp_accounts = excluded.frp_accounts, support_message = excluded.support_message`,
   ).run({
@@ -304,6 +307,7 @@ function saveRules(db: DB, deviceId: string, rules: Rules, now: number): void {
     paused: rules.pause ? 1 : 0,
     pause_until: rules.pause?.until ?? null,
     pause_note: rules.pause?.note ?? null,
+    pause_set_at: rules.pause?.setAt ?? null,
     restrictions: JSON.stringify(Object.fromEntries(RESTRICTIONS.filter((r) => rules.restrictions[r]).map((r) => [r, true]))),
     private_dns: rules.privateDns,
     chrome: rules.chrome ? JSON.stringify(rules.chrome) : null,
@@ -763,14 +767,16 @@ export function pausePhone(
     const kept = who.kind === "ai" && current !== null && (current.until === null || (until !== null && current.until >= until));
     const given = input.note !== undefined && input.note !== null ? clean(input.note, LIMITS.pauseNote) : undefined;
     let note: string | null;
+    let setAt: number | null = ctx.now;
     if (kept) {
       until = current.until;
       note = current.note;
+      setAt = current.setAt;
     } else {
       // Without a note of its own, an AI app's longer pause keeps the note there is.
       note = given !== undefined ? given : who.kind === "ai" ? (current?.note ?? null) : null;
     }
-    rules.pause = { until, note };
+    rules.pause = { until, note, setAt };
     log("phone.paused", { until, minutes, note: note ?? undefined, ...(kept ? { kept: true } : {}) });
     return { until, kept };
   });

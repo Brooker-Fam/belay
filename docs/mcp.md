@@ -129,6 +129,10 @@ too, since whoever holds a phone's token can send any text.
   it in that parent's name, and approving an app also answers the kid's request for it. The
   same change proposed again while it waits isn't a second proposal, and a change that
   wouldn't loosen anything (an app already allowed, a phone that isn't paused) is refused.
+  When a parent approves, the server checks again: if what the proposal was about changed
+  since it was made (the phone was paused again, the app's rule was decided again or the
+  kid's request for it answered, another web filter), it's marked out of date and nothing
+  changes. The Proposals page says so, before and after.
 - The kid's requests are answered only by a parent, on the parent page.
 - Factory reset, debugging, reset protection and maintenance mode have no tool and no kind
   of proposal: only a parent changes them, on the parent page, and turning hardening on

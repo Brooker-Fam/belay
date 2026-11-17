@@ -114,6 +114,8 @@ function what(e: AuditEntry): string {
       return `approved ${str(d.client) || "an AI app"}'s proposal: ${str(d.change)}${device}`;
     case "proposal.rejected":
       return `rejected ${str(d.client) || "an AI app"}'s proposal: ${str(d.change)}${device}`;
+    case "proposal.outdated":
+      return `approved ${str(d.client) || "an AI app"}'s proposal, but it was out of date, so nothing changed: ${str(d.change)}${device}`;
     default:
       if (e.action === "ai.read") return `read ${str(d.what) || "data"}${device}`;
       return e.action;

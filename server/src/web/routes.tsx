@@ -65,7 +65,7 @@ import {
   validHostname,
   type PolicyContext,
 } from "../family/policy.js";
-import { approveProposal, listProposals, pendingProposalCount, rejectProposal } from "../family/proposals.js";
+import { approveProposal, listProposals, outdatedBecause, pendingProposalCount, rejectProposal } from "../family/proposals.js";
 import { listRequests, pendingRequestCount, recentRequests } from "../family/requests.js";
 import { clientAddress, type Bindings } from "../http.js";
 import { createPersonalToken, getGrant, listGrants, revokeAllGrants, revokeGrant } from "../oauth/store.js";
@@ -673,8 +673,21 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
     );
   });
 
-  const proposalsPage = (c: WebContext, extra: { message?: string; error?: string } = {}, status: ContentfulStatusCode = 200) =>
-    render(c, <ProposalsPage view={view(c)} proposals={listProposals(db, { limit: 200 })} message={extra.message ?? SAVED[c.req.query("saved") ?? ""]} error={extra.error} />, status);
+  const proposalsPage = (c: WebContext, extra: { message?: string; error?: string } = {}, status: ContentfulStatusCode = 200) => {
+    const now = deps.now();
+    const proposals = listProposals(db, { limit: 200 });
+    const stale = new Map(
+      proposals.flatMap((p) => {
+        const why = p.status === "pending" ? outdatedBecause(db, p, now) : null;
+        return why ? [[p.id, why] as const] : [];
+      }),
+    );
+    return render(
+      c,
+      <ProposalsPage view={view(c)} proposals={proposals} stale={stale} message={extra.message ?? SAVED[c.req.query("saved") ?? ""]} error={extra.error} />,
+      status,
+    );
+  };
 
   app.get("/proposals", (c) => proposalsPage(c));
 
@@ -688,6 +701,7 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
       if (error instanceof RuleRefused) return proposalsPage(c, { error: `Nothing changed. ${error.message}` }, 400);
       throw error;
     }
+    if (!done.ok && done.outdated) return proposalsPage(c, { error: `Nothing changed: that proposal was out of date. ${done.reason}` }, 409);
     if (!done.ok) return proposalsPage(c, { error: done.reason }, 400);
     return c.redirect("/proposals?saved=proposal_approved");
   });
