@@ -6,8 +6,9 @@
  * activity log, and bumps the phone's version when what the phone would see changed, then
  * wakes the phone's long-poll. Who may change what is checked here as well as in the
  * callers: an AI app may block an app or pause the phone (never shorter), and nothing else;
- * hardening (factory reset, debugging, reset protection) is only changed by setHardening,
- * which only the parent page calls, after the parent types the phone's name.
+ * hardening (factory reset, debugging, reset protection) is only turned on by setHardening,
+ * which only the parent page calls, after the parent types the phone's name. Phase 11's
+ * hand-over (liftForHandover, family/offbelay) lifts it again, a person's action too.
  */
 import { type Actor, audit } from "../audit.js";
 import { newId } from "../crypto.js";
@@ -17,7 +18,7 @@ import { oneLine } from "../text.js";
 import { deviceFacts } from "./devices.js";
 import { aiReadsFor, helpSeenFor, parentNumbersFor } from "./kidside.js";
 import { locationFor } from "./location/store.js";
-import { handoverFor, offBelayFor } from "./offbelay/store.js";
+import { handoverFor, handoverOf, offBelayFor } from "./offbelay/store.js";
 import { agreementFor } from "./screentime/agreement.js";
 import { insertExtra, phoneDay, phoneRules, screenTimeFor, stageFor } from "./screentime/rules.js";
 
@@ -1064,6 +1065,7 @@ export function setRestrictions(
     const off: Restriction[] = [];
     for (const [key, value] of Object.entries(changes) as [OrdinaryRestriction, boolean | undefined][]) {
       if (value === undefined || rules.restrictions[key] === value) continue;
+      if (value && (HANDOVER_LIFTS as readonly string[]).includes(key)) refuseWhileHandedOver(ctx.db, deviceId);
       rules.restrictions[key] = value;
       (value ? on : off).push(key);
     }
@@ -1098,8 +1100,38 @@ export function setHardening(
       (accounts.length ? on : off).push("frp_accounts");
       rules.frpAccounts = accounts;
     }
+    if (on.length) refuseWhileHandedOver(ctx.db, deviceId);
     if (on.length || off.length) log("policy.hardening", { on, off, frp_accounts: accounts.length });
     return { on, off };
+  });
+}
+
+/** Phase 11: what a hand-over lifts, so the kid can reset the phone from Settings and set it up with their own account. */
+export const HANDOVER_LIFTS = ["factory_reset", "debugging", "modify_accounts"] as const satisfies readonly Restriction[];
+
+/** While a phone is being handed over, nothing a hand-over lifts locks again: the kid's phone is telling them to reset it. */
+function refuseWhileHandedOver(db: DB, deviceId: string): void {
+  if (handoverOf(db, deviceId)) {
+    throw new RuleRefused("This phone is being handed over, so factory reset, debugging, accounts and reset protection stay unlocked: its screen tells the kid to back up, remove your account and reset it. Cancel the hand-over first.");
+  }
+}
+
+/**
+ * Phase 11's hand-over (family/offbelay/changes.ts records it, in `record`, in the same
+ * transaction): factory reset, debugging and the accounts lock lifted, so the kid can reset the
+ * phone from Settings and use their own Google account, and reset protection emptied, so the
+ * phone isn't tied to the parent's account any more. A person's action only: the parent page,
+ * after the parent types the phone's name, or the server's CLI. Never an AI app's, not even as a
+ * proposal.
+ */
+export function liftForHandover<T>(ctx: PolicyContext, deviceId: string, who: Person, record: (log: Log, lifted: { restrictions: Restriction[]; frpAccounts: number }) => T): Changed<T> {
+  onlyPeople(who);
+  return mutate(ctx, deviceId, who, (rules, log) => {
+    const restrictions: Restriction[] = HANDOVER_LIFTS.filter((r) => rules.restrictions[r]);
+    for (const r of HANDOVER_LIFTS) rules.restrictions[r] = false;
+    const frpAccounts = rules.frpAccounts.length;
+    rules.frpAccounts = [];
+    return record(log, { restrictions, frpAccounts });
   });
 }
 

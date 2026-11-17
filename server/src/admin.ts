@@ -44,10 +44,12 @@
  *   parent-number "<phone>" --name <name> --number <E.164>, or --remove <name>
  *                                                 a number on the phone's emergency card
  *   kid-number "<phone>" <E.164>|--clear          the kid's own number, for "Call" on the parent page
+ *   handover "<phone>"                            hands the phone over to the kid (Phase 11); prints one sentence
  *
  * Changes are logged as the server's (the activity log's "The server"). A running server sees
  * them within a second or two and passes them to the phone's long-poll. Hardening (factory
- * reset, debugging, reset protection) is only on the parent page.
+ * reset, debugging, reset protection) is only turned on on the parent page; `handover` lifts it,
+ * as the phone page's "Hand this phone over" does.
  */
 import { endAllSessions, newSetupToken, parentCount, passwordProblem, setPassword } from "./auth/parents.js";
 import { audit } from "./audit.js";
@@ -68,6 +70,8 @@ import { type LocationChange, locateNow, removePlace, savePlace, setLocation, se
 import { latestFix, listFixes, listPlaceEvents } from "./family/location/fixes.js";
 import { type Notify, listPlaces, locationFor, locationSettings } from "./family/location/store.js";
 import { locationWords } from "./mcp/location.js";
+import { handOver } from "./family/offbelay/changes.js";
+import { handoverOf } from "./family/offbelay/store.js";
 import { setPhoneRules, setPhoneSettings } from "./family/screentime/changes.js";
 import { WEEKDAYS, type Weekday, clockMinutes } from "./family/screentime/days.js";
 import { newRuleId, phoneLabels, phoneRules, screenTimeFor } from "./family/screentime/rules.js";
@@ -118,6 +122,12 @@ function recoveryStatus(state: RecoveryState, iso: (ms: number | null) => string
   };
 }
 
+/** status --json's handover. */
+function handoverStatus(db: DB, deviceId: string) {
+  const h = handoverOf(db, deviceId);
+  return h ? { at: h.at, by: h.byName, version: h.version } : null;
+}
+
 /** "Of the apps without a decision, 1 is allowed and 2 wait for a parent." */
 function askAgainWords(r: { grandfathered: number; stillWaiting: number }): string {
   return `Of the apps without a decision, ${r.grandfathered} ${r.grandfathered === 1 ? "is" : "are"} allowed and ${r.stillWaiting} ${r.stillWaiting === 1 ? "waits" : "wait"} for a parent.`;
@@ -157,7 +167,8 @@ const USAGE = `Commands:
   help-seen "<phone>" <request id> [--note <words>]
   parent-number "<phone>" --name <name> --number <E.164>
   parent-number "<phone>" --remove <name>
-  kid-number "<phone>" <E.164>|--clear`;
+  kid-number "<phone>" <E.164>|--clear
+  handover "<phone>"`;
 
 /** How many of the newest fixes and place events status --json lists per phone. */
 const STATUS_FIXES = 50;
@@ -344,6 +355,8 @@ async function run(argv: string[], io: CliIO): Promise<void> {
           help_seen: helpSeenFor(db, d.id, now),
           parent_numbers: parentNumbersFor(db, d.id),
           ai_reads: aiReads(settings),
+          /** Phase 11: the hand-over, as the policy carries it (at: milliseconds since the epoch), with the rules version that carried it; null: none. */
+          handover: handoverStatus(db, d.id),
         };
       });
       if (flags.has("json")) {
@@ -374,6 +387,17 @@ async function run(argv: string[], io: CliIO): Promise<void> {
         }
         for (const c of p.recent_changes.slice(0, 5)) io.out(`  ${c.at ?? ""} ${c.kind} ${c.package}`);
       }
+      return;
+    }
+    case "handover": {
+      // Phase 11: what the phone page's "Hand this phone over" does, where typing the phone's name is the confirmation.
+      const row = phone();
+      const done = handOver(ctx, row.id, server);
+      io.out(
+        done.result.already
+          ? `${row.name} was already handed over (rules version ${done.result.handover.version}).`
+          : `${row.name} is handed over (rules version ${done.version}): factory reset, debugging and accounts are unlocked and reset protection is cleared, and the phone tells the kid to back up and reset it from Settings.`,
+      );
       return;
     }
     case "protect": {
