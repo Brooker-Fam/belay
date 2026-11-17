@@ -127,9 +127,14 @@ profile, and the fixes from a security review of the Phase 2 server. The contrac
 built too: one provisioning plan that `provision.sh` and the kit both run, the kit's page and
 runner, and its container; CI provisions the emulator with the kit's runner. Phase 7 (the kid's side:
 Home, help, the emergency card, talk) and Phase 4 (location, off by default) are built and run end
-to end too. **In progress:** Phase 5's calls (Belay as the phone app, approved contacts) and
-Phase 11 (off belay). Phase 5's texts wait for a Pixel test of Google Messages' archival hook;
-network logging (Phase 3) comes after.
+to end too. Phase 5's calls (Belay as the
+phone app when a parent turns calls on: approved contacts, who rings, call records; 911,
+emergency numbers and 988 always allowed in code) and Phase 11 (off belay: the last stage,
+stopping collection with deletion, the hand-over) are built and run end to end too, after a
+second security review whose fixes are in. **Next:** Phase 5's texts wait for a Pixel test of
+Google Messages' archival hook; network logging (Phase 3); Play's `allowed_accounts`; and the
+smaller hardening items the second review listed (rates for AI checks and locks, caps on the
+Phase 1 tables, activity-log retention).
 
 ### Phase 3: screen time, schedules and stages ([design](docs/design/phase3-screen-time.md)) (built)
 
@@ -159,7 +164,13 @@ on the Pixel, including the battery cost per mode.
 - The kid sees every check, from the phone's own record. AI access is off by default; the server
   never calls a map or geocoding service.
 
-### Phase 5: calls and texts ([design](docs/design/phase5-calls-texts.md))
+### Phase 5: calls and texts ([design](docs/design/phase5-calls-texts.md)) (calls built)
+
+Calls are built and run end to end in CI (a contact's call rings Belay's screen, a stranger's
+is refused and recorded, Belay becomes and stops being the phone app). **Still open:**
+[docs/phase5-checklist.md](docs/phase5-checklist.md) on the Pixel, and texts, after the Pixel
+test of Google Messages' archival hook (T8).
+
 
 - **Calls:** Belay as the default dialer, so the family decides who rings, including withheld
   numbers. 911 always goes to the phone's own dialer; 988 is allowed in Belay's code; neither is
@@ -227,7 +238,12 @@ and a parent can remove another user or profile from the phone's page (`remove_o
   app rules can lift Belay's suspensions. Belay detects other users, re-applies its rules, and lets
   a parent remove the profile.
 
-### Phase 11: off belay ([design](docs/design/phase11-off-belay.md))
+### Phase 11: off belay ([design](docs/design/phase11-off-belay.md)) (built)
+
+Built and run end to end in CI (the hand-over reaches the phone, which lifts its locks and shows
+the kid what comes next). **Still open:** [docs/phase11-checklist.md](docs/phase11-checklist.md)
+with a release build, ending in a reset from Settings.
+
 
 - The last stage, visible from the start: blocking stops, then collection stops, then the parent
   hands the phone over: restrictions and reset protection lifted, data backed up to the kid's own
