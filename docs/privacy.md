@@ -40,6 +40,15 @@ parent can see" (built from the code that collects them: `inventory/Collectors.k
 - a changed SIM card (opaque ids, never the phone number), and another user or profile on the
   phone, such as Android's own Parental Controls.
 
+**About Belay itself (Phases 6 and 10)**
+
+- the fingerprint (SHA-256) of the certificate Belay is signed with, and how an update a parent
+  offered is going;
+- when the recovery key was used on the phone, and until when it opened repair access;
+- how many users or profiles besides the kid's own are on the phone, which Android
+  restrictions are in force that Belay didn't set, and the result of a parent's request to
+  remove the other users. Nothing about what's in those profiles.
+
 **Not collected in Phase 1:** messages, calls, contacts, photos, files, browsing, searches,
 location, what's on the screen, or how long apps are used. Later phases add some of these
 only as listed in [ROADMAP.md](../ROADMAP.md), each shown to the kid on the phone first,
