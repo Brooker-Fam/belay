@@ -1,4 +1,4 @@
-import type { FC } from "hono/jsx";
+import type { Child, FC } from "hono/jsx";
 import type { Parent } from "../../auth/parents.js";
 import type { Grant } from "../../oauth/store.js";
 import type { PushSubscription } from "../../push.js";
@@ -74,9 +74,11 @@ export const SettingsPage: FC<{
   grants: Grant[];
   mcpUrl: string;
   push: { publicKey: string; browsers: PushSubscription[] };
+  /** The daily summary's form (web/pages/server.tsx). */
+  digest?: Child;
   message?: string;
   error?: string;
-}> = ({ view, settings, parents, meId, grants, mcpUrl, push, message, error }) => {
+}> = ({ view, settings, parents, meId, grants, mcpUrl, push, digest, message, error }) => {
   const apps = grants.filter((g) => g.kind === "oauth");
   const tokens = grants.filter((g) => g.kind === "pat");
   return (
@@ -124,6 +126,7 @@ export const SettingsPage: FC<{
 
       <h2 id="notifications">Notifications</h2>
       <Notifications view={view} publicKey={push.publicKey} browsers={push.browsers} />
+      {digest}
 
       <h2>AI access</h2>
       <div class="card">

@@ -3,9 +3,11 @@ import { serve } from "@hono/node-server";
 import { createApp } from "./app.js";
 import { parentCount, newSetupToken } from "./auth/parents.js";
 import { ConfigError, loadConfig } from "./config.js";
-import { openDatabase } from "./db.js";
+import { type DB, openDatabase } from "./db.js";
 import { makeDeps } from "./deps.js";
 import { cleanUp } from "./maintenance.js";
+import { serveDegraded } from "./ops/degraded.js";
+import { startOps } from "./ops/jobs.js";
 
 function main(): void {
   let config;
@@ -18,7 +20,14 @@ function main(): void {
     }
     throw error;
   }
-  const db = openDatabase(config.dataDir);
+  let db: DB;
+  try {
+    db = openDatabase(config.dataDir);
+  } catch (error) {
+    // Say why on every page and on /healthz, instead of crashing in a loop, and keep trying (ops/degraded.ts).
+    serveDegraded(config, error, main, { handleSignals: true });
+    return;
+  }
   const deps = makeDeps(config, db);
   const app = createApp(deps);
 
@@ -35,12 +44,15 @@ function main(): void {
     cleanUp(db, Date.now());
   }, 3_600_000);
   timer.unref();
+  // Daily backups, the server's own health, and telling the parents about it (ops/jobs.ts).
+  const stopOps = startOps(deps);
 
   const server = serve({ fetch: app.fetch, hostname: config.host, port: config.port }, (info) => {
     console.log(`Belay is listening on ${info.address}:${info.port} for ${config.publicUrl}`);
   });
   const stop = () => {
     clearInterval(timer);
+    stopOps();
     // Phones holding a long-poll are answered now; they ask again when the server is back.
     deps.waiters.close();
     server.close(() => {

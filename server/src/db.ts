@@ -24,6 +24,18 @@ export function loadMigrations(): Migration[] {
     .sort((a, b) => a.version - b.version);
 }
 
+/** A migration failed. Its transaction rolled back: the database is still at the version before it. */
+export class MigrationError extends Error {
+  override name = "MigrationError";
+  constructor(
+    readonly version: number,
+    readonly migration: string,
+    cause: unknown,
+  ) {
+    super(`Migration ${version} (${migration}) failed: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
+  }
+}
+
 /** Applies every migration newer than the database's `user_version`, each in its own transaction. */
 export function migrate(db: DB, migrations: Migration[] = loadMigrations()): number[] {
   const current = db.pragma("user_version", { simple: true }) as number;
@@ -34,10 +46,14 @@ export function migrate(db: DB, migrations: Migration[] = loadMigrations()): num
   const applied: number[] = [];
   for (const migration of migrations) {
     if (migration.version <= current) continue;
-    db.transaction(() => {
-      db.exec(migration.sql);
-      db.pragma(`user_version = ${migration.version}`);
-    })();
+    try {
+      db.transaction(() => {
+        db.exec(migration.sql);
+        db.pragma(`user_version = ${migration.version}`);
+      })();
+    } catch (error) {
+      throw new MigrationError(migration.version, migration.name, error);
+    }
     applied.push(migration.version);
   }
   return applied;

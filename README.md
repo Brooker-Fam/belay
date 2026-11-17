@@ -22,7 +22,7 @@ no monthly fee and no company that can change or disappear. A parent mostly mana
 asking Claude (or any MCP client) things like "what did they install this week, and is it
 OK?", with a web page as the fallback.
 
-## What exists today (Phases 1 and 2)
+## What exists today (Phases 1 and 2, and part of 6)
 
 - **`android/`: the device-owner agent.** Provisioned over adb, it becomes device owner and
   blocks its own uninstall. It always shows "This phone is managed by your parent", and its
@@ -44,6 +44,13 @@ OK?", with a web page as the fallback.
   kid's requests, AI proposals, and end-to-end encrypted Web Push to parents' browsers. Over
   MCP, an AI client can block an app or pause the phone; anything that loosens is only a
   proposal a parent approves on the parent page.
+- **Phase 6, so far: backups that are proven to restore, and health monitoring.** The server
+  backs itself up every day (the newest 14 kept, encrypted with the family's passphrase if
+  they set one); `verify-backup` proves a backup restores, `restore` puts one back, and the
+  parent page asks for a restore drill every 3 months. The server reports its own problems
+  (disk space, a fast-growing database, failing backups, its clock, a database it can't
+  open) on the parent page, over MCP and on `/healthz`, pushes the urgent ones to the
+  parents, and sends an opt-in daily summary with counts only.
 - **CI:** Android build, unit tests and lint, an Android 17 emulator job that provisions
   the agent and checks it end to end, and the server's tests and Docker image.
 - **Docs:** [running the server](docs/server.md), [connecting Claude](docs/mcp.md),

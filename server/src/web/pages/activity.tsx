@@ -1,5 +1,6 @@
 import type { FC } from "hono/jsx";
 import type { AuditEntry } from "../../audit.js";
+import { hourLabel } from "../../ops/words.js";
 import { dayKey, formatDayKey, formatTime } from "../../time.js";
 import { Layout, Time, type View } from "../ui.js";
 
@@ -58,6 +59,14 @@ function what(e: AuditEntry): string {
     }
     case "settings.changed":
       return "changed the settings";
+    case "settings.digest":
+      return d.on === true ? `turned their daily summary on${typeof d.hour === "number" ? `, at ${hourLabel(d.hour)}` : ""}` : "turned their daily summary off";
+    case "backup.drill":
+      return "did a restore drill: restored a backup into a scratch server, signed in and saw the phones";
+    case "backup.verified":
+      return `checked the backup ${str(d.file) || "file"}: ${d.ok === true ? "it restores" : `it doesn't restore${str(d.problem) ? ` (${str(d.problem)})` : ""}`}`;
+    case "backup.restored":
+      return `restored this database from ${str(d.file) || "a backup"}${d.drill === true ? ", as a restore drill's copy" : ""}`;
     case "ai.connected":
       return `connected ${str(d.client) || "an AI app"}`;
     case "ai.disconnected":

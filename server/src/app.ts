@@ -6,6 +6,7 @@ import { deviceRoutes } from "./device/routes.js";
 import type { Bindings } from "./http.js";
 import { mcpRoutes } from "./mcp/routes.js";
 import { oauthRoutes } from "./oauth/routes.js";
+import { healthz } from "./ops/health.js";
 import { loadAssets } from "./web/assets.js";
 import { webRoutes } from "./web/routes.js";
 
@@ -13,7 +14,8 @@ export function createApp(deps: Deps): Hono<{ Bindings: Bindings }> {
   const app = new Hono<{ Bindings: Bindings }>();
   const assets = loadAssets();
 
-  app.get("/healthz", (c) => c.json({ ok: true }));
+  // 200 while the process is up, saying "ok" or why not; ?strict=1 answers 503 for an urgent problem (ops/health.ts).
+  app.get("/healthz", healthz(deps));
   assets.mount(app);
   // The device API sets its own limits per endpoint, and the parent pages theirs.
   const tooLarge = bodyLimit({ maxSize: 64 * 1024, onError: (c) => c.json({ error: "too_large", error_description: "The request is too large" }, 413) });

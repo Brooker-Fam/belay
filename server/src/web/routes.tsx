@@ -70,6 +70,9 @@ import { approveProposal, listProposals, outdatedBecause, pendingProposalCount, 
 import { listRequests, pendingRequestCount, recentRequests } from "../family/requests.js";
 import { clientAddress, type Bindings } from "../http.js";
 import { createPersonalToken, getGrant, listGrants, revokeAllGrants, revokeGrant } from "../oauth/store.js";
+import { serverHealth } from "../ops/health.js";
+import { getDigest } from "../ops/notify.js";
+import { opsWebRoutes } from "../ops/web.js";
 import { browserName, listSubscriptions, removeSubscription, saveSubscription, sendNotice, subscriptionProblem, vapidKeys } from "../push.js";
 import { AI_SCOPES, type AiScope, getSettings, updateSettings } from "../settings.js";
 import { isValidTimeZone } from "../time.js";
@@ -80,6 +83,7 @@ import { InvitePage, LoginPage, MessagePage, SetupPage } from "./pages/auth.js";
 import { type AppRule, AppPage, DevicePage, DevicesPage, type PhoneRules } from "./pages/devices.js";
 import { ProposalsPage, RequestsPage } from "./pages/requests.js";
 import { AskAgainPage, MAINTENANCE_HOURS, PAUSE_MINUTES } from "./pages/rules.js";
+import { DigestCard, ServerCard } from "./pages/server.js";
 import { SettingsPage, ShownOncePage } from "./pages/settings.js";
 import { TimelinePage } from "./pages/timeline.js";
 import type { View } from "./ui.js";
@@ -119,6 +123,7 @@ const SAVED: Record<string, string> = {
   answer_talk: "They'll see on the phone that you want to talk about it.",
   proposal_approved: "Approved. The change is on its way to the phone.",
   proposal_rejected: "Rejected. Nothing changed.",
+  digest: "Daily summary saved.",
 };
 
 /** Google account ids for reset protection: long numbers, one per line ("people/" before one is fine). */
@@ -382,7 +387,7 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
     }));
     const pending = pendingCodes(db, now).filter((p) => !p.deviceId);
     if (devices.length === 0 && pending.length === 0) return c.redirect("/add");
-    return render(c, <DevicesPage view={view(c)} devices={devices} pending={pending} />);
+    return render(c, <DevicesPage view={view(c)} devices={devices} pending={pending} server={<ServerCard view={view(c)} health={serverHealth(deps)} />} />);
   });
 
   const deviceOr404 = (c: WebContext) => getDevice(db, c.req.param("id") ?? "", getSettings(db), deps.now());
@@ -825,6 +830,7 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
         grants={listGrants(db)}
         mcpUrl={`${config.publicUrl}/mcp`}
         push={{ publicKey: vapidKeys(db).publicKey, browsers: listSubscriptions(db, me(c).parent.id) }}
+        digest={<DigestCard view={view(c)} digest={getDigest(db)} meId={me(c).parent.id} browsers={listSubscriptions(db, me(c).parent.id).length} />}
         message={extra.message ?? SAVED[c.req.query("saved") ?? ""]}
         error={extra.error}
       />,
@@ -966,6 +972,9 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
     }
     return c.redirect("/settings?saved=revoked");
   });
+
+  // Recording a restore drill, and the daily summary's settings (ops/web.ts).
+  app.route("/", opsWebRoutes(deps));
 
   app.get("/activity", (c) => {
     const includeReads = c.req.query("reads") === "1";
