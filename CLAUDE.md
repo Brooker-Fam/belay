@@ -67,8 +67,8 @@ exists; [ROADMAP.md](ROADMAP.md) says what's next.
   `server/src/migrations/NNN_name.sql`, never edit an applied one); every parent or AI
   action goes through `audit()`; MCP results put developer- or kid-written text under
   `untrusted`; the server makes no outbound requests except the allowlisted client
-  metadata documents in `oauth/clients.ts` and encrypted Web Push to allowlisted push
-  services.
+  metadata documents in `oauth/clients.ts` and end-to-end encrypted Web Push to the push
+  services allowlisted in `push.ts`.
 - **A new kind of data** needs a collector and `DataCategory` on the phone, an AI scope in
   `server/src/settings.ts`, and a line in [docs/privacy.md](docs/privacy.md).
 - **Small, reviewable commits.** Keep the README true as you go.

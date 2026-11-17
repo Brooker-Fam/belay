@@ -55,6 +55,11 @@ jobs:
           device='{"manufacturer":"Google","model":"sdk_gphone64_x86_64","android_release":"17","sdk":37,"sdk_full":"37.0","security_patch":"2026-10-05","agent_version_name":"ci","agent_version_code":1,"last_boot_at":0,"timezone":"UTC","device_time":0,"health":{"device_owner":true,"battery_exempt":true,"usage_access":true,"notifications_shown":true,"permissions":[],"standby_bucket":5,"background_restricted":false,"service_running":true,"test_only":true}}'
           token=$(curl -fsS -H 'content-type: application/json' -d "{\"code\":\"$code\",\"device\":$device}" http://localhost:8080/api/v1/enroll | jq -r .token)
           curl -fsS -H 'content-type: application/json' -H "authorization: Bearer $token" -d "{\"status\":$device}" http://localhost:8080/api/v1/checkin | jq -e '.policy.version == 0'
+          # Phase 2: the policy long-poll, and a rule change reaching the phone.
+          test "$(curl -sS -o /dev/null -w '%{http_code}' -H "authorization: Bearer $token" 'http://localhost:8080/api/v1/policy?have=-1')" = 200
+          test "$(curl -sS -o /dev/null -w '%{http_code}' -H "authorization: Bearer $token" 'http://localhost:8080/api/v1/policy?have=0&wait=1')" = 204
+          docker exec belay node dist/cli.js protect "CI phone"
+          curl -fsS -H 'content-type: application/json' -H "authorization: Bearer $token" -d "{\"status\":$device}" http://localhost:8080/api/v1/checkin | jq -e '.policy.version >= 1 and .policy.apps.new_apps == "ask"'
           test "$(curl -sS -o /dev/null -w '%{http_code}' -X POST http://localhost:8080/mcp)" = 401
       - name: Logs
         if: always()
