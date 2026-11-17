@@ -522,15 +522,20 @@ elif [ -n "$E2E_SERVER" ]; then
 fi
 
 # Phase 4: "granted=true" or "granted=false" for Belay's fine location, from `dumpsys package`
-# (AOSP 17 Settings.dumpRuntimePermissionsLPr: "<permission>: granted=<bool>, flags=[ … ]").
+# (AOSP 17 Settings.dumpRuntimePermissionsLPr: "<permission>: granted=<bool>, flags=[ … ]"), or
+# "not listed".
 fine_location() {
-  ash dumpsys package "$PKG" | grep -m 1 -o 'android.permission.ACCESS_FINE_LOCATION: granted=[a-z]*' | sed 's/.*: //' || true
+  local line
+  line="$(ash dumpsys package "$PKG" | grep -m 1 -o 'android.permission.ACCESS_FINE_LOCATION: granted=[a-z]*' || true)"
+  if [ -n "$line" ]; then printf '%s\n' "${line##*: }"; else echo "not listed"; fi
 }
-# Waits up to $2 seconds until Belay's fine location is "granted=$1".
+# Waits up to $2 seconds until Belay holds fine location ($1 = true) or doesn't ($1 = false).
 wait_location_permission() {
-  local _
+  local _ now
   for _ in $(seq 1 "${2:-30}"); do
-    [ "$(fine_location)" = "granted=$1" ] && return 0
+    now="$(fine_location)"
+    if [ "$1" = true ] && [ "$now" = "granted=true" ]; then return 0; fi
+    if [ "$1" = false ] && [ "$now" != "granted=true" ]; then return 0; fi
     sleep 1
   done
   echo "--- Belay's fine location: $(fine_location)"
@@ -560,7 +565,7 @@ elif [ -n "$E2E_CLI" ]; then
   phone="$(server_status | jq -r '.phones[0].name')"
 
   step "Phase 4: on demand, with location kept on: Belay holds location by policy, and the kid can't turn it off"
-  [ "$(fine_location)" = "granted=false" ] || { diagnose; die "with location off, Belay holds location ($(fine_location))"; }
+  [ "$(fine_location)" != "granted=true" ] || { diagnose; die "with location off, Belay holds location"; }
   server_cli location "$phone" --mode on_demand --keep-on on
   wait_applied
   wait_location_permission true 30 || { diagnose; die "Belay wasn't granted location by policy within 30 s of on_demand"; }
@@ -577,7 +582,8 @@ elif [ -n "$E2E_CLI" ]; then
   command_id="$(server_cli_out locate-now "$phone")"
   [[ "$command_id" =~ ^[A-Za-z0-9_-]+$ ]] || die "locate-now should print only the command's id" "$command_id"
   wait_server "[.fixes[]? | select(.command_id == \"$command_id\")] | length > 0" "a fix answering locate-now $command_id" 45
-  fix_ok="[.fixes[] | select(.command_id == \"$command_id\")][0] | (((.lat - $GEO_LAT) | fabs) < 0.0002) and (((.lng - ($GEO_LNG)) | fabs) < 0.0002) and .mock == false"
+  # About 4 decimals: within 0.0002 degrees (about 20 m), without jq's libm functions.
+  fix_ok="def off: if . < 0 then -. else . end; [.fixes[] | select(.command_id == \"$command_id\")][0] | ((.lat - $GEO_LAT) | off) < 0.0002 and ((.lng - ($GEO_LNG)) | off) < 0.0002 and .mock == false"
   server_status | jq -e ".phones[0] | $fix_ok" >/dev/null ||
     die "the fix answering $command_id isn't at $GEO_LAT,$GEO_LNG from the GPS" "$(server_status | jq -c "[.phones[0].fixes[] | select(.command_id == \"$command_id\")]")"
   wait_server "[.enforcement.commands[]? | select(.id == \"$command_id\" and .result == \"done\")] | length > 0" "a done result for locate-now"
