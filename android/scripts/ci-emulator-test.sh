@@ -555,7 +555,9 @@ open_belay() {
 # Taps "I need help" through the debug-only receiver, sharing where the phone is; prints the request's id.
 ask_help() {
   local out
-  out="$(ash am broadcast -a "$PKG.DEBUG_HELP" -n "$PKG/.DebugHelpReceiver" --es reason "Made-up words from CI" --ez share true)"
+  # adb shell joins its arguments with spaces for the phone's shell to split again, so the words
+  # are quoted for that shell too; unquoted, "words" and everything after it (--ez share) were lost.
+  out="$(ash am broadcast -a "$PKG.DEBUG_HELP" -n "$PKG/.DebugHelpReceiver" --es reason "'Made-up words from CI'" --ez share true)"
   sed -n 's/^Broadcast completed: result=-1, data="help: \([A-Za-z0-9_-]*\)"$/\1/p' <<<"$out"
 }
 
