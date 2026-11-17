@@ -188,6 +188,13 @@ object Requests {
             askedAt = request.askedAt,
             reason = request.reason,
         )
+        // Phase 7 (the phone side builds them; the contract is here already).
+        WireRequestKind.HELP, WireRequestKind.TALK -> WireRequest(
+            id = request.id,
+            kind = request.kind,
+            reason = cleanReason(request.reason),
+            askedAt = request.askedAt,
+        )
     }
 
     /** The outbox item id for this send of [request]: unique per send, ordered by revision. */

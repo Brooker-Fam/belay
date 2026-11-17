@@ -29,6 +29,7 @@ schemas in `server/src/device/schemas.ts`. Change all three together.
 | `POST /api/v1/requests` | 128 KB, at most 100 requests |
 | `GET /api/v1/agent/<sha256>.apk` | (no body; the answer is at most 100 MB) |
 | `POST /api/v1/usage` | 256 KB, at most 31 days (Phase 3) |
+| `POST /api/v1/locations` | 64 KB, at most 200 fixes and 200 place events (Phase 4) |
 
 Errors: `{"error": "<code>", "error_description": "<words>"}` with
 
@@ -232,6 +233,64 @@ locks are lifted, so adb and Settings' reset work.
   when it can; the server then drops that check from the policy and asks a parent to
   make a new key.
 
+## `POST /api/v1/locations`
+
+Phase 4. Fixes and place events, only while the policy's `location` allows them (or in lost
+mode, or a help request's shared fix, which goes in the request instead).
+
+```json
+{ "fixes": [ { …Fix… } ], "place_events": [ { …PlaceEvent… } ] }
+```
+→ `200`
+```json
+{ "server_time": 1794867161711, "accepted": 2 }
+```
+
+Idempotent by each item's `id`. A `locate_now` command waits on the server up to 60 seconds
+for the fix that names it in `command_id`; a fix that fails is reported in
+`enforcement.commands` with its problem.
+
+## Location rules (Phase 4, both sides)
+
+- **Off by default.** With `location` null or `mode: off`, Belay holds no location
+  permission: a location permission is granted by policy only while the family has location
+  on (or lost mode, or for the one fix a kid shares with a help request), and denied by
+  policy again at once when it ends. The same rule covers every permission tied to a data
+  category.
+- **Single fixes,** never a stream: `getCurrentLocation` with the policy's `provider` and a
+  60-second timeout. `gps` (the default) uses only the satellite receiver; `fused` uses
+  Android's combined provider, which on a Pixel is Google's service. A GPS timeout falls
+  back to `fused` only with `fallback_fused`.
+- **Modes:** `on_demand` takes a fix only for `locate_now` or lost mode; `periodic` also
+  takes one every `every_minutes` (15 to 120) within `hours`, and computes place events.
+- **Places** (`periodic` only): arrival when two fixes in a row are inside
+  `radius_m − accuracy`, departure when two are outside `radius_m + accuracy`; a fix less
+  accurate than the radius decides nothing; a mock fix (`isMock()`) never counts.
+- **The kid sees every check:** each `locate_now` and lost-mode fix posts Belay's own
+  notice, and Belay's screen lists them from the phone's own record.
+- **`keep_on`:** Belay keeps location on and sets `DISALLOW_CONFIG_LOCATION`.
+- **Lost mode** (`lost`, any mode): the parent's message on the lock screen, location kept
+  on, a fix every 5 minutes, and one screen lock; everything goes back when it ends.
+- **Only a parent** turns location on or off, changes places, `keep_on` or lost mode.
+  An AI client may read fixes only with the `location` scope on (off by default), and may
+  ask for `locate_now` only in `on_demand` or `periodic` mode; the kid's notice names it.
+
+## The kid's side (Phase 7, both sides)
+
+- **`help`:** one tap sends it, no reason needed; parents get an urgent push, and it stays
+  at the top of the parent page until a parent marks it seen (`help_seen`, which the kid's
+  phone shows). The kid may add words and may share where the phone is, once
+  (`location`, a Fix with `reason: help`), even if location is off. Belay's screen always
+  says to call 911 in danger, with buttons for 911 and 988.
+- **`talk`:** the kid's words ("I'd like to talk about…"); it changes no rule.
+- **Withdrawing:** a pending request sent again with `withdrawn_at` is withdrawn; it leaves
+  the policy's `requests`. An answered one can't be withdrawn.
+- **The emergency card** (Belay's screen, also while paused): 911 and 988, call or text, the
+  `parent_numbers`, and Android's own emergency information.
+- **`ai_reads`** lists the data categories the parents' AI app may read, so the kid's
+  "What your parent can see" says so for each.
+- No AI tool answers a request; parents answer on the parent page.
+
 ## Screen time rules (Phase 3, both sides)
 
 The phone counts app time itself from Android's usage events (`queryEvents`, with the
@@ -380,6 +439,25 @@ server decides whether a change tightens or loosens.
 | `stage` | `{name, number, since, next?: {name, unlocks: string[], how?, screen_time?}}`? | Phase 3, for the kid's screen; `unlocks` and `how` are the family's words |
 | `agreement` | `{version, sections: [{title, text}], kid_agreed_at?, parents_agreed_at?}`? | Phase 3; at most 20 sections of 2000 characters |
 | `network_log` | `{enabled}` | Phase 3, later: off unless a parent turns it on (the phone doesn't log yet) |
+| `location` | Location? | Phase 4; null or `mode: off`: no location at all |
+| `ai_reads` | string[] | Phase 7: the data categories the AI app may read |
+| `help_seen` | `[{request_id, at, by?}]` | Phase 7: the last 30 days |
+| `parent_numbers` | `[{name, number}]` | Phase 7: at most 4; `number` in E.164, `name` at most 40 characters |
+
+The `commands` kinds gain `locate_now` (Phase 4).
+
+**Location** (Phase 4; the rules are above)
+
+| Field | Type | |
+|---|---|---|
+| `mode` | `"off"` \| `"on_demand"` \| `"periodic"` | |
+| `every_minutes` | int? | periodic: 15 to 120 |
+| `hours` | `{start: "HH:MM", end: "HH:MM"}`? | periodic fixes only within these hours, in the phone's zone |
+| `provider` | `"gps"` \| `"fused"` | default `"gps"` |
+| `fallback_fused` | bool | |
+| `places` | `[{id, name, lat, lng, radius_m, notify: ("arrive"\|"leave")[]}]` | at most 20; `name` at most 40 characters; `radius_m` 50 to 1000 |
+| `keep_on` | bool | |
+| `lost` | `{since, message}`? | `message` at most 120 characters |
 
 The answers in `requests` gain `minutes?` (Phase 3: an approved `more_time`).
 
@@ -403,11 +481,13 @@ The answers in `requests` gain `minutes?` (Phase 3: an approved `more_time`).
 | Field | Type | |
 |---|---|---|
 | `id` | string | UUID made on the phone |
-| `kind` | `app`, Phase 3: `more_time` `agreement` | |
+| `kind` | `app`, Phase 3: `more_time` `agreement`, Phase 7: `help` `talk` (`talk` needs `reason`) | |
 | `package` | string (app), string? (more_time: the app the kid was in) | |
 | `label` | string (app only) | untrusted |
 | `limit_id`, `minutes` | string, int (more_time only: 5 to 240) | |
 | `version`, `answer` | int, `agree`\|`talk` (agreement only) | |
+| `location` | Fix? (help only) | Phase 7: only when the kid chose to share it |
+| `withdrawn_at` | int? | Phase 7: withdraws a pending request |
 | `reason` | string? | the kid's own words, at most 500 characters: untrusted |
 | `asked_at` | int | |
 
@@ -425,6 +505,22 @@ The answers in `requests` gain `minutes?` (Phase 3: an approved `more_time`).
 | `never_blocked` | string[] | the packages this phone never blocks, at most 100 |
 | `screen_time` | `{day, measured, used_minutes?, limits: [{id, used?, left?, state: "open"\|"used_up"\|"extra"}], schedule?: {id, until}, self_serve: [{limit_id, package?, minutes, at}]}`? | Phase 3: the phone's view now; minutes left out when `measure` is off (`used` rounds down, `left` up) |
 | `network_log` | `{enabled, paused}`? | Phase 3, later |
+| `location` | `{permission, location_on, last_fix_at?, problem?}`? | Phase 4: null while location is off |
+
+**Fix** (phone → server, Phase 4)
+
+| Field | Type | |
+|---|---|---|
+| `id` | string | UUID made on the phone |
+| `at` | int | the fix's own time |
+| `lat`, `lng` | number | 5 decimal places |
+| `accuracy_m` | int | |
+| `provider` | `"gps"` \| `"fused"` | the one that answered |
+| `reason` | `"on_demand"` \| `"periodic"` \| `"place"` \| `"lost"` \| `"help"` | |
+| `command_id` | string? | the `locate_now` it answers |
+| `mock` | bool | |
+
+**PlaceEvent**: `{id, place_id, kind: "arrived"|"left", at, fix_id}`.
 
 **UsageDay** (phone → server, Phase 3)
 
