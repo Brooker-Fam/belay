@@ -13,6 +13,7 @@ import family.brooker.belay.Agent
 import family.brooker.belay.R
 import family.brooker.belay.ui.Screen
 import family.brooker.belay.ui.Screens
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Phase 4: Belay's own notices for location, so the kid always knows (principle 4): each time a
@@ -48,16 +49,28 @@ object LocationNotice {
         show(context, id, CHECK_ID, text, ongoing = false)
     }
 
+    /** The lost-mode notice's text now up; null when none (this process's view: a restart shows it again). */
+    @Volatile
+    private var lostShown: String? = null
+
     /** Lost mode is on: an ongoing notice, with the last check's time once there is one. */
     fun lost(context: Context, lastCheck: String?) {
         val text = context.getString(R.string.location_lost_notice) +
             (lastCheck?.let { " " + context.getString(R.string.location_lost_last_check, it) } ?: "")
+        if (text == lostShown) return
         show(context, null, LOST_ID, text, ongoing = true)
+        lostShown = text
     }
 
+    /** Lost mode ended (or was never on in this process): the notice goes. */
     fun cancelLost(context: Context) {
+        if (lostShown == null && !firstCancel.compareAndSet(false, true)) return
         NotificationManagerCompat.from(context).cancel(LOST_ID)
+        lostShown = null
     }
+
+    /** The first step in a process cancels once, in case a lost-mode notice outlived the last one. */
+    private val firstCancel = AtomicBoolean(false)
 
     private fun show(context: Context, tag: String?, id: Int, text: String, ongoing: Boolean) {
         if (context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
