@@ -11,9 +11,9 @@ import { listAudit } from "../src/audit.js";
 import { Policy } from "../src/device/schemas.js";
 import { revokeDevice } from "../src/family/devices.js";
 import { cancelHandover, handOver } from "../src/family/offbelay/changes.js";
-import { RuleRefused, buildPolicy, getRules, protect, setHardening, setRestrictions, type PolicyContext } from "../src/family/policy.js";
+import { RuleRefused, buildPolicy, decideApp, getRules, protect, setHardening, setRestrictions, type PolicyContext } from "../src/family/policy.js";
 import { listGrants } from "../src/oauth/store.js";
-import { device, deviceCall, enrollPhone, get, postForm, signIn, testServer, type TestServer } from "./helpers.js";
+import { device, deviceCall, enrollPhone, get, pkg, postForm, signIn, snapshot, testServer, type TestServer } from "./helpers.js";
 
 const ACCOUNT = "112233445566778899000";
 
@@ -118,11 +118,13 @@ describe("handing a phone over", () => {
   });
 
   it("on the phone's page: only after the parent types the phone's name; then what's next, and taking it back", async () => {
-    const { t, phone, form, page, policy } = await family();
+    const { t, phone, parent, ctx, form, page, policy } = await family();
+    await deviceCall(t, phone.token, "inventory", snapshot([pkg("com.example.racer", { label: "Racer" })], t.now()));
+    decideApp(ctx(), phone.deviceId, "com.example.racer", "blocked", parent);
     const before = await page(`/devices/${phone.deviceId}`);
     expect(before).toContain("Hand this phone over");
     expect(before).toContain("isn&#39;t on Off belay yet");
-    expect(before).toContain("Belay still holds new apps for you, filters the web on this phone");
+    expect(before).toContain("Belay still holds new apps for you, hides an app you blocked, filters the web on this phone");
     const wrong = await form(`/devices/${phone.deviceId}/handover`, { confirm: "Alex" });
     expect(wrong.status).toBe(400);
     expect(await wrong.text()).toContain("type the phone&#39;s name, Alex&#39;s phone, in the box");

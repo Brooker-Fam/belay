@@ -13,7 +13,7 @@ import { isCollected, keptAbout, keptFor, stopCollecting } from "../family/colle
 import { type DeviceView, getDevice } from "../family/devices.js";
 import { cancelHandover, handOver } from "../family/offbelay/changes.js";
 import { handoverOf } from "../family/offbelay/store.js";
-import { activePause, getRules, type PolicyContext, RuleRefused } from "../family/policy.js";
+import { activePause, currentDecisions, getRules, type PolicyContext, RuleRefused } from "../family/policy.js";
 import { offBelayStage, phoneRules } from "../family/screentime/rules.js";
 import { getSettings } from "../settings.js";
 import { CollectionPage, type OffBelayData } from "./pages/offbelay.js";
@@ -31,9 +31,12 @@ export interface OffBelayWebHelpers {
 function blockingWords(db: DB, deviceId: string, now: number): string[] {
   const rules = getRules(db, deviceId);
   const screen = phoneRules(db, deviceId).rules;
+  const present = new Set(db.prepare<[string], { package: string }>("SELECT package FROM apps WHERE device_id = ? AND present = 1").all(deviceId).map((a) => a.package));
+  const blocked = [...currentDecisions(db, deviceId).values()].filter((d) => d.state === "blocked" && present.has(d.package)).length;
   return [
     ...(activePause(rules, now) ? ["pauses the phone"] : []),
     ...(rules.newApps === "ask" ? ["holds new apps for you"] : []),
+    ...(blocked ? [`hides ${blocked === 1 ? "an app" : `${blocked} apps`} you blocked`] : []),
     ...(rules.privateDns || rules.chrome || rules.hideBrowsers ? ["filters the web"] : []),
     ...(screen.limits.length || screen.schedules.length ? ["has screen-time limits or schedules"] : []),
   ];
