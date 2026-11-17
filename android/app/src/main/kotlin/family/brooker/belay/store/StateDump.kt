@@ -3,6 +3,9 @@ package family.brooker.belay.store
 import family.brooker.belay.core.AppChange
 import family.brooker.belay.core.Heartbeat
 import family.brooker.belay.core.Reconcile
+import family.brooker.belay.core.UpdateRecord
+import family.brooker.belay.core.WireCommandResult
+import family.brooker.belay.core.WireRecoveryUse
 import family.brooker.belay.settings.Connection
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -13,8 +16,9 @@ import kotlinx.serialization.json.putJsonObject
 
 /**
  * A JSON summary of what the agent keeps: heartbeats and changes (oldest first), the
- * outbox's counts, the connection without the token, and (Phase 2) what Belay enforces and
- * which requests it made, without the kid's words. Debug builds write it after every step
+ * outbox's counts, the connection without the token, (Phase 2) what Belay enforces and which
+ * requests it made, without the kid's words, and (Phases 6 and 10) the update, the recovery
+ * key's tries and use, and the commands' results. Debug builds write it after every step
  * (DebugTools.afterStep), for android/scripts/ci-emulator-test.sh.
  */
 object StateDump {
@@ -45,7 +49,17 @@ object StateDump {
             put("hidden", JsonArray(applied.hidden.sorted().map(::JsonPrimitive)))
             put("locks", JsonArray(applied.locks.map { JsonPrimitive(it.name) }))
             put("problems", JsonArray(applied.problems.map(::JsonPrimitive)))
+            put("policy_too_large", store.policyTooLarge() != null)
         }
+        // Phases 6 and 10: the update, the recovery key (never the key itself) and commands.
+        store.agentUpdate()?.let { put("agent_update", Json.encodeToJsonElement(UpdateRecord.serializer(), it)) }
+        val recovery = store.recovery()
+        putJsonObject("recovery") {
+            put("wrong_tries", recovery.wrongTries)
+            put("used_versions", JsonArray(recovery.usedVersions.map(::JsonPrimitive)))
+            recovery.lastUse?.let { put("last_use", Json.encodeToJsonElement(WireRecoveryUse.serializer(), it)) }
+        }
+        put("commands", JsonArray(store.commandLog().results.map { Json.encodeToJsonElement(WireCommandResult.serializer(), it) }))
         put(
             "requests",
             JsonArray(

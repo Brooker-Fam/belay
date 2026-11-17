@@ -103,6 +103,45 @@ data class PrivateDnsRow(
 )
 
 /**
+ * Phase 6. One row, written only by the update thread (update/AgentUpdater.kt): how the offered
+ * update is going (core's UpdateRecord, as JSON). It outlives the restart an update causes.
+ */
+@Entity(tableName = "agent_update")
+data class AgentUpdateRow(
+    @PrimaryKey val id: Int = 0,
+    val record: String,
+    @ColumnInfo(name = "updated_at") val updatedAt: Long,
+)
+
+/** Phase 6. One row, written only by the agent thread: the recovery key's wrong tries and last use (core's RecoveryState, as JSON). */
+@Entity(tableName = "recovery")
+data class RecoveryRow(
+    @PrimaryKey val id: Int = 0,
+    val state: String,
+    @ColumnInfo(name = "updated_at") val updatedAt: Long,
+)
+
+/** Phase 10. One row, written only by the agent thread: the commands run and their last results (core's CommandLog, as JSON). */
+@Entity(tableName = "commands")
+data class CommandsRow(
+    @PrimaryKey val id: Int = 0,
+    val log: String,
+    @ColumnInfo(name = "updated_at") val updatedAt: Long,
+)
+
+/**
+ * One row while the server's last policy answer was too big to read (core's PolicyTooLarge),
+ * written by the sync and long-poll threads; gone once a policy answer is read again.
+ */
+@Entity(tableName = "policy_fetch")
+data class PolicyFetchRow(
+    @PrimaryKey val id: Int = 0,
+    @ColumnInfo(name = "too_large_at") val tooLargeAt: Long,
+    /** The answer's Content-Length; null when the server didn't send one. */
+    @ColumnInfo(name = "too_large_bytes") val tooLargeBytes: Long?,
+)
+
+/**
  * What waits to be sent, in the order it was made: [id] is AUTOINCREMENT, so it only ever
  * grows. Events are written in the same transaction as the baseline that found them.
  * Sent and dropped rows stay a while (OutboxPolicy.KEEP_FINISHED_MS) for the screen and for
@@ -326,21 +365,51 @@ interface EnforcementDao {
 
     @Upsert
     fun setPrivateDns(row: PrivateDnsRow)
+
+    @Query("SELECT * FROM agent_update WHERE id = 0")
+    fun agentUpdate(): AgentUpdateRow?
+
+    @Upsert
+    fun setAgentUpdate(row: AgentUpdateRow)
+
+    @Query("SELECT * FROM recovery WHERE id = 0")
+    fun recovery(): RecoveryRow?
+
+    @Upsert
+    fun setRecovery(row: RecoveryRow)
+
+    @Query("SELECT * FROM commands WHERE id = 0")
+    fun commands(): CommandsRow?
+
+    @Upsert
+    fun setCommands(row: CommandsRow)
+
+    @Query("SELECT * FROM policy_fetch WHERE id = 0")
+    fun policyFetch(): PolicyFetchRow?
+
+    @Upsert
+    fun setPolicyFetch(row: PolicyFetchRow)
+
+    /** The number of rows deleted: 1 when a too-large answer was on record. */
+    @Query("DELETE FROM policy_fetch")
+    fun clearPolicyFetch(): Int
 }
 
 /**
  * Version 2 (Phase 2) adds the policy, enforcement, requests and private_dns tables; the
- * outbox gains a third type ("request") without a schema change. Room migrates 1 to 2 by
- * itself from the exported schemas in app/schemas/.
+ * outbox gains a third type ("request") without a schema change. Version 3 (Phases 6 and 10)
+ * adds agent_update, recovery, commands and policy_fetch, one row each. Room migrates 1 to 2
+ * and 2 to 3 by itself from the exported schemas in app/schemas/ (new tables only).
  */
 @Database(
     entities = [
         PackageRow::class, ScanStateRow::class, ChangeRow::class, HeartbeatRow::class, OutboxRow::class,
         PolicyRow::class, EnforcementRow::class, RequestRow::class, PrivateDnsRow::class,
+        AgentUpdateRow::class, RecoveryRow::class, CommandsRow::class, PolicyFetchRow::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
-    autoMigrations = [AutoMigration(from = 1, to = 2)],
+    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3)],
 )
 abstract class BelayDatabase : RoomDatabase() {
     abstract fun inventory(): InventoryDao

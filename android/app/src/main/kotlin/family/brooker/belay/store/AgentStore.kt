@@ -9,6 +9,7 @@ import family.brooker.belay.core.AppChange
 import family.brooker.belay.core.Applied
 import family.brooker.belay.core.Baseline
 import family.brooker.belay.core.ChangeCursor
+import family.brooker.belay.core.CommandLog
 import family.brooker.belay.core.Heartbeat
 import family.brooker.belay.core.InventoryRequest
 import family.brooker.belay.core.KidRequest
@@ -16,7 +17,9 @@ import family.brooker.belay.core.OutboxPolicy
 import family.brooker.belay.core.PackageRecord
 import family.brooker.belay.core.PolicyRules
 import family.brooker.belay.core.Reconcile
+import family.brooker.belay.core.RecoveryState
 import family.brooker.belay.core.Requests
+import family.brooker.belay.core.UpdateRecord
 import family.brooker.belay.core.Wire
 import family.brooker.belay.core.WireEvent
 import family.brooker.belay.core.WirePolicy
@@ -29,10 +32,11 @@ import java.io.File
 
 /**
  * The agent's storage, on top of Room. The agent thread is the only writer of the baseline,
- * the change log, the heartbeats, what Belay applied and the kid's requests, and the only
- * one that adds to the outbox; the sync thread marks outbox items sent, failed or dropped;
- * the long-poll and the sync thread store the policy; the Private DNS thread writes its own
- * row. SQLite transactions keep all of them safe.
+ * the change log, the heartbeats, what Belay applied, the kid's requests, the recovery key's
+ * tries and the command log, and the only one that adds to the outbox; the sync thread marks
+ * outbox items sent, failed or dropped; the long-poll and the sync thread store the policy
+ * (and note an answer too big to read); the Private DNS and update threads write their own
+ * rows. SQLite transactions keep all of them safe.
  */
 class AgentStore internal constructor(private val db: BelayDatabase, private val noBackupDir: File) {
     private val inventory = db.inventory()
@@ -235,13 +239,17 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
     fun requests(): List<KidRequest> = enforcement.requests().mapNotNull { decode(it.request, KidRequest.serializer()) }
 
     /**
-     * What one enforcement step did, in one transaction: what Belay now holds, and the
-     * requests it made or the kid sent, each queued for the server behind everything older.
+     * What one enforcement step did, in one transaction: what Belay now holds, the commands it
+     * ran (Phase 10), and the requests it made or the kid sent, each queued for the server
+     * behind everything older.
      */
-    fun commitEnforcement(applied: Applied?, requests: List<KidRequest>, at: Long) {
+    fun commitEnforcement(applied: Applied?, requests: List<KidRequest>, at: Long, commands: CommandLog? = null) {
         db.runInTransaction {
             if (applied != null) {
                 enforcement.setEnforcement(EnforcementRow(applied = json.encodeToString(Applied.serializer(), applied), updatedAt = at))
+            }
+            if (commands != null) {
+                enforcement.setCommands(CommandsRow(log = json.encodeToString(CommandLog.serializer(), commands), updatedAt = at))
             }
             if (requests.isNotEmpty()) {
                 enforcement.upsertRequests(
@@ -269,6 +277,38 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
 
     /** For the Private DNS thread only. */
     fun savePrivateDns(row: PrivateDnsRow) = enforcement.setPrivateDns(row)
+
+    // Phases 6 and 10: the update, the recovery key, commands, and a policy too big to read.
+
+    /** How the offered update is going; null before Belay ever started on one. */
+    fun agentUpdate(): UpdateRecord? = enforcement.agentUpdate()?.let { decode(it.record, UpdateRecord.serializer()) }
+
+    /** For the update thread only. */
+    fun saveAgentUpdate(record: UpdateRecord, at: Long) =
+        enforcement.setAgentUpdate(AgentUpdateRow(record = json.encodeToString(UpdateRecord.serializer(), record), updatedAt = at))
+
+    /** The recovery key's wrong tries and last use; empty before the first try. */
+    fun recovery(): RecoveryState = enforcement.recovery()?.let { decode(it.state, RecoveryState.serializer()) } ?: RecoveryState()
+
+    /** For the agent thread only. */
+    fun saveRecovery(state: RecoveryState, at: Long) =
+        enforcement.setRecovery(RecoveryRow(state = json.encodeToString(RecoveryState.serializer(), state), updatedAt = at))
+
+    /** The commands run, and their last results; written by commitEnforcement. */
+    fun commandLog(): CommandLog = enforcement.commands()?.let { decode(it.log, CommandLog.serializer()) } ?: CommandLog()
+
+    /** The server's last policy answer, if it was too big to read; null once one was read again. */
+    fun policyTooLarge(): PolicyFetchRow? = enforcement.policyFetch()
+
+    /** An answer too big to read arrived. True when that's news (a new problem, or a new size). */
+    fun notePolicyTooLarge(bytes: Long?, at: Long): Boolean = db.runInTransaction<Boolean> {
+        val before = enforcement.policyFetch()
+        enforcement.setPolicyFetch(PolicyFetchRow(tooLargeAt = at, tooLargeBytes = bytes))
+        before == null || before.tooLargeBytes != bytes
+    }
+
+    /** A policy answer was read. True when one too big to read was on record until now. */
+    fun clearPolicyTooLarge(): Boolean = enforcement.clearPolicyFetch() > 0
 
     private fun <T> decode(text: String, serializer: KSerializer<T>): T? = try {
         json.decodeFromString(serializer, text)
