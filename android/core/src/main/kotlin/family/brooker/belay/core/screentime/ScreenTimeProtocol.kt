@@ -334,4 +334,13 @@ object ScreenTimeWireLimits {
     const val MAX_COMMAND_REPORTS = 20
     const val MAX_AGREEMENT_SECTIONS = 20
     const val MAX_AGREEMENT_SECTION = 2000
+
+    /** The most minutes enforcement.screen_time reports in one number: 25 hours, the longest day. */
+    const val MAX_STATUS_MINUTES = 1500
+
+    /** Self-serve takes in enforcement.screen_time. */
+    const val MAX_STATUS_TAKES = 20
+
+    /** Gaps in one UsageDay. */
+    const val MAX_USAGE_GAPS = 200
 }
