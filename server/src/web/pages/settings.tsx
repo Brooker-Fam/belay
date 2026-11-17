@@ -2,7 +2,7 @@ import type { Child, FC } from "hono/jsx";
 import type { Parent } from "../../auth/parents.js";
 import type { Grant } from "../../oauth/store.js";
 import type { PushSubscription } from "../../push.js";
-import { AI_SCOPES, LOCATION_DAYS, MAP_SITES, MAX_PARENT_NUMBERS, OFF_BY_DEFAULT, type Settings, USAGE_MONTHS } from "../../settings.js";
+import { AI_SCOPES, CALL_DAYS, LOCATION_DAYS, MAP_SITES, MAX_PARENT_NUMBERS, OFF_BY_DEFAULT, type Settings, USAGE_MONTHS } from "../../settings.js";
 import { formatAgo, timeZones } from "../../time.js";
 import { ChangePasswordForm } from "./auth.js";
 import { Csrf, Layout, Notice, PostButton, Time, type View } from "../ui.js";
@@ -136,6 +136,8 @@ export const SettingsPage: FC<{
           </select>
           <p class="muted small">Only your browser follows that link, when you click it. Belay's server never asks a map site anything, and shows no map.</p>
         </fieldset>
+        <label for="call-days">Keep the record of calls for this many days, then delete it (only for phones that record calls)</label>
+        <input id="call-days" type="number" name="call_days" min={CALL_DAYS.min} max={CALL_DAYS.max} required value={String(settings.callDays)} />
         <fieldset>
           <legend>
             <strong>What AI apps may read</strong>
@@ -169,7 +171,8 @@ export const SettingsPage: FC<{
         <Csrf view={view} />
         <p class="small">
           The kid's emergency card, on Belay's screen even while the phone is paused, always has 911 and 988, call or text. It also lists these
-          numbers, on every phone that doesn't have its own (a phone's Location and help tab can give it its own).
+          numbers, on every phone that doesn't have its own (a phone's Location and help tab can give it its own), and the contacts marked parent on a
+          phone's Calls tab.
         </p>
         {Array.from({ length: MAX_PARENT_NUMBERS }, (_, i) => settings.parentNumbers[i] ?? { name: "", number: "" }).map((p, i) => (
           <div class="row">
