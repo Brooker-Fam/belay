@@ -41,6 +41,8 @@ function main(): void {
   });
   const stop = () => {
     clearInterval(timer);
+    // Phones holding a long-poll are answered now; they ask again when the server is back.
+    deps.waiters.close();
     server.close(() => {
       db.close();
       process.exit(0);

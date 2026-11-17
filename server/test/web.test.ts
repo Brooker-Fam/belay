@@ -1,29 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { createParent, createSession, newSetupToken } from "../src/auth/parents.js";
+import { createSession, newSetupToken } from "../src/auth/parents.js";
 import { updateSettings } from "../src/settings.js";
-import { deviceCall, enrollPhone, event, pkg, snapshot, testServer, T0, type TestServer } from "./helpers.js";
-
-const ORIGIN = "https://belay.example.org";
-const PASSWORD = "correct horse battery staple";
-
-async function signIn(t: TestServer, username = "sam") {
-  const parent = await createParent(t.deps.db, t.now(), { name: "Sam", username, password: PASSWORD });
-  const session = createSession(t.deps.db, t.now(), parent.id);
-  return { parent, cookie: `__Host-belay=${session.cookie}`, csrf: session.csrf };
-}
-
-function get(t: TestServer, path: string, cookie?: string) {
-  return t.app.request(path, { headers: cookie ? { cookie } : {} });
-}
-
-function postForm(t: TestServer, path: string, fields: Record<string, string | string[]>, opts: { cookie?: string; origin?: string | null } = {}) {
-  const body = new URLSearchParams();
-  for (const [k, v] of Object.entries(fields)) for (const one of Array.isArray(v) ? v : [v]) body.append(k, one);
-  const headers: Record<string, string> = { "content-type": "application/x-www-form-urlencoded", "x-forwarded-for": "203.0.113.9" };
-  if (opts.cookie) headers.cookie = opts.cookie;
-  if (opts.origin !== null) headers.origin = opts.origin ?? ORIGIN;
-  return t.app.request(path, { method: "POST", headers, body });
-}
+import { deviceCall, enrollPhone, event, get, PASSWORD, pkg, postForm, signIn, snapshot, testServer, T0 } from "./helpers.js";
 
 describe("first-run setup", () => {
   it("needs the one-time link from the server's log", async () => {

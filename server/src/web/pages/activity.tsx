@@ -66,6 +66,50 @@ function what(e: AuditEntry): string {
       return `made a personal access token, "${str(d.name)}"`;
     case "token.revoked":
       return `revoked the personal access token "${str(d.name)}"`;
+    case "push.subscribed":
+      return `turned on notifications on ${str(d.browser) || "a browser"}`;
+    case "push.unsubscribed":
+      return `turned off notifications on ${str(d.browser) || "a browser"}`;
+    case "request.made":
+      return `asked for ${str(d.label) || str(d.package) || "an app"}`;
+    case "request.answered": {
+      const answer = { approved: "approved", declined: "declined", talk: `said "let's talk" about` }[str(d.answer)] ?? "answered";
+      return `${answer} the request for ${str(d.label) || str(d.package) || "an app"}${device}${str(d.note) ? `, noting: "${str(d.note)}"` : ""}`;
+    }
+    case "app.allowed":
+    case "app.blocked":
+    case "app.undecided": {
+      const verb = e.action === "app.allowed" ? "allowed" : e.action === "app.blocked" ? "blocked" : "cleared the decision on";
+      return `${verb} ${str(d.label) || str(d.package) || "an app"}${device}${str(d.proposal) ? " (an AI app's proposal)" : ""}${str(d.note) ? `, noting: "${str(d.note)}"` : ""}`;
+    }
+    case "policy.protected":
+      return `turned protection on${device}`;
+    case "policy.unprotected":
+      return `turned protection off${device}`;
+    case "policy.new_apps":
+      return d.mode === "ask" ? `made new apps wait for a parent's approval${device}` : `let new apps run without asking${device}`;
+    case "phone.paused":
+      return `paused the phone${device}${typeof d.until === "number" ? "" : " until a parent resumes it"}`;
+    case "phone.resumed":
+      return `resumed the phone${device}`;
+    case "policy.restrictions":
+      return `changed the locked settings${device}`;
+    case "policy.hardening":
+      return `changed factory reset, debugging or reset protection${device}`;
+    case "policy.maintenance":
+      return `turned on maintenance mode${device}`;
+    case "policy.maintenance_ended":
+      return `ended maintenance mode${device}`;
+    case "policy.web":
+      return `changed the web filter or Chrome settings${device}`;
+    case "policy.support_message":
+      return `changed the message on blocked-app screens${device}`;
+    case "proposal.created":
+      return `proposed: ${str(d.change) || "a change"}${device}`;
+    case "proposal.approved":
+      return `approved ${str(d.client) || "an AI app"}'s proposal: ${str(d.change)}${device}`;
+    case "proposal.rejected":
+      return `rejected ${str(d.client) || "an AI app"}'s proposal: ${str(d.change)}${device}`;
     default:
       if (e.action === "ai.read") return `read ${str(d.what) || "data"}${device}`;
       return e.action;

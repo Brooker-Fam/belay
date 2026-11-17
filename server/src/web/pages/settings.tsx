@@ -1,10 +1,70 @@
 import type { FC } from "hono/jsx";
 import type { Parent } from "../../auth/parents.js";
 import type { Grant } from "../../oauth/store.js";
+import type { PushSubscription } from "../../push.js";
 import { AI_SCOPES, type Settings } from "../../settings.js";
 import { formatAgo, timeZones } from "../../time.js";
 import { ChangePasswordForm } from "./auth.js";
 import { Csrf, Layout, Notice, PostButton, Time, type View } from "../ui.js";
+
+/** Web Push on this browser: the buttons only show once app.js finds the browser can do it. */
+const Notifications: FC<{ view: View; publicKey: string; browsers: PushSubscription[] }> = ({ view, publicKey, browsers }) => (
+  <div class="card">
+    <p>
+      Belay can tell you on your phone or computer when a phone has a request waiting, or an AI app proposes a change. Each notice is end-to-end
+      encrypted to your browser: its push service (Apple, Google, Mozilla or Microsoft) carries it but can't read it.
+    </p>
+    <p class="muted small" data-push-unsupported hidden>
+      This browser can't get notifications from Belay. On an iPhone or iPad, add Belay to your Home Screen first (Share, then Add to Home Screen),
+      open it from there, and turn notifications on in its Settings.
+    </p>
+    <noscript>
+      <p class="muted small">Turning notifications on needs JavaScript.</p>
+    </noscript>
+    <div class="row">
+      <form method="post" action="/settings/push/subscribe" id="push-on" data-vapid-key={publicKey} class="inline">
+        <Csrf view={view} />
+        <input type="hidden" name="endpoint" value="" />
+        <input type="hidden" name="p256dh" value="" />
+        <input type="hidden" name="auth" value="" />
+        <button type="button" hidden>
+          Turn on notifications on this browser
+        </button>
+      </form>
+      <form method="post" action="/settings/push/unsubscribe" id="push-off" class="inline">
+        <Csrf view={view} />
+        <input type="hidden" name="endpoint" value="" />
+        <button type="button" class="quiet" hidden>
+          Turn off on this browser
+        </button>
+      </form>
+    </div>
+    <p class="small" data-push-status role="status"></p>
+    <h3>Your browsers</h3>
+    {browsers.length === 0 && <p class="muted">None yet.</p>}
+    {browsers.map((b) => (
+      <div class="row spread">
+        <span>
+          <strong>{b.name}</strong>
+          <br />
+          <span class="small muted">
+            turned on <Time ms={b.createdAt} tz={view.tz} />; last notice {b.lastSentAt ? formatAgo(b.lastSentAt, view.now) : "never"}
+          </span>
+        </span>
+        <PostButton view={view} action={`/settings/push/${b.id}/remove`} kind="danger" confirm={`Stop notices to ${b.name}?`}>
+          Remove
+        </PostButton>
+      </div>
+    ))}
+    {browsers.length > 0 && (
+      <p>
+        <PostButton view={view} action="/settings/push/test" kind="quiet">
+          Send a test notice
+        </PostButton>
+      </p>
+    )}
+  </div>
+);
 
 export const SettingsPage: FC<{
   view: View;
@@ -13,9 +73,10 @@ export const SettingsPage: FC<{
   meId: string;
   grants: Grant[];
   mcpUrl: string;
+  push: { publicKey: string; browsers: PushSubscription[] };
   message?: string;
   error?: string;
-}> = ({ view, settings, parents, meId, grants, mcpUrl, message, error }) => {
+}> = ({ view, settings, parents, meId, grants, mcpUrl, push, message, error }) => {
   const apps = grants.filter((g) => g.kind === "oauth");
   const tokens = grants.filter((g) => g.kind === "pat");
   return (
@@ -52,11 +113,14 @@ export const SettingsPage: FC<{
         </div>
       </form>
 
+      <h2 id="notifications">Notifications</h2>
+      <Notifications view={view} publicKey={push.publicKey} browsers={push.browsers} />
+
       <h2>AI access</h2>
       <div class="card">
         <p>
-          Connect Claude or another MCP client to <code>{mcpUrl}</code>. It can read what you allow above and mark apps reviewed. In this version it
-          can't change anything on a phone.
+          Connect Claude or another MCP client to <code>{mcpUrl}</code>. It can read what you allow above, mark apps reviewed, block an app and
+          pause a phone. Anything that loosens a rule is only a proposal until a parent approves it on the Proposals page.
         </p>
         <h3>Connected apps</h3>
         {apps.length === 0 && <p class="muted">None.</p>}

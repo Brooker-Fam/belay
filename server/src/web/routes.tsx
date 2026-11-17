@@ -34,17 +34,48 @@ import {
 import { newId } from "../crypto.js";
 import type { Deps } from "../deps.js";
 import { cancelCode, createEnrollmentCode, pendingCodes } from "../device/enroll.js";
-import { getApp, listApps, listChanges, markReviewed, reviewHistory, appCounts } from "../family/apps.js";
-import { deleteDevice, getDevice, listDevices, nameTaken, renameDevice, revokeDevice } from "../family/devices.js";
+import { packageName } from "../device/schemas.js";
+import { type App, getApp, listApps, listChanges, markReviewed, reviewHistory, appCounts } from "../family/apps.js";
+import { type DeviceView, deleteDevice, getDevice, listDevices, nameTaken, renameDevice, revokeDevice } from "../family/devices.js";
+import {
+  type ChromeSettings,
+  DNS_FILTERS,
+  LIMITS,
+  LOCK_RESTRICTIONS,
+  SAFE_RESTRICTIONS,
+  answerRequest,
+  currentDecisions,
+  decideApp,
+  decisionHistory,
+  getRules,
+  neverBlocked,
+  pausePhone,
+  protect,
+  resumePhone,
+  setHardening,
+  setMaintenance,
+  setNewApps,
+  setRestrictions,
+  setSupportMessage,
+  setWeb,
+  unprotect,
+  validHostname,
+  type PolicyContext,
+} from "../family/policy.js";
+import { approveProposal, listProposals, pendingProposalCount, rejectProposal } from "../family/proposals.js";
+import { listRequests, pendingRequestCount, recentRequests } from "../family/requests.js";
 import { clientAddress, type Bindings } from "../http.js";
 import { createPersonalToken, getGrant, listGrants, revokeAllGrants, revokeGrant } from "../oauth/store.js";
+import { browserName, listSubscriptions, removeSubscription, saveSubscription, sendNotice, subscriptionProblem, vapidKeys } from "../push.js";
 import { AI_SCOPES, type AiScope, getSettings, updateSettings } from "../settings.js";
 import { isValidTimeZone } from "../time.js";
 import type { Assets } from "./assets.js";
 import { ActivityPage } from "./pages/activity.js";
 import { AddPage, CodePage } from "./pages/add.js";
 import { InvitePage, LoginPage, MessagePage, SetupPage } from "./pages/auth.js";
-import { AppPage, DevicePage, DevicesPage } from "./pages/devices.js";
+import { type AppRule, AppPage, DevicePage, DevicesPage, type PhoneRules } from "./pages/devices.js";
+import { ProposalsPage, RequestsPage } from "./pages/requests.js";
+import { MAINTENANCE_HOURS, PAUSE_MINUTES } from "./pages/rules.js";
 import { SettingsPage, ShownOncePage } from "./pages/settings.js";
 import { TimelinePage } from "./pages/timeline.js";
 import type { View } from "./ui.js";
@@ -63,13 +94,64 @@ const SAVED: Record<string, string> = {
   removed: "Removed.",
   renamed: "Renamed.",
   disconnected: "Disconnected. The phone's access stopped.",
+  push_on: "Notifications are on for this browser.",
+  push_off: "Notifications are off for this browser.",
+  push_removed: "Removed. That browser gets no more notices.",
+  protected: "Protection is on. The phone gets the new rules within seconds if it's online.",
+  unprotected: "Protection is off. The phone gets the change within seconds if it's online.",
+  new_apps_ask: "New apps now wait for your approval. The apps already on the phone are allowed.",
+  new_apps_allow: "New apps now run without asking.",
+  allowed: "Allowed.",
+  blocked: "Blocked. The phone hides it within seconds if it's online.",
+  paused: "Paused. The phone gets it within seconds if it's online.",
+  resumed: "Resumed.",
+  rules: "Saved. The phone gets it within seconds if it's online.",
+  maintenance_on: "Maintenance mode is on: USB debugging works until it ends.",
+  maintenance_off: "Maintenance mode is off.",
+  answer_approved: "Approved, and the app is allowed. They'll see your answer on the phone.",
+  answer_declined: "Declined. They'll see your answer on the phone.",
+  answer_talk: "They'll see on the phone that you want to talk about it.",
+  proposal_approved: "Approved. The change is on its way to the phone.",
+  proposal_rejected: "Rejected. Nothing changed.",
 };
 
-/** Security headers for every page. `formAction` widens form-action for the OAuth consent page. */
+/** Google account ids for reset protection: long numbers, one per line ("people/" before one is fine). */
+function accountIds(text: string): { ok: true; ids: string[] } | { ok: false; error: string } {
+  const ids = [
+    ...new Set(
+      text
+        .split(/[\s,]+/)
+        .map((s) => s.replace(/^people\//i, ""))
+        .filter(Boolean),
+    ),
+  ];
+  if (ids.some((id) => !/^\d{1,64}$/.test(id))) return { ok: false, error: "A Google account id is a long number, like 112233445566778899000. Paste only the number after people/." };
+  if (ids.length > LIMITS.maxFrpAccounts) return { ok: false, error: `List at most ${LIMITS.maxFrpAccounts} accounts.` };
+  return { ok: true, ids };
+}
+
+/** Sites for Chrome's lists, one per line, as Chrome takes them (example.com, *.example.com). */
+function urlPatterns(text: string): { ok: true; list: string[] } | { ok: false } {
+  const list = [
+    ...new Set(
+      text
+        .split(/\r?\n/)
+        .map((s) => s.trim())
+        .filter(Boolean),
+    ),
+  ];
+  if (list.length > LIMITS.maxUrlPatterns || list.some((p) => p.length > LIMITS.urlPattern || /\s/.test(p))) return { ok: false };
+  return { ok: true, list };
+}
+
+/**
+ * Security headers for every page. `formAction` widens form-action for the OAuth consent page.
+ * Scripts, the service worker (/sw.js) and the web app manifest are all same-origin files.
+ */
 export function pageHeaders(c: Context, formAction = "'self'"): void {
   c.header(
     "Content-Security-Policy",
-    `default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:; form-action ${formAction}; frame-ancestors 'none'; base-uri 'none'`,
+    `default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; form-action ${formAction}; frame-ancestors 'none'; base-uri 'none'`,
   );
   c.header("X-Content-Type-Options", "nosniff");
   c.header("X-Frame-Options", "DENY");
@@ -127,7 +209,15 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
 
   const view = (c: WebContext): View => {
     const session = c.var.session;
-    return { parentName: session?.parent.name ?? null, csrf: session?.csrf ?? "", tz: getSettings(db).timezone, now: deps.now(), path: c.req.path, assets: assets.urls };
+    return {
+      parentName: session?.parent.name ?? null,
+      csrf: session?.csrf ?? "",
+      tz: getSettings(db).timezone,
+      now: deps.now(),
+      path: c.req.path,
+      assets: assets.urls,
+      waiting: session ? { requests: pendingRequestCount(db), proposals: pendingProposalCount(db) } : undefined,
+    };
   };
   const message = (c: WebContext, title: string, text: string, status: ContentfulStatusCode = 200, link?: { href: string; label: string }) =>
     render(c, <MessagePage view={view(c)} title={title} message={text} link={link} />, status);
@@ -278,7 +368,12 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
   app.get("/", (c) => {
     const now = deps.now();
     const settings = getSettings(db);
-    const devices = listDevices(db, settings, now).map((device) => ({ device, ...appCounts(db, device.id) }));
+    const devices = listDevices(db, settings, now).map((device) => ({
+      device,
+      ...appCounts(db, device.id),
+      requests: pendingRequestCount(db, device.id),
+      protectedOn: getRules(db, device.id).protectedAt !== null,
+    }));
     const pending = pendingCodes(db, now).filter((p) => !p.deviceId);
     if (devices.length === 0 && pending.length === 0) return c.redirect("/add");
     return render(c, <DevicesPage view={view(c)} devices={devices} pending={pending} />);
@@ -286,17 +381,57 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
 
   const deviceOr404 = (c: WebContext) => getDevice(db, c.req.param("id") ?? "", getSettings(db), deps.now());
 
+  /** A phone's rules, as its page shows them. */
+  const phoneRules = (deviceId: string): PhoneRules => {
+    const rules = getRules(db, deviceId);
+    const decisions = currentDecisions(db, deviceId);
+    const ruleOf = (app: Pick<App, "package" | "system">): AppRule => {
+      const decision = decisions.get(app.package) ?? null;
+      const canBlock = !neverBlocked(app.package);
+      if (decision) return { state: decision.state, decision, canBlock };
+      if (app.system || !canBlock) return { state: "runs", decision: null, canBlock };
+      return { state: rules.newApps === "ask" ? "waiting" : "runs", decision: null, canBlock };
+    };
+    const present = new Set(
+      db
+        .prepare<[string], { package: string }>("SELECT package FROM apps WHERE device_id = ? AND present = 1")
+        .all(deviceId)
+        .map((r) => r.package),
+    );
+    // The newest open request per app.
+    const seen = new Set<string>();
+    const openRequests = recentRequests(db, deps.now(), { deviceId }).filter((r) => {
+      if ((r.status !== "pending" && r.status !== "talk") || seen.has(r.package)) return false;
+      seen.add(r.package);
+      return true;
+    });
+    return {
+      rules,
+      undecidedApps: listApps(db, deviceId).filter((a) => !decisions.has(a.package)).length,
+      ruleOf,
+      openRequests,
+      requestsForUnknownApps: openRequests.filter((r) => !present.has(r.package)),
+    };
+  };
+
+  const showDevice = (c: WebContext, device: DeviceView, extra: { message?: string; error?: string } = {}, status: ContentfulStatusCode = 200) => {
+    const filter = { q: c.req.query("q") ?? "", system: c.req.query("system") === "1", permission: c.req.query("permission") ?? "" };
+    const apps = listApps(db, device.id, { query: filter.q, includeSystem: filter.system, permission: filter.permission || undefined });
+    const phone = phoneRules(device.id);
+    // The kid's requests first, then apps waiting for a decision, then apps to review.
+    const requested = new Set(phone.openRequests.map((r) => r.package));
+    const rank = (a: App) => (requested.has(a.package) ? 0 : phone.ruleOf(a).state === "waiting" ? 1 : a.unreviewed ? 2 : 3);
+    apps.sort((a, b) => rank(a) - rank(b));
+    return render(c, <DevicePage view={view(c)} device={device} apps={apps} phone={phone} filter={filter} message={extra.message} error={extra.error} />, status);
+  };
+
   app.get("/devices/:id", (c) => {
     const device = deviceOr404(c);
     if (!device) return message(c, "No such phone", "It may have been deleted.", 404, { href: "/", label: "Back to phones" });
-    const filter = { q: c.req.query("q") ?? "", system: c.req.query("system") === "1", permission: c.req.query("permission") ?? "" };
-    const apps = listApps(db, device.id, { query: filter.q, includeSystem: filter.system, permission: filter.permission || undefined });
-    // Apps to review first.
-    apps.sort((a, b) => Number(!!b.unreviewed) - Number(!!a.unreviewed));
     const reviewed = Number(c.req.query("reviewed") ?? "");
     const saved = c.req.query("saved");
     const note = Number.isInteger(reviewed) && reviewed > 0 ? `Marked ${reviewed} app${reviewed === 1 ? "" : "s"} reviewed.` : saved ? SAVED[saved] : undefined;
-    return render(c, <DevicePage view={view(c)} device={device} apps={apps} filter={filter} message={note} />);
+    return showDevice(c, device, { message: note });
   });
 
   app.get("/devices/:id/apps/:package", (c) => {
@@ -304,7 +439,242 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
     const app = device && getApp(db, device.id, c.req.param("package"));
     if (!device || !app) return message(c, "No such app", "This phone has never had it.", 404, { href: "/", label: "Back to phones" });
     const changes = listChanges(db, { deviceId: device.id, package: app.package, includeSystem: true, limit: 50 });
-    return render(c, <AppPage view={view(c)} device={device} app={app} reviews={reviewHistory(db, device.id, app.package)} changes={changes} />);
+    return render(
+      c,
+      <AppPage
+        view={view(c)}
+        device={device}
+        app={app}
+        reviews={reviewHistory(db, device.id, app.package)}
+        changes={changes}
+        rule={phoneRules(device.id).ruleOf(app)}
+        history={decisionHistory(db, device.id, app.package)}
+        requests={listRequests(db, { deviceId: device.id, package: app.package, limit: 20 })}
+        message={SAVED[c.req.query("saved") ?? ""]}
+      />,
+    );
+  });
+
+  // ── Rules ──────────────────────────────────────────────────────────
+
+  const policyContext = (): PolicyContext => ({
+    db,
+    now: deps.now(),
+    changed: (id) => {
+      deps.waiters.changed(id);
+    },
+  });
+  const asParent = (c: WebContext) => ({ kind: "parent", parentId: me(c).parent.id }) as const;
+  const backTo = (c: WebContext, device: DeviceView, saved: string, section: string) => c.redirect(`/devices/${device.id}?saved=${saved}#${section}`);
+  const noPhone = (c: WebContext) => message(c, "No such phone", "It may have been deleted.", 404, { href: "/", label: "Back to phones" });
+
+  app.post("/devices/:id/protect", (c) => {
+    const device = deviceOr404(c);
+    if (!device) return noPhone(c);
+    protect(policyContext(), device.id, asParent(c));
+    return backTo(c, device, "protected", "rules");
+  });
+
+  app.post("/devices/:id/unprotect", (c) => {
+    const device = deviceOr404(c);
+    if (!device) return noPhone(c);
+    unprotect(policyContext(), device.id, asParent(c));
+    return backTo(c, device, "unprotected", "rules");
+  });
+
+  app.post("/devices/:id/new-apps", async (c) => {
+    const device = deviceOr404(c);
+    if (!device) return noPhone(c);
+    const mode = first(await form(c), "mode");
+    if (mode !== "ask" && mode !== "allow") return showDevice(c, device, { error: "Choose Ask or Allow for new apps." }, 400);
+    setNewApps(policyContext(), device.id, mode, asParent(c));
+    return backTo(c, device, `new_apps_${mode}`, "new-apps");
+  });
+
+  app.post("/devices/:id/decide", async (c) => {
+    const device = deviceOr404(c);
+    if (!device) return noPhone(c);
+    const body = await form(c);
+    const allow = first(body, "allow");
+    const block = first(body, "block");
+    const pkg = allow || block;
+    if (!pkg || (allow && block) || !packageName.safeParse(pkg).success) return showDevice(c, device, { error: "Choose Allow or Block on one app." }, 400);
+    const state = allow ? "allowed" : "blocked";
+    if (state === "blocked" && neverBlocked(pkg)) {
+      return showDevice(c, device, { error: "Belay never blocks that app: the phone app, texting, Settings and Belay itself always work, so 911 and 988 do too." }, 400);
+    }
+    const note = first(body, "note");
+    if (note.length > LIMITS.decisionNote) return showDevice(c, device, { error: `Keep the note under ${LIMITS.decisionNote} characters.` }, 400);
+    decideApp(policyContext(), device.id, pkg, state, asParent(c), { note: note || null });
+    if (first(body, "back") === "app") return c.redirect(`/devices/${device.id}/apps/${encodeURIComponent(pkg)}?saved=${state}`);
+    return backTo(c, device, state, "apps");
+  });
+
+  app.post("/devices/:id/pause", async (c) => {
+    const device = deviceOr404(c);
+    if (!device) return noPhone(c);
+    const body = await form(c);
+    const minutes = first(body, "minutes");
+    const note = first(body, "note");
+    if (minutes !== "until" && !PAUSE_MINUTES.has(minutes)) return showDevice(c, device, { error: "Choose how long to pause the phone." }, 400);
+    if (note.length > LIMITS.pauseNote) return showDevice(c, device, { error: `Keep the note under ${LIMITS.pauseNote} characters.` }, 400);
+    pausePhone(policyContext(), device.id, { minutes: minutes === "until" ? null : Number(minutes), note: note || null }, asParent(c));
+    return backTo(c, device, "paused", "pause");
+  });
+
+  app.post("/devices/:id/resume", (c) => {
+    const device = deviceOr404(c);
+    if (!device) return noPhone(c);
+    resumePhone(policyContext(), device.id, asParent(c));
+    return backTo(c, device, "resumed", "pause");
+  });
+
+  app.post("/devices/:id/restrictions", async (c) => {
+    const device = deviceOr404(c);
+    if (!device) return noPhone(c);
+    const body = await form(c);
+    const locks = new Set(all(body, "lock"));
+    const rules = getRules(db, device.id);
+    if (locks.has("modify_accounts") && !rules.restrictions.modify_accounts && first(body, "accounts_ready") !== "1") {
+      return showDevice(c, device, { error: "Add the parent-owned Google account to the phone first, and tick that it's there: once accounts are locked, none can be added." }, 400);
+    }
+    if (locks.has("sim") && !rules.restrictions.sim && first(body, "sim_ready") !== "1") {
+      return showDevice(c, device, { error: "Activate the phone's line first, and tick that it works: once eSIMs are locked, none can be added or downloaded." }, 400);
+    }
+    const changes = Object.fromEntries([...SAFE_RESTRICTIONS, ...LOCK_RESTRICTIONS].map((r) => [r, locks.has(r)]));
+    setRestrictions(policyContext(), device.id, changes, asParent(c));
+    return backTo(c, device, "rules", "locks");
+  });
+
+  app.post("/devices/:id/hardening", async (c) => {
+    const device = deviceOr404(c);
+    if (!device) return noPhone(c);
+    const body = await form(c);
+    const factoryReset = first(body, "factory_reset") === "1";
+    const debugging = first(body, "debugging") === "1";
+    const accounts = accountIds(first(body, "frp_accounts"));
+    if (!accounts.ok) return showDevice(c, device, { error: accounts.error }, 400);
+    const rules = getRules(db, device.id);
+    const tightens =
+      (factoryReset && !rules.restrictions.factory_reset) ||
+      (debugging && !rules.restrictions.debugging) ||
+      (accounts.ids.length > 0 && JSON.stringify(accounts.ids) !== JSON.stringify(rules.frpAccounts));
+    if (tightens && first(body, "confirm").toLowerCase() !== device.name.trim().toLowerCase()) {
+      return showDevice(c, device, { error: `These can lock the phone for good. To turn them on, type the phone's name, ${device.name}, in the box.` }, 400);
+    }
+    setHardening(policyContext(), device.id, { factoryReset, debugging, frpAccounts: accounts.ids }, asParent(c));
+    return backTo(c, device, "rules", "hardening");
+  });
+
+  app.post("/devices/:id/maintenance", async (c) => {
+    const device = deviceOr404(c);
+    if (!device) return noPhone(c);
+    const body = await form(c);
+    if (first(body, "end") === "1") {
+      setMaintenance(policyContext(), device.id, null, asParent(c));
+      return backTo(c, device, "maintenance_off", "maintenance");
+    }
+    const hours = first(body, "hours");
+    if (!MAINTENANCE_HOURS.has(hours)) return showDevice(c, device, { error: "Choose 1, 4 or 24 hours." }, 400);
+    setMaintenance(policyContext(), device.id, deps.now() + Number(hours) * 3_600_000, asParent(c));
+    return backTo(c, device, "maintenance_on", "maintenance");
+  });
+
+  app.post("/devices/:id/web", async (c) => {
+    const device = deviceOr404(c);
+    if (!device) return noPhone(c);
+    const body = await form(c);
+    const checked = (name: string) => first(body, name) === "1";
+    const filter = first(body, "filter");
+    let privateDns: string | null;
+    if (filter === "cleanbrowsing" || filter === "adguard") privateDns = DNS_FILTERS[filter].host;
+    else if (filter === "off") privateDns = null;
+    else if (filter === "custom") {
+      privateDns = first(body, "custom_host").toLowerCase().replace(/\.$/, "");
+      if (!validHostname(privateDns)) return showDevice(c, device, { error: "Enter the Private DNS host name, like dns.example.org." }, 400);
+    } else return showDevice(c, device, { error: "Choose a web filter, or Off." }, 400);
+    let chrome: ChromeSettings | null = null;
+    if (checked("chrome")) {
+      const youtube = first(body, "youtube");
+      const allowed = urlPatterns(first(body, "allowlist"));
+      const blocked = urlPatterns(first(body, "blocklist"));
+      if (youtube !== "off" && youtube !== "moderate" && youtube !== "strict") return showDevice(c, device, { error: "Choose a YouTube setting." }, 400);
+      if (!allowed.ok || !blocked.ok) {
+        return showDevice(c, device, { error: `List one site per line, without spaces, at most ${LIMITS.maxUrlPatterns} of them.` }, 400);
+      }
+      chrome = {
+        incognito: checked("incognito"),
+        safe_search: checked("safe_search"),
+        youtube_restrict: youtube,
+        safe_sites: checked("safe_sites"),
+        allow_downloads: checked("allow_downloads"),
+        url_allowlist: checked("allowlist_mode") ? allowed.list : null,
+        url_blocklist: blocked.list,
+      };
+    }
+    setWeb(policyContext(), device.id, { privateDns, chrome, hideBrowsers: checked("hide_browsers") }, asParent(c));
+    return backTo(c, device, "rules", "web");
+  });
+
+  app.post("/devices/:id/support", async (c) => {
+    const device = deviceOr404(c);
+    if (!device) return noPhone(c);
+    const text = first(await form(c), "message");
+    if (text.length > LIMITS.supportMessage) return showDevice(c, device, { error: `Keep it under ${LIMITS.supportMessage} characters.` }, 400);
+    setSupportMessage(policyContext(), device.id, text || null, asParent(c));
+    return backTo(c, device, "rules", "support");
+  });
+
+  // ── Requests and proposals ─────────────────────────────────────────
+
+  app.post("/devices/:id/requests/:requestId/answer", async (c) => {
+    const device = deviceOr404(c);
+    if (!device) return noPhone(c);
+    const body = await form(c);
+    const answer = first(body, "answer");
+    const note = first(body, "note");
+    if (answer !== "approved" && answer !== "declined" && answer !== "talk") return message(c, "Choose an answer", "Approve, Decline or Let's talk.", 400);
+    if (note.length > LIMITS.answerNote) return message(c, "That note is too long", `Keep it under ${LIMITS.answerNote} characters.`, 400);
+    const done = answerRequest(policyContext(), device.id, c.req.param("requestId"), answer, asParent(c), note || null);
+    if (!done.result) return message(c, "No such request", "It may have been deleted with its phone.", 404, { href: "/requests", label: "Back to requests" });
+    const back = first(body, "back");
+    if (back === "requests") return c.redirect(`/requests?saved=answer_${answer}`);
+    if (back === "app") return c.redirect(`/devices/${device.id}/apps/${encodeURIComponent(done.result.package)}?saved=answer_${answer}`);
+    return backTo(c, device, `answer_${answer}`, "apps");
+  });
+
+  app.get("/requests", (c) => {
+    const now = deps.now();
+    const phones = listDevices(db, getSettings(db), now).length;
+    const known = new Set(
+      db
+        .prepare<[], { key: string }>("SELECT DISTINCT a.device_id || ' ' || a.package AS key FROM apps a JOIN requests r ON r.device_id = a.device_id AND r.package = a.package")
+        .all()
+        .map((r) => r.key),
+    );
+    return render(
+      c,
+      <RequestsPage view={view(c)} requests={recentRequests(db, now, { limit: 200 })} phones={phones} known={known} message={SAVED[c.req.query("saved") ?? ""]} />,
+    );
+  });
+
+  const proposalsPage = (c: WebContext, extra: { message?: string; error?: string } = {}, status: ContentfulStatusCode = 200) =>
+    render(c, <ProposalsPage view={view(c)} proposals={listProposals(db, { limit: 200 })} message={extra.message ?? SAVED[c.req.query("saved") ?? ""]} error={extra.error} />, status);
+
+  app.get("/proposals", (c) => proposalsPage(c));
+
+  app.post("/proposals/:id/approve", async (c) => {
+    const note = first(await form(c), "note");
+    if (note.length > LIMITS.answerNote) return proposalsPage(c, { error: `Keep the note under ${LIMITS.answerNote} characters.` }, 400);
+    const done = approveProposal(policyContext(), c.req.param("id"), me(c).parent.id, note || null);
+    if (!done.ok) return proposalsPage(c, { error: done.reason }, 400);
+    return c.redirect("/proposals?saved=proposal_approved");
+  });
+
+  app.post("/proposals/:id/reject", (c) => {
+    const done = rejectProposal(db, deps.now(), c.req.param("id"), me(c).parent.id);
+    if (!done.ok) return proposalsPage(c, { error: done.reason }, 400);
+    return c.redirect("/proposals?saved=proposal_rejected");
   });
 
   app.post("/devices/:id/review", async (c) => {
@@ -409,6 +779,7 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
         meId={me(c).parent.id}
         grants={listGrants(db)}
         mcpUrl={`${config.publicUrl}/mcp`}
+        push={{ publicKey: vapidKeys(db).publicKey, browsers: listSubscriptions(db, me(c).parent.id) }}
         message={extra.message ?? SAVED[c.req.query("saved") ?? ""]}
         error={extra.error}
       />,
@@ -498,6 +869,46 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
         after="Belay keeps only a hash of it. Revoke it in Settings when you no longer need it."
       />,
     );
+  });
+
+  // ── Notifications (Web Push) ───────────────────────────────────────
+
+  app.post("/settings/push/subscribe", async (c) => {
+    const body = await form(c);
+    const input = { endpoint: first(body, "endpoint"), p256dh: first(body, "p256dh"), auth: first(body, "auth") };
+    const problem = subscriptionProblem(input);
+    if (problem) return settingsPage(c, { error: problem }, 400);
+    const now = deps.now();
+    const parentId = me(c).parent.id;
+    const saved = saveSubscription(db, now, parentId, input, browserName(c.req.header("user-agent"), input.endpoint));
+    audit(db, now, { kind: "parent", parentId }, "push.subscribed", { detail: { browser: saved.name } });
+    return c.redirect("/settings?saved=push_on#notifications");
+  });
+
+  app.post("/settings/push/unsubscribe", async (c) => {
+    const endpoint = first(await form(c), "endpoint");
+    const parentId = me(c).parent.id;
+    const removed = endpoint ? removeSubscription(db, parentId, { endpoint }) : null;
+    if (removed) audit(db, deps.now(), { kind: "parent", parentId }, "push.unsubscribed", { detail: { browser: removed.name } });
+    return c.redirect("/settings?saved=push_off#notifications");
+  });
+
+  app.post("/settings/push/:id/remove", (c) => {
+    const parentId = me(c).parent.id;
+    const removed = removeSubscription(db, parentId, { id: c.req.param("id") });
+    if (removed) audit(db, deps.now(), { kind: "parent", parentId }, "push.unsubscribed", { detail: { browser: removed.name } });
+    return c.redirect("/settings?saved=push_removed#notifications");
+  });
+
+  app.post("/settings/push/test", async (c) => {
+    const result = await sendNotice(deps, { title: "Belay", body: "A test notice from Belay's Settings page.", url: "/settings" }, { parentId: me(c).parent.id });
+    const message =
+      result.sent > 0
+        ? `Sent a test notice to ${result.sent} browser${result.sent === 1 ? "" : "s"}.`
+        : result.removed > 0
+          ? "That browser's push service no longer knows it, so it was removed. Turn notifications on again there."
+          : "The test notice didn't go out. Try again in a minute.";
+    return settingsPage(c, result.sent > 0 ? { message } : { error: message }, result.sent > 0 ? 200 : 502);
   });
 
   app.post("/settings/ai/:id/revoke", (c) => {

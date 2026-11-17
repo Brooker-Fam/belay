@@ -224,10 +224,12 @@ export function oauthRoutes(deps: Deps, assets: Assets): Hono<{ Bindings: Bindin
               <li>See only the phones' names: you turned off AI access to app data and device status in Settings.</li>
             )}
             <li>Mark apps as reviewed, with a note, in your name.</li>
+            <li>Block an app or pause a phone at once, in your name.</li>
+            <li>Propose loosening a rule, like allowing an app. Nothing loosens until a parent approves it on the parent page.</li>
           </ul>
           <p class="muted small">
-            It can't change anything on a phone. What it reads goes to the app's provider. You can disconnect it any time in Settings, and the
-            Activity page shows what it did.
+            It can't answer your kid's requests, or change factory reset, debugging or maintenance mode. What it reads goes to the app's provider.
+            You can disconnect it any time in Settings, and the Activity page shows what it did.
           </p>
         </div>
         <form method="post" action="/oauth/authorize" class="row">

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { sha256 } from "../src/crypto.js";
 import { createEnrollmentCode } from "../src/device/enroll.js";
+import { Policy } from "../src/device/schemas.js";
 import { revokeDevice } from "../src/family/devices.js";
 import { device, deviceCall, enrollPhone, post, testServer } from "./helpers.js";
 
@@ -135,12 +136,14 @@ describe("device auth", () => {
     }
   });
 
-  it("checks in: stores the facts and answers with the empty Phase 1 policy", async () => {
+  it("checks in: stores the facts and answers with the whole policy, version 0 before any rules", async () => {
     const t = testServer();
     const { token, deviceId } = await enrollPhone(t);
     t.advance(60_000);
     const res = await deviceCall(t, token, "checkin", { status: device({ battery_percent: 42 }) });
-    expect(await res.json()).toEqual({ server_time: t.now(), policy: { version: 0 } });
+    const body = (await res.json()) as { server_time: number; policy: unknown };
+    expect(body.server_time).toBe(t.now());
+    expect(Policy.parse(body.policy)).toMatchObject({ version: 0, apps: { new_apps: "allow", decisions: [] }, pause: null });
     const row = t.deps.db.prepare("SELECT facts, last_checkin_at FROM devices WHERE id = ?").get(deviceId) as { facts: string; last_checkin_at: number };
     expect(row.last_checkin_at).toBe(t.now());
     expect((JSON.parse(row.facts) as { battery_percent: number }).battery_percent).toBe(42);

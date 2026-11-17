@@ -12,15 +12,19 @@ export interface View {
   tz: string;
   now: number;
   path: string;
-  assets: { css: string; js: string };
+  assets: { css: string; js: string; icon: string };
+  /** What waits for a parent, for the menu: the kid's requests and AI apps' proposals. */
+  waiting?: { requests: number; proposals: number };
 }
 
 const NAV = [
-  ["/", "Phones"],
-  ["/timeline", "Timeline"],
-  ["/add", "Add a phone"],
-  ["/settings", "Settings"],
-  ["/activity", "Activity"],
+  ["/", "Phones", null],
+  ["/requests", "Requests", "requests"],
+  ["/proposals", "Proposals", "proposals"],
+  ["/timeline", "Timeline", null],
+  ["/add", "Add a phone", null],
+  ["/settings", "Settings", null],
+  ["/activity", "Activity", null],
 ] as const;
 
 function current(path: string, href: string): boolean {
@@ -33,7 +37,11 @@ export const Layout: FC<PropsWithChildren<{ view: View; title: string; narrow?: 
       <meta charset="utf-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1" />
       <meta name="robots" content="noindex" />
+      <meta name="theme-color" content="#1f6f5c" />
+      <meta name="apple-mobile-web-app-title" content="Belay" />
       <title>{`${title} · Belay`}</title>
+      <link rel="manifest" href="/manifest.webmanifest" />
+      <link rel="icon" href={view.assets.icon} type="image/svg+xml" />
       <link rel="stylesheet" href={view.assets.css} />
       <script src={view.assets.js} defer></script>
     </head>
@@ -45,11 +53,19 @@ export const Layout: FC<PropsWithChildren<{ view: View; title: string; narrow?: 
               Belay
             </a>
             <nav aria-label="Main">
-              {NAV.map(([href, label]) => (
-                <a href={href} aria-current={current(view.path, href) ? "page" : undefined}>
-                  {label}
-                </a>
-              ))}
+              {NAV.map(([href, label, count]) => {
+                const n = count ? (view.waiting?.[count] ?? 0) : 0;
+                return (
+                  <a href={href} aria-current={current(view.path, href) ? "page" : undefined}>
+                    {label}
+                    {n > 0 && (
+                      <span class="badge" aria-label={`${n} waiting`}>
+                        {n}
+                      </span>
+                    )}
+                  </a>
+                );
+              })}
             </nav>
             <form method="post" action="/logout">
               <Csrf view={view} />
@@ -90,7 +106,7 @@ export const Problems: FC<{ problems: Problem[] }> = ({ problems }) =>
   problems.length ? (
     <ul class="problems">
       {problems.map((p) => (
-        <li>{p.text}</li>
+        <li class={p.code === "tampering" ? "tamper" : undefined}>{p.text}</li>
       ))}
     </ul>
   ) : null;

@@ -1,10 +1,11 @@
 import type { DB } from "./db.js";
 import { isValidTimeZone } from "./time.js";
 
-/** Data categories AI clients may read, decided on the Settings page. Phase 1 has two. */
+/** Data categories AI clients may read, decided on the Settings page. All on by default. */
 export const AI_SCOPES = {
   apps: "Apps: installed apps, their permissions, app changes and reviews",
   device_status: "Device status: model, Android version, battery, storage and Belay's health on the phone",
+  requests: "Requests: what the kid asks for, and why, in their words",
 } as const;
 export type AiScope = keyof typeof AI_SCOPES;
 
@@ -19,7 +20,7 @@ export interface Settings {
 export const DEFAULT_SETTINGS: Settings = {
   timezone: "UTC",
   silentHours: 12,
-  aiScopes: { apps: true, device_status: true },
+  aiScopes: { apps: true, device_status: true, requests: true },
 };
 
 function read(db: DB, key: string): unknown {
@@ -43,22 +44,27 @@ export function getSettings(db: DB): Settings {
   const timezone = read(db, "timezone");
   const silentHours = read(db, "silent_hours");
   const scopes = read(db, "ai_scopes") as Partial<Record<AiScope, unknown>> | undefined;
+  const scope = (key: AiScope): boolean => (typeof scopes?.[key] === "boolean" ? scopes[key] : DEFAULT_SETTINGS.aiScopes[key]);
   return {
     timezone: typeof timezone === "string" && isValidTimeZone(timezone) ? timezone : DEFAULT_SETTINGS.timezone,
     silentHours: typeof silentHours === "number" && silentHours >= 1 ? silentHours : DEFAULT_SETTINGS.silentHours,
-    aiScopes: {
-      apps: typeof scopes?.apps === "boolean" ? scopes.apps : DEFAULT_SETTINGS.aiScopes.apps,
-      device_status: typeof scopes?.device_status === "boolean" ? scopes.device_status : DEFAULT_SETTINGS.aiScopes.device_status,
-    },
+    aiScopes: { apps: scope("apps"), device_status: scope("device_status"), requests: scope("requests") },
   };
 }
 
-export function updateSettings(db: DB, change: Partial<Settings>): Settings {
+/** A change to the settings; AI scopes left out keep their value. */
+export interface SettingsChange {
+  timezone?: string;
+  silentHours?: number;
+  aiScopes?: Partial<Record<AiScope, boolean>>;
+}
+
+export function updateSettings(db: DB, change: SettingsChange): Settings {
   if (change.timezone !== undefined) {
     if (!isValidTimeZone(change.timezone)) throw new Error(`Unknown timezone: ${change.timezone}`);
     write(db, "timezone", change.timezone);
   }
   if (change.silentHours !== undefined) write(db, "silent_hours", change.silentHours);
-  if (change.aiScopes !== undefined) write(db, "ai_scopes", change.aiScopes);
+  if (change.aiScopes !== undefined) write(db, "ai_scopes", { ...getSettings(db).aiScopes, ...change.aiScopes });
   return getSettings(db);
 }

@@ -11,9 +11,14 @@ It needs a **public HTTPS address**:
 - Android 17 enforces Certificate Transparency, so the certificate must come from a public
   CA (Let's Encrypt is fine). Self-signed certificates don't work.
 
-The server makes one kind of outbound request: it reads the client metadata document of
-an allowlisted AI client (claude.ai's), with no family data in the request. It never calls
-an AI or any other API.
+The server makes two kinds of outbound requests, and no others:
+
+- it reads the client metadata document of an allowlisted AI client (claude.ai's) when a
+  parent connects it, with no family data in the request;
+- if a parent turned on [notifications](#notifications), it sends them to the push service
+  of that parent's browser, end-to-end encrypted, so the push service can't read them.
+
+It never calls an AI or any other API.
 
 ## Option 1: a small VPS with Caddy (simplest)
 
@@ -67,8 +72,51 @@ home network; see docs/platform-notes.md.)
 | `BELAY_TRUST_PROXY` | off | `1` when exactly one reverse proxy (Caddy, a tunnel) is in front: client addresses for rate limits then come from the last `X-Forwarded-For` entry. Leave it off if clients can reach the server directly, or they could pretend to be anyone. |
 | `BELAY_EXTRA_REDIRECT_URIS` | none | More OAuth redirect URIs to allow, comma-separated and exact, for MCP clients other than Claude. They get no refresh tokens. |
 
-The family's timezone, the silent threshold and what AI apps may read are set on the
-Settings page, not here.
+The family's timezone, the silent threshold, what AI apps may read and notifications are set
+on the Settings page, not here.
+
+## Notifications
+
+Off until a parent turns them on. Without them, a request from the kid shows on the parent
+page (Requests in the menu shows how many are waiting) and through MCP.
+
+**Turning them on:** Settings → Notifications → Turn on notifications on this browser, on
+each browser where a parent wants them. The page registers a small service worker
+(`/sw.js`) that shows each notice and opens the page it's about when tapped. Settings lists
+each parent's own browsers, and Remove stops one; Send a test notice checks them. On an
+iPhone or iPad, iOS only delivers notifications to web apps on the Home Screen: open the
+parent page in Safari, choose Share → Add to Home Screen, open Belay from the Home Screen,
+and turn them on there (iOS 16.4 or later).
+
+**When:** when a phone sends a new request (one notice for the requests in one call), and
+when an AI app proposes a change. Not again when a request is sent a second time, or the
+same change is proposed again while it waits, and at most six notices an hour about one
+phone: past that, requests and proposals still show on the parent page.
+
+**What is sent, and to whom:**
+
+- A short notice goes to the push service of every browser a parent turned on: Apple
+  (`web.push.apple.com`) for Safari, Google (`fcm.googleapis.com`) for Chrome and most
+  Android browsers, Mozilla (`updates.push.services.mozilla.com`) for Firefox, Microsoft
+  (`*.notify.windows.com`) for Edge. The push service passes it to the browser. The server
+  accepts no other address when a browser subscribes, sends to no other host, and never
+  follows a redirect.
+- The notice is the phone's name and the app's name or the proposed change, like
+  `Sam's phone: "Chatter Box" is waiting for you` or
+  `Sam's phone: Claude proposes resuming the paused phone`, and which page to open
+  (Requests or Proposals). It is encrypted for that browser (RFC 8291, `aes128gcm`): only
+  the browser can read it, not the push service.
+- The push service does see the browser's subscription address, when each notice is sent
+  and how long it is, the server's VAPID public key, and a token signed with it (RFC 8292)
+  that names the push service, expires within 12 hours, and contains the server's address
+  (`BELAY_PUBLIC_URL`). A notice waits at the push service for up to a day while the browser
+  is offline.
+
+The server makes its VAPID key pair the first time it's needed and keeps it in the database
+(so backups hold it); the private key never leaves the server. When a push service says a
+browser's subscription is gone (404 or 410), the server deletes it. Sending never holds up
+the phone's request that caused it: each push service gets 5 seconds, and a failure is
+logged without the browser's address.
 
 ## Admin commands
 
@@ -79,8 +127,24 @@ docker compose exec belay node dist/cli.js setup-link             # a new one-ti
 docker compose exec belay node dist/cli.js create-code "Sam's phone"   # an enrollment code, without the web page
 docker compose exec -it belay node dist/cli.js reset-password sam # asks for a new password; signs that parent out everywhere
 docker compose exec belay node dist/cli.js backup /data/belay-backup.db
-docker compose exec belay node dist/cli.js status                 # each phone: status, apps, latest changes (--json for scripts)
+docker compose exec belay node dist/cli.js status                 # each phone: status, apps, rules, requests, latest changes (--json for scripts)
 ```
+
+And for a phone's rules, as the parent page sets them:
+
+```bash
+docker compose exec belay node dist/cli.js protect "Sam's phone"                       # turn protection on
+docker compose exec belay node dist/cli.js policy "Sam's phone" --new-apps ask         # or allow
+docker compose exec belay node dist/cli.js decide "Sam's phone" com.example.app allow  # or block, or undecided
+docker compose exec belay node dist/cli.js pause "Sam's phone" --minutes 30            # without --minutes: until resumed
+docker compose exec belay node dist/cli.js resume "Sam's phone"
+```
+
+They're logged as the server's ("The server" on the Activity page), and a running server
+passes them to the phone within a second or two. `status --json` gives each phone's
+`policy_version` (the server's), `enforcement` (what the phone last said it applied, or
+`null`) and `requests` (`[{package, status, reason}]`). Hardening (factory reset, debugging,
+reset protection) can only be turned on on the parent page.
 
 Outside Docker, use `npm run cli -- <command>` from `server/`.
 
@@ -132,16 +196,16 @@ Put it behind a reverse proxy with HTTPS, as a service of its own user (a system
 
 ## What it logs
 
-Startup, the one-time setup link, "a phone enrolled", and errors. Never tokens, passwords,
-app names or request bodies. The activity log on the parent page is where parents see who
-did what.
+Startup, the one-time setup link, "a phone enrolled", notifications that didn't go out, and
+errors. Never tokens, passwords, browsers' push addresses, app names or request bodies. The
+activity log on the parent page is where parents see who did what.
 
 ## Development
 
 ```bash
 cd server
 npm ci --ignore-scripts
-npm test                 # Vitest: device API, snapshots, login, CSRF, OAuth, every MCP tool
+npm test                 # Vitest: device API, the policy and its long-poll, snapshots, login, CSRF, OAuth, Web Push, every MCP tool, the CLI
 npm run typecheck && npm run lint
 BELAY_PUBLIC_URL=http://localhost:8080 npm run dev
 ```

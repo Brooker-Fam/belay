@@ -1,6 +1,6 @@
 /** The family's phones as the parent pages and MCP show them, with what needs attention. */
 import type { DB } from "../db.js";
-import type { Device } from "../device/schemas.js";
+import type { Device, Enforcement } from "../device/schemas.js";
 import type { Settings } from "../settings.js";
 import { formatDuration } from "../time.js";
 
@@ -15,7 +15,16 @@ export interface DeviceRow {
   last_inventory_at: number | null;
   facts: string | null;
   facts_at: number | null;
+  /** The version the phone last said it has, on the policy long-poll, and when it asked. */
+  policy_have: number | null;
+  policy_asked_at: number | null;
+  /** The server's policy version and when it changed (from policies; null without rules). */
+  policy_version: number | null;
+  policy_changed_at: number | null;
 }
+
+const DEVICE_SELECT = `SELECT d.*, p.version AS policy_version, p.changed_at AS policy_changed_at
+  FROM devices d LEFT JOIN policies p ON p.device_id = d.id`;
 
 /** Something about a phone a parent should know, in plain words. */
 export interface Problem {
@@ -31,8 +40,13 @@ export interface Problem {
     | "background_restricted"
     | "permission_missing"
     | "clock_off"
-    | "no_app_list";
+    | "no_app_list"
+    | "rules_not_applied"
+    | "phone_reported"
+    | "tampering";
   text: string;
+  /** For phone_reported: what Belay on the phone said, as it said it. It comes from the kid's phone: untrusted. */
+  fromPhone?: string;
 }
 
 export type DeviceStatus = "ok" | "attention" | "silent" | "disconnected";
@@ -47,6 +61,14 @@ export interface DeviceView {
   lastInventoryAt: number | null;
   facts: Device | null;
   factsAt: number | null;
+  /** The server's policy version (0: no rules) and when it last changed. */
+  policyVersion: number;
+  policyChangedAt: number | null;
+  /** On the long-poll: the version the phone has, and when it last asked. */
+  policyHave: number | null;
+  policyAskedAt: number | null;
+  /** What the phone last said it enforces (its latest check-in or app list), or null. */
+  enforcement: Enforcement | null;
   status: DeviceStatus;
   problems: Problem[];
 }
@@ -55,6 +77,19 @@ export interface DeviceView {
 const NEEDED_PERMISSIONS = new Set(["POST_NOTIFICATIONS"]);
 const CLOCK_TOLERANCE_MS = 10 * 60_000;
 const INVENTORY_EXPECTED_MS = 36 * 3_600_000;
+/**
+ * A phone reports the version it applied at its next check-in (every 2 hours) or app list, so
+ * new rules that aren't applied after this long are a problem.
+ */
+export const RULES_EXPECTED_MS = 3 * 3_600_000;
+
+/**
+ * What Belay on the phone reports that can mean someone is getting around it: Android's own
+ * Parental Controls (in Settings, they can add a hidden profile that gets around the lock on
+ * adding users, and lift Belay's suspensions), or another user or profile on the phone. The
+ * words are the agent's own, not a code, so this matches the subject rather than a sentence.
+ */
+const TAMPERING = /parental control|supervis|profile|another user|second user|new user/i;
 
 function parseFacts(json: string | null): Device | null {
   if (!json) return null;
@@ -90,11 +125,30 @@ export function problemsOf(row: DeviceRow, facts: Device | null, settings: Setti
       problems.push({ code: "clock_off", text: `The phone's clock is ${formatDuration(Math.abs(off))} ${off > 0 ? "ahead" : "behind"}` });
     }
   }
+  const silent = problems.some((p) => p.code === "silent");
   const lastList = row.last_inventory_at ?? row.enrolled_at;
-  if (now - lastList > INVENTORY_EXPECTED_MS && !problems.some((p) => p.code === "silent")) {
+  if (now - lastList > INVENTORY_EXPECTED_MS && !silent) {
     problems.push({ code: "no_app_list", text: `No app list from the phone for ${formatDuration(now - lastList)}` });
   }
-  return problems;
+  const version = row.policy_version ?? 0;
+  const applied = facts?.enforcement?.policy_version ?? null;
+  if (version > 0 && applied !== version && row.policy_changed_at !== null && now - row.policy_changed_at > RULES_EXPECTED_MS && !silent) {
+    const ago = formatDuration(now - row.policy_changed_at);
+    problems.push({
+      code: "rules_not_applied",
+      text:
+        applied === null
+          ? `The phone hasn't applied any rules yet. They were set ${ago} ago; Belay on the phone may be a version that can't enforce them`
+          : `The phone hasn't applied the rules changed ${ago} ago`,
+    });
+  }
+  const tampering: Problem[] = [];
+  for (const said of facts?.enforcement?.problems ?? []) {
+    if (TAMPERING.test(said)) tampering.push({ code: "tampering", text: `Someone may be getting around Belay. Belay on the phone says: ${said}`, fromPhone: said });
+    else problems.push({ code: "phone_reported", text: `Belay on the phone says: ${said}`, fromPhone: said });
+  }
+  // A sign of tampering comes first.
+  return [...tampering, ...problems];
 }
 
 function statusOf(problems: Problem[]): DeviceStatus {
@@ -116,6 +170,11 @@ export function toView(row: DeviceRow, settings: Settings, now: number): DeviceV
     lastInventoryAt: row.last_inventory_at,
     facts,
     factsAt: row.facts_at,
+    policyVersion: row.policy_version ?? 0,
+    policyChangedAt: row.policy_changed_at,
+    policyHave: row.policy_have,
+    policyAskedAt: row.policy_asked_at,
+    enforcement: facts?.enforcement ?? null,
     status: statusOf(problems),
     problems,
   };
@@ -123,20 +182,20 @@ export function toView(row: DeviceRow, settings: Settings, now: number): DeviceV
 
 export function listDevices(db: DB, settings: Settings, now: number): DeviceView[] {
   return db
-    .prepare<[], DeviceRow>("SELECT * FROM devices ORDER BY revoked_at IS NOT NULL, name COLLATE NOCASE")
+    .prepare<[], DeviceRow>(`${DEVICE_SELECT} ORDER BY d.revoked_at IS NOT NULL, d.name COLLATE NOCASE`)
     .all()
     .map((row) => toView(row, settings, now));
 }
 
 export function getDevice(db: DB, id: string, settings: Settings, now: number): DeviceView | null {
-  const row = db.prepare<[string], DeviceRow>("SELECT * FROM devices WHERE id = ?").get(id);
+  const row = db.prepare<[string], DeviceRow>(`${DEVICE_SELECT} WHERE d.id = ?`).get(id);
   return row ? toView(row, settings, now) : null;
 }
 
 /** A phone by the name a parent or AI client uses for it, ignoring case and surrounding space. */
 export function findDeviceByName(db: DB, name: string): DeviceRow | undefined {
   return db
-    .prepare<[string], DeviceRow>("SELECT * FROM devices WHERE name = ? COLLATE NOCASE ORDER BY revoked_at IS NOT NULL LIMIT 1")
+    .prepare<[string], DeviceRow>(`${DEVICE_SELECT} WHERE d.name = ? COLLATE NOCASE ORDER BY d.revoked_at IS NOT NULL LIMIT 1`)
     .get(name.trim());
 }
 
