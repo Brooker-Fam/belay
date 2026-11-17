@@ -140,7 +140,7 @@
     <string name="rule_unknown_sources">You can\'t install apps from downloaded files or other app stores.</string>
     <string name="rule_unknown_sources_why">The Play Store checks apps for harmful software first.</string>
     <string name="rule_vpn">You can\'t set up a VPN.</string>
-    <string name="rule_vpn_why">A VPN could send the phone\'s internet around these rules.</string>
+    <string name="rule_vpn_why">A VPN could get around the phone\'s website settings.</string>
     <string name="rule_web_filter">Websites go through a filter.</string>
     <string name="rule_web_filter_why">The phone looks up websites through %1$s, which your parent chose.</string>
     <string name="rule_private_dns">You can\'t change Private DNS.</string>
@@ -158,7 +158,7 @@
     <string name="rule_reset_protection">After a reset, the phone asks for your parent\'s Google account.</string>
     <string name="rule_reset_protection_why">That\'s factory reset protection: only your parent can set the phone up again.</string>
     <string name="rule_debugging">Developer options and USB debugging are off.</string>
-    <string name="rule_debugging_why">They could be used to turn Belay off.</string>
+    <string name="rule_debugging_why">With them, a computer could change this phone\'s settings around these rules.</string>
     <string name="rule_repair">Repair mode is on until %1$s.</string>
     <string name="rule_repair_why">Until then, the phone can be connected to a computer to fix something.</string>
     <string name="rule_no_browsers">Web browsers are turned off.</string>
