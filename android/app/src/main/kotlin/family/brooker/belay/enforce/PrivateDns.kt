@@ -41,26 +41,32 @@ object PrivateDns {
     fun want(context: Context, host: String?, row: PrivateDnsRow?, now: Long, recheck: Boolean) {
         val done = host == row?.setHost
         if (done && !(recheck && host != null)) return
-        val failedRecently = host != null && row?.attemptHost == host && row.error != null &&
+        // The same attempt failed a moment ago: its retry is scheduled.
+        val failedRecently = row != null && row.attemptHost == host && row.error != null &&
             row.attemptAt != null && now - row.attemptAt in 0 until RETRY_MS
         if (failedRecently && !recheck) return
         submit(context.applicationContext, host)
     }
 
-    /** A new network: a failed host gets its next try now. */
+    /** A new network: after a failure, an agent step tries the policy's host again now. */
     fun networkBack(context: Context) {
         val row = AgentStore.get(context).privateDns() ?: return
-        if (row.error != null && row.attemptHost != null) submit(context.applicationContext, row.attemptHost)
+        if (row.error != null) Agent.handle(context, Trigger.PRIVATE_DNS_RETRY)
     }
 
     private fun submit(app: Context, host: String?) {
         wanted = host
         if (!busy.compareAndSet(false, true)) return
         executor.execute {
+            val target = wanted
+            val store = AgentStore.get(app)
             try {
-                run(app, wanted)
+                run(app, store, target)
             } catch (t: Throwable) {
+                // Recorded as a failed attempt, so the step that follows doesn't simply try again.
                 Log.e(Agent.TAG, "Private DNS step failed", t)
+                runCatching { store.savePrivateDns(store.privateDns().failed(target, System.currentTimeMillis(), ERROR_NOT_SET)) }
+                executor.schedule({ Agent.handle(app, Trigger.PRIVATE_DNS_RETRY) }, RETRY_MS, TimeUnit.MILLISECONDS)
             } finally {
                 busy.set(false)
             }
@@ -68,8 +74,7 @@ object PrivateDns {
         }
     }
 
-    private fun run(app: Context, host: String?) {
-        val store = AgentStore.get(app)
+    private fun run(app: Context, store: AgentStore, host: String?) {
         val before = store.privateDns()
         val dpm = app.getSystemService(DevicePolicyManager::class.java)
         val admin = DeviceOwnerSetup.admin(app)
@@ -115,7 +120,7 @@ object PrivateDns {
     }
 
     /** Keeps the host Belay had set (if any) when a new one fails. */
-    private fun PrivateDnsRow?.failed(host: String, now: Long, error: String) =
+    private fun PrivateDnsRow?.failed(host: String?, now: Long, error: String) =
         PrivateDnsRow(setHost = this?.setHost, attemptHost = host, attemptAt = now, error = error)
 
     /** The problem to report for [row], when [host] is what the policy wants and it isn't set. */

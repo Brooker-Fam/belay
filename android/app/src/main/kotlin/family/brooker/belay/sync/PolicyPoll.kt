@@ -96,8 +96,7 @@ object PolicyPoll {
                     idle(IDLE_NOT_CONNECTED_MS)
                     continue
                 }
-                val store = AgentStore.get(app)
-                val have = store.policy()?.version ?: -1
+                val have = AgentStore.get(app).policyVersion() ?: -1
                 val answer = try {
                     DeviceApi(server).policy(token, have, PolicyRules.POLL_WAIT_S) { call = it }
                 } catch (e: IllegalArgumentException) {

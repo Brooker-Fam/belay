@@ -299,8 +299,9 @@ interface EnforcementDao {
     @Query("SELECT * FROM policy WHERE id = 0")
     fun policy(): PolicyRow?
 
-    @Query("SELECT * FROM policy WHERE id = 0")
-    fun policyFlow(): Flow<PolicyRow?>
+    /** For the long-poll's `have`, without reading the whole policy. */
+    @Query("SELECT version FROM policy WHERE id = 0")
+    fun policyVersion(): Int?
 
     @Upsert
     fun setPolicy(row: PolicyRow)

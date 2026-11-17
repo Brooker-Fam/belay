@@ -212,9 +212,8 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
     /** The last policy the phone got, or null before the first (or if it can't be read). */
     fun policy(): WirePolicy? = enforcement.policy()?.let { decode(it.policy, WirePolicy.serializer()) }
 
-    /** The policy as the screen watches it. */
-    val policyFlow: Flow<WirePolicy?>
-        get() = enforcement.policyFlow().map { row -> row?.let { decode(it.policy, WirePolicy.serializer()) } }
+    /** The stored policy's version, or null before the first. */
+    fun policyVersion(): Int? = enforcement.policyVersion()
 
     /**
      * Keeps [incoming] if it replaces the stored policy (core's PolicyRules), in one
