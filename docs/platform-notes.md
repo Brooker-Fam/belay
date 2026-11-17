@@ -1716,10 +1716,11 @@ least hourly) checks the dialer, for a change with no broadcast.
   calls to the default dialer: Belay will rarely see it.
 
 Belay's consequence: the 2-hour callback window opens on a call Belay places to an always-allowed
-number, a tap on "Text 988", `NEW_OUTGOING_CALL` to one of those numbers (from the preloaded dialer
-or the lock screen's emergency dialer), an outgoing one in Android's call log, or Telecom's extra.
-Belay keeps the time only on the phone, and forgets it once the window is over. A call that rings
-only because of the window is never sent (its record would tell a parent).
+number, a tap on one of Belay's buttons to text 911 or 988, `NEW_OUTGOING_CALL` to one of those
+numbers (from the preloaded dialer or the lock screen's emergency dialer), an outgoing one in
+Android's call log, or Telecom's extra. Belay keeps the time only on the phone, and forgets it once
+the window is over. A call that rings only because of the window is never sent (its record would
+tell a parent).
 
 ### T12. Missed-call notifications
 
