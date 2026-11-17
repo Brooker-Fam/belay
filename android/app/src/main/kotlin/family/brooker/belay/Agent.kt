@@ -180,6 +180,41 @@ object Agent {
     }
 
     /**
+     * Phase 6: [typed] is tried as the recovery key, offline, against the stored policy's check
+     * (core's RecoveryRules: the waits after wrong tries, and a used version never works again).
+     * On the agent thread, the recovery state's only writer; a right key opens repair access in
+     * the same task (the step lifts the locks) and the phone checks in soon after. [done] gets
+     * the outcome (null if something went wrong) on the agent thread. The key is never logged.
+     */
+    fun recover(context: Context, typed: String, done: (RecoveryOutcome?) -> Unit) {
+        val app = context.applicationContext
+        executor.execute {
+            val outcome = try {
+                val store = AgentStore.get(app)
+                val policy = DebugTools.policyOverride ?: store.policy()
+                val clock = RecoveryClock(System.currentTimeMillis(), bootCount(app), SystemClock.elapsedRealtime())
+                val before = store.recovery()
+                val (state, outcome) = RecoveryRules.attempt(before, policy?.recovery, typed, clock)
+                if (state != before) store.saveRecovery(state, clock.now)
+                Log.i(TAG, "recovery key: ${outcome.javaClass.simpleName.lowercase()}" + if (state.wrongTries > 0) " (wrong tries: ${state.wrongTries})" else "")
+                _view.value?.let { _view.value = it.copy(recovery = state) }
+                outcome
+            } catch (t: Throwable) {
+                Log.e(TAG, "recovery key check failed", t)
+                null
+            }
+            if (outcome is RecoveryOutcome.Opened) {
+                step(app, Trigger.RECOVERY, emptySet())
+                Sync.checkinSoon(app)
+            }
+            done(outcome)
+        }
+    }
+
+    private fun bootCount(app: Context): Int? =
+        Settings.Global.getInt(app.contentResolver, Settings.Global.BOOT_COUNT, -1).takeIf { it >= 0 }
+
+    /**
      * The kid asks a parent for [packageName], with [reason] (their own words, or none), from
      * Belay's screen. On the agent thread like every other write: the open request for the app
      * gets the new reason (the server updates it by id), or a new request is made. Queued in
