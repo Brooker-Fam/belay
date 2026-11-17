@@ -1,7 +1,8 @@
 # Belay: notes for contributors (people and Claude)
 
-Open-source, AI-first parental controls for a kid's first Android phone. Phase 0: the
-device-owner agent and its provisioning; no server yet. [README.md](README.md) says what
+Open-source, AI-first parental controls for a kid's first Android phone. Phase 1: the
+device-owner agent reports to the family's server, and parents use MCP (Claude) or the
+parent page. Monitoring only: nothing is blocked yet. [README.md](README.md) says what
 exists; [ROADMAP.md](ROADMAP.md) says what's next.
 
 ## Principles (every phase)
@@ -54,12 +55,31 @@ exists; [ROADMAP.md](ROADMAP.md) says what's next.
   builds contain nothing that can switch Belay off.
 - **Kid-facing words:** plain and respectful, for a 12-year-old, in `strings.xml`. Never
   claim more than the code does.
-- **Times:** stored in UTC (epoch millis); shown in the family's timezone with its offset.
+- **Times:** stored in UTC (epoch millis); shown in the family's timezone with its offset
+  (`server/src/time.ts`).
+- **The device API contract** is [docs/protocol.md](docs/protocol.md), `core/Protocol.kt`
+  and `server/src/device/schemas.ts`: change all three together. The server rejects
+  unknown fields; optional fields are additive.
+- **Server:** Zod on every input; SQL migrations are append-only (add
+  `server/src/migrations/NNN_name.sql`, never edit an applied one); every parent or AI
+  action goes through `audit()`; MCP results put developer- or kid-written text under
+  `untrusted`; the server makes no outbound requests except the allowlisted client
+  metadata documents in `oauth/clients.ts`.
+- **A new kind of data** needs a collector and `DataCategory` on the phone, an AI scope in
+  `server/src/settings.ts`, and a line in [docs/privacy.md](docs/privacy.md).
 - **Small, reviewable commits.** Keep the README true as you go.
 
 ## Commands
 
 ```bash
+cd server
+npm ci --ignore-scripts                               # native modules ship prebuilt
+npm test                                              # Vitest
+npm run typecheck && npm run lint
+BELAY_PUBLIC_URL=http://localhost:8080 npm run dev    # docs/server.md has the settings
+npm run cli -- status                                 # also setup-link, create-code, reset-password, backup
+docker build -t belay-server .
+
 cd android
 ./gradlew :core:test                                  # JVM unit tests
 ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest
@@ -74,7 +94,8 @@ scripts/ci-emulator-test.sh <apk> <test apk>          # emulators only
 ```
 
 `ANDROID_HOME` must point at an SDK with platform 37.0. CI:
-`.github/workflows/android.yml` (build, tests, lint, then the emulator job).
+`.github/workflows/android.yml` (build, tests, lint, then the emulator job) and
+`.github/workflows/server.yml` (typecheck, lint, tests, Docker image).
 
 ## Layout
 
@@ -83,4 +104,8 @@ scripts/ci-emulator-test.sh <apk> <test apk>          # emulators only
   `service/` (foreground service, managed notice, `DeviceAdminService`),
   `inventory/` (reader, reconciler, runtime watcher), `health/`, `ui/`, `work/`.
 - `android/scripts`: provisioning and release tooling (`lib.sh` is shared).
-- `docs/`: platform notes, Phase 0 checklist, emulator, Pixel, signing, prior art.
+- `server/src`: `device/` (the device API, snapshot diffs), `family/` (what pages and MCP
+  read), `web/` (Hono JSX parent pages), `auth/` (parents, sessions), `oauth/`, `mcp/`,
+  `migrations/`. Tests in `server/test`.
+- `docs/`: protocol, server, MCP, privacy, threat model, platform notes, Phase 0 checklist,
+  emulator, Pixel, signing, prior art.

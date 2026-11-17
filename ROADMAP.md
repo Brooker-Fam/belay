@@ -4,16 +4,17 @@ Each phase stops with a short report: what works, what was verified on which And
 version, and what's still unproven. Verified platform facts live in
 [docs/platform-notes.md](docs/platform-notes.md).
 
-## Phase 0: prove the real-phone path (now)
+## Phase 0: prove the real-phone path
 
 Built: the device-owner agent (adb provisioning, the managed notice, the installed-app
 inventory and change detection, kept on the phone), `provision.sh` / `unprovision.sh`,
-the platform notes, and CI that provisions it on the Android 17 emulator.
+the platform notes, and CI that provisions it on the Android 17 emulator. Verified on the
+Android 17 emulator (two images).
 
-Done when [docs/phase0-checklist.md](docs/phase0-checklist.md) has run on the Pixel 8. If an
+**Still open:** [docs/phase0-checklist.md](docs/phase0-checklist.md) on the Pixel 8. If an
 adb-provisioned device owner is blocked on the real phone, the plan changes.
 
-## Phase 1: foundation and monitoring (no blocking yet)
+## Phase 1: foundation and monitoring, no blocking (built)
 
 The plumbing and the AI interface. **Not safe to hand to a kid:** they could still reset
 the phone from Settings, install anything, or browse anything.
