@@ -125,7 +125,9 @@ export const RecoveryKeyPage: FC<{ view: View; device: DeviceView; grouped: stri
       {replaced && " The earlier key stops working once the phone has this one."} Belay keeps only the check too.
     </p>
     <p>
-      <a href={`/devices/${device.id}#hardening`}>Back to {device.name}</a>
+      <a class="go" href={`/devices/${device.id}#hardening`}>
+        Back to {device.name}
+      </a>
     </p>
   </Layout>
 );

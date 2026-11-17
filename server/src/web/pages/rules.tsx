@@ -497,7 +497,9 @@ export const AskAgainPage: FC<{ view: View; device: DeviceView; again: AskAgain 
       )}
       <div class="row">
         <button type="submit">Switch to Ask</button>
-        <a href={`/devices/${device.id}#new-apps`}>Cancel</a>
+        <a class="go" href={`/devices/${device.id}#new-apps`}>
+          Cancel
+        </a>
       </div>
     </form>
   </Layout>

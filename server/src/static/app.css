@@ -121,8 +121,8 @@ button, .button {
 button.quiet, .button.quiet { background: transparent; color: var(--accent); }
 button.danger { background: transparent; border-color: var(--bad); color: var(--bad); }
 button.link { background: none; border: none; color: var(--accent); padding: 0; font-weight: 400; text-decoration: underline; }
-/* A link on its own line (back to the phone, an app's name in a list): a taller target, the same layout. */
-main > p.small:first-child > a:only-child, .applist a.name, .barrow > .label > a { display: inline-block; padding: 11px 0; margin: -11px 0; }
+/* A link on its own line (back to the phone, an app's name, "Older"): a taller target, the same layout. */
+main > p.small:first-child > a:only-child, a.name, a.go, .barrow > .label > a { display: inline-block; padding: 12px 0; margin: -12px 0; }
 main > p.small:first-child { margin-bottom: 4px; }
 .notice { border-left: 4px solid var(--accent); background: var(--card); padding: 10px 14px; border-radius: 6px; margin-bottom: 14px; }
 .notice.error { border-left-color: var(--bad); }
@@ -245,7 +245,8 @@ input[type=time], input[type=date] { font: inherit; color: inherit; background: 
 .chip.changed { background: #fde7c8; color: #6b3d00; }
 @media (prefers-color-scheme: dark) { .chip.changed { background: #4a3413; color: #ffd9a1; } }
 @media (max-width: 560px) {
-  .barrow { grid-template-columns: 1fr auto; grid-template-areas: "label value" "bar bar"; }
+  /* Halves: with an auto value column, a large text size squeezed the day's name to a letter a line. */
+  .barrow { grid-template-columns: 1fr 1fr; grid-template-areas: "label value" "bar bar"; }
 }
 .bar > i.w0 { width: 0%; } .bar > i.w1 { width: 1%; } .bar > i.w2 { width: 2%; } .bar > i.w3 { width: 3%; } .bar > i.w4 { width: 4%; } .bar > i.w5 { width: 5%; } .bar > i.w6 { width: 6%; } .bar > i.w7 { width: 7%; } .bar > i.w8 { width: 8%; } .bar > i.w9 { width: 9%; }
 .bar > i.w10 { width: 10%; } .bar > i.w11 { width: 11%; } .bar > i.w12 { width: 12%; } .bar > i.w13 { width: 13%; } .bar > i.w14 { width: 14%; } .bar > i.w15 { width: 15%; } .bar > i.w16 { width: 16%; } .bar > i.w17 { width: 17%; } .bar > i.w18 { width: 18%; } .bar > i.w19 { width: 19%; }

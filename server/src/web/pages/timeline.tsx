@@ -86,7 +86,9 @@ export const TimelinePage: FC<{
       ))}
       {next && (
         <p>
-          <a href={`/timeline?${query.toString()}`}>Older changes</a>
+          <a class="go" href={`/timeline?${query.toString()}`}>
+            Older changes
+          </a>
         </p>
       )}
     </Layout>

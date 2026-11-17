@@ -318,7 +318,9 @@ export const ShownOncePage: FC<{ view: View; title: string; intro: string; secre
     )}
     {after && <p class="muted">{after}</p>}
     <p>
-      <a href="/settings">Back to Settings</a>
+      <a class="go" href="/settings">
+        Back to Settings
+      </a>
     </p>
   </Layout>
 );

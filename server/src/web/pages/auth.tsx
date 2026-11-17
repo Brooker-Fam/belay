@@ -75,7 +75,9 @@ export const MessagePage: FC<{ view: View; title: string; message: string; link?
     <p>{message}</p>
     {link && (
       <p>
-        <a href={link.href}>{link.label}</a>
+        <a class="go" href={link.href}>
+          {link.label}
+        </a>
       </p>
     )}
   </Layout>
