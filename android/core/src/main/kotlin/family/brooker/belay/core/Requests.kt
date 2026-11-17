@@ -1,30 +1,49 @@
 package family.brooker.belay.core
 
+import family.brooker.belay.core.screentime.AgreementAnswer
+import family.brooker.belay.core.screentime.MoreTime
+import family.brooker.belay.core.screentime.ScreenTimeWireLimits
+import family.brooker.belay.core.screentime.WireAgreementAnswer
 import kotlinx.serialization.Serializable
 
 /**
  * Something the kid asked a parent for, as the phone keeps it (data category
  * [DataCategories.REQUESTS]). The server keeps the same id; its answer comes back in the
- * policy's `requests`.
+ * policy's `requests`. Phase 3 adds two [kind]s, each with its own fields: more time for a
+ * limit today, and the kid's answer to the family agreement.
  */
 @Serializable
 data class KidRequest(
     /** UUID made on the phone. */
     val id: String,
+    /** The app (`app`), the app the kid was in (`more_time`, or "" for none), or "" (`agreement`). */
     val packageName: String,
-    /** The app's name, from its developer: untrusted. */
+    /** The app's name, from its developer: untrusted. "" when there's no app. */
     val label: String,
     /** The kid's own words: untrusted, at most [WireLimits.MAX_REASON] characters. */
     val reason: String? = null,
     val askedAt: Long,
     /** Counts each send, so every send is its own outbox item. */
     val revision: Int = 0,
+    /** Phase 3: what the kid asks for. */
+    val kind: WireRequestKind = WireRequestKind.APP,
+    /** more_time: the limit's id. */
+    val limitId: String? = null,
+    /** more_time: the minutes asked for, 5 to 240. */
+    val minutes: Int? = null,
+    /** agreement: the version answered. */
+    val version: Int? = null,
+    /** agreement: "I agree" or "I want to talk about it". */
+    val answer: WireAgreementAnswer? = null,
 )
 
 /** A request with the server's answer, if it has one yet. */
 data class AnsweredRequest(val request: KidRequest, val answer: WireRequestAnswer?) {
     /** Still open: not answered, or only "pending". Sending again updates the reason. */
     val open: Boolean get() = answer == null || answer.status == WireRequestStatus.PENDING
+
+    /** A Phase 2 request for an app (not more time or an agreement answer). */
+    val forApp: Boolean get() = request.kind == WireRequestKind.APP
 }
 
 object Requests {
@@ -41,9 +60,9 @@ object Requests {
         return requests.sortedByDescending { it.askedAt }.map { AnsweredRequest(it, answers[it.id]) }
     }
 
-    /** The newest open request for [packageName], which sending again updates. */
+    /** The newest open request for the app [packageName], which sending again updates. */
     fun open(answered: List<AnsweredRequest>, packageName: String): AnsweredRequest? =
-        answered.firstOrNull { it.request.packageName == packageName && it.open }
+        answered.firstOrNull { it.forApp && it.request.packageName == packageName && it.open }
 
     /**
      * The waiting apps that need a request made for them now: any without a request since it
@@ -54,7 +73,7 @@ object Requests {
      */
     fun toMake(waiting: List<String>, requests: List<KidRequest>, installedAt: (String) -> Long?): List<String> {
         val lastAsked = HashMap<String, Long>()
-        requests.forEach { lastAsked.merge(it.packageName, it.askedAt, ::maxOf) }
+        requests.filter { it.kind == WireRequestKind.APP }.forEach { lastAsked.merge(it.packageName, it.askedAt, ::maxOf) }
         return waiting.filter { name ->
             val asked = lastAsked[name] ?: return@filter true
             val installed = installedAt(name) ?: return@filter false
@@ -79,14 +98,97 @@ object Requests {
             ?: KidRequest(newId(), packageName, label.take(WireLimits.MAX_LABEL), cleanReason(reason), now)
     }
 
-    fun toWire(request: KidRequest) = WireRequest(
-        id = request.id,
-        kind = WireRequestKind.APP,
-        packageName = request.packageName,
-        label = request.label.take(WireLimits.MAX_LABEL),
-        reason = cleanReason(request.reason),
-        askedAt = request.askedAt,
-    )
+    /**
+     * Phase 3: the kid asks for [minutes] more for [limitId] today, from the app [packageName]
+     * (with its [label]) or from Belay's screen. While a request for the same limit made since
+     * [todayStart] is still open, this sends it again with the new reason: the server only takes
+     * a new reason for a pending request, so the minutes stay as first asked.
+     */
+    fun moreTime(
+        answered: List<AnsweredRequest>,
+        limitId: String,
+        minutes: Int,
+        packageName: String?,
+        label: String?,
+        reason: String?,
+        now: Long,
+        todayStart: Long,
+        newId: () -> String,
+    ): KidRequest {
+        val open = openMoreTime(answered, limitId, todayStart)?.request
+        return open?.copy(reason = cleanReason(reason), revision = open.revision + 1)
+            ?: KidRequest(
+                id = newId(),
+                packageName = packageName.orEmpty(),
+                label = label.orEmpty().take(WireLimits.MAX_LABEL),
+                reason = cleanReason(reason),
+                askedAt = now,
+                kind = WireRequestKind.MORE_TIME,
+                limitId = limitId,
+                minutes = minutes.coerceIn(ScreenTimeWireLimits.MIN_MORE_TIME_MINUTES, ScreenTimeWireLimits.MAX_MORE_TIME_MINUTES),
+            )
+    }
+
+    /** The open more-time request for [limitId] made since [todayStart], if any. */
+    fun openMoreTime(answered: List<AnsweredRequest>, limitId: String, todayStart: Long): AnsweredRequest? =
+        answered.firstOrNull {
+            it.request.kind == WireRequestKind.MORE_TIME && it.request.limitId == limitId && it.request.askedAt >= todayStart && it.open
+        }
+
+    /**
+     * Phase 3: the kid's [answer] to version [version] of the family agreement. The same answer
+     * again while it's open sends it again with the new reason; a different one is a new request.
+     */
+    fun agreement(
+        answered: List<AnsweredRequest>,
+        version: Int,
+        answer: WireAgreementAnswer,
+        reason: String?,
+        now: Long,
+        newId: () -> String,
+    ): KidRequest {
+        val open = answered.firstOrNull {
+            it.request.kind == WireRequestKind.AGREEMENT && it.request.version == version && it.request.answer == answer && it.open
+        }?.request
+        return open?.copy(reason = cleanReason(reason), revision = open.revision + 1)
+            ?: KidRequest(
+                id = newId(),
+                packageName = "",
+                label = "",
+                reason = cleanReason(reason),
+                askedAt = now,
+                kind = WireRequestKind.AGREEMENT,
+                version = version,
+                answer = answer,
+            )
+    }
+
+    /** The request as the server takes it: each kind with only its own fields. */
+    fun toWire(request: KidRequest): WireRequest = when (request.kind) {
+        WireRequestKind.APP -> WireRequest(
+            id = request.id,
+            kind = WireRequestKind.APP,
+            packageName = request.packageName,
+            label = request.label.take(WireLimits.MAX_LABEL),
+            reason = cleanReason(request.reason),
+            askedAt = request.askedAt,
+        )
+        WireRequestKind.MORE_TIME -> MoreTime.request(
+            id = request.id,
+            limitId = request.limitId.orEmpty(),
+            minutes = request.minutes ?: ScreenTimeWireLimits.MIN_MORE_TIME_MINUTES,
+            askedAt = request.askedAt,
+            packageName = request.packageName.takeIf { it.isNotEmpty() },
+            reason = request.reason,
+        )
+        WireRequestKind.AGREEMENT -> AgreementAnswer.request(
+            id = request.id,
+            version = request.version ?: 0,
+            answer = request.answer ?: WireAgreementAnswer.TALK,
+            askedAt = request.askedAt,
+            reason = request.reason,
+        )
+    }
 
     /** The outbox item id for this send of [request]: unique per send, ordered by revision. */
     fun itemId(request: KidRequest): String = "request:${request.id}:${request.revision}"
