@@ -140,6 +140,9 @@ enum class Trigger(val label: String, val heartbeat: Boolean, val checkin: Boole
 
     /** Phase 3: Android has a batch of network logs ready (AdminReceiver.onNetworkLogsAvailable). */
     NETWORK_LOGS("network logs ready", false, setup = false),
+
+    /** Phase 2: a proxy was set on the phone's network, or taken off (PolicyPoll's network callback). */
+    PROXY_CHANGED("network proxy changed", false, setup = false),
 }
 
 /** Everything the main screen shows from the agent's last step. */

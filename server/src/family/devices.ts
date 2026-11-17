@@ -182,10 +182,13 @@ export const RULES_EXPECTED_MS = 3 * 3_600_000;
 /**
  * What Belay on the phone reports that can mean someone is getting around it: Android's own
  * Parental Controls (in Settings, they can add a hidden profile that gets around the lock on
- * adding users, and lift Belay's suspensions), or another user or profile on the phone. The
- * words are the agent's own, not a code, so this matches the subject rather than a sentence.
+ * adding users, and lift Belay's suspensions), another user or profile on the phone, a proxy on
+ * the phone's network (it gets around the web filter), or wireless debugging on (another phone,
+ * or an app on this one, can change settings around Belay with it). The words are the agent's
+ * own (core's Workarounds for the last two), not a code, so this matches the subject rather than
+ * a sentence.
  */
-const TAMPERING = /parental control|supervis|profile|another user|second user|new user/i;
+const TAMPERING = /parental control|supervis|profile|another user|second user|new user|proxy|wireless debugging/i;
 
 function parseFacts(json: string | null): Device | null {
   if (!json) return null;

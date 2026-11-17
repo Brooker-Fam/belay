@@ -38,7 +38,10 @@ parent can see" (built from the code that collects them: `inventory/Collectors.k
 
 - the rules version the phone applied, how many apps it holds back, and what it couldn't do;
 - a changed SIM card (opaque ids, never the phone number), and another user or profile on the
-  phone, such as Android's own Parental Controls.
+  phone, such as Android's own Parental Controls;
+- that the phone's network uses a proxy, while the family has a web filter (only that it does:
+  never the proxy's address or the network's name), and that wireless debugging is on, since
+  both can get around the rules.
 
 **Belay itself (Phases 6 and 10)**, all part of "How Belay and the phone are doing":
 

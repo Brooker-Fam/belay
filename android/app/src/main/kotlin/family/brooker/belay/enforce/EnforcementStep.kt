@@ -32,6 +32,7 @@ import family.brooker.belay.core.WireCommand
 import family.brooker.belay.core.WireEnforcement
 import family.brooker.belay.core.WirePolicy
 import family.brooker.belay.core.WireRequestKind
+import family.brooker.belay.core.Workarounds
 import family.brooker.belay.core.location.WireLocationStatus
 import family.brooker.belay.core.screentime.Decision
 import family.brooker.belay.core.screentime.KidArg
@@ -242,7 +243,9 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
             tooLarge?.let { PolicyTooLarge.problem(it.tooLargeBytes) },
             screenTimeState?.lockProblem,
             screenTimeProblem,
-        ) + calling?.problems.orEmpty() + networking?.problems.orEmpty()
+        ) + calling?.problems.orEmpty() + networking?.problems.orEmpty() +
+            // A proxy on the network, or wireless debugging: they get around the rules, so they're reported.
+            Workarounds.problems(plan, proxy = PhoneFacts.proxy(app), wirelessDebugging = PhoneFacts.wirelessDebugging(app))
         next = next.copy(sim = sim, problems = (next.problems + extra).distinct().take(Enforcement.MAX_PROBLEMS))
 
         // Belay asks for each new waiting app at once, so the parent sees it even if the kid
