@@ -79,6 +79,7 @@ docker compose exec belay node dist/cli.js setup-link             # a new one-ti
 docker compose exec belay node dist/cli.js create-code "Sam's phone"   # an enrollment code, without the web page
 docker compose exec -it belay node dist/cli.js reset-password sam # asks for a new password; signs that parent out everywhere
 docker compose exec belay node dist/cli.js backup /data/belay-backup.db
+docker compose exec belay node dist/cli.js status                 # each phone: status, apps, latest changes (--json for scripts)
 ```
 
 Outside Docker, use `npm run cli -- <command>` from `server/`.

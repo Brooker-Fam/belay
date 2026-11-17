@@ -5,6 +5,7 @@
  *   node dist/cli.js create-code <phone name>    an enrollment code for a phone
  *   node dist/cli.js reset-password <username>   a new password, read from the terminal
  *   node dist/cli.js backup <file>               a consistent copy of the database, while it runs
+ *   node dist/cli.js status [--json]             each phone's status, apps and latest changes
  */
 import { existsSync } from "node:fs";
 import { createInterface } from "node:readline";
@@ -13,7 +14,10 @@ import { audit } from "./audit.js";
 import { ConfigError, loadConfig } from "./config.js";
 import { openDatabase } from "./db.js";
 import { createEnrollmentCode } from "./device/enroll.js";
-import { nameTaken } from "./family/devices.js";
+import { appCounts, listChanges } from "./family/apps.js";
+import { listDevices, nameTaken } from "./family/devices.js";
+import { getSettings } from "./settings.js";
+import { formatAgo, isoInZone } from "./time.js";
 
 function fail(message: string): never {
   console.error(message);
@@ -88,8 +92,42 @@ async function main(): Promise<void> {
         console.log(`Backed up to ${file}. It holds the family's data: keep it as private as the server.`);
         break;
       }
+      case "status": {
+        const settings = getSettings(db);
+        const iso = (ms: number | null) => (ms === null ? null : isoInZone(ms, settings.timezone));
+        const phones = listDevices(db, settings, now).map((d) => {
+          const counts = appCounts(db, d.id);
+          return {
+            name: d.name,
+            status: d.status,
+            problems: d.problems.map((p) => p.text),
+            last_heard_from: iso(d.lastSeenAt),
+            heard_ago: d.lastSeenAt === null ? "never" : formatAgo(d.lastSeenAt, now),
+            last_app_list: iso(d.lastInventoryAt),
+            user_apps: counts.userApps,
+            apps_to_review: counts.unreviewed,
+            recent_changes: listChanges(db, { deviceId: d.id, includeSystem: true, limit: 20 }).map((c) => ({
+              kind: c.kind,
+              package: c.package,
+              at: iso(c.at),
+              found_by: c.backfilled ? "server snapshot" : c.detection,
+            })),
+          };
+        });
+        if (args.includes("--json")) {
+          console.log(JSON.stringify({ phones }, null, 2));
+          break;
+        }
+        if (!phones.length) console.log("No phones yet.");
+        for (const p of phones) {
+          console.log(`${p.name}: ${p.status}${p.problems.length ? ` (${p.problems.join("; ")})` : ""}`);
+          console.log(`  last heard from ${p.heard_ago}; ${p.user_apps} apps, ${p.apps_to_review} to review`);
+          for (const c of p.recent_changes.slice(0, 5)) console.log(`  ${c.at ?? ""} ${c.kind} ${c.package}`);
+        }
+        break;
+      }
       default:
-        fail("Commands: setup-link, create-code <phone name>, reset-password <username>, backup <file>");
+        fail("Commands: setup-link, create-code <phone name>, reset-password <username>, backup <file>, status [--json]");
     }
   } finally {
     db.close();
