@@ -322,6 +322,25 @@ Phase 5. Call records, only while the policy's `calls.log` is on.
   propose (it would loosen or change who reaches the kid), and reads records only with the
   `calls` scope on (off by default).
 
+## Off belay (Phase 11, both sides)
+
+The last stage, and the hand-over. Every step loosens or deletes, so each is a parent's action on
+the parent page (never an AI client's, not even as a proposal), and the phone shows each step
+before it happens.
+
+- **Off belay** is an ordinary stage (Phase 3) whose template blocks nothing and collects only
+  device health; the kid's "My stage" shows it at the end of the list from the first day, with
+  the family's words for when it comes.
+- **Stop collecting:** each data category a parent turns off is deleted on the server, after a
+  confirmation that says exactly what goes.
+- **`handover`** in the policy: the server also lifts `factory_reset` and `debugging`, empties
+  `frp_accounts` and frees Play's accounts (all ordinary fields); the phone clears its reset
+  protection policy, lifts those locks, and shows the kid what happens next: back up to their
+  own account, remove the parent's account, then reset from Settings. Release builds still
+  contain nothing that switches Belay off: the reset does.
+- **Afterwards** the server disconnects the phone and offers to delete everything it recorded
+  about it.
+
 ## Location rules (Phase 4, both sides)
 
 - **Off by default.** With `location` null or `mode: off`, Belay holds no location
@@ -564,6 +583,7 @@ server decides whether a change tightens or loosens.
 | `contacts` | `[{id, name, numbers: [E.164], calls, texts, parent}]` | Phase 5: at most 500; `name` at most 60 characters, at most 5 numbers |
 | `private_numbers` | string[] | Phase 5: E.164 numbers Belay never records or reads, beyond 988 and emergency numbers; at most 50 |
 | `blocked_numbers` | string[] | Phase 5: E.164 numbers a parent blocked; Belay, as the dialer, puts them on Android's block list (which blocks their texts too); at most 500 |
+| `handover` | `{at, by?}`? | Phase 11: a parent is handing the phone over (see "Off belay") |
 
 The `commands` kinds gain `locate_now` (Phase 4).
 

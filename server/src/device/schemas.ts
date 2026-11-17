@@ -660,5 +660,7 @@ export const Policy = z.strictObject({
   private_numbers: z.array(e164).max(50).optional(),
   /** Phase 5: numbers a parent blocked (Android's block list, set by Belay as the dialer). */
   blocked_numbers: z.array(e164).max(500).optional(),
+  /** Phase 11: a parent is handing the phone over; optional until the server builds it. */
+  handover: z.strictObject({ at: time, by: text(60).nullable() }).nullable().optional(),
 });
 export type Policy = z.infer<typeof Policy>;
