@@ -62,6 +62,7 @@ class Enforcer(context: Context) {
         val failedSuspend = suspend(changes.suspend, true, problems)
         val failedLock = changes.lock.filterNot { lock(it, true, problems) }.toSet()
         val autoTimeFailed = changes.autoTime?.let { !autoTime(it, problems) } ?: false
+        val autoTimeZoneFailed = changes.autoTimeZone?.let { !autoTimeZone(it, problems) } ?: false
         val chromeFailed = changes.chrome?.let { !chrome(it, problems) } ?: false
         val playFailed = changes.playAccounts?.let { !playAccounts(it, problems) } ?: false
         val frpFailed = changes.frpAccounts?.let { !resetProtection(it, problems) } ?: false
@@ -77,6 +78,7 @@ class Enforcer(context: Context) {
             failedLock = failedLock,
             failedUnlock = failedUnlock,
             autoTimeFailed = autoTimeFailed,
+            autoTimeZoneFailed = autoTimeZoneFailed,
             chromeFailed = chromeFailed,
             frpFailed = frpFailed,
             playFailed = playFailed,
@@ -122,6 +124,7 @@ class Enforcer(context: Context) {
             unhide = applied.hidden,
             unlock = applied.locks,
             autoTime = false.takeIf { applied.autoTime },
+            autoTimeZone = false.takeIf { applied.autoTimeZone },
             chrome = Setting.Clear.takeIf { applied.chrome != null },
             frpAccounts = Setting.Clear.takeIf { applied.frpAccounts != null },
             playAccounts = Setting.Clear.takeIf { applied.playAccounts != null },
@@ -230,6 +233,27 @@ class Enforcer(context: Context) {
     } catch (e: RuntimeException) {
         Log.w(Agent.TAG, "auto time", e)
         problems += "Couldn't ${if (on) "turn on" else "hand back"} automatic time: ${e.javaClass.simpleName}."
+        false
+    }
+
+    /**
+     * Automatic time zone while the date and time are locked (platform notes H8):
+     * DISALLOW_CONFIG_DATE_TIME stops the kid changing the zone, but keeps whatever zone the phone
+     * had. Like automatic time: from Android 16 (API 36) a policy that can also hand control back;
+     * before that, Belay only turns it on and leaves it on.
+     */
+    private fun autoTimeZone(on: Boolean, problems: MutableList<String>): Boolean = try {
+        if (Build.VERSION.SDK_INT >= 36) {
+            dpm.setAutoTimeZonePolicy(
+                if (on) DevicePolicyManager.AUTO_TIME_ZONE_ENABLED else DevicePolicyManager.AUTO_TIME_ZONE_NOT_CONTROLLED_BY_POLICY,
+            )
+        } else if (on) {
+            dpm.setAutoTimeZoneEnabled(admin, true)
+        }
+        true
+    } catch (e: RuntimeException) {
+        Log.w(Agent.TAG, "auto time zone", e)
+        problems += "Couldn't ${if (on) "turn on" else "hand back"} automatic time zone: ${e.javaClass.simpleName}."
         false
     }
 
