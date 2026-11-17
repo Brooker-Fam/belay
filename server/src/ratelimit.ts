@@ -69,6 +69,11 @@ export interface Limiters {
   mcpPerGrant: RateLimiter;
   /** Device API calls, per phone. */
   devicePerPhone: RateLimiter;
+  /**
+   * Policy long-polls, per phone, counted apart so the loop can't use up the phone's other
+   * calls. A phone asks again after each answer: about once a minute while nothing changes.
+   */
+  policyPerPhone: RateLimiter;
 }
 
 export function createLimiters(now: () => number): Limiters {
@@ -82,5 +87,6 @@ export function createLimiters(now: () => number): Limiters {
     tokenPerClient: new RateLimiter(60, MIN, now),
     mcpPerGrant: new RateLimiter(300, MIN, now),
     devicePerPhone: new RateLimiter(120, MIN, now),
+    policyPerPhone: new RateLimiter(30, MIN, now),
   };
 }

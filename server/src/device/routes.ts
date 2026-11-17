@@ -4,11 +4,13 @@ import { bodyLimit } from "hono/body-limit";
 import { audit } from "../audit.js";
 import { normalizeCode, sha256 } from "../crypto.js";
 import type { Deps } from "../deps.js";
+import { buildPolicy, policyVersion } from "../family/policy.js";
+import { saveRequests } from "../family/requests.js";
 import { bearerToken, clientAddress, readJson, type Bindings } from "../http.js";
 import type { Verdict } from "../ratelimit.js";
 import { applyEvents, applyInventory } from "./apps.js";
 import { enroll } from "./enroll.js";
-import { CheckinRequest, EnrollRequest, EventsRequest, InventoryRequest, LIMITS, type Device } from "./schemas.js";
+import { CheckinRequest, EnrollRequest, EventsRequest, InventoryRequest, LIMITS, PolicyQuery, RequestsRequest, type Device } from "./schemas.js";
 
 interface PhoneRow {
   id: string;
@@ -37,6 +39,8 @@ function blocked(...verdicts: Verdict[]): number | null {
   const waits = verdicts.flatMap((v) => (v.ok ? [] : [v.retryAfterSeconds]));
   return waits.length ? Math.max(...waits) : null;
 }
+
+const isPolicyPoll = (method: string, path: string) => method === "GET" && path.endsWith("/policy");
 
 export function deviceRoutes(deps: Deps): Hono<DeviceEnv> {
   const { db, limits } = deps;
@@ -76,7 +80,8 @@ export function deviceRoutes(deps: Deps): Hono<DeviceEnv> {
       ? db.prepare<[string], PhoneRow>("SELECT id, name FROM devices WHERE token_hash = ? AND revoked_at IS NULL").get(sha256(token))
       : undefined;
     if (!phone) return fail(401, "invalid_token", "This phone isn't connected to Belay. A parent can reconnect it from the parent page.");
-    const verdict = limits.devicePerPhone.hit(phone.id);
+    const limiter = isPolicyPoll(c.req.method, c.req.path) ? limits.policyPerPhone : limits.devicePerPhone;
+    const verdict = limiter.hit(phone.id);
     if (!verdict.ok) return fail(429, "rate_limited", "Too many requests", verdict.retryAfterSeconds);
     c.set("phone", phone);
     return next();
@@ -88,7 +93,7 @@ export function deviceRoutes(deps: Deps): Hono<DeviceEnv> {
     const now = deps.now();
     saveFacts(c.var.phone.id, body.value.status, now);
     db.prepare("UPDATE devices SET last_checkin_at = ? WHERE id = ?").run(now, c.var.phone.id);
-    return c.json({ server_time: now, policy: { version: 0 } });
+    return c.json({ server_time: now, policy: buildPolicy(db, c.var.phone.id, now) });
   });
 
   app.post("/inventory", limit(LIMITS.inventoryBytes), async (c) => {
@@ -107,6 +112,45 @@ export function deviceRoutes(deps: Deps): Hono<DeviceEnv> {
     db.prepare("UPDATE devices SET last_seen_at = ? WHERE id = ?").run(now, c.var.phone.id);
     const result = applyEvents(db, c.var.phone.id, body.value.events, now);
     return c.json({ server_time: now, accepted: result.accepted, duplicates: result.duplicates });
+  });
+
+  /**
+   * The long-poll: answers at once when the phone's version isn't the server's, else holds
+   * the request up to `wait` seconds for a change, then answers 204.
+   */
+  app.get("/policy", async (c) => {
+    const query = PolicyQuery.safeParse(c.req.query());
+    if (!query.success) {
+      const issue = query.error.issues[0];
+      const what = issue?.code === "unrecognized_keys" ? `unknown parameter ${issue.keys.map((k) => `"${k}"`).join(", ")}` : `${issue?.path.join(".") ?? "query"}: ${issue?.message ?? "invalid"}`;
+      return fail(400, "invalid_request", what.slice(0, 300));
+    }
+    const have = query.data.have ?? -1;
+    const wait = query.data.wait ?? 0;
+    const phone = c.var.phone;
+    const now = deps.now();
+    db.prepare("UPDATE devices SET last_seen_at = ?, policy_have = ?, policy_asked_at = ? WHERE id = ?").run(now, have >= 0 ? have : null, now, phone.id);
+    c.header("Cache-Control", "no-store");
+    const answer = () => {
+      const at = deps.now();
+      return c.json({ server_time: at, policy: buildPolicy(db, phone.id, at) });
+    };
+    if (policyVersion(db, phone.id) !== have) return answer();
+    if (wait > 0 && (await deps.waiters.wait(phone.id, have, wait * 1000, c.req.raw.signal))) return answer();
+    return c.body(null, 204);
+  });
+
+  app.post("/requests", limit(LIMITS.requestsBytes), async (c) => {
+    const body = await readJson(c, RequestsRequest);
+    if (!body.ok) return fail(400, "invalid_request", body.description);
+    const now = deps.now();
+    const phone = c.var.phone;
+    db.prepare("UPDATE devices SET last_seen_at = ? WHERE id = ?").run(now, phone.id);
+    const saved = saveRequests(db, phone.id, body.value.requests, now);
+    for (const r of saved.created) {
+      audit(db, now, { kind: "phone", deviceId: phone.id }, "request.made", { detail: { package: r.package, label: r.label } });
+    }
+    return c.json({ server_time: now, accepted: saved.accepted });
   });
 
   app.all("*", () => fail(404, "not_found", "No such endpoint"));

@@ -1,5 +1,7 @@
 import type { Config } from "./config.js";
 import type { DB } from "./db.js";
+import { createWaiters, type Waiters } from "./device/waiters.js";
+import { policyVersion } from "./family/policy.js";
 import { createLimiters, type Limiters } from "./ratelimit.js";
 
 /** What every part of the server is handed, so tests can swap the clock and the network. */
@@ -8,9 +10,12 @@ export interface Deps {
   db: DB;
   now: () => number;
   limits: Limiters;
+  /** Phones waiting for a new policy (the long-poll). */
+  waiters: Waiters;
   /**
-   * Used only to read the Client ID Metadata Document of an allowlisted AI client
-   * (claude.ai's): the server's one outbound request, carrying no family data.
+   * The server's outbound requests: reading the Client ID Metadata Document of an allowlisted
+   * AI client (claude.ai's), which carries no family data, and sending Web Push notices to the
+   * parents' own browsers, end-to-end encrypted, at the push services those browsers use.
    */
   fetch: typeof fetch;
   log: (message: string) => void;
@@ -23,6 +28,7 @@ export function makeDeps(config: Config, db: DB, overrides: Partial<Omit<Deps, "
     db,
     now,
     limits: overrides.limits ?? createLimiters(now),
+    waiters: overrides.waiters ?? createWaiters((deviceId) => policyVersion(db, deviceId)),
     fetch: overrides.fetch ?? ((input, init) => fetch(input, init)),
     log:
       overrides.log ??
