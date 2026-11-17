@@ -6,6 +6,7 @@ import android.os.UserManager
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import family.brooker.belay.core.CategoryPermissions
+import family.brooker.belay.core.DataCategories
 import family.brooker.belay.core.WireCommand
 import family.brooker.belay.core.WireCommandOutcome
 import family.brooker.belay.core.WirePolicy
@@ -67,7 +68,8 @@ class LocationInstrumentedTest {
     fun locationIsGrantedByPolicyWhileThePolicyHasItOn() {
         val dpm = context.getSystemService(DevicePolicyManager::class.java)
         val admin = DeviceOwnerSetup.admin(context)
-        for (permission in CategoryPermissions.CATEGORY.keys) {
+        // Only location's own permissions: Phase 5's call permissions follow `calls`, not location.
+        for (permission in CategoryPermissions.CATEGORY.filterValues { it == DataCategories.LOCATION_ID }.keys) {
             assertEquals("$permission isn't granted by policy", DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED, dpm.getPermissionGrantState(admin, context.packageName, permission))
         }
         assertTrue(DeviceOwnerSetup.hasLocation(context))

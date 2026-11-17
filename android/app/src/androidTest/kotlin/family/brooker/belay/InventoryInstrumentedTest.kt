@@ -84,7 +84,8 @@ class InventoryInstrumentedTest {
         // here; denying a granted one restarts Belay, so CI checks that from the shell).
         val plan = DeviceOwnerSetup.permissionPlan(context)
         val tied = CategoryPermissions.CATEGORY.keys.map { it.substringAfterLast('.') }
-        val locationWanted = plan.grant.any { CategoryPermissions.tied(it) }
+        // Each category's permissions follow their own category (location, Phase 5's calls).
+        val granting = plan.grant.map { it.substringAfterLast('.') }.toSet()
         health.permissions.forEach {
             when {
                 it.name in neverGranted -> {
@@ -92,7 +93,7 @@ class InventoryInstrumentedTest {
                     assertFalse("${it.name} is granted", it.granted)
                     assertTrue("${it.name} not denied by policy", it.fixedByPolicy)
                 }
-                it.name in tied && !locationWanted -> assertTrue("${it.name} not denied by policy with location off", !it.granted && it.fixedByPolicy)
+                it.name in tied && it.name !in granting -> assertTrue("${it.name} not denied by policy with its category off", !it.granted && it.fixedByPolicy)
                 else -> assertTrue("${it.name} not granted by policy", it.granted && it.fixedByPolicy)
             }
         }
