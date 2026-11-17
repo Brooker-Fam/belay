@@ -6,16 +6,23 @@
   --text: #1d2521;
   --muted: #5d6b64;
   --line: #d9dfdb;
+  /* A field's or a box's edge: 3:1 against the card and the page, so it can be seen (WCAG 1.4.11). */
+  --field: #7b8781;
   --accent: #1f6f5c;
   --accent-text: #ffffff;
   --ok: #1f7a45;
   --warn: #a35d00;
   --bad: #b3261e;
+  /* A red to fill a button or a badge with white words on it: --bad is for words, and in the dark it's light. */
+  --bad-fill: #b3261e;
   --off: #6b6f72;
   --chip: #eef2ef;
   --focus: #2a7de1;
+  /* The smallest thing to tap. */
+  --tap: 44px;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  font-size: 16px;
+  /* The reader's own text size, 16px unless they chose larger: everything else is in rem and em. */
+  font-size: 100%;
   line-height: 1.45;
 }
 @media (prefers-color-scheme: dark) {
@@ -25,11 +32,13 @@
     --text: #e8eeea;
     --muted: #a3b1aa;
     --line: #2e3833;
+    --field: #6f7b75;
     --accent: #5cc3a5;
     --accent-text: #0b1512;
     --ok: #6fd39a;
     --warn: #f0b45c;
     --bad: #ff8a80;
+    --bad-fill: #c0352c;
     --off: #9aa0a4;
     --chip: #243029;
   }
@@ -86,7 +95,7 @@ form.stack { display: grid; gap: 10px; }
 label { font-weight: 600; font-size: 0.9rem; }
 label.check { font-weight: 400; display: flex; gap: 8px; align-items: flex-start; }
 input[type=text], input[type=password], input[type=search], input[type=number], textarea, select {
-  width: 100%; font: inherit; color: inherit; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px;
+  width: 100%; font: inherit; color: inherit; background: var(--card); border: 1px solid var(--field); border-radius: 8px; padding: 9px 10px;
 }
 textarea { min-height: 70px; }
 button, .button {
@@ -124,7 +133,7 @@ form.inline { display: inline; margin: 0; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 .card > .change:last-child { border-bottom: none; }
 /* Phase 2: rules, requests, proposals. */
-.badge { display: inline-block; min-width: 1.4em; margin-left: 5px; padding: 0 6px; border-radius: 999px; background: var(--bad); color: #fff; font-size: 0.75rem; font-weight: 700; line-height: 1.5; text-align: center; }
+.badge { display: inline-block; min-width: 1.4em; margin-left: 5px; padding: 0 6px; border-radius: 999px; background: var(--bad-fill); color: #fff; font-size: 0.75rem; font-weight: 700; line-height: 1.5; text-align: center; }
 .chip.waiting { background: var(--accent); color: var(--accent-text); font-weight: 600; }
 .chip.allowed { background: #dcefe3; color: #14532d; }
 .chip.blocked { background: #f9d9d6; color: #7f1d1d; font-weight: 600; }
@@ -183,7 +192,7 @@ svg.hours g:hover .col, svg.hours g:focus .col { opacity: 0.8; }
 .days-picker label { font-weight: 400; display: flex; gap: 4px; align-items: center; }
 .by-day { display: grid; grid-template-columns: repeat(auto-fill, minmax(5.5rem, 1fr)); gap: 6px; }
 .by-day label { font-weight: 400; font-size: 0.85rem; }
-input[type=time], input[type=date] { font: inherit; color: inherit; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+input[type=time], input[type=date] { font: inherit; color: inherit; background: var(--card); border: 1px solid var(--field); border-radius: 8px; padding: 8px 10px; }
 .rule { padding: 10px 0; border-bottom: 1px solid var(--line); }
 .rule:last-child { border-bottom: none; }
 .rule .row form.inline button { padding: 4px 10px; }
@@ -209,7 +218,7 @@ input[type=time], input[type=date] { font: inherit; color: inherit; background: 
 .card.help strong.title { color: var(--bad); }
 .help-banner { border-left: 4px solid var(--bad); background: var(--card); padding: 10px 14px; border-radius: 6px; margin-bottom: 14px; }
 .help-banner strong { color: var(--bad); }
-a.button.call { background: var(--bad); border-color: var(--bad); color: #ffffff; }
+a.button.call { background: var(--bad-fill); border-color: var(--bad-fill); color: #ffffff; }
 /* Phase 4: where the phone is, in words and numbers; never a map. */
 .coords { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.875rem; }
 .numbers .row input[type=text] { min-width: 0; flex: 1 1 10rem; }
