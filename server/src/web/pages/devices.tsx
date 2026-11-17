@@ -25,6 +25,7 @@ import {
 } from "./rules.js";
 import { OtherUsersCard, RecoveryCard, UpdateCard } from "./belay.js";
 import { ChangeLine } from "./timeline.js";
+import { PhoneTabs } from "./screentime.js";
 
 export interface DeviceSummary {
   device: DeviceView;
@@ -319,6 +320,7 @@ export const DevicePage: FC<{
         <h1>{device.name}</h1>
         <StatusBadge status={device.status} />
       </div>
+      <PhoneTabs view={view} device={device} current="apps" />
       {message && <Notice>{message}</Notice>}
       {error && <Notice kind="error">{error}</Notice>}
       {tampering.length > 0 && (

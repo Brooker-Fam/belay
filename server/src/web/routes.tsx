@@ -79,9 +79,10 @@ import { serverHealth } from "../ops/health.js";
 import { getDigest } from "../ops/notify.js";
 import { opsWebRoutes } from "../ops/web.js";
 import { browserName, listSubscriptions, removeSubscription, saveSubscription, sendNotice, subscriptionProblem, vapidKeys } from "../push.js";
-import { AI_SCOPES, type AiScope, getSettings, updateSettings } from "../settings.js";
+import { AI_SCOPES, type AiScope, USAGE_MONTHS, getSettings, updateSettings } from "../settings.js";
 import { isValidTimeZone } from "../time.js";
 import type { Assets } from "./assets.js";
+import { screenTimeWebRoutes } from "./screentime.js";
 import { ActivityPage } from "./pages/activity.js";
 import { AddPage, CodePage } from "./pages/add.js";
 import { InvitePage, LoginPage, MessagePage, SetupPage } from "./pages/auth.js";
@@ -197,7 +198,7 @@ export function first(form: Form, name: string): string {
   return typeof one === "string" ? one.trim() : "";
 }
 
-function all(form: Form, name: string): string[] {
+export function all(form: Form, name: string): string[] {
   const value = form[name];
   return (Array.isArray(value) ? value : value === undefined ? [] : [value]).filter((v): v is string => typeof v === "string");
 }
@@ -932,10 +933,16 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
     const silentHours = Number(first(body, "silent_hours"));
     if (!isValidTimeZone(timezone)) return settingsPage(c, { error: "Pick a timezone from the list, like America/New_York." }, 400);
     if (!Number.isInteger(silentHours) || silentHours < 1 || silentHours > 168) return settingsPage(c, { error: "Use 1 to 168 hours for the silent threshold." }, 400);
+    // Phase 3: how long screen time is kept (left out: as it is).
+    const monthsText = first(body, "usage_months");
+    const usageMonths = monthsText === "" ? undefined : Number(monthsText);
+    if (usageMonths !== undefined && (!Number.isInteger(usageMonths) || usageMonths < USAGE_MONTHS.min || usageMonths > USAGE_MONTHS.max)) {
+      return settingsPage(c, { error: `Keep screen time ${USAGE_MONTHS.min} to ${USAGE_MONTHS.max} months.` }, 400);
+    }
     const chosen = new Set(all(body, "ai_scope"));
     const aiScopes = Object.fromEntries(Object.keys(AI_SCOPES).map((k) => [k, chosen.has(k)])) as Record<AiScope, boolean>;
     const before = getSettings(db);
-    const after = updateSettings(db, { timezone, silentHours, aiScopes });
+    const after = updateSettings(db, { timezone, silentHours, aiScopes, ...(usageMonths !== undefined ? { usageMonths } : {}) });
     audit(db, deps.now(), { kind: "parent", parentId: me(c).parent.id }, "settings.changed", { detail: { before, after } });
     return c.redirect("/settings?saved=settings");
   });
@@ -1062,6 +1069,8 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
 
   // Recording a restore drill, and the daily summary's settings (ops/web.ts).
   app.route("/", opsWebRoutes(deps));
+  // Phase 3: screen time, its rules, stages and the family agreement (web/screentime.tsx).
+  app.route("/", screenTimeWebRoutes(deps, { view, message }));
 
   app.get("/activity", (c) => {
     const includeReads = c.req.query("reads") === "1";
