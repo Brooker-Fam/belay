@@ -3,7 +3,8 @@ import { defineConfig } from "eslint/config";
 import tseslint from "typescript-eslint";
 
 export default defineConfig(
-  { ignores: ["dist/", "node_modules/", "coverage/"] },
+  // src/static/app.js is a few lines of plain browser script.
+  { ignores: ["dist/", "node_modules/", "coverage/", "src/static/"] },
   js.configs.recommended,
   ...tseslint.configs.strictTypeChecked,
   {
