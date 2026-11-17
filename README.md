@@ -68,6 +68,18 @@ OK?", with a web page as the fallback.
   that work while the phone is paused; My requests shows every answer and lets the kid change or
   take back a waiting one; "Talk to my parent"; what the parent and their AI app can see; and what
   Belay told the parent, from the phone's own record.
+  **Phase 5 (the phone's side): calls.** While a parent has calls on, Belay is the phone's calling
+  app (the app it took over from is again when calls goes off): a large-print dial pad,
+  the approved contacts, recent calls, and its own incoming-call and in-call screens, with
+  "Emergency (911)" and "988: Call or text for crisis support" always there. Belay decides every
+  call in code before anything rings: 911, Android's emergency numbers and 988 always work, in and
+  out; parents always ring; for 2 hours after a call to 911 or 988 everyone rings, so they can call
+  back; otherwise the family's rules for contacts, other callers, callers with no caller ID and
+  quiet times. A refused call never rings, and Belay's recent calls say why. The kid can ask to add
+  a contact. Belay keeps Android's block list in step with the family's blocked numbers, stops other
+  apps from placing calls around its rules, and, while calls are recorded, sends each call's record
+  (never one with 911, 988 or a private number). If Belay's dialer breaks, calls go through the
+  phone's own app, unfiltered, and the parents are told.
 - **`server/`: the family's server.** Node and SQLite in one Docker image. The device API,
   the parent pages (phones and their health, apps with "new" badges and reviews, the
   timeline, adding a phone, settings, the activity log), and OAuth 2.1 plus MCP for Claude.

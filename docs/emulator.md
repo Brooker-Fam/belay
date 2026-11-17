@@ -113,7 +113,16 @@ platform notes L9), `locate-now` gets a fix on the server at that point, not a m
 command is done; `LocationInstrumentedTest` runs with that point; a help request from a
 debug-only receiver reaches the server, and `help-seen` comes back to the phone's state; location
 off takes the permission away (Android restarts Belay, which comes back, L7); and with location
-off a kid's shared fix still gets into a help request, once.
+off a kid's shared fix still gets into a help request, once. Then Phase 5, when the server's status
+has `calls` and the image has telephony: `calls --mode contacts --unknown reject --log on` makes
+Belay the default dialer, reported as such; `CallsInstrumentedTest` checks the role, the call
+permissions granted by policy and other apps' `CALL_PHONE` denied; `adb emu gsm call` from a
+contact's made-up number rings Belay's own screen, and from another number is rejected without
+ringing and reaches the server's call records with that number (the contact's record has only its
+id); `block-number` puts a number on Android's block list and `unblock-number` takes it off; and
+`calls --off` gives the dialer back (on the ATD image, which has no preloaded dialer, to nobody,
+platform notes T15), Belay comes back after Android restarts it, and it holds no `CALL_PHONE`.
+Every number is a made-up 555-01xx one: nothing ever calls or simulates 911 or 988.
 
 The fixture app has one blank launcher screen (`.FixtureActivity`) from Phase 3, so tests can
 open it, count it and see a limit or a schedule pause it. Screen time only counts while the
