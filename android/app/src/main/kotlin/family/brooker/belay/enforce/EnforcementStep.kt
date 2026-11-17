@@ -15,6 +15,8 @@ import family.brooker.belay.core.Commands
 import family.brooker.belay.core.Enforcement
 import family.brooker.belay.core.EnforcementChanges
 import family.brooker.belay.core.EnforcementPlan
+import family.brooker.belay.core.HandoverDone
+import family.brooker.belay.core.HandoverFrp
 import family.brooker.belay.core.KidRequest
 import family.brooker.belay.core.KidRules
 import family.brooker.belay.core.PackageRecord
@@ -239,6 +241,7 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
         )
         PolicyTimer.schedule(app, plan.nextChangeAt)
         log(plan, changes, made)
+        next.handover?.takeIf { it != applied.handover }?.let(::logHandover)
         // Android's screen for a held-back app can't name it: Belay's notice does.
         if (owner && made.isNotEmpty()) WaitingNotice.show(app, made.map { it.label })
         if (plan.waiting.isEmpty()) WaitingNotice.cancel(app)
@@ -325,6 +328,17 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
             policy?.let { Stages.next(it) }.orEmpty().flatMap { change ->
                 change.kidText.args.filterIsInstance<KidArg.Apps>().flatMap { it.packages }
             }
+    }
+
+    /** Phase 11: a hand-over carried out, and what a debug build would have done about reset protection. */
+    private fun logHandover(done: HandoverDone) {
+        val frp = when (done.frp) {
+            HandoverFrp.CLEARED -> "reset protection cleared (setFactoryResetProtectionPolicy(null), then FRP_CONFIG_CHANGED)"
+            HandoverFrp.SKIPPED_DEBUG ->
+                "a test build never touches reset protection, so it left it alone; a release build clears it now " +
+                    "(setFactoryResetProtectionPolicy(null), then FRP_CONFIG_CHANGED)"
+        }
+        Log.i(Agent.TAG, "handover ${done.at}: factory reset, debugging and accounts unlocked; $frp")
     }
 
     private fun log(plan: EnforcementPlan, changes: EnforcementChanges, made: List<KidRequest>) {
