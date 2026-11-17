@@ -27,7 +27,29 @@
         <item quantity="other">%d packages in all, counting the system\'s own</item>
     </plurals>
     <string name="section_can_see">What your parent can see</string>
-    <string name="data_stays_here">For now, all of this stays on this phone. Nothing is sent anywhere yet.</string>
+    <string name="data_stays_here">For now, all of this stays on this phone. Nothing is sent anywhere yet. When your parent connects the phone to their Belay server, Belay will send this there, including the app changes it noticed before.</string>
+    <string name="data_sent_to_server">Belay sends this to your parent\'s Belay server at %1$s, and nowhere else. It doesn\'t send anything that isn\'t on this list.</string>
+    <string name="data_disconnected">Belay isn\'t sending any of this right now, because this phone was disconnected from your parent\'s Belay server. It stays on this phone.</string>
+
+    <!-- The connection to the family's Belay server. -->
+    <string name="section_connection">Belay server</string>
+    <string name="connection_connected">Connected to your parent\'s Belay server at %1$s.</string>
+    <string name="connection_device_name">The server calls this phone \"%1$s\".</string>
+    <string name="connection_last_sync">Last sent: %1$s</string>
+    <string name="connection_never_synced">Nothing has been sent yet.</string>
+    <plurals name="connection_waiting">
+        <item quantity="one">%d thing waiting to be sent</item>
+        <item quantity="other">%d things waiting to be sent</item>
+    </plurals>
+    <string name="connection_nothing_waiting">Nothing waiting to be sent.</string>
+    <string name="connection_trouble">The last try to reach the server didn\'t work. Belay will try again by itself.</string>
+    <string name="connection_version">Belay version %1$s</string>
+    <string name="connection_none">Not connected to a Belay server yet.</string>
+    <string name="connection_none_detail">Your parent connects this phone to their Belay server, with a QR code or a short code from it.</string>
+    <string name="connection_connect">Connect to a Belay server</string>
+    <string name="connection_disconnected">This phone was disconnected from Belay.</string>
+    <string name="connection_disconnected_detail">Your parent\'s Belay server doesn\'t accept this phone anymore, so Belay stopped sending. Your parent can connect it again.</string>
+    <string name="connection_connect_again">Connect again</string>
 
     <!-- The enrollment screen. -->
     <string name="enroll_title">Connect to your parent\'s Belay server</string>

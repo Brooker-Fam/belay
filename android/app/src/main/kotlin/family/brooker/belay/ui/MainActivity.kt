@@ -8,11 +8,14 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.remember
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import family.brooker.belay.Agent
 import family.brooker.belay.DebugTools
 import family.brooker.belay.Trigger
+import family.brooker.belay.settings.ConnectionStore
+import family.brooker.belay.store.AgentStore
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -21,8 +24,15 @@ class MainActivity : ComponentActivity() {
         setContent {
             BelayTheme {
                 val view = Agent.view.collectAsStateWithLifecycle().value
+                val connection = remember { ConnectionStore.flow(applicationContext) }
+                    .collectAsStateWithLifecycle(initialValue = null).value
+                val waiting = remember { AgentStore.get(applicationContext).pendingCountFlow }
+                    .collectAsStateWithLifecycle(initialValue = 0).value
                 MainScreen(
                     view = view,
+                    connection = connection,
+                    waiting = waiting,
+                    onConnect = { startActivity(Intent(this, EnrollActivity::class.java)) },
                     onAllowBattery = ::requestBatteryExemption,
                     onRelease = if (DebugTools.CAN_RELEASE) ::releasePhone else null,
                 )
