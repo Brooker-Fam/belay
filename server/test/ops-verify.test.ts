@@ -298,7 +298,8 @@ describe("verify-backup and restore, without the live database open", () => {
     expect(done.code).toBe(0);
     expect(done.out).toContain("as a restore drill's copy: it sends no notifications");
     const db = openDatabase(target);
-    expect(drillCopy(db)).toEqual({ at: T0, from: "a backup from stdin" });
+    expect(drillCopy(db)).toEqual({ at: T0, from: null });
+    expect(listAudit(db, { limit: 1, includeReads: false })[0]).toMatchObject({ action: "backup.restored", detail: { drill: true } });
     db.close();
   });
 

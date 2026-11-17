@@ -169,7 +169,7 @@ async function restoreCommand(args: string[], io: OfflineIO, dataDir: string): P
   const drill = flags.has("drill");
   let report: VerifyReport;
   try {
-    report = await restoreBackup(fromStdin ? io.stdin : input, dataDir, { now: io.now, passphrase: readingPassphrase(io, fromStdin), drill, name: fromStdin ? "a backup from stdin" : basename(input) });
+    report = await restoreBackup(fromStdin ? io.stdin : input, dataDir, { now: io.now, passphrase: readingPassphrase(io, fromStdin), drill, name: fromStdin ? null : basename(input) });
   } catch (error) {
     if (error instanceof RestoreError) throw new CommandError(error.message);
     throw error;

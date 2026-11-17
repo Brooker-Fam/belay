@@ -188,19 +188,19 @@ export class RestoreError extends Error {
 export interface RestoreOptions extends CheckOptions {
   /** A restore drill's scratch copy: it sends no notifications, and its parent page says so. */
   drill: boolean;
-  /** How the backup is named in the activity log, like "belay-2026-11-17.db.enc". */
-  name: string;
+  /** The backup's file name, like "belay-2026-11-17.db.enc", for the activity log; null when it came on stdin. */
+  name: string | null;
 }
 
 export const DRILL_KEY = "drill_copy";
 
 /** A scratch copy made for a restore drill, and when: it sends no notifications. */
-export function drillCopy(db: DB): { at: number; from: string } | null {
+export function drillCopy(db: DB): { at: number; from: string | null } | null {
   const row = db.prepare<[string], { value: string }>("SELECT value FROM settings WHERE key = ?").get(DRILL_KEY);
   if (!row) return null;
   try {
     const value = JSON.parse(row.value) as { at?: unknown; from?: unknown };
-    return typeof value.at === "number" && typeof value.from === "string" ? { at: value.at, from: value.from } : null;
+    return typeof value.at === "number" ? { at: value.at, from: typeof value.from === "string" ? value.from : null } : null;
   } catch {
     return null;
   }
@@ -242,7 +242,7 @@ export async function restoreBackup(input: string | NodeJS.ReadableStream, dataD
           JSON.stringify({ at: opts.now, from: opts.name }),
         );
       }
-      audit(db, opts.now, { kind: "server" }, "backup.restored", { detail: { file: opts.name, drill: opts.drill } });
+      audit(db, opts.now, { kind: "server" }, "backup.restored", { detail: { ...(opts.name ? { file: opts.name } : {}), drill: opts.drill } });
     } finally {
       db.close();
     }

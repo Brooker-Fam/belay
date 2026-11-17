@@ -33,8 +33,9 @@ export const ServerCard: FC<{ view: View; health: ServerHealth }> = ({ view, hea
       <h2>This server</h2>
       {h.drillCopy && (
         <Notice kind="warn">
-          This is a restore drill's scratch copy, restored {dayAndTime(h.drillCopy.at, view.now, view.tz)} from {h.drillCopy.from}. It sends no
-          notifications. When you're done, remove it: <code>docker rm -f belay-drill && docker volume rm belay-drill</code>
+          This is a restore drill's scratch copy, restored {dayAndTime(h.drillCopy.at, view.now, view.tz)}
+          {h.drillCopy.from ? ` from ${h.drillCopy.from}` : ""}. It sends no notifications. When you're done, remove it:{" "}
+          <code>docker rm -f belay-drill && docker volume rm belay-drill</code>
         </Notice>
       )}
       <div class="card">

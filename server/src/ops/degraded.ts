@@ -12,6 +12,7 @@ import { Hono } from "hono";
 import { html } from "hono/html";
 import type { Config } from "../config.js";
 import { MigrationError, openDatabase } from "../db.js";
+import { formatDuration } from "../time.js";
 import { diskSpace } from "./backups.js";
 import { healthzAnswer, isStrict, serverProblems } from "./health.js";
 
@@ -92,7 +93,7 @@ export function serveDegraded(config: Config, error: unknown, recovered: () => v
     });
   const problem = databaseProblem(error);
   const detail = (e: unknown) => (e instanceof Error ? e.message : String(e));
-  log(`${problem} Until it can, every page says so and /healthz gives the reason; it tries again every ${Math.round((opts.retryMs ?? RETRY_MS) / 1000)} seconds. ${detail(error)}`);
+  log(`${problem} Until it can, every page says so and /healthz gives the reason; it tries again every ${formatDuration(opts.retryMs ?? RETRY_MS)}. ${detail(error)}`);
   let server: ServerType | null = null;
   const port = new Promise<number>((resolve) => {
     server = serve({ fetch: degradedApp(config, problem).fetch, hostname: config.host, port: config.port }, (info) => {

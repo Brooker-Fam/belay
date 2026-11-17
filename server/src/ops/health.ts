@@ -273,7 +273,7 @@ export interface ServerHealth {
   dbBytes: number | null;
   clock: { phones: number; offMs: number | null };
   /** This server is a restore drill's scratch copy. */
-  drillCopy: { at: number; from: string } | null;
+  drillCopy: { at: number; from: string | null } | null;
 }
 
 export function serverHealth(deps: Deps): ServerHealth {
