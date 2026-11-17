@@ -48,3 +48,5 @@ backup-passphrase*
 
 # Made from server/Caddyfile.example: it names the family's server
 server/Caddyfile
+# The family's own Docker Compose settings (docs/server.md): with .env, never in git
+server/docker-compose.override.yml

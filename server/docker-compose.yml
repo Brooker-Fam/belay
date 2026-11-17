@@ -1,14 +1,18 @@
 # Belay behind Caddy, which gets and renews a public HTTPS certificate on its own.
 # 1. Point a DNS name (belay.example.org below) at this machine; open ports 80 and 443.
-# 2. cp Caddyfile.example Caddyfile, and put your name in both files.
+# 2. cp Caddyfile.example Caddyfile, and put your name in it. Put the same name in .env, next to
+#    this file: echo BELAY_PUBLIC_URL=https://belay.example.org > .env
 # 3. docker compose up -d, then docker compose logs belay for the one-time setup link.
-# docs/server.md has the details, and other ways to get HTTPS.
+# Don't edit this file: your own changes (the backup passphrase, a tunnel instead of Caddy) go in
+# docker-compose.override.yml, which Docker Compose reads with it, so `git pull` always works.
+# Git ignores .env, Caddyfile and the override. docs/server.md has the details, and other ways
+# to get HTTPS.
 services:
   belay:
     build: .
     restart: unless-stopped
     environment:
-      BELAY_PUBLIC_URL: https://belay.example.org
+      BELAY_PUBLIC_URL: ${BELAY_PUBLIC_URL:?put your server's address in .env next to docker-compose.yml, like BELAY_PUBLIC_URL=https://belay.example.org}
       # Caddy is the one proxy in front: client addresses (for rate limits) come from it.
       BELAY_TRUST_PROXY: "1"
     volumes:

@@ -33,7 +33,11 @@ Any small Linux VPS with Docker works (1 GB of memory is plenty).
    git clone https://github.com/brooker-fam/belay.git && cd belay/server
    cp Caddyfile.example Caddyfile
    ```
-3. Put your name in `Caddyfile` and in `BELAY_PUBLIC_URL` in `docker-compose.yml`.
+3. Put your name in `Caddyfile`, and the same name in a file called `.env` next to
+   `docker-compose.yml`:
+   ```bash
+   echo BELAY_PUBLIC_URL=https://belay.example.org > .env
+   ```
 4. Start it, and read the one-time setup link from the log:
    ```bash
    docker compose up -d --build
@@ -42,8 +46,11 @@ Any small Linux VPS with Docker works (1 GB of memory is plenty).
 5. Open the link (it works once, for 24 hours) and create the first parent account. You
    can invite a second parent from Settings.
 
-Caddy gets and renews the certificate on its own. `Caddyfile` stays out of git: it names
-your server.
+Caddy gets and renews the certificate on its own. `Caddyfile` and `.env` stay out of git:
+they name your server. **Don't edit `docker-compose.yml`:** your own changes (the backup
+passphrase, a tunnel instead of Caddy) go in `docker-compose.override.yml` next to it, which
+Docker Compose reads with it and git ignores, so [upgrading](#upgrades) is always a plain
+`git pull`.
 
 ## Option 2: a computer at home, behind a tunnel
 
@@ -56,9 +63,20 @@ the home router. Use a tunnel that gives it a public HTTPS name:
 - **Tailscale Funnel:** `tailscale funnel 8080` gives `https://<machine>.<tailnet>.ts.net`
   with a Let's Encrypt certificate, and TLS ends on your machine.
 
-Run the `belay` service from `docker-compose.yml` without Caddy, publish port 8080 on
-localhost (`ports: ["127.0.0.1:8080:8080"]`), set `BELAY_PUBLIC_URL` to the tunnel's
-address, and set `BELAY_TRUST_PROXY=1` (the tunnel is the one proxy in front).
+Put the tunnel's address in `.env` (`echo BELAY_PUBLIC_URL=https://<the tunnel's name> > .env`),
+and in `docker-compose.override.yml`, next to `docker-compose.yml`, leave Caddy out and
+publish port 8080 on this machine only:
+
+```yaml
+services:
+  belay:
+    ports: ["127.0.0.1:8080:8080"]
+  caddy:
+    profiles: ["caddy"]   # not started: the tunnel is the one proxy in front
+```
+
+`BELAY_TRUST_PROXY` stays `1`: the tunnel is the one proxy in front. Then
+`docker compose up -d --build`.
 
 The phone always uses the public name, at home too, so it never needs the local-network
 permission for this. (Belay pre-grants `ACCESS_LOCAL_NETWORK` anyway, for servers on the
@@ -628,7 +646,8 @@ to keep anywhere off the machine on its own. Without the passphrase nobody can r
 included: keep it in a password manager, and on paper with the family's papers, not only on
 the server.
 
-With Docker, keep the passphrase in a secret rather than in `docker-compose.yml`:
+With Docker, keep the passphrase in a secret, in `docker-compose.override.yml` (next to
+`docker-compose.yml`; add to it if you have one already):
 
 ```yaml
 services:
@@ -640,6 +659,13 @@ services:
 secrets:
   belay_backup:
     file: ./backup-passphrase.txt     # one line; git ignores it
+```
+
+Docker Compose hands the file to the container as it is, and Belay runs as the container's
+`node` user (uid 1000), so make it that user's, readable by no one else:
+
+```bash
+sudo chown 1000 backup-passphrase.txt && sudo chmod 600 backup-passphrase.txt
 ```
 
 A passphrase that's set but unusable (shorter than 15 characters, or a file that can't be
@@ -790,6 +816,11 @@ monitor tells you even when nobody looks at the parent page.
 git pull
 docker compose up -d --build
 ```
+
+Your settings are in `.env`, `Caddyfile` and `docker-compose.override.yml`, which git doesn't
+touch. (On a server set up before they were, with the address in `docker-compose.yml`
+itself: put it in `.env` and any other change you made in the override, then
+`git checkout docker-compose.yml` and pull.)
 
 Back up first (`backup /data/before-upgrade.db`: the daily one may be hours old). The
 database schema upgrades itself when the server starts (versioned SQL migrations in

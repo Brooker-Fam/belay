@@ -224,7 +224,8 @@ has the options):
 
 ```bash
 cd server
-cp Caddyfile.example Caddyfile          # put your server's name here and in docker-compose.yml
+cp Caddyfile.example Caddyfile          # put your server's name here
+echo BELAY_PUBLIC_URL=https://belay.example.org > .env   # and here: your own settings stay out of git
 docker compose up -d --build
 docker compose logs belay               # open the one-time setup link it prints
 ```

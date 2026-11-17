@@ -200,11 +200,20 @@ home, follow [Option 2](server.md#option-2-a-computer-at-home-behind-a-tunnel) i
    ```bash
    cp Caddyfile.example Caddyfile
    ```
-3. Put your server's name in `Caddyfile`, and in `BELAY_PUBLIC_URL` in `docker-compose.yml`,
-   like `https://belay.example.org`, with no path.
-4. Set a backup passphrase now, as a Docker secret, so the daily backups are encrypted from the
-   first one ([Encrypted backups](server.md#encrypted-backups)). Keep it in your password
-   manager too: without it nobody can read the backups, you included.
+3. Put your server's name in `Caddyfile`, and in a file called `.env` next to
+   `docker-compose.yml`, like `https://belay.example.org`, with no path:
+   ```bash
+   echo BELAY_PUBLIC_URL=https://belay.example.org > .env
+   ```
+   Don't edit `docker-compose.yml` itself: what you'd change goes in
+   `docker-compose.override.yml` (the next step makes one), so updating the server later is a
+   plain `git pull`.
+4. Set a backup passphrase now (at least 15 characters), so the daily backups are encrypted
+   from the first one: put it on one line in `backup-passphrase.txt`, and the lines from
+   [Encrypted backups](server.md#encrypted-backups) in `docker-compose.override.yml`, both next
+   to `docker-compose.yml`, and give the file to the container's user as that section says.
+   Keep the passphrase in your password manager too: without it nobody can read the backups,
+   you included.
 5. Start it, and read the one-time setup link from the log:
    ```bash
    docker compose up -d --build
@@ -726,8 +735,10 @@ docker compose up -d --build
 ```
 
 The database upgrades itself; if that fails, every page says so, and the database is left as
-it was. If `git pull` refuses because you edited `docker-compose.yml` (your server's name), copy
-your changes somewhere, `git checkout docker-compose.yml`, pull, and put them back.
+it was. Your settings live in `.env`, `Caddyfile` and `docker-compose.override.yml`, which git
+leaves alone. (If you set up your server before that and `git pull` refuses because you edited
+`docker-compose.yml`: put your server's name in `.env` and your other changes in the override,
+then `git checkout docker-compose.yml` and pull.)
 
 **Belay on the phone** updates itself from your server, with no cable
 ([Updating Belay](server.md#updating-belay)):
