@@ -61,6 +61,8 @@ object StateDump {
             put("suspended", JsonArray(applied.suspended.sorted().map(::JsonPrimitive)))
             put("hidden", JsonArray(applied.hidden.sorted().map(::JsonPrimitive)))
             put("locks", JsonArray(applied.locks.map { JsonPrimitive(it.name) }))
+            // How many accounts Belay set as Play's allowed accounts (0: none), never which.
+            put("play_accounts", applied.playAccounts?.size ?: 0)
             put("problems", JsonArray(applied.problems.map(::JsonPrimitive)))
             put("policy_too_large", store.policyTooLarge() != null)
         }

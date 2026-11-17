@@ -57,6 +57,7 @@ import {
   getRules,
   neverBlockedOn,
   pausePhone,
+  playAccountsOf,
   preDecisions,
   protect,
   resumePhone,
@@ -670,6 +671,8 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
     const debugging = first(body, "debugging") === "1";
     const accounts = accountIds(first(body, "frp_accounts"));
     if (!accounts.ok) return showDevice(c, device, { error: accounts.error }, 400);
+    // Play's allowed accounts, email addresses (one per line, or commas); a form without the field leaves them as they are.
+    const play = "play_accounts" in body ? playAccountsOf(first(body, "play_accounts").split(/[\s,;]+/)) : undefined;
     const rules = getRules(db, device.id);
     const tightens =
       (factoryReset && !rules.restrictions.factory_reset) ||
@@ -681,7 +684,7 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
     // Phase 6: turning on a lock that can strand the phone makes its recovery key, in the same request, if it has none to use.
     const locking = (factoryReset && !rules.restrictions.factory_reset) || (debugging && !rules.restrictions.debugging);
     const made = db.transaction(() => {
-      setHardening(policyContext(), device.id, { factoryReset, debugging, frpAccounts: accounts.ids }, asParent(c));
+      setHardening(policyContext(), device.id, { factoryReset, debugging, frpAccounts: accounts.ids, ...(play ? { playAccounts: play } : {}) }, asParent(c));
       return locking && !usableKey(recoveryState(db, device.id)) ? makePhoneRecoveryKey(policyContext(), device.id, asParent(c)).result : null;
     }).immediate();
     if (made) return render(c, <RecoveryKeyPage view={view(c)} device={device} grouped={made.grouped} replaced={made.replaced} because="hardening" />);

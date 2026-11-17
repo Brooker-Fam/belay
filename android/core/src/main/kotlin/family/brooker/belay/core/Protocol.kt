@@ -413,6 +413,12 @@ data class WirePolicy(
     @SerialName("maintenance_until") val maintenanceUntil: Long? = null,
     /** Google account ids allowed to set the phone up after a factory reset; empty: no policy. */
     @SerialName("frp_accounts") val frpAccounts: List<String> = emptyList(),
+    /**
+     * The parent-owned Google accounts (email addresses) Google Play may use, set as Play's
+     * `allowed_accounts` managed configuration (core's PlayAccounts); empty: Belay leaves Play's
+     * configuration alone, and takes back what it set.
+     */
+    @SerialName("play_accounts") val playAccounts: List<String> = emptyList(),
     /** The parent's short words for blocked-app screens, like "Ask Mom or Dad". */
     @SerialName("support_message") val supportMessage: String? = null,
     /** The kid's requests of the last 30 days, newest first, with their answers. */
@@ -474,7 +480,7 @@ enum class WireOffBelayPosition {
 
 /**
  * Phase 11: the hand-over (docs/protocol.md, "Off belay"). Its effects are ordinary policy fields
- * the server already sets (restrictions lifted, `frp_accounts` empty, Play's accounts free); this
+ * the server already sets (restrictions lifted, `frp_accounts` and `play_accounts` empty); this
  * tells the phone to show the kid the hand-over screen: back up, then reset from Settings.
  */
 @Serializable

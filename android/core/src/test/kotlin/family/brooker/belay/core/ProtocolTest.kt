@@ -147,6 +147,14 @@ class ProtocolTest {
         assertEquals("family-filter-dns.cleanbrowsing.org", policy.web.privateDns)
         assertEquals("strict", policy.web.chrome?.youtubeRestrict)
         assertEquals(WireRequestStatus.TALK, policy.requests.single().status)
+        // A policy from before Play's accounts: none, so Belay leaves Play alone.
+        assertEquals(emptyList(), policy.playAccounts)
+    }
+
+    @Test
+    fun `Play's allowed accounts parse from play_accounts`() {
+        val policy = Wire.json.decodeFromString(WirePolicy.serializer(), """{"version":3,"play_accounts":["parent@gmail.com","co.parent@example.org"]}""")
+        assertEquals(listOf("parent@gmail.com", "co.parent@example.org"), policy.playAccounts)
     }
 
     @Test

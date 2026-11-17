@@ -252,3 +252,22 @@ describe("migration 7 (calls)", () => {
     }
   });
 });
+
+describe("migration 10 (Play's accounts)", () => {
+  it("keeps each phone's rules, with no Play accounts: the phone leaves Play's configuration alone", () => {
+    const db = phase6();
+    migrate(
+      db,
+      loadMigrations().filter((m) => m.version < 10),
+    );
+    db.prepare("INSERT INTO policies (device_id, version, changed_at, frp_accounts, restrictions) VALUES ('phone-1', 4, 0, '[\"112233445566778899000\"]', '{\"factory_reset\":true}')").run();
+    migrate(
+      db,
+      loadMigrations().filter((m) => m.version <= 10),
+    );
+    expect(db.pragma("user_version", { simple: true })).toBe(10);
+    expect(db.prepare("SELECT version, frp_accounts, restrictions, play_accounts FROM policies").all()).toEqual([
+      { version: 4, frp_accounts: '["112233445566778899000"]', restrictions: '{"factory_reset":true}', play_accounts: "[]" },
+    ]);
+  });
+});

@@ -320,6 +320,7 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
         autoTimeFailed = changes.autoTime != null,
         chromeFailed = changes.chrome != null,
         frpFailed = changes.frpAccounts != null,
+        playFailed = changes.playAccounts != null,
         problems = listOf("Belay isn't the device owner, so it can't apply any rules."),
     )
 
@@ -378,6 +379,7 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
             changes.autoTime?.let { "auto time $it" },
             changes.chrome?.let { "Chrome ${it.javaClass.simpleName.lowercase()}" },
             changes.frpAccounts?.let { "reset protection ${it.javaClass.simpleName.lowercase()}" },
+            changes.playAccounts?.let { "Play's accounts ${it.javaClass.simpleName.lowercase()}" },
             made.takeIf { it.isNotEmpty() }?.let { list -> "asked for ${list.map { it.packageName }}" },
         )
         val why = changes.suspend.sorted().joinToString { "$it: ${plan.reasons[it].orEmpty().joinToString("+")}" }

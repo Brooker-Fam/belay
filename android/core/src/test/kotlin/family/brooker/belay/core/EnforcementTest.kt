@@ -63,6 +63,7 @@ class EnforcementTest {
         web: WireWebPolicy = WireWebPolicy(),
         maintenanceUntil: Long? = null,
         frpAccounts: List<String> = emptyList(),
+        playAccounts: List<String> = emptyList(),
     ) = WirePolicy(
         version = version,
         apps = WireAppPolicy(newApps, decisions.map { (app, state) -> WireAppDecision(app.packageName, state) }),
@@ -71,6 +72,7 @@ class EnforcementTest {
         web = web,
         maintenanceUntil = maintenanceUntil,
         frpAccounts = frpAccounts,
+        playAccounts = playAccounts,
     )
 
     private fun plan(
@@ -407,6 +409,68 @@ class EnforcementTest {
         assertNull(plan(policy()).frpAccounts)
     }
 
+    // Play's allowed accounts (platform notes A4).
+
+    @Test
+    fun `Play's accounts are set from the policy, on debug builds too, and taken back when it has none`() {
+        val listed = policy(playAccounts = listOf(" Parent@Gmail.com ", "parent@gmail.com", "", "co.parent+play@example.org"))
+        val first = plan(listed)
+        assertEquals(listOf("parent@gmail.com", "co.parent+play@example.org"), first.playAccounts)
+        assertTrue(first.problems.isEmpty())
+        // They can't lock anyone out of the phone, so a test build sets them too.
+        assertEquals(first.playAccounts, plan(listed, debugBuild = true).playAccounts)
+        assertEquals(Setting.Set(listOf("parent@gmail.com", "co.parent+play@example.org")), Enforcement.changes(first, Applied()).playAccounts)
+        val applied = apply(first)
+        assertEquals(listOf("parent@gmail.com", "co.parent+play@example.org"), applied.playAccounts)
+        // The same again changes nothing; another list is set in its place.
+        assertNull(Enforcement.changes(plan(listed, applied = applied), applied).playAccounts)
+        val other = plan(policy(playAccounts = listOf("parent@gmail.com")), applied = applied)
+        assertEquals(Setting.Set(listOf("parent@gmail.com")), Enforcement.changes(other, applied).playAccounts)
+        // None in the policy: Belay takes back what it set, and then holds nothing.
+        val none = plan(policy(), applied = applied)
+        assertNull(none.playAccounts)
+        assertEquals(Setting.Clear, Enforcement.changes(none, applied).playAccounts)
+        assertNull(apply(none, applied).playAccounts)
+        // With none set and none asked for, Play's configuration is left alone.
+        assertNull(Enforcement.changes(plan(policy()), Applied()).playAccounts)
+    }
+
+    @Test
+    fun `setting Play's accounts that failed is tried again, and a take-back that failed is still Belay's`() {
+        val listed = plan(policy(playAccounts = listOf("parent@gmail.com")))
+        val failed = Enforcement.after(Applied(), listed, Enforcement.changes(listed, Applied()), ApplyOutcome(playFailed = true), T0)
+        assertNull(failed.playAccounts)
+        assertEquals(Setting.Set(listOf("parent@gmail.com")), Enforcement.changes(plan(policy(playAccounts = listOf("parent@gmail.com")), applied = failed), failed).playAccounts)
+        val held = apply(listed)
+        val none = plan(policy(), applied = held)
+        val stuck = Enforcement.after(held, none, Enforcement.changes(none, held), ApplyOutcome(playFailed = true), T0)
+        assertEquals(listOf("parent@gmail.com"), stuck.playAccounts)
+        assertEquals(Setting.Clear, Enforcement.changes(plan(policy(), applied = stuck), stuck).playAccounts)
+    }
+
+    @Test
+    fun `an account that isn't an email address is left out, and the problem doesn't repeat it`() {
+        val plan = plan(policy(playAccounts = listOf("not an email", "a,b@example.org", "parent@example", "parent@gmail.com")))
+        assertEquals(listOf("parent@gmail.com"), plan.playAccounts)
+        assertEquals(listOf("Play's accounts: one isn't an email address, so Belay left it out."), plan.problems)
+        val nothingGood = plan(policy(playAccounts = listOf("nobody")))
+        assertNull(nothingGood.playAccounts)
+        assertEquals(1, nothingGood.problems.size)
+    }
+
+    @Test
+    fun `at most five of Play's accounts, as one comma-separated string`() {
+        val many = (1..7).map { "parent$it@example.org" }
+        assertEquals(many.take(PlayAccounts.MAX), plan(policy(playAccounts = many)).playAccounts)
+        assertEquals("parent@gmail.com,co.parent@example.org", PlayAccounts.value(listOf("parent@gmail.com", "co.parent@example.org")))
+        assertEquals("com.android.vending", PlayAccounts.PLAY_STORE)
+        assertEquals("allowed_accounts", PlayAccounts.KEY)
+        for (good in listOf("parent@gmail.com", "o'brien.family+play@mail.example.co.uk", "a@b.co")) assertTrue(PlayAccounts.valid(good), good)
+        for (bad in listOf("", "Parent@Gmail.com", "parent", "parent@", "@gmail.com", "parent@gmail", "pa rent@gmail.com", "a,b@gmail.com", "parent@-gmail.com")) {
+            assertFalse(PlayAccounts.valid(bad), bad)
+        }
+    }
+
     // Applying, loosening and idempotence.
 
     @Test
@@ -416,6 +480,7 @@ class EnforcementTest {
         assertNull(plan.privateDns)
         assertNull(plan.chrome)
         assertNull(plan.frpAccounts)
+        assertNull(plan.playAccounts)
         assertTrue(Enforcement.changes(plan, Applied()).none)
     }
 

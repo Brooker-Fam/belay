@@ -819,6 +819,9 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
         `Calls: ${callsSummary(callSettings(db, row.id))} (get_contacts has the rules and contacts). 911, 988 and emergency numbers always work.`,
         ...(maintenance ? [`Maintenance mode until ${iso(maintenance) ?? ""}: USB debugging works.`] : []),
         ...(rules.frpAccounts.length ? [`Factory reset protection: ${rules.frpAccounts.length} parent Google account${rules.frpAccounts.length === 1 ? "" : "s"}.`] : []),
+        ...(rules.playAccounts.length
+          ? [`Google Play may use only the ${rules.playAccounts.length === 1 ? "parent-owned Google account" : `${rules.playAccounts.length} parent-owned Google accounts`} a parent listed.`]
+          : []),
       ];
       let apps: Record<string, unknown> = { note: "App details are hidden: a parent turned off AI access to apps." };
       if (settings.aiScopes.apps) {
@@ -851,6 +854,8 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
           factory_reset_locked: rules.restrictions.factory_reset,
           debugging_locked: rules.restrictions.debugging,
           reset_protection_accounts: rules.frpAccounts.length,
+          // How many, never which: the parent's email addresses stay on the parent page.
+          play_accounts: rules.playAccounts.length,
           // Whether there's a key and when one was last used: never the key, its check or its version.
           recovery_key: ((state) => ({ exists: usableKey(state), last_used: iso(state.lastUse?.usedAt) }))(recoveryState(db, row.id)),
         },

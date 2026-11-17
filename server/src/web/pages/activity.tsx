@@ -161,7 +161,7 @@ function what(e: AuditEntry): string {
     case "policy.restrictions":
       return `changed the locked settings${device}`;
     case "policy.hardening":
-      return `changed factory reset, debugging or reset protection${device}`;
+      return `changed factory reset, debugging, reset protection or the accounts Play may use${device}`;
     case "policy.maintenance":
       return `turned on maintenance mode${device}`;
     case "policy.maintenance_ended":

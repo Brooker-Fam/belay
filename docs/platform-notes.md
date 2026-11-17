@@ -26,6 +26,7 @@ relying on something new, it goes here first, with a source.
 | A1 | A Family Link child account can't sit next to a device owner | Very likely; unconfirmed by Google | Sources only |
 | A2 | A parent-owned regular Google account works with Play on a fully managed phone | Third-party sources only | Pixel 8 pending (step 3) |
 | A3 | The Android Management API isn't open to parental control | Confirmed | Docs |
+| A4 | Play's `allowed_accounts` managed configuration keeps Play to the accounts listed | Confirmed in the docs; Android stores it whether Play is there or not | Docs; AOSP; Emulator pending (Phase 2 CI); Pixel pending (Phase 2 checklist) |
 | K1 | Manifest receivers only get `PACKAGE_FULLY_REMOVED` and `PACKAGE_DATA_CLEARED` | Confirmed | Docs; AOSP; Emulator |
 | K2 | `getChangedPackages` resets every boot; key it to `BOOT_COUNT` | Confirmed | Docs; AOSP |
 | K3 | Seeing every package needs `QUERY_ALL_PACKAGES`, no device-owner exemption | Confirmed | Docs; AOSP; Emulator |
@@ -287,6 +288,38 @@ developers…". Not allowed: "Solutions developed exclusively for the purpose of
 user monitoring… independent of enterprise management." A parental-control developer was
 told "Google does not see parental controls as a valid business case for amapi"
 (Android Enterprise Community thread 1434, May 2026). So no managed Google Play either.
+
+### A4. Play's `allowed_accounts`
+
+**Confirmed in the docs and AOSP; untested on a phone.** Verified on: Docs; AOSP. Read on
+2026-11-17.
+
+- developer.android.com/work/dpc/security, "Restrict accounts in Google Play": "Your DPC can set a
+  list of accounts people can use in Google Play", for fully managed devices and work profiles,
+  "when the installed Google Play app is version 80970100 or higher". Set "a managed
+  configuration bundle for the Google Play package `com.android.vending`", and "put the
+  comma-separated email addresses as a string value for the `allowed_accounts` key". Its sample
+  copies Play's existing configuration (`getApplicationRestrictions`), puts the key and sets it
+  back (`setApplicationRestrictions`). "An empty string prevents people using any account in
+  Google Play."
+- AOSP `android-17.0.0_r1`, `services/devicepolicy/.../DevicePolicyManagerService.java`:
+  `setApplicationRestrictions` checks only that the package name is well formed
+  (`FrameworkParsingPackageUtils.validateName`), never that the app is installed. With the
+  `app_restrictions_coexistence` flag it's the admin's local policy in the policy engine
+  (`BundlePolicyValue.createIfNotNullOrEmpty`: an empty bundle removes it), whose callback,
+  `PolicyEnforcerCallbacks.setApplicationRestrictions`, only sends
+  `ACTION_APPLICATION_RESTRICTIONS_CHANGED` to the package's registered receivers; without the
+  flag, `UserManagerService.setApplicationRestrictions` writes it (cleans it for an empty bundle)
+  and sends the same. `getApplicationRestrictions` returns this admin's own bundle, or an empty
+  one.
+
+Belay's consequence: the policy's `play_accounts` (a parent lists them on the phone's page) become
+`allowed_accounts`, comma-separated, with any other key in Play's configuration kept; an empty list
+removes the key, so Belay never sends the empty string that would keep every account out. Play
+needn't be installed, so `EnforcementInstrumentedTest` sets it and takes it back on the CI emulator
+images, which have none; debug builds set it too: it can't lock anyone out of the phone. A hand-over empties it, so Play may use the kid's own
+account. Whether Play on the Pixel honours it, with the parent's account listed and another account
+added, is in [phase2-checklist.md](phase2-checklist.md).
 
 ---
 

@@ -141,6 +141,7 @@ private fun RuleText(rule: Rule, kid: KidView) {
         Rule.CLOCK_LOCKED -> stringResource(R.string.rule_clock) to stringResource(R.string.rule_clock_why)
         Rule.DEFAULT_APPS_LOCKED -> stringResource(R.string.rule_default_apps) to stringResource(R.string.rule_default_apps_why)
         Rule.ACCOUNTS_LOCKED -> stringResource(R.string.rule_accounts) to stringResource(R.string.rule_accounts_why)
+        Rule.PLAY_ACCOUNTS -> stringResource(R.string.rule_play_accounts) to stringResource(R.string.rule_play_accounts_why)
         Rule.NO_NEW_ESIM -> stringResource(R.string.rule_esim) to stringResource(R.string.rule_esim_why)
         Rule.NO_FACTORY_RESET -> stringResource(R.string.rule_factory_reset) to stringResource(R.string.rule_factory_reset_why)
         Rule.RESET_PROTECTION -> stringResource(R.string.rule_reset_protection) to stringResource(R.string.rule_reset_protection_why)

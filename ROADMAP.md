@@ -81,8 +81,10 @@ requests through end-to-end encrypted Web Push.
   install remains (threat model).
 - **Play:** stays signed in with the parent-owned account, and `DISALLOW_MODIFY_ACCOUNTS` keeps
   the kid from adding their own; Play's own parental controls behind a PIN, and authentication for
-  every purchase. Play's `allowed_accounts` managed configuration (platform notes A4) isn't set
-  yet: that's still to build.
+  every purchase. With the parent-owned accounts listed on the phone's page (hardening), Play's
+  `allowed_accounts` managed configuration (platform notes A4) keeps Play to them even if another
+  account is on the phone; the hand-over clears it. Built; the Phase 2 checklist tries it on the
+  Pixel.
 - **Hardening:**
   - `DISALLOW_FACTORY_RESET`, plus a factory-reset-protection policy with the parent's
     Google ID (`people/me`), then the `FRP_CONFIG_CHANGED` broadcast to Play services.
@@ -134,8 +136,8 @@ stopping collection with deletion, the hand-over) are built and run end to end t
 second security review whose fixes are in; an AI app's checks of where a phone is, and its pauses
 and locks, are limited to a few an hour per connection, what a phone can make the server keep
 of its apps is capped, and the activity log is kept as long as the family chooses (400 days by
-default). **Next:** Phase 5's texts wait for a Pixel test of Google Messages' archival hook;
-network logging (Phase 3); and Play's `allowed_accounts`.
+default); Play's `allowed_accounts` is built too. **Next:** Phase 5's texts wait for a Pixel test
+of Google Messages' archival hook; and network logging (Phase 3).
 
 ### Phase 3: screen time, schedules and stages ([design](docs/design/phase3-screen-time.md)) (built)
 

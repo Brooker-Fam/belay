@@ -131,8 +131,8 @@ size, its clock. It names no phone or app.
 
 Never included, because Belay doesn't collect it: messages, what's said on calls, Android's
 own contacts and call log, photos, browsing, or what's on the screen. Passwords, tokens,
-enrollment codes, reset protection account ids and recovery keys (or their checks) are never
-returned, and neither is the kid's own phone number (it's only for "Call" on the parent page)
+enrollment codes, reset protection account ids, the email addresses of the accounts Play may use
+(only how many) and recovery keys (or their checks) are never returned, and neither is the kid's own phone number (it's only for "Call" on the parent page)
 or which numbers are private.
 
 Every tool call is in the activity log (Activity → "Also show what AI apps read").
@@ -161,7 +161,7 @@ says so, once an hour. A parent, on the parent page or with the CLI, isn't limit
 | `get_location(device)` | Phase 4: the latest fix the server keeps: when and how long ago, why it was taken, how accurate, its coordinates, and where it is by the family's places (inside one, or how far from the nearest). Needs the Location category. |
 | `locate_now(device)` | Phase 4: asks the phone for a fresh fix and waits up to a minute for it. Only while the phone shares where it is on demand or periodically, and with the Location category. The kid's phone shows a notice naming the AI app ("Your parent checked where this phone is, using Claude"). At most 6 an hour per connection and phone. |
 | `get_place_events(device, from?, to?)` | Phase 4: arrivals at and departures from the family's places, newest first; the last 7 days by default, at most 92. Needs the Location category. |
-| `get_policy(device)` | What a phone enforces now, in words, with the rules' version and whether the phone has applied it; blocked and waiting apps; a line on its screen time; proposals waiting for a parent; whether the phone has a recovery key, and when one was last used. |
+| `get_policy(device)` | What a phone enforces now, in words, with the rules' version and whether the phone has applied it; blocked and waiting apps; a line on its screen time; proposals waiting for a parent; whether the phone has a recovery key, and when one was last used; how many reset protection accounts, and how many accounts Play may use (never which). |
 | `get_rules(device)` | Phase 3: the phone's screen-time rules (measuring, limits with their ids, schedules, exempt apps, self-serve, what happens when Belay can't count), extra time given today, the last "lock now", and proposals waiting. The apps under each rule with the Apps category; without it, only how many. With the Screen time category, where each limit stands today; with Requests, more-time requests waiting; with Stage and agreement, the stage, what the next one changes, and the agreement with the kid's answer. |
 | `get_screen_time(device, from?, to?)` | Phase 3: day by day, in the phone's days: screen minutes, unlocks, minutes by hour, the most used apps with minutes and opens (their names with the Apps category, else their package names), and the times Belay couldn't count, with why. A day the phone sent nothing for says so: that's unknown, not zero. The last 7 days by default, at most 92. Needs the Screen time category. |
 | `block_app(device, package, note?)` | Blocks an app at once (tightening). It refuses the apps the phone never blocks, so 911 and 988 always work: Belay itself, the dialer and the services that place calls, the texting app, the keyboard, the home screen, emergency and safety apps, System UI, Settings, and anything else the phone reports it never blocks. An app that isn't on the phone yet can be blocked ahead of time, but AI apps may have at most 50 of those per phone; a parent clears them on the phone's page. |

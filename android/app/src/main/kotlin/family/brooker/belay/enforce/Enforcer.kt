@@ -19,6 +19,7 @@ import family.brooker.belay.core.ApplyOutcome
 import family.brooker.belay.core.ChromeConfig
 import family.brooker.belay.core.EnforcementChanges
 import family.brooker.belay.core.Lock
+import family.brooker.belay.core.PlayAccounts
 import family.brooker.belay.core.Setting
 
 /**
@@ -38,6 +39,9 @@ import family.brooker.belay.core.Setting
  *   and hidden again.
  * - User restrictions: a device owner's unknown key is silently ignored, so keys newer than
  *   the phone's Android are never sent (core's Lock.minSdkFull).
+ * - setApplicationRestrictions (Chrome's settings, Play's allowed accounts) checks only that the
+ *   package name is well formed, not that the app is installed: Android keeps the configuration
+ *   for when it is, and an empty bundle removes it (platform notes A4).
  *
  * Never on a debug build, whatever the plan says: DISALLOW_FACTORY_RESET,
  * DISALLOW_DEBUGGING_FEATURES or a factory reset protection policy (CLAUDE.md, "Ask
@@ -59,6 +63,7 @@ class Enforcer(context: Context) {
         val failedLock = changes.lock.filterNot { lock(it, true, problems) }.toSet()
         val autoTimeFailed = changes.autoTime?.let { !autoTime(it, problems) } ?: false
         val chromeFailed = changes.chrome?.let { !chrome(it, problems) } ?: false
+        val playFailed = changes.playAccounts?.let { !playAccounts(it, problems) } ?: false
         val frpFailed = changes.frpAccounts?.let { !resetProtection(it, problems) } ?: false
         val failedUnhide = changes.unhide.filterNot { unhide(it, problems) }.toSet()
         val failedUnsuspend = suspend(changes.unsuspend, false, problems)
@@ -74,6 +79,7 @@ class Enforcer(context: Context) {
             autoTimeFailed = autoTimeFailed,
             chromeFailed = chromeFailed,
             frpFailed = frpFailed,
+            playFailed = playFailed,
             problems = problems,
         )
     }
@@ -118,6 +124,7 @@ class Enforcer(context: Context) {
             autoTime = false.takeIf { applied.autoTime },
             chrome = Setting.Clear.takeIf { applied.chrome != null },
             frpAccounts = Setting.Clear.takeIf { applied.frpAccounts != null },
+            playAccounts = Setting.Clear.takeIf { applied.playAccounts != null },
         )
         apply(changes)
         if (privateDns != null && runCatching { dpm.getGlobalPrivateDnsHost(admin) }.getOrNull() == privateDns) {
@@ -237,6 +244,26 @@ class Enforcer(context: Context) {
     } catch (e: RuntimeException) {
         Log.w(Agent.TAG, "Chrome configuration", e)
         problems += "Couldn't set Chrome's settings: ${e.javaClass.simpleName}."
+        false
+    }
+
+    /**
+     * Play's allowed accounts (platform notes A4): `allowed_accounts` in Play's managed configuration,
+     * the accounts' email addresses comma-separated, as Google's guide for device policy apps sets
+     * it, keeping any other key there; taken back by removing the key, and with it the whole
+     * configuration when nothing else is left. Play reads it from version 80970100.
+     */
+    private fun playAccounts(change: Setting<List<String>>, problems: MutableList<String>): Boolean = try {
+        val config = Bundle(dpm.getApplicationRestrictions(admin, PlayAccounts.PLAY_STORE))
+        when (change) {
+            is Setting.Set -> config.putString(PlayAccounts.KEY, PlayAccounts.value(change.value))
+            Setting.Clear -> config.remove(PlayAccounts.KEY)
+        }
+        dpm.setApplicationRestrictions(admin, PlayAccounts.PLAY_STORE, config)
+        true
+    } catch (e: RuntimeException) {
+        Log.w(Agent.TAG, "Play's accounts", e)
+        problems += "Couldn't ${if (change is Setting.Set) "set" else "take back"} the accounts the Play Store may use: ${e.javaClass.simpleName}."
         false
     }
 

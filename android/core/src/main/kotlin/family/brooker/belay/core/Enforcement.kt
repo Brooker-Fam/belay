@@ -202,6 +202,8 @@ data class EnforcementPlan(
     val chrome: ChromeConfig?,
     /** Factory reset protection accounts; null: no policy. */
     val frpAccounts: List<String>?,
+    /** Play's allowed accounts (PlayAccounts); null: Belay sets none, and takes back what it set. */
+    val playAccounts: List<String>? = null,
     /** The parent's words for blocked-app screens; null: Belay's own. */
     val supportMessage: String?,
     /** User apps waiting for a parent's decision, by package name. */
@@ -237,9 +239,10 @@ data class EnforcementPlan(
 
 /**
  * Phase 11: a parent is handing the phone over (the policy's `handover`, docs/protocol.md "Off
- * belay"). Whatever the restrictions say, Belay then holds none of [LIFTS] and no reset protection
- * policy, and a release build clears that policy once ([clearFrp]), even if it has no record of
- * setting one: the kid resets the phone from Settings and sets it up with their own account.
+ * belay"). Whatever the restrictions say, Belay then holds none of [LIFTS], no reset protection
+ * policy and no allowed accounts for Play, and a release build clears that policy once
+ * ([clearFrp]), even if it has no record of setting one: the kid resets the phone from Settings
+ * and sets it up with their own account.
  */
 data class HandoverPlan(
     /** The policy's handover.at: Belay carries out each hand-over once. */
@@ -283,6 +286,8 @@ data class Applied(
     val autoTime: Boolean = false,
     val chrome: ChromeConfig? = null,
     val frpAccounts: List<String>? = null,
+    /** Play's allowed accounts as Belay set them, or null: Belay set none. */
+    val playAccounts: List<String>? = null,
     /** The short support message Belay set, or null. */
     val supportMessage: String? = null,
     /**
@@ -318,10 +323,12 @@ data class EnforcementChanges(
     val autoTime: Boolean? = null,
     val chrome: Setting<ChromeConfig>? = null,
     val frpAccounts: Setting<List<String>>? = null,
+    /** Play's allowed accounts: set them, or take back Belay's own. */
+    val playAccounts: Setting<List<String>>? = null,
 ) {
     val none: Boolean
         get() = suspend.isEmpty() && unsuspend.isEmpty() && hide.isEmpty() && unhide.isEmpty() &&
-            lock.isEmpty() && unlock.isEmpty() && autoTime == null && chrome == null && frpAccounts == null
+            lock.isEmpty() && unlock.isEmpty() && autoTime == null && chrome == null && frpAccounts == null && playAccounts == null
 }
 
 /** A setting Belay manages as one value: set it to [Set.value], or take back its own. */
@@ -342,6 +349,7 @@ data class ApplyOutcome(
     val autoTimeFailed: Boolean = false,
     val chromeFailed: Boolean = false,
     val frpFailed: Boolean = false,
+    val playFailed: Boolean = false,
     val problems: List<String> = emptyList(),
 )
 
@@ -467,6 +475,8 @@ object Enforcement {
         if (frpAccounts != null && input.debugBuild) {
             problems += "This is a test build of Belay: it never sets factory reset protection."
         }
+        // While the phone is handed over, Play may use the kid's own account, whatever the policy says.
+        val playAccounts = if (handover == null) PlayAccounts.plan(policy.playAccounts, problems) else null
 
         val nextChangeAt = listOfNotNull(
             pause?.until,
@@ -490,6 +500,7 @@ object Enforcement {
             privateDns = privateDns,
             chrome = policy.web.chrome?.let(ChromeConfig::of),
             frpAccounts = frpAccounts.takeUnless { input.debugBuild },
+            playAccounts = playAccounts,
             supportMessage = policy.supportMessage?.trim()?.take(MAX_SUPPORT_MESSAGE)?.takeIf { it.isNotEmpty() },
             waiting = waiting,
             blocked = blocked.toList(),
@@ -572,6 +583,11 @@ object Enforcement {
             plan.frpAccounts == null -> Setting.Clear
             else -> Setting.Set(plan.frpAccounts)
         },
+        playAccounts = when {
+            plan.playAccounts == applied.playAccounts -> null
+            plan.playAccounts == null -> Setting.Clear
+            else -> Setting.Set(plan.playAccounts)
+        },
     )
 
     /**
@@ -590,6 +606,7 @@ object Enforcement {
             autoTime = if (changes.autoTime == null || outcome.autoTimeFailed) applied.autoTime else changes.autoTime,
             chrome = settle(applied.chrome, changes.chrome, outcome.chromeFailed),
             frpAccounts = settle(applied.frpAccounts, changes.frpAccounts, outcome.frpFailed),
+            playAccounts = settle(applied.playAccounts, changes.playAccounts, outcome.playFailed),
             supportMessage = applied.supportMessage,
             browsers = if (plan.hiddenBrowsers.isEmpty()) emptySet() else plan.hiddenBrowsers.toSet(),
             problems = problems,

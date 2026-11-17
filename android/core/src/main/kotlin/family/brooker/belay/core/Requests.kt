@@ -361,6 +361,9 @@ object KidRules {
         CLOCK_LOCKED,
         DEFAULT_APPS_LOCKED,
         ACCOUNTS_LOCKED,
+
+        /** Play may use only the accounts a parent chose (the policy's play_accounts). */
+        PLAY_ACCOUNTS,
         NO_NEW_ESIM,
         NO_FACTORY_RESET,
         RESET_PROTECTION,
@@ -401,6 +404,7 @@ object KidRules {
         if (Lock.CONFIG_DATE_TIME in locks) rules += Rule.CLOCK_LOCKED
         if (Lock.CONFIG_DEFAULT_APPS in locks) rules += Rule.DEFAULT_APPS_LOCKED
         if (Lock.MODIFY_ACCOUNTS in locks) rules += Rule.ACCOUNTS_LOCKED
+        if (applied.playAccounts != null) rules += Rule.PLAY_ACCOUNTS
         if (Lock.SIM in locks) rules += Rule.NO_NEW_ESIM
         if (Lock.CONFIG_LOCATION in locks) rules += Rule.LOCATION_LOCKED_ON
         if (Lock.FACTORY_RESET in locks) rules += Rule.NO_FACTORY_RESET

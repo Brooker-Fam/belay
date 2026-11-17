@@ -449,7 +449,7 @@ async function run(argv: string[], io: CliIO): Promise<void> {
       io.out(
         done.result.already
           ? `${row.name} was already handed over (rules version ${done.result.handover.version}).`
-          : `${row.name} is handed over (rules version ${done.version}): factory reset, debugging and accounts are unlocked and reset protection is cleared, and the phone tells the kid to back up and reset it from Settings.`,
+          : `${row.name} is handed over (rules version ${done.version}): factory reset, debugging and accounts are unlocked, reset protection is cleared and Play may use any account, and the phone tells the kid to back up and reset it from Settings.`,
       );
       return;
     }

@@ -249,7 +249,10 @@ sends outside the family's server, and the parent page says so where you choose 
 - Every answer, with the parent's note, who answered and when.
 - While the phone is paused: the parent's note and until when.
 - Which apps are blocked, and "This phone's rules": only the locks Belay actually applied,
-  each with why, and that calling or texting 911 and 988 always works.
+  each with why, and that calling or texting 911 and 988 always works. With the accounts Play
+  may use set, "The Play Store is set to use only the Google accounts your parent chose", never
+  the accounts themselves: the server keeps their email addresses for the phone's policy, and AI
+  apps see only how many.
 
 ## What the kid sees (Phases 6 and 10)
 

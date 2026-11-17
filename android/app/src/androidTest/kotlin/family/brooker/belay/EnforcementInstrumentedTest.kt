@@ -7,6 +7,7 @@ import android.os.UserManager
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import family.brooker.belay.core.Lock
+import family.brooker.belay.core.PlayAccounts
 import family.brooker.belay.core.Wire
 import family.brooker.belay.core.WireAppDecision
 import family.brooker.belay.core.WireAppState
@@ -21,6 +22,7 @@ import family.brooker.belay.store.AgentStore
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Before
@@ -35,9 +37,10 @@ import java.util.concurrent.TimeUnit
  * can't change it mid-test. Each test puts the phone back as it found it: the override is
  * cleared and a step re-applies the real policy, and the fixture app is removed.
  *
- * Only safe things: suspending and hiding the made-up fixture app, and DISALLOW_SAFE_BOOT.
- * Never DISALLOW_FACTORY_RESET, DISALLOW_DEBUGGING_FEATURES or reset protection (CLAUDE.md,
- * "Ask before"); debug builds refuse them anyway.
+ * Only safe things: suspending and hiding the made-up fixture app, DISALLOW_SAFE_BOOT, and Play's
+ * allowed accounts (made-up ones, on images without Play). Never DISALLOW_FACTORY_RESET,
+ * DISALLOW_DEBUGGING_FEATURES or reset protection (CLAUDE.md, "Ask before"); debug builds refuse
+ * them anyway.
  *
  * The fixture test needs the fixture APK on the device, like FixtureEventsInstrumentedTest.
  */
@@ -125,6 +128,27 @@ class EnforcementInstrumentedTest {
         DebugTools.policyOverride = null
         agentStep()
         assertEquals(before, um.hasUserRestriction(UserManager.DISALLOW_SAFE_BOOT))
+    }
+
+    /**
+     * Play's allowed accounts (platform notes A4). The CI images have no Play Store: Android keeps a
+     * package's managed configuration whether or not it's installed, so this runs there too.
+     */
+    @Test
+    fun playsAllowedAccountsAreSetInItsManagedConfigurationAndTakenBack() {
+        val before = dpm.getApplicationRestrictions(admin, PlayAccounts.PLAY_STORE)
+        assumeTrue("Play's configuration holds something Belay didn't set", before.isEmpty || store.applied().playAccounts != null)
+        val base = basePolicy()
+        DebugTools.policyOverride = base.copy(version = base.version + VERSION_OFFSET, playAccounts = listOf("Parent@Example.org", "co.parent@example.org"))
+        agentStep()
+        assertEquals("parent@example.org,co.parent@example.org", dpm.getApplicationRestrictions(admin, PlayAccounts.PLAY_STORE).getString(PlayAccounts.KEY))
+        assertEquals(listOf("parent@example.org", "co.parent@example.org"), store.applied().playAccounts)
+
+        // None in the policy: Belay takes the key back, and with it the configuration it set.
+        DebugTools.policyOverride = base.copy(version = base.version + VERSION_OFFSET + 1, playAccounts = emptyList())
+        agentStep()
+        assertFalse(dpm.getApplicationRestrictions(admin, PlayAccounts.PLAY_STORE).containsKey(PlayAccounts.KEY))
+        assertNull(store.applied().playAccounts)
     }
 
     @Test

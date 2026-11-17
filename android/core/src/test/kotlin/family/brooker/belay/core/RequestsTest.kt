@@ -209,6 +209,16 @@ class RequestsTest {
     }
 
     @Test
+    fun `Play's accounts show only while Belay holds them`() {
+        val roles = PhoneRoles(self = "family.example.belay")
+        val policy = WirePolicy(version = 2, playAccounts = listOf("parent@gmail.com"))
+        val plan = Enforcement.plan(Enforcement.Input(policy, emptyMap(), roles, Applied(), true, Enforcement.sdkFull(37), T0))
+        assertFalse(KidRules.Rule.PLAY_ACCOUNTS in KidRules.of(policy, plan, Applied(), privateDns = null))
+        val applied = Enforcement.after(Applied(), plan, Enforcement.changes(plan, Applied()), ApplyOutcome(), T0)
+        assertTrue(KidRules.Rule.PLAY_ACCOUNTS in KidRules.of(policy, plan, applied, privateDns = null))
+    }
+
+    @Test
     fun `repair mode shows while maintenance lifts debugging`() {
         val policy = WirePolicy(version = 2, restrictions = WireRestrictions(debugging = true), maintenanceUntil = T0 + HOUR)
         val plan = Enforcement.plan(Enforcement.Input(policy, emptyMap(), PhoneRoles("family.example.belay"), Applied(), false, Enforcement.sdkFull(37), T0))

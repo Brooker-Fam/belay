@@ -275,8 +275,9 @@ and `contact` entries in `requests` with `contact_name`, `contact_number` and `c
 contact an approval added, or the one that had the number; `null` until approved). Phase 11
 adds `handover` (`{at, by, version}` or `null`: when, as the policy has it in milliseconds since
 the epoch, the parent's name or `null` from the CLI, and the rules version that carried it).
-Hardening (factory reset, debugging, reset protection) can only be turned on on the parent page;
-`handover` lifts it, as the phone page's "Hand this phone over" does.
+Hardening (factory reset, debugging, reset protection, and the accounts Play may use) can only
+be turned on on the parent page; `handover` lifts it, as the phone page's "Hand this phone over"
+does.
 
 For scripts: `agent-add` prints only the APK's SHA-256 (lowercase) on stdout,
 `recovery-key` prints only the key, grouped like `7KD2M-8Q4ZX-1HNP3-RT6VW-B9CF0G`,
@@ -507,7 +508,8 @@ The end of the rules, for when the kid outgrows Belay: each step is a parent's, 
   location on; recording calls). The app list and the kid's requests keep coming while Belay is on the phone;
   [privacy.md](privacy.md) has exactly what each stop deletes.
 - **Hand this phone over** (a phone's page, after typing its name): lifts the locks on factory
-  reset, debugging and accounts and clears reset protection, and the phone shows the kid what to
+  reset, debugging and accounts and clears reset protection and the accounts Play may use, and
+  the phone shows the kid what to
   back up and how to reset it from Settings. While it lasts, those can't be locked again; "Take the
   hand-over back" stops the phone showing it (the locks stay lifted). The page says when the phone
   has it.

@@ -63,6 +63,16 @@ const clientId = z
 /** Phase 7: a phone number in E.164, like +15555550100. */
 export const e164 = z.string().regex(/^\+[1-9]\d{6,14}$/, "not E.164");
 
+/**
+ * A Google account's email address, lowercase, as Play's `allowed_accounts` lists it (Play takes
+ * them comma-separated in one string, so there's never a comma, nor a space, in one): a local
+ * part of letters, digits and . _ % + ' -, then a domain of letters, digits and hyphens with a dot.
+ */
+export const googleAccount = z
+  .string()
+  .max(254)
+  .regex(/^[a-z0-9._%+'-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/, "not a Google account's email address, in lowercase");
+
 export const Version = z.strictObject({ name: text().nullish(), code: versionCode });
 
 // ── Phase 3 building blocks ─────────────────────────────────────────────
@@ -581,6 +591,8 @@ export const Policy = z.strictObject({
   }),
   maintenance_until: time.nullable(),
   frp_accounts: z.array(text(64)),
+  /** The parent-owned Google accounts Play may use (Play's `allowed_accounts`); empty: Belay leaves Play's configuration alone. */
+  play_accounts: z.array(googleAccount).max(5),
   support_message: text(200).nullable(),
   requests: z.array(
     z.strictObject({

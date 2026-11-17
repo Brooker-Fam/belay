@@ -13,7 +13,7 @@
 import { type Actor, audit } from "../audit.js";
 import { newId } from "../crypto.js";
 import type { DB } from "../db.js";
-import { Policy } from "../device/schemas.js";
+import { Policy, googleAccount } from "../device/schemas.js";
 import { cleanText, oneLine } from "../text.js";
 import { addRequestedContact } from "./calls/approve.js";
 import { callsFor, contactsFor, numbersOf } from "./calls/store.js";
@@ -173,6 +173,8 @@ export const LIMITS = {
   decisionNote: 2000,
   maxPauseMinutes: 7 * 24 * 60,
   maxFrpAccounts: 5,
+  /** Play's allowed accounts (the policy's play_accounts). */
+  maxPlayAccounts: 5,
   maxUrlPatterns: 200,
   urlPattern: 500,
   /**
@@ -230,6 +232,8 @@ export interface Rules {
   /** As stored: see activeMaintenance. */
   maintenanceUntil: number | null;
   frpAccounts: string[];
+  /** The parent-owned Google accounts (emails, lowercase) Play may use; empty: Belay leaves Play's configuration alone. */
+  playAccounts: string[];
   supportMessage: string | null;
   /** When new apps first waited for a parent (null: never). Only then is every app already on the phone allowed. */
   askFirstAt: number | null;
@@ -253,6 +257,7 @@ interface PolicyRow {
   hide_browsers: number;
   maintenance_until: number | null;
   frp_accounts: string;
+  play_accounts: string;
   support_message: string | null;
   ask_first_at: number | null;
   new_apps_at: number | null;
@@ -285,6 +290,7 @@ export function defaultRules(): Rules {
     hideBrowsers: false,
     maintenanceUntil: null,
     frpAccounts: [],
+    playAccounts: [],
     supportMessage: null,
     askFirstAt: null,
     newAppsAt: null,
@@ -301,6 +307,7 @@ export function getRules(db: DB, deviceId: string): Rules {
   }
   const chrome = ChromeSettings.safeParse(parseJson(row.chrome));
   const frp = parseJson(row.frp_accounts);
+  const play = parseJson(row.play_accounts);
   return {
     version: row.version,
     changedAt: row.changed_at,
@@ -313,6 +320,7 @@ export function getRules(db: DB, deviceId: string): Rules {
     hideBrowsers: row.hide_browsers === 1,
     maintenanceUntil: row.maintenance_until,
     frpAccounts: Array.isArray(frp) ? frp.filter((a): a is string => typeof a === "string") : [],
+    playAccounts: Array.isArray(play) ? play.filter((a): a is string => typeof a === "string" && googleAccount.safeParse(a).success) : [],
     supportMessage: row.support_message,
     askFirstAt: row.ask_first_at,
     newAppsAt: row.new_apps_at,
@@ -322,14 +330,14 @@ export function getRules(db: DB, deviceId: string): Rules {
 function saveRules(db: DB, deviceId: string, rules: Rules, now: number): void {
   db.prepare(
     `INSERT INTO policies (device_id, version, changed_at, protected_at, new_apps, paused, pause_until, pause_note, pause_set_at, restrictions,
-       private_dns, chrome, hide_browsers, maintenance_until, frp_accounts, support_message, ask_first_at, new_apps_at)
+       private_dns, chrome, hide_browsers, maintenance_until, frp_accounts, play_accounts, support_message, ask_first_at, new_apps_at)
      VALUES (@device_id, 0, @now, @protected_at, @new_apps, @paused, @pause_until, @pause_note, @pause_set_at, @restrictions,
-       @private_dns, @chrome, @hide_browsers, @maintenance_until, @frp_accounts, @support_message, @ask_first_at, @new_apps_at)
+       @private_dns, @chrome, @hide_browsers, @maintenance_until, @frp_accounts, @play_accounts, @support_message, @ask_first_at, @new_apps_at)
      ON CONFLICT (device_id) DO UPDATE SET protected_at = excluded.protected_at, new_apps = excluded.new_apps, paused = excluded.paused,
        pause_until = excluded.pause_until, pause_note = excluded.pause_note, pause_set_at = excluded.pause_set_at, restrictions = excluded.restrictions,
        private_dns = excluded.private_dns, chrome = excluded.chrome, hide_browsers = excluded.hide_browsers,
-       maintenance_until = excluded.maintenance_until, frp_accounts = excluded.frp_accounts, support_message = excluded.support_message,
-       ask_first_at = excluded.ask_first_at, new_apps_at = excluded.new_apps_at`,
+       maintenance_until = excluded.maintenance_until, frp_accounts = excluded.frp_accounts, play_accounts = excluded.play_accounts,
+       support_message = excluded.support_message, ask_first_at = excluded.ask_first_at, new_apps_at = excluded.new_apps_at`,
   ).run({
     device_id: deviceId,
     now,
@@ -345,6 +353,7 @@ function saveRules(db: DB, deviceId: string, rules: Rules, now: number): void {
     hide_browsers: rules.hideBrowsers ? 1 : 0,
     maintenance_until: rules.maintenanceUntil,
     frp_accounts: JSON.stringify(rules.frpAccounts),
+    play_accounts: JSON.stringify(rules.playAccounts),
     support_message: rules.supportMessage,
     ask_first_at: rules.askFirstAt,
     new_apps_at: rules.newAppsAt,
@@ -599,6 +608,7 @@ export function buildPolicy(db: DB, deviceId: string, now: number): Policy {
     web: { private_dns: rules.privateDns, chrome: rules.chrome ? { ...rules.chrome } : null, hide_browsers: rules.hideBrowsers },
     maintenance_until: activeMaintenance(rules, now),
     frp_accounts: [...rules.frpAccounts],
+    play_accounts: [...rules.playAccounts],
     support_message: kidWords(rules.supportMessage, LIMITS.supportMessage),
     requests: requestAnswers(db, deviceId, now),
     agent_update: agentUpdate(db, deviceId),
@@ -1096,14 +1106,18 @@ export function setRestrictions(
 /**
  * Factory reset, debugging and reset protection: they can lock a phone for good. Only the
  * parent page calls this, after the parent typed the phone's name; AI apps and the CLI can't.
+ * With them, Play's allowed accounts (`playAccounts`; left out, they stay as they are): the
+ * parent-owned Google accounts Play may use, which can't lock anyone out of the phone, so they
+ * need no typed name. The activity log says how many accounts, never which.
  */
 export function setHardening(
   ctx: PolicyContext,
   deviceId: string,
-  input: { factoryReset: boolean; debugging: boolean; frpAccounts: string[] },
+  input: { factoryReset: boolean; debugging: boolean; frpAccounts: string[]; playAccounts?: readonly string[] },
   who: { kind: "parent"; parentId: string },
 ): Changed<{ on: string[]; off: string[] }> {
   onlyParents(who);
+  const play = input.playAccounts && playAccountsOf(input.playAccounts);
   return mutate(ctx, deviceId, who, (rules, log) => {
     const on: string[] = [];
     const off: string[] = [];
@@ -1119,10 +1133,29 @@ export function setHardening(
       (accounts.length ? on : off).push("frp_accounts");
       rules.frpAccounts = accounts;
     }
+    if (play && JSON.stringify(play) !== JSON.stringify(rules.playAccounts)) {
+      (play.length ? on : off).push("play_accounts");
+      rules.playAccounts = play;
+    }
     if (on.length) refuseWhileHandedOver(ctx.db, deviceId);
-    if (on.length || off.length) log("policy.hardening", { on, off, frp_accounts: accounts.length });
+    if (on.length || off.length) log("policy.hardening", { on, off, frp_accounts: accounts.length, play_accounts: rules.playAccounts.length });
     return { on, off };
   });
+}
+
+/**
+ * Play's allowed accounts as the policy carries them: each a Google account's email address
+ * (schemas.ts's googleAccount), lowercase, once, at most LIMITS.maxPlayAccounts. Anything else is
+ * refused, with the reason in plain words: one that isn't an email address, or too many.
+ */
+export function playAccountsOf(emails: readonly string[]): string[] {
+  const accounts = [...new Set(emails.map((e) => e.trim().toLowerCase()).filter(Boolean))];
+  const wrong = accounts.find((a) => !googleAccount.safeParse(a).success);
+  if (wrong !== undefined) {
+    throw new RuleRefused(`"${oneLine(wrong, 80)}" isn't a Google account's email address. List the parent-owned accounts Play may use, like parent@gmail.com, one per line.`);
+  }
+  if (accounts.length > LIMITS.maxPlayAccounts) throw new RuleRefused(`List at most ${LIMITS.maxPlayAccounts} accounts for Play.`);
+  return accounts;
 }
 
 /** Phase 11: what a hand-over lifts, so the kid can reset the phone from Settings and set it up with their own account. */
@@ -1131,26 +1164,34 @@ export const HANDOVER_LIFTS = ["factory_reset", "debugging", "modify_accounts"] 
 /** While a phone is being handed over, nothing a hand-over lifts locks again: the kid's phone is telling them to reset it. */
 function refuseWhileHandedOver(db: DB, deviceId: string): void {
   if (handoverOf(db, deviceId)) {
-    throw new RuleRefused("This phone is being handed over, so factory reset, debugging, accounts and reset protection stay unlocked: its screen tells the kid to back up, remove your account and reset it. Cancel the hand-over first.");
+    throw new RuleRefused("This phone is being handed over, so factory reset, debugging, accounts (Play's too) and reset protection stay unlocked: its screen tells the kid to back up, remove your account and reset it. Cancel the hand-over first.");
   }
 }
 
 /**
  * Phase 11's hand-over (family/offbelay/changes.ts records it, in `record`, in the same
  * transaction): factory reset, debugging and the accounts lock lifted, so the kid can reset the
- * phone from Settings and use their own Google account, and reset protection emptied, so the
- * phone isn't tied to the parent's account any more. A person's action only: the parent page,
- * after the parent types the phone's name, or the server's CLI. Never an AI app's, not even as a
- * proposal.
+ * phone from Settings and use their own Google account, and reset protection and Play's allowed
+ * accounts emptied, so the phone isn't tied to the parent's account any more. A person's action
+ * only: the parent page, after the parent types the phone's name, or the server's CLI. Never an AI
+ * app's, not even as a proposal.
  */
-export function liftForHandover<T>(ctx: PolicyContext, deviceId: string, who: Person, record: (log: Log, lifted: { restrictions: Restriction[]; frpAccounts: number }) => T): Changed<T> {
+export function liftForHandover<T>(
+  ctx: PolicyContext,
+  deviceId: string,
+  who: Person,
+  record: (log: Log, lifted: { restrictions: Restriction[]; frpAccounts: number; playAccounts: number }) => T,
+): Changed<T> {
   onlyPeople(who);
   return mutate(ctx, deviceId, who, (rules, log) => {
     const restrictions: Restriction[] = HANDOVER_LIFTS.filter((r) => rules.restrictions[r]);
     for (const r of HANDOVER_LIFTS) rules.restrictions[r] = false;
     const frpAccounts = rules.frpAccounts.length;
     rules.frpAccounts = [];
-    return record(log, { restrictions, frpAccounts });
+    // Play may use the kid's own account from now on.
+    const playAccounts = rules.playAccounts.length;
+    rules.playAccounts = [];
+    return record(log, { restrictions, frpAccounts, playAccounts });
   });
 }
 
