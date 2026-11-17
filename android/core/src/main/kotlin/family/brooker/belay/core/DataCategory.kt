@@ -48,7 +48,7 @@ object DataCategories {
         ),
     )
 
-    /** Phase 2: what the kid asks a parent for, from Belay's screen. */
+    /** Phase 2: what the kid asks a parent for, from Belay's screen; Phase 3 adds more time and the agreement. */
     val REQUESTS = DataCategory(
         id = "requests",
         title = "What you ask for, and what you write about why",
@@ -56,6 +56,45 @@ object DataCategories {
             "Which apps you ask your parent for, and when. When a new app waits for your " +
                 "parent, Belay asks for it right away.",
             "What you write in \"Why I want it\", if you write something",
+            "When you ask for more time: how many minutes, for which time limit and app, and " +
+                "what you write about why",
+            "Your answer to your family agreement, and what you write with it",
         ),
     )
+
+    /**
+     * Phase 3, while the policy's screen_time measures (`measure` on): the usage days Belay
+     * sends (POST /api/v1/usage) and the minutes in its report. Its id is the server's AI scope.
+     */
+    val SCREEN_TIME = DataCategory(
+        id = "screen_time",
+        title = "How long you use apps",
+        details = listOf(
+            "How many minutes each app is on your screen each day, and how many times you open it " +
+                "(not the phone app, your texting app or the other apps that always work)",
+            "How long the screen is on in each hour, and how many times you unlock the phone",
+            "When Belay couldn't count, like when usage access was off",
+            "How many minutes are used and left on each of your time limits, and when you take " +
+                "extra minutes yourself",
+        ),
+    )
+
+    /**
+     * Phase 3, while the policy has screen_time but doesn't measure: Belay counts on the phone to
+     * keep the limits, and reports only where each one stands.
+     */
+    val SCREEN_TIME_LIMITS = DataCategory(
+        id = "screen_time",
+        title = "Whether your time limits are used up",
+        details = listOf(
+            "Belay counts how long you use apps, on this phone, to keep your time limits. It " +
+                "doesn't send the minutes.",
+            "Whether each time limit is open, used up or running on extra time today, and which " +
+                "schedule is on",
+            "When you take extra minutes yourself, and whether Belay can count (usage access is on)",
+        ),
+    )
+
+    /** What screen time collects under a policy that [measures] or doesn't. */
+    fun screenTime(measures: Boolean): DataCategory = if (measures) SCREEN_TIME else SCREEN_TIME_LIMITS
 }
