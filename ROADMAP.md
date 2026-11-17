@@ -118,16 +118,20 @@ changes, tests and the family's decisions. Build order: Phase 2; then Phase 10's
 and Phase 6's self-update and recovery key; then Phase 3 with Phase 7's core; Phase 4;
 Phase 5 (calls, then texts); Phases 8, 9 and 11 when they're needed.
 
-**Built since Phase 2** (on `main`, checked end to end in CI on the Android 17 emulator): Phase 6's
-self-update, recovery key, backups and health checks, Phase 10's removal of another user or
-profile, and the fixes from a security review of the Phase 2 server. **In progress:** Phase 3,
-whose contract is in [docs/protocol.md](docs/protocol.md): its phone side is built (the engine in
-`:core`, and the app: counting, enforcing, notices, lock now, uploads and the kid's screens;
-[phase3-checklist.md](docs/phase3-checklist.md) is for the Pixel), and so is its server side
-(each phone's rules, stages, the agreement, more-time answers, usage storage, the Screen time
-page, the CLI and the MCP tools). Network logging comes after.
+**Built since Phase 2** (on `main`, checked end to end in CI on the Android 17 emulator): Phase 3's
+screen time (limits, schedules, lock now, measuring, more time, stages and the agreement), Phase
+6's self-update, recovery key, backups and health checks, Phase 10's removal of another user or
+profile, and the fixes from a security review of the Phase 2 server. The contracts are in
+[docs/protocol.md](docs/protocol.md); each phase's Pixel checklist is in `docs/`. **In progress:**
+Phase 7 (the kid's side: Home, help, the emergency card, talk), Phase 4 (location, off by
+default) and Phase 8 (the setup kit). Network logging (Phase 3) comes after.
 
-### Phase 3: screen time, schedules and stages ([design](docs/design/phase3-screen-time.md))
+### Phase 3: screen time, schedules and stages ([design](docs/design/phase3-screen-time.md)) (built)
+
+Built and run end to end in CI, except opt-in network logging. **Still open:**
+[docs/phase3-checklist.md](docs/phase3-checklist.md) on the Pixel (after updating, the phone
+needs one restart before lock now works: platform notes, S5).
+
 
 - Per-app time counted on the phone from usage events (the system's usage-limit observers are
   closed to Belay); daily limits and school, bedtime and custom schedules as a pure function in
