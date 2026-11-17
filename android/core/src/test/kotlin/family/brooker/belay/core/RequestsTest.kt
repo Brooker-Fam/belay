@@ -150,6 +150,25 @@ class RequestsTest {
     }
 
     @Test
+    fun `the recovery key's repair access shows only while it lifts a lock`() {
+        val until = T0 + 24 * HOUR
+        for ((restrictions, debug, shown) in listOf(
+            Triple(WireRestrictions(factoryReset = true), false, true),
+            Triple(WireRestrictions(debugging = true, factoryReset = true), false, true),
+            Triple(WireRestrictions(safeBoot = true), false, false),
+        )) {
+            val policy = WirePolicy(version = 2, restrictions = restrictions)
+            val input = Enforcement.Input(policy, emptyMap(), PhoneRoles("family.example.belay"), Applied(), debug, Enforcement.sdkFull(37), T0, recoveryUntil = until)
+            val plan = Enforcement.plan(input)
+            val applied = Enforcement.after(Applied(), plan, Enforcement.changes(plan, Applied()), ApplyOutcome(), T0)
+            val rules = KidRules.of(policy, plan, applied, privateDns = null)
+            assertEquals(shown, KidRules.Rule.RECOVERY_OPEN in rules, "$restrictions")
+            assertFalse(KidRules.Rule.NO_FACTORY_RESET in rules)
+            assertFalse(KidRules.Rule.NO_DEBUGGING in rules)
+        }
+    }
+
+    @Test
     fun `no policy, no rules`() {
         assertEquals(emptyList(), KidRules.of(null, null, Applied(), null))
     }

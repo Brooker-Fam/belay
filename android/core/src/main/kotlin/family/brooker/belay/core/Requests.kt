@@ -139,6 +139,9 @@ object KidRules {
         RESET_PROTECTION,
         NO_DEBUGGING,
         REPAIR_MODE,
+
+        /** Phase 6: the recovery key opened repair access (debugging and factory reset) for a while. */
+        RECOVERY_OPEN,
         WEB_FILTER,
         NO_BROWSERS,
         CHROME_NO_INCOGNITO,
@@ -173,6 +176,11 @@ object KidRules {
         if (applied.frpAccounts != null) rules += Rule.RESET_PROTECTION
         if (Lock.DEBUGGING in locks) rules += Rule.NO_DEBUGGING
         if (plan.maintenanceUntil != null && policy.restrictions.debugging && Lock.DEBUGGING !in locks) rules += Rule.REPAIR_MODE
+        if (plan.recoveryUntil != null && (policy.restrictions.debugging || policy.restrictions.factoryReset) &&
+            Lock.DEBUGGING !in locks && Lock.FACTORY_RESET !in locks
+        ) {
+            rules += Rule.RECOVERY_OPEN
+        }
         if (policy.web.hideBrowsers && plan.hiddenBrowsers.all { it in applied.hidden }) rules += Rule.NO_BROWSERS
         val chrome = applied.chrome
         if (chrome != null && plan.hiddenBrowsers.isEmpty()) {
