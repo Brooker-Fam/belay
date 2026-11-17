@@ -39,6 +39,31 @@ describe("migration 3", () => {
     expect(db.prepare("SELECT COUNT(*) AS n FROM proposals").get()).toEqual({ n: 0 });
   });
 
+  it("keeps the kid's requests, and of several waiting for one app keeps the newest", () => {
+    const db = phase2();
+    const insert = db.prepare(
+      "INSERT INTO requests (device_id, id, kind, package, label, reason, asked_at, received_at, updated_at, status) VALUES ('phone-1', ?, 'app', ?, 'Chatter Box', ?, ?, ?, ?, ?)",
+    );
+    insert.run("request-0001", "com.example.chat", "Please", T, T, T, "pending");
+    insert.run("request-0002", "com.example.chat", null, T + 1, T + 1, T + 1, "pending");
+    insert.run("request-0003", "com.example.chat", null, T + 2, T + 2, T + 2, "pending");
+    insert.run("request-0004", "com.example.maps", null, T, T, T, "pending");
+    insert.run("request-0005", "com.example.chat", null, T - 5, T - 5, T - 5, "declined");
+    migrate(db);
+    expect(db.prepare("SELECT id, status, superseded_by, reason FROM requests ORDER BY id").all()).toEqual([
+      { id: "request-0001", status: "superseded", superseded_by: "request-0003", reason: "Please" },
+      { id: "request-0002", status: "superseded", superseded_by: "request-0003", reason: null },
+      { id: "request-0003", status: "pending", superseded_by: null, reason: null },
+      { id: "request-0004", status: "pending", superseded_by: null, reason: null },
+      { id: "request-0005", status: "declined", superseded_by: null, reason: null },
+    ]);
+    expect(db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'requests' ORDER BY name").all()).toEqual([
+      { name: "requests_received" },
+      { name: "requests_status" },
+      { name: "sqlite_autoindex_requests_1" },
+    ]);
+  });
+
   it("learns from the activity log when new apps first asked, and when they last changed", () => {
     const db = phase2();
     db.prepare("INSERT INTO devices (id, name, token_hash, enrolled_at) VALUES ('phone-2', 'Alex''s phone', 'h2', ?)").run(T);

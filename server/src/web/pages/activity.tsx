@@ -71,7 +71,7 @@ function what(e: AuditEntry): string {
     case "push.unsubscribed":
       return `turned off notifications on ${str(d.browser) || "a browser"}`;
     case "request.made":
-      return `asked for ${str(d.label) || str(d.package) || "an app"}`;
+      return `asked for ${str(d.label) || str(d.package) || "an app"}${d.again === true ? " again" : ""}`;
     case "request.answered": {
       const answer = { approved: "approved", declined: "declined", talk: `said "let's talk" about` }[str(d.answer)] ?? "answered";
       return `${answer} the request for ${str(d.label) || str(d.package) || "an app"}${device}${str(d.note) ? `, noting: "${str(d.note)}"` : ""}`;

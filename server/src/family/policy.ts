@@ -493,7 +493,7 @@ function requestAnswers(db: DB, deviceId: string, now: number): Policy["requests
       { id: string; status: Policy["requests"][number]["status"]; note: string | null; answered_at: number | null; answered_by: string | null }
     >(
       `SELECT r.id, r.status, r.note, r.answered_at, p.name AS answered_by FROM requests r LEFT JOIN parents p ON p.id = r.answered_by
-       WHERE r.device_id = ? AND (r.status = 'pending' OR r.received_at >= ? OR r.answered_at >= ?)
+       WHERE r.device_id = ? AND r.status != 'superseded' AND (r.status = 'pending' OR r.received_at >= ? OR r.answered_at >= ?)
        ORDER BY r.received_at DESC, r.rowid DESC LIMIT ?`,
     )
     .all(deviceId, since, since, MAX_POLICY_REQUESTS)
@@ -1001,10 +1001,14 @@ export function answerRequest(
   onlyPeople(who);
   return mutate(ctx, deviceId, who, (_rules, log) => {
     const { db, now } = ctx;
-    const row = db
-      .prepare<[string, string], { package: string; label: string; status: string }>("SELECT package, label, status FROM requests WHERE device_id = ? AND id = ?")
-      .get(deviceId, requestId);
-    if (!row) return null;
+    const find = db.prepare<[string, string], { id: string; package: string; label: string; status: string; superseded_by: string | null }>(
+      "SELECT id, package, label, status, superseded_by FROM requests WHERE device_id = ? AND id = ?",
+    );
+    let row = find.get(deviceId, requestId);
+    // Asked again since (a page from before): the answer goes to the request that took its place.
+    for (let hops = 0; row?.status === "superseded" && row.superseded_by !== null && hops < 50; hops++) row = find.get(deviceId, row.superseded_by);
+    if (!row || row.status === "superseded") return null;
+    requestId = row.id;
     const note = clean(noteText, LIMITS.answerNote);
     db.prepare("UPDATE requests SET status = ?, note = ?, answered_by = ?, answered_at = ? WHERE device_id = ? AND id = ?").run(
       answer,

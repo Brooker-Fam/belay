@@ -49,7 +49,7 @@ import {
   type Rules,
 } from "../family/policy.js";
 import { LIFTABLE, PROPOSAL_KINDS, changeWords, createProposal, listProposals, nothingToLoosen, type ProposalChange } from "../family/proposals.js";
-import { pendingRequestCount, recentRequests, type RequestStatus } from "../family/requests.js";
+import { pendingRequestCount, recentRequests, type StoredRequestStatus } from "../family/requests.js";
 import { notifyParents, proposalNotice } from "../push.js";
 import { type AiScope, AI_SCOPES, getSettings } from "../settings.js";
 import { durations, formatDuration, isoInZone, parseWhen } from "../time.js";
@@ -79,7 +79,7 @@ const READ = { readOnlyHint: true, destructiveHint: false, idempotentHint: true,
 const TIGHTEN = { readOnlyHint: false, destructiveHint: true, openWorldHint: false } as const;
 
 const STATUS_WORDS: Record<DeviceView["status"], string> = { ok: "OK", attention: "needs attention", silent: "silent", disconnected: "disconnected" };
-const REQUEST_WORDS: Record<RequestStatus, string> = { pending: "waiting for a parent", approved: "approved", declined: "declined", talk: "let's talk" };
+const REQUEST_WORDS: Record<StoredRequestStatus, string> = { pending: "waiting for a parent", approved: "approved", declined: "declined", talk: "let's talk", superseded: "asked again since" };
 
 function result(value: unknown): CallToolResult {
   return { content: [{ type: "text", text: JSON.stringify(value) }] };

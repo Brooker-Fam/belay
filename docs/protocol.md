@@ -156,6 +156,11 @@ pending. When a new app is suspended, Belay makes its request at once (without a
 so the parent sees it even if the kid never opens Belay. The answers come back in the
 policy's `requests`, which Belay shows the kid.
 
+A new request (a new `id`) for an app that has one waiting takes its place, as when the app
+is installed again: the old one leaves the policy's `requests`, and the kid's earlier reason
+stays with the new one until they write another. At most 200 apps can have a request
+waiting per phone; past that, new ones are answered `429`.
+
 Phase 3 makes Request a union on `kind`: `app`, `more_time` (more minutes for a limit
 today) and `agreement` (the kid's answer to the family agreement). Only a parent answers;
 an approved `more_time` answer carries the `minutes` given, and the policy's

@@ -457,7 +457,7 @@ const STATE_WORDS: Record<AppRule["state"], string> = {
   runs: "Runs: there's no decision, and new apps run without asking",
 };
 
-const ANSWER_WORDS: Record<RequestView["status"], string> = { pending: "Waiting for you", approved: "Approved", declined: "Declined", talk: "Let's talk" };
+const ANSWER_WORDS: Record<RequestView["status"], string> = { pending: "Waiting for you", approved: "Approved", declined: "Declined", talk: "Let's talk", superseded: "Asked again" };
 
 /** The app's rule, its history, and the kid's requests for it. */
 const AppRuleCard: FC<{ view: View; device: DeviceView; app: App; rule: AppRule; history: Decision[]; requests: RequestView[] }> = ({

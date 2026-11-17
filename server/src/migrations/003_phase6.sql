@@ -44,3 +44,37 @@ UPDATE policies SET new_apps_at = (
   SELECT MAX(a.at) FROM audit_log a WHERE a.device_id = policies.device_id
     AND a.action IN ('policy.new_apps', 'policy.protected', 'policy.unprotected'));
 UPDATE policies SET new_apps_at = changed_at WHERE new_apps_at IS NULL AND ask_first_at IS NOT NULL;
+
+-- A new request for an app that already has one waiting takes its place ('superseded'), so
+-- the cap on waiting requests counts apps, not reinstalls. The table is made again for its
+-- CHECK constraint; no other table refers to it.
+CREATE TABLE requests_v3 (
+  device_id TEXT NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+  id TEXT NOT NULL,                         -- the phone's UUID
+  kind TEXT NOT NULL CHECK (kind IN ('app')),
+  package TEXT NOT NULL,
+  label TEXT NOT NULL,                      -- from the app's developer: untrusted
+  reason TEXT,                              -- the kid's own words: untrusted
+  asked_at INTEGER NOT NULL,                -- the phone's clock
+  received_at INTEGER NOT NULL,             -- the server's clock
+  updated_at INTEGER NOT NULL,              -- when the reason last changed
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'declined', 'talk', 'superseded')),
+  note TEXT,                                -- the parent's answer, shown to the kid
+  answered_by TEXT REFERENCES parents(id) ON DELETE SET NULL,
+  answered_at INTEGER,
+  superseded_by TEXT,                       -- for 'superseded': the newer request for the same app
+  PRIMARY KEY (device_id, id)
+) STRICT;
+INSERT INTO requests_v3 (device_id, id, kind, package, label, reason, asked_at, received_at, updated_at, status, note, answered_by, answered_at)
+  SELECT device_id, id, kind, package, label, reason, asked_at, received_at, updated_at, status, note, answered_by, answered_at FROM requests ORDER BY rowid;
+DROP TABLE requests;
+ALTER TABLE requests_v3 RENAME TO requests;
+CREATE INDEX requests_received ON requests(device_id, received_at);
+CREATE INDEX requests_status ON requests(status, received_at);
+-- Of several requests waiting for one app, the newest stays.
+UPDATE requests SET status = 'superseded', superseded_by = (
+    SELECT n.id FROM requests n WHERE n.device_id = requests.device_id AND n.package = requests.package AND n.status = 'pending'
+    ORDER BY n.received_at DESC, n.rowid DESC LIMIT 1)
+  WHERE status = 'pending' AND EXISTS (
+    SELECT 1 FROM requests n WHERE n.device_id = requests.device_id AND n.package = requests.package AND n.status = 'pending'
+      AND (n.received_at > requests.received_at OR (n.received_at = requests.received_at AND n.rowid > requests.rowid)));

@@ -48,8 +48,8 @@ async function family(fetch = pushService()) {
   return { t, sam, phone, fetch };
 }
 
-const ask = (t: TestServer, token: string, id = "request-0001") =>
-  deviceCall(t, token, "requests", { requests: [{ id, kind: "app", package: "com.example.chat", label: "Chatter\u0007 Box", asked_at: T0 }] });
+const ask = (t: TestServer, token: string, id = "request-0001", app = "com.example.chat") =>
+  deviceCall(t, token, "requests", { requests: [{ id, kind: "app", package: app, label: "Chatter\u0007 Box", asked_at: T0 }] });
 
 describe("RFC 8291 encryption", () => {
   it("gives the example's message from its keys and salt (section 5)", () => {
@@ -197,17 +197,30 @@ describe("sending notices", () => {
   it("sends at most six notices an hour about one phone", async () => {
     const { t, sam, phone, fetch } = await family();
     saveSubscription(t.deps.db, t.now(), sam.parent.id, browser().input, "Chrome on Android");
-    for (let i = 0; i < 8; i++) await ask(t, phone.token, `request-000${i}`);
+    for (let i = 0; i < 8; i++) await ask(t, phone.token, `request-000${i}`, `com.example.app${i}`);
     await vi.waitFor(() => {
       expect(fetch).toHaveBeenCalledTimes(6);
     });
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(fetch).toHaveBeenCalledTimes(6);
     t.advance(3_600_001);
-    await ask(t, phone.token, "request-0009");
+    await ask(t, phone.token, "request-0009", "com.example.app9");
     await vi.waitFor(() => {
       expect(fetch).toHaveBeenCalledTimes(7);
     });
+  });
+
+  it("doesn't tell parents again when the kid asks again for an app already waiting", async () => {
+    const { t, sam, phone, fetch } = await family();
+    saveSubscription(t.deps.db, t.now(), sam.parent.id, browser().input, "Chrome on Android");
+    await ask(t, phone.token, "request-0001");
+    await vi.waitFor(() => {
+      expect(fetch).toHaveBeenCalledTimes(1);
+    });
+    // The app was removed and installed again: the phone asks with a new id.
+    await ask(t, phone.token, "request-0002");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 
   it("forgets a browser its push service no longer knows (404 or 410)", async () => {

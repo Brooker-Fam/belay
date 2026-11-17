@@ -149,10 +149,12 @@ export function deviceRoutes(deps: Deps): Hono<DeviceEnv> {
     db.prepare("UPDATE devices SET last_seen_at = ? WHERE id = ?").run(now, phone.id);
     const saved = saveRequests(db, phone.id, body.value.requests, now);
     for (const r of saved.created) {
-      audit(db, now, { kind: "phone", deviceId: phone.id }, "request.made", { detail: { package: r.package, label: r.label } });
+      audit(db, now, { kind: "phone", deviceId: phone.id }, "request.made", { detail: { package: r.package, label: r.label, ...(r.again ? { again: true } : {}) } });
     }
     // A few notices an hour per phone at most: a burst of requests still shows on the parent page.
-    if (saved.created.length && limits.noticesPerPhone.hit(phone.id).ok) notifyParents(deps, requestNotice(phone.name, saved.created.map((r) => r.label)));
+    // Asking again for an app already waiting isn't news.
+    const fresh = saved.created.filter((r) => !r.again);
+    if (fresh.length && limits.noticesPerPhone.hit(phone.id).ok) notifyParents(deps, requestNotice(phone.name, fresh.map((r) => r.label)));
     if (saved.refused) return fail(429, "rate_limited", "Too many requests are waiting for a parent already", 3600);
     return c.json({ server_time: now, accepted: saved.accepted });
   });
