@@ -40,3 +40,6 @@ server/data/
 *.db
 *.db-wal
 *.db-shm
+
+# Made from server/Caddyfile.example: it names the family's server
+server/Caddyfile

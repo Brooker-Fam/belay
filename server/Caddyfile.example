@@ -1,0 +1,6 @@
+# Copy to Caddyfile and replace belay.example.org with your server's name.
+belay.example.org {
+	encode zstd gzip
+	header Strict-Transport-Security "max-age=31536000"
+	reverse_proxy belay:8080
+}

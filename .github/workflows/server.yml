@@ -1,0 +1,61 @@
+name: Server
+
+on:
+  push:
+    paths: ["server/**", ".github/workflows/server.yml"]
+  pull_request:
+    paths: ["server/**", ".github/workflows/server.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: server-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Typecheck, lint, tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.22.1
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      # No install scripts: the native modules ship prebuilt binaries.
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build
+        run: docker build -t belay-server:ci server
+      - name: Start it and enroll a made-up phone
+        run: |
+          set -euo pipefail
+          docker run -d --name belay -p 8080:8080 -e BELAY_PUBLIC_URL=http://localhost:8080 belay-server:ci
+          for _ in $(seq 30); do curl -fsS http://localhost:8080/healthz && break; sleep 1; done
+          docker logs belay 2>&1 | grep -q "/setup?token="
+          test "$(docker exec belay id -u)" != 0
+          code=$(docker exec belay node dist/cli.js create-code "CI phone" 2>/dev/null)
+          device='{"manufacturer":"Google","model":"sdk_gphone64_x86_64","android_release":"17","sdk":37,"sdk_full":"37.0","security_patch":"2026-10-05","agent_version_name":"ci","agent_version_code":1,"last_boot_at":0,"timezone":"UTC","device_time":0,"health":{"device_owner":true,"battery_exempt":true,"usage_access":true,"notifications_shown":true,"permissions":[],"standby_bucket":5,"background_restricted":false,"service_running":true,"test_only":true}}'
+          token=$(curl -fsS -H 'content-type: application/json' -d "{\"code\":\"$code\",\"device\":$device}" http://localhost:8080/api/v1/enroll | jq -r .token)
+          curl -fsS -H 'content-type: application/json' -H "authorization: Bearer $token" -d "{\"status\":$device}" http://localhost:8080/api/v1/checkin | jq -e '.policy.version == 0'
+          test "$(curl -sS -o /dev/null -w '%{http_code}' -X POST http://localhost:8080/mcp)" = 401
+      - name: Logs
+        if: always()
+        run: docker logs belay || true

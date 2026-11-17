@@ -1,0 +1,36 @@
+# Belay behind Caddy, which gets and renews a public HTTPS certificate on its own.
+# 1. Point a DNS name (belay.example.org below) at this machine; open ports 80 and 443.
+# 2. cp Caddyfile.example Caddyfile, and put your name in both files.
+# 3. docker compose up -d, then docker compose logs belay for the one-time setup link.
+# docs/server.md has the details, and other ways to get HTTPS.
+services:
+  belay:
+    build: .
+    restart: unless-stopped
+    environment:
+      BELAY_PUBLIC_URL: https://belay.example.org
+      # Caddy is the one proxy in front: client addresses (for rate limits) come from it.
+      BELAY_TRUST_PROXY: "1"
+    volumes:
+      - belay-data:/data
+    expose:
+      - "8080"
+
+  caddy:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - belay
+
+volumes:
+  belay-data:
+  caddy-data:
+  caddy-config:
