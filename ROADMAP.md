@@ -122,9 +122,11 @@ Phase 5 (calls, then texts); Phases 8, 9 and 11 when they're needed.
 screen time (limits, schedules, lock now, measuring, more time, stages and the agreement), Phase
 6's self-update, recovery key, backups and health checks, Phase 10's removal of another user or
 profile, and the fixes from a security review of the Phase 2 server. The contracts are in
-[docs/protocol.md](docs/protocol.md); each phase's Pixel checklist is in `docs/`. **In progress:**
-Phase 7 (the kid's side: Home, help, the emergency card, talk), Phase 4 (location, off by
-default) and Phase 8 (the setup kit). Network logging (Phase 3) comes after.
+[docs/protocol.md](docs/protocol.md); each phase's Pixel checklist is in `docs/`. Phase 8's setup kit is
+built too: one provisioning plan that `provision.sh` and the kit both run, the kit's page and
+runner, and its container; CI provisions the emulator with the kit's runner. **In progress:**
+Phase 7 (the kid's side: Home, help, the emergency card, talk) and Phase 4 (location, off by
+default). Network logging (Phase 3) comes after.
 
 ### Phase 3: screen time, schedules and stages ([design](docs/design/phase3-screen-time.md)) (built)
 
