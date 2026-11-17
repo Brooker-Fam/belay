@@ -3,6 +3,7 @@ package family.brooker.belay
 import android.content.pm.ApplicationInfo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import family.brooker.belay.core.CategoryPermissions
 import family.brooker.belay.core.InstallSource
 import family.brooker.belay.core.PackagePresence
 import family.brooker.belay.core.SensitivePermissions
@@ -79,16 +80,24 @@ class InventoryInstrumentedTest {
         assertEquals(true, health.uninstallBlocked)
         assertTrue(health.permissions.isNotEmpty())
         val neverGranted = DeviceOwnerSetup.NEVER_GRANTED.map { it.substringAfterLast('.') }
+        // Phase 4: location is granted by policy only while the policy has it on (the real policy
+        // here; denying a granted one restarts Belay, so CI checks that from the shell).
+        val plan = DeviceOwnerSetup.permissionPlan(context)
+        val tied = CategoryPermissions.CATEGORY.keys.map { it.substringAfterLast('.') }
+        val locationWanted = plan.grant.any { CategoryPermissions.tied(it) }
         health.permissions.forEach {
-            if (it.name in neverGranted) {
-                // CAMERA: never granted by policy, and denied by policy outside the enrollment screen.
-                assertFalse("${it.name} is granted", it.granted)
-                assertTrue("${it.name} not denied by policy", it.fixedByPolicy)
-            } else {
-                assertTrue("${it.name} not granted by policy", it.granted && it.fixedByPolicy)
+            when {
+                it.name in neverGranted -> {
+                    // CAMERA: never granted by policy, and denied by policy outside the enrollment screen.
+                    assertFalse("${it.name} is granted", it.granted)
+                    assertTrue("${it.name} not denied by policy", it.fixedByPolicy)
+                }
+                it.name in tied && !locationWanted -> assertTrue("${it.name} not denied by policy with location off", !it.granted && it.fixedByPolicy)
+                else -> assertTrue("${it.name} not granted by policy", it.granted && it.fixedByPolicy)
             }
         }
         assertTrue("CAMERA isn't reported", "CAMERA" in health.permissions.map { it.name })
+        assertTrue("location isn't reported", "ACCESS_FINE_LOCATION" in health.permissions.map { it.name })
         assertTrue("managed notice can't show", health.notificationsShown)
     }
 
