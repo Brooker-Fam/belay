@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.app.admin.DevicePolicyManager
 import android.app.admin.FactoryResetProtectionPolicy
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -241,8 +242,11 @@ class Enforcer(context: Context) {
 
     /**
      * Factory reset protection (API 30). Android itself then tells the reset-protection agent
-     * (Play services on a Pixel) with ACTION_RESET_PROTECTION_POLICY_CHANGED. Throws
+     * (Play services on a Pixel) with ACTION_RESET_PROTECTION_POLICY_CHANGED, and Google's
+     * guide for device policy apps still asks for FRP_CONFIG_CHANGED too, so Belay sends it
+     * (a local broadcast to Play services; nothing leaves the phone from Belay). Throws
      * UnsupportedOperationException where the phone has no persistent data block (emulators).
+     * Reset protection doesn't hold while OEM unlocking is on, which Belay can't read.
      */
     private fun resetProtection(change: Setting<List<String>>, problems: MutableList<String>): Boolean {
         if (change is Setting.Set && BuildConfig.DEBUG) {
@@ -257,6 +261,7 @@ class Enforcer(context: Context) {
                     .build()
             }
             dpm.setFactoryResetProtectionPolicy(admin, policy)
+            app.sendBroadcast(Intent(FRP_CONFIG_CHANGED).setPackage(PLAY_SERVICES).addFlags(Intent.FLAG_RECEIVER_FOREGROUND))
             true
         } catch (e: UnsupportedOperationException) {
             problems += "This phone doesn't support factory reset protection."
@@ -270,6 +275,10 @@ class Enforcer(context: Context) {
 
     companion object {
         const val CHROME = "com.android.chrome"
+
+        /** Google's broadcast for a changed reset-protection setup, to Play services only. */
+        private const val FRP_CONFIG_CHANGED = "com.google.android.gms.auth.FRP_CONFIG_CHANGED"
+        private const val PLAY_SERVICES = "com.google.android.gms"
 
         /** Can lock someone out of a phone: release builds only. */
         val NEVER_ON_DEBUG = setOf(Lock.FACTORY_RESET, Lock.DEBUGGING)
