@@ -1,0 +1,10 @@
+{
+  "format": 1,
+  "note": "The question, for the interpreters' fixture tests.",
+  "package": "family.brooker.belay",
+  "admin": "family.brooker.belay/.AdminReceiver",
+  "steps": [
+    {"kind": "confirm", "text": "Make {package} the device owner?", "no": ["Nothing changed: you said no.", "Run it again to try once more."]},
+    {"kind": "say", "text": "never: the answer was no"}
+  ]
+}

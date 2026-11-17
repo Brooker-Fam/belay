@@ -1,0 +1,13 @@
+{
+  "name": "No APK at the path given.",
+  "base": "fresh-debug",
+  "plan": "provision",
+  "args": [
+    "--yes",
+    "{apk}"
+  ],
+  "exit": 1,
+  "apk": {
+    "missing": true
+  }
+}

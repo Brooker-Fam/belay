@@ -73,6 +73,21 @@ rules and keeps what the phone reports.
 | A bad update (Phase 6) | A version of Belay that breaks, or doesn't start. | Updates are offered one phone at a time. No rollback: Android refuses downgrades, so a newer version fixes it. Each phone reports how the update went, word for word when Android refused it, and a failed one waits (a minute, doubling to six hours) instead of looping. The phone's page shows each step, the parents hear when an update fails, and a phone that goes quiet within an hour of updating is flagged; adb in maintenance mode still works. CI's emulator test runs a self-update. |
 | A lost server and no backup (Phase 6) | A phone locked against adb and reset, and nothing to unlock them. | The recovery key, kept printed or in a password manager, opens both for 24 hours, offline; the phone then needs a new server and enrolling again. The server keeps only its check, never the key. |
 
+## Setting up a phone (Phase 8)
+
+The setup kit ([setup-kit.md](setup-kit.md)) runs on the parent's own computer: it makes the
+release key, builds and signs Belay, and serves a page that sets up the phone over USB.
+
+| Who | Risk | What the kit does |
+|---|---|---|
+| A malicious page on the internet | Taking over the phone over USB. | It can't reach it: WebUSB only opens a device the parent picks in the browser's own dialog, and only for the page that asked. The kit's page is on `localhost`, and the kit's server answers only requests addressed to `localhost` or `127.0.0.1`, so another website can't reach it through a name of its own (DNS rebinding). |
+| Someone on the family's network | Using the kit's page, or fetching the APK. | `-p 127.0.0.1:8090:8090` keeps the port on the computer itself, and the server refuses requests addressed to anything but `localhost`. A browser elsewhere could only reach its own computer's USB anyway. The APK isn't secret, and the key is never served. |
+| A compromised family server | Signing an update, or a page that installs something else. | It never sees the key, and the kit never talks to it: the phone enrolls itself with the address and code the parent pastes. A server-hosted setup page (not built) would show the APK's certificate SHA-256 to compare, as the kit's page does. |
+| A tampered setup image | A kit that installs a different app, or keeps the key. | No image is published: the parent builds it from the repository's Dockerfile, with the base images pinned by digest and the SDK's tools by SHA-256 (sdkmanager checks the rest against Google's checksums). The page shows the certificate SHA-256 of whatever it installs, to compare with the one written down when the key was made, and asks before making it device owner. |
+| A mistake with the key | A key made inside the container and lost when it stops, overwritten, or kept in the repository. | The kit refuses to run without a folder from the computer at `/keys`, only makes a key when there isn't one (with `make-release-key.sh`, which refuses to overwrite and refuses the repository), refuses a folder that looks like the repository, and walks the parent through the backup. The image is built without any key. |
+| Another program on the computer | Holding the phone's USB debugging (adb) while the page sets it up. | Only one program can: the page says so and stops. A program that can already run adb on this computer could set up the phone itself, so the kit adds no new risk there. |
+| Someone with the parent's computer later | The page's adb key, kept by the browser for `localhost:8090`. | It only works on a phone that allowed it, with USB debugging on; Phase 2's debugging lock closes that once the parent turns it on. Revoke it on the phone in Developer options ("Revoke USB debugging authorizations"). |
+
 ## Out of scope
 
 - A kid with a second phone, or a friend's phone. Belay is about this phone.

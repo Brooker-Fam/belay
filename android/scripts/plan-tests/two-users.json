@@ -1,0 +1,16 @@
+{
+  "name": "A second user: stop, and list the users.",
+  "base": "fresh-debug",
+  "plan": "provision",
+  "args": [
+    "--yes",
+    "{apk}"
+  ],
+  "exit": 1,
+  "phone": [
+    {
+      "run": "pm list users",
+      "out": "Users:\n\tUserInfo{0:Owner:4c13} running\n\tUserInfo{11:Guest:414} running"
+    }
+  ]
+}

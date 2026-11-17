@@ -1,0 +1,3 @@
+
+STOPPED: --server https://belay.example.org/x;reboot doesn't look like a server address.
+  It should look like https://belay.example.org

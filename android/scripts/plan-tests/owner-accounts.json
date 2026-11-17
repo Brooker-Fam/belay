@@ -1,0 +1,26 @@
+{
+  "name": "An account appeared between the check and dpm set-device-owner: its type, and what to do.",
+  "base": "fresh-debug",
+  "plan": "provision",
+  "args": [
+    "--yes",
+    "{apk}"
+  ],
+  "exit": 1,
+  "phone": [
+    {
+      "run": "dpm set-device-owner family.brooker.belay/.AdminReceiver",
+      "err": "java.lang.IllegalStateException: Not allowed to set the device owner because there are already some accounts on the device",
+      "exit": 255
+    },
+    {
+      "run": "dumpsys account",
+      "out": "Accounts: 0"
+    },
+    {
+      "run": "dumpsys account",
+      "after": "shell dpm set-device-owner family.brooker.belay/.AdminReceiver",
+      "out": "Accounts: 1\n    Account {name=kid, type=com.example.game}"
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+shell cmd one
+shell cmd noisy
+shell cmd noisy
+shell cmd errors
+shell cmd list
+shell cmd list
+shell cmd list
+shell cmd empty
+shell cmd empty
+shell cmd fails
+shell cmd fails
+shell cmd fails
+shell cmd lines
+shell cmd later
+sleep 2
+shell cmd later
+sleep 2
+shell cmd later
+shell cmd never
+sleep 1
+shell cmd never
+sleep 1
+shell cmd loud
+shell cmd loud
+shell cmd change
+shell cmd works
+shell cmd fails

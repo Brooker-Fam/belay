@@ -1,0 +1,17 @@
+{
+  "name": "A release build without --yes: it asks, and \"n\" changes nothing.",
+  "base": "fresh-debug",
+  "plan": "provision",
+  "args": [
+    "{apk}"
+  ],
+  "stdin": "n\n",
+  "exit": 1,
+  "apk": {
+    "package": "family.brooker.belay",
+    "testOnly": false,
+    "signed": true,
+    "sha256": "64ed03ab327f851e45c14054f192a8d594cbb898ec2ef57bb4ff66fef32f1ec1",
+    "dn": "CN=Belay release key"
+  }
+}

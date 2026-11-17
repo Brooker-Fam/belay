@@ -1,0 +1,8 @@
+Belay: provisioning
+APK: {apk}
+  test-only (debug) build: yes
+  signed by: C=US, O=Android, CN=Android Debug
+  certificate SHA-256: fb72cb7ed181acfc60dfb82e7791dd67725f55ba939616929e1e762c516ef853
+  Phone: Google sdk_gphone64_x86_64, Android 11 (API 30), security update 2026-10-05, serial emulator-5554
+
+STOPPED: Belay needs Android 12 (API 31) or newer; this phone has API 30.

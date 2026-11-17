@@ -1,0 +1,39 @@
+{
+  "name": "belay-setup-kit",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && node scripts/build-web.mjs",
+    "start": "node dist/server.js",
+    "provision": "node dist/run.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@yume-chan/adb": "2.6.4",
+    "@yume-chan/adb-credential-web": "2.1.0",
+    "@yume-chan/adb-daemon-webusb": "2.3.2",
+    "@yume-chan/adb-server-node-tcp": "2.5.2",
+    "@yume-chan/android-bin": "2.1.0",
+    "@yume-chan/stream-extra": "2.6.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.19.2",
+    "@types/w3c-web-usb": "1.0.14",
+    "esbuild": "0.28.2",
+    "eslint": "10.14.0",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.1",
+    "vitest": "5.1.0"
+  },
+  "allowScripts": {
+    "esbuild": false
+  }
+}

@@ -182,7 +182,13 @@ self-update uses a non-test-only debug build: platform notes, I5).
   can see and what Belay told them, an "I need help" button and an emergency card that work even
   while the phone is paused, and "talk to my parent".
 
-### Phase 8: setup without the Android SDK ([design](docs/design/phase8-setup-without-sdk.md))
+### Phase 8: setup without the Android SDK ([design](docs/design/phase8-setup-without-sdk.md)) (built)
+
+Built ([docs/setup-kit.md](docs/setup-kit.md)): `provision.sh`'s steps are a plan,
+`android/scripts/provision-plan.json`, run by lib.sh and by the kit, both held to the same
+fixtures; the kit's container, page and command-line runner; CI's informational emulator job with
+the kit's runner. **Still open:** a factory-fresh Pixel 8 with desktop Chrome on Linux, macOS and
+Windows (and Windows' USB driver).
 
 - A setup kit on the parent's computer that makes the key, builds and signs the APK, and provisions
   the phone from a local page in desktop Chrome over WebUSB (Tango, MIT). One provisioning plan
