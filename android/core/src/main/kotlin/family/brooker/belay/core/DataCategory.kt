@@ -3,7 +3,7 @@ package family.brooker.belay.core
 /**
  * A kind of data the agent collects. The kid-facing list "What your parent can see" is
  * built from the categories of the collectors that actually run, so it can't drift from
- * what is collected. The same ids become the AI data scopes on the server (Phase 1).
+ * what is collected. The same ids become the AI data scopes on the server.
  */
 data class DataCategory(
     val id: String,
@@ -17,8 +17,13 @@ object DataCategories {
         id = "apps",
         title = "The apps on this phone",
         details = listOf(
-            "Each app's name and version, and when it was installed or last updated",
+            "Each app's name, version and kind (like game or social), when it was installed " +
+                "or last updated, and whether it came with the phone",
             "Where each app came from, like the Play Store or a computer",
+            // SensitivePermissions.categories, in words.
+            "What each app is allowed to use: the camera, microphone, location, contacts, " +
+                "texts, call history, photos and media, or nearby devices, and whether it can " +
+                "read notifications, use accessibility controls or act as a device admin",
             "When an app is installed, updated or removed",
         ),
     )

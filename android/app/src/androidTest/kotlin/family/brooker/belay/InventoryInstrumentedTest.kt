@@ -3,6 +3,7 @@ package family.brooker.belay
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import family.brooker.belay.core.InstallSource
+import family.brooker.belay.core.SensitivePermissions
 import family.brooker.belay.health.HealthReader
 import family.brooker.belay.inventory.PackageReader
 import org.junit.Assert.assertEquals
@@ -48,6 +49,16 @@ class InventoryInstrumentedTest {
         assertTrue(framework!!.system)
         assertEquals(InstallSource.PREINSTALLED, framework.source)
         assertTrue(context.packageName in all)
+    }
+
+    @Test
+    fun sensitivePermissionsAreRead() {
+        assumeTrue("not device owner", DeviceOwnerSetup.isDeviceOwner(context))
+        DeviceOwnerSetup.ensure(context)
+        val self = PackageReader(context).read(listOf(context.packageName)).getValue(context.packageName)
+        // A device owner is an active device admin, and holds ACCESS_LOCAL_NETWORK by policy.
+        assertTrue(SensitivePermissions.DEVICE_ADMIN in self.permissions)
+        assertTrue(SensitivePermissions.NEARBY_DEVICES in self.permissions)
     }
 
     @Test
