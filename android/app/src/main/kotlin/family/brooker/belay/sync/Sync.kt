@@ -176,7 +176,11 @@ private class SyncRun(private val app: Context) {
                 ConnectionStore.synced(app, answer.receivedAt, skew, checkin = true)
                 Log.i(Agent.TAG, "checked in (clock skew ${skew / 1000} s)")
                 // The long-poll's fallback: the answer carries the server's current policy.
-                Sync.received(app, answer.body.policy, fromLongPoll = false, at = answer.receivedAt)
+                try {
+                    Sync.received(app, answer.body.policy, fromLongPoll = false, at = answer.receivedAt)
+                } catch (e: RuntimeException) {
+                    Log.e(Agent.TAG, "the check-in's policy couldn't be stored", e)
+                }
                 Verdict.Sent
             }
             is DeviceApi.Answer.Refused -> verdictFor(answer, items = 1)

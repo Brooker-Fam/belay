@@ -80,71 +80,83 @@ object PolicyPoll {
         Log.i(Agent.TAG, "policy long-poll started")
         try {
             while (!Thread.currentThread().isInterrupted) {
-                val connection = ConnectionStore.read(app)
-                val server = connection.server
-                if (!connection.connected || server == null) {
-                    idle(IDLE_NOT_CONNECTED_MS)
-                    continue
+                val wait = try {
+                    once(app, failures)
+                } catch (e: InterruptedException) {
+                    throw e
+                } catch (e: Exception) {
+                    // Never the end of the loop: an unexpected failure waits like any other.
+                    Log.e(Agent.TAG, "policy long-poll step failed", e)
+                    Poll.Failed
                 }
-                if (!Sync.online(app)) {
-                    idle(IDLE_OFFLINE_MS)
-                    continue
-                }
-                // An unreadable token is the sync thread's to handle (it disconnects).
-                val token = connection.sealedToken?.let(TokenVault::decrypt)
-                if (token == null) {
-                    idle(IDLE_NOT_CONNECTED_MS)
-                    continue
-                }
-                val have = AgentStore.get(app).policyVersion() ?: -1
-                val answer = try {
-                    DeviceApi(server).policy(token, have, PolicyRules.POLL_WAIT_S) { call = it }
-                } catch (e: IllegalArgumentException) {
-                    DeviceApi.Answer.Failed("bad server address")
-                } finally {
-                    call = null
-                }
-                if (Thread.currentThread().isInterrupted) break
-                val wait: Long? = when (answer) {
-                    is DeviceApi.Answer.Ok -> {
-                        val body = answer.body
-                        val new = body != null && Sync.received(app, body.policy, fromLongPoll = true, at = answer.receivedAt)
-                        if (new || answer.receivedAt - answer.sentAt >= TOO_QUICK_MS) {
-                            failures = 0
-                            null
-                        } else {
-                            failures++
-                            PolicyRules.pollRetryMs(failures, null, Random.nextDouble())
-                        }
-                    }
-                    is DeviceApi.Answer.Refused -> {
-                        val verdict = OutboxPolicy.verdict(answer.status, answer.error?.error, items = 1)
-                        if (verdict is Verdict.Disconnect) {
-                            Sync.disconnect(app, verdict.reason)
-                            null
-                        } else {
-                            failures++
-                            val retryAfter = OutboxPolicy.retryAfterMs(answer.retryAfter, System.currentTimeMillis())
-                            PolicyRules.pollRetryMs(failures, retryAfter, Random.nextDouble()).also {
-                                Log.w(Agent.TAG, "policy long-poll: HTTP ${answer.status}; again in ${it / 1000} s")
-                            }
-                        }
-                    }
-                    is DeviceApi.Answer.Failed -> {
+                when (wait) {
+                    Poll.Again -> failures = 0
+                    Poll.Failed -> {
                         failures++
-                        PolicyRules.pollRetryMs(failures, null, Random.nextDouble()).also {
-                            Log.w(Agent.TAG, "policy long-poll: ${answer.reason}; again in ${it / 1000} s")
-                        }
+                        idle(PolicyRules.pollRetryMs(failures, null, Random.nextDouble()))
+                    }
+                    is Poll.Wait -> {
+                        if (wait.failure) failures++
+                        idle(wait.ms(failures))
                     }
                 }
-                if (wait != null) idle(wait)
             }
         } catch (e: InterruptedException) {
             // stop()
-        } catch (t: Throwable) {
-            Log.e(Agent.TAG, "policy long-poll failed", t)
         } finally {
             Log.i(Agent.TAG, "policy long-poll stopped")
+        }
+    }
+
+    /** What the loop does after one round. */
+    private sealed interface Poll {
+        /** Ask again at once. */
+        data object Again : Poll
+
+        /** A failure: back off. */
+        data object Failed : Poll
+
+        /** Wait: a fixed time, or a backoff ([failure]) at least as long as Retry-After. */
+        data class Wait(val failure: Boolean, private val fixedMs: Long? = null, private val retryAfterMs: Long? = null) : Poll {
+            fun ms(failures: Int): Long = fixedMs ?: PolicyRules.pollRetryMs(failures, retryAfterMs, Random.nextDouble())
+        }
+    }
+
+    private fun once(app: Context, failures: Int): Poll {
+        val connection = ConnectionStore.read(app)
+        val server = connection.server
+        if (!connection.connected || server == null) return Poll.Wait(failure = false, fixedMs = IDLE_NOT_CONNECTED_MS)
+        if (!Sync.online(app)) return Poll.Wait(failure = false, fixedMs = IDLE_OFFLINE_MS)
+        // An unreadable token is the sync thread's to handle (it disconnects).
+        val token = connection.sealedToken?.let(TokenVault::decrypt)
+            ?: return Poll.Wait(failure = false, fixedMs = IDLE_NOT_CONNECTED_MS)
+        val have = AgentStore.get(app).policyVersion() ?: -1
+        val answer = try {
+            DeviceApi(server).policy(token, have, PolicyRules.POLL_WAIT_S) { call = it }
+        } finally {
+            call = null
+        }
+        if (Thread.currentThread().isInterrupted) throw InterruptedException()
+        return when (answer) {
+            is DeviceApi.Answer.Ok -> {
+                val body = answer.body
+                val new = body != null && Sync.received(app, body.policy, fromLongPoll = true, at = answer.receivedAt)
+                if (new || answer.receivedAt - answer.sentAt >= TOO_QUICK_MS) Poll.Again else Poll.Failed
+            }
+            is DeviceApi.Answer.Refused -> {
+                val verdict = OutboxPolicy.verdict(answer.status, answer.error?.error, items = 1)
+                if (verdict is Verdict.Disconnect) {
+                    Sync.disconnect(app, verdict.reason)
+                    Poll.Again
+                } else {
+                    Log.w(Agent.TAG, "policy long-poll: HTTP ${answer.status} (failure ${failures + 1})")
+                    Poll.Wait(failure = true, retryAfterMs = OutboxPolicy.retryAfterMs(answer.retryAfter, System.currentTimeMillis()))
+                }
+            }
+            is DeviceApi.Answer.Failed -> {
+                Log.w(Agent.TAG, "policy long-poll: ${answer.reason} (failure ${failures + 1})")
+                Poll.Failed
+            }
         }
     }
 
