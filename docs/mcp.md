@@ -73,6 +73,9 @@ provider's terms. Settings → "What AI apps may read" turns each category off:
 - **Requests:** what the kid asks for from Belay's screen (which app), and why, in their
   own words, with each answer and the parent's note. On by default.
 
+Each category is on by default. One that a new version of Belay adds starts off for a
+family that had turned any category off, and Settings marks it "new" until a parent saves.
+
 Always included: the phones' names, their status and problems ("silent for 14 hours",
 "the phone hasn't applied the rules changed 4 hours ago", or, first, that someone may be
 getting around Belay when the phone reports Android's own Parental Controls or another

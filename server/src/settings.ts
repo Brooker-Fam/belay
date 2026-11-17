@@ -15,13 +15,21 @@ export interface Settings {
   /** A phone that hasn't checked in for this long is reported as silent. */
   silentHours: number;
   aiScopes: Record<AiScope, boolean>;
+  /**
+   * Categories added since the family last saved its choices (none if they never did). Each is
+   * off if the family had turned any category off, else on, like the rest.
+   */
+  newAiScopes: AiScope[];
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   timezone: "UTC",
   silentHours: 12,
   aiScopes: { apps: true, device_status: true, requests: true },
+  newAiScopes: [],
 };
+
+const SCOPE_KEYS = Object.keys(AI_SCOPES) as AiScope[];
 
 function read(db: DB, key: string): unknown {
   const row = db.prepare<[string], { value: string }>("SELECT value FROM settings WHERE key = ?").get(key);
@@ -43,12 +51,20 @@ function write(db: DB, key: string, value: unknown): void {
 export function getSettings(db: DB): Settings {
   const timezone = read(db, "timezone");
   const silentHours = read(db, "silent_hours");
-  const scopes = read(db, "ai_scopes") as Partial<Record<AiScope, unknown>> | undefined;
-  const scope = (key: AiScope): boolean => (typeof scopes?.[key] === "boolean" ? scopes[key] : DEFAULT_SETTINGS.aiScopes[key]);
+  const stored = read(db, "ai_scopes");
+  const scopes = stored && typeof stored === "object" ? (stored as Partial<Record<AiScope, unknown>>) : undefined;
+  // A family that turned any category off chose what AI apps see: a category added since starts off.
+  const optedOut = scopes !== undefined && Object.values(scopes).some((v) => v === false);
+  const scope = (key: AiScope): boolean => {
+    const value = scopes?.[key];
+    if (typeof value === "boolean") return value;
+    return optedOut ? false : DEFAULT_SETTINGS.aiScopes[key];
+  };
   return {
     timezone: typeof timezone === "string" && isValidTimeZone(timezone) ? timezone : DEFAULT_SETTINGS.timezone,
     silentHours: typeof silentHours === "number" && silentHours >= 1 ? silentHours : DEFAULT_SETTINGS.silentHours,
     aiScopes: { apps: scope("apps"), device_status: scope("device_status"), requests: scope("requests") },
+    newAiScopes: scopes ? SCOPE_KEYS.filter((key) => typeof scopes[key] !== "boolean") : [],
   };
 }
 
