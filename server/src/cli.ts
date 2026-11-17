@@ -4,7 +4,9 @@
  *   node dist/cli.js setup-link                  a one-time link to create the first parent
  *   node dist/cli.js create-code <phone name>    an enrollment code for a phone
  *   node dist/cli.js reset-password <username>   a new password, read from the terminal
+ *   node dist/cli.js backup <file>               a consistent copy of the database, while it runs
  */
+import { existsSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { endAllSessions, newSetupToken, parentCount, passwordProblem, setPassword } from "./auth/parents.js";
 import { audit } from "./audit.js";
@@ -78,8 +80,16 @@ async function main(): Promise<void> {
         console.log("Password changed. That parent was signed out everywhere.");
         break;
       }
+      case "backup": {
+        const file = args[0];
+        if (!file) fail("Usage: backup <file>, for example backup /data/belay-backup.db");
+        if (existsSync(file)) fail(`${file} already exists. Pick a new name.`);
+        await db.backup(file);
+        console.log(`Backed up to ${file}. It holds the family's data: keep it as private as the server.`);
+        break;
+      }
       default:
-        fail("Commands: setup-link, create-code <phone name>, reset-password <username>");
+        fail("Commands: setup-link, create-code <phone name>, reset-password <username>, backup <file>");
     }
   } finally {
     db.close();
