@@ -37,6 +37,7 @@ export const Layout: FC<PropsWithChildren<{ view: View; title: string; narrow?: 
     <head>
       <meta charset="utf-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1" />
+      <meta name="color-scheme" content="light dark" />
       <meta name="robots" content="noindex" />
       <meta name="theme-color" content="#1f6f5c" />
       <meta name="apple-mobile-web-app-title" content="Belay" />
@@ -47,6 +48,11 @@ export const Layout: FC<PropsWithChildren<{ view: View; title: string; narrow?: 
       <script src={view.assets.js} defer></script>
     </head>
     <body>
+      {view.parentName !== null && (
+        <a class="skip" href="#main">
+          Skip the menu
+        </a>
+      )}
       {view.parentName !== null && (
         <header class="top">
           <div class="bar">
@@ -77,7 +83,9 @@ export const Layout: FC<PropsWithChildren<{ view: View; title: string; narrow?: 
           </div>
         </header>
       )}
-      <main class={narrow ? "narrow" : undefined}>{children}</main>
+      <main id="main" class={narrow ? "narrow" : undefined}>
+        {children}
+      </main>
       <footer>
         Times are in {view.tz} ({offsetLabel(view.now, view.tz)}). Belay keeps this family's data on this server only.
       </footer>
@@ -112,8 +120,12 @@ export const Problems: FC<{ problems: Problem[] }> = ({ problems }) =>
     </ul>
   ) : null;
 
-export const Notice: FC<PropsWithChildren<{ kind?: "error" | "warn" }>> = ({ kind, children }) => (
-  <div class={kind ? `notice ${kind}` : "notice"} role={kind === "error" ? "alert" : "status"}>
+/**
+ * A message at the top of a page. An error that a form came back with gets the focus (app.js), so
+ * a screen reader reads it first; one that stands while something's wrong on a phone is `standing`.
+ */
+export const Notice: FC<PropsWithChildren<{ kind?: "error" | "warn"; standing?: boolean }>> = ({ kind, standing, children }) => (
+  <div class={kind ? `notice ${kind}` : "notice"} role={kind === "error" ? "alert" : "status"} data-standing={standing ? "" : undefined}>
     {children}
   </div>
 );
@@ -124,6 +136,18 @@ export const PermissionChips: FC<{ permissions: string[]; highlight?: string[] }
       <span class={highlight.includes(p) ? "chip warn" : "chip"}>{PERMISSION_NAMES[p] ?? p}</span>
     ))}
   </>
+);
+
+/** For a long page: its sections, folded away until wanted, so a phone needn't scroll past the rest. */
+export const OnThisPage: FC<{ links: (readonly [href: string, label: string])[] }> = ({ links }) => (
+  <details class="jump">
+    <summary>On this page</summary>
+    <nav aria-label="On this page">
+      {links.map(([href, label]) => (
+        <a href={href}>{label}</a>
+      ))}
+    </nav>
+  </details>
 );
 
 /** A POST button with the CSRF token, optionally asking first. */

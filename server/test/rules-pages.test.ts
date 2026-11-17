@@ -178,7 +178,7 @@ describe("the phone's Rules section", () => {
     const said = ["Android's Parental Controls are on: they can lift Belay's suspensions", "Private DNS: the host isn't serving"];
     await deviceCall(t, phone.token, "checkin", { status: device({ device_time: t.now(), enforcement: { policy_version: 0, applied_at: t.now(), problems: said } }) });
     const html = await page();
-    const alert = html.indexOf('<div class="notice error" role="alert"><p><strong>Someone may be getting around Belay on this phone.</strong>');
+    const alert = html.indexOf('<div class="notice error" role="alert" data-standing=""><p><strong>Someone may be getting around Belay on this phone.</strong>');
     expect(alert).toBeGreaterThan(-1);
     expect(alert).toBeLessThan(html.indexOf('<h2 id="rules">'));
     expect(html).toContain("<li>Android&#39;s Parental Controls are on: they can lift Belay&#39;s suspensions</li>");

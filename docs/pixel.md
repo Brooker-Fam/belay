@@ -15,9 +15,10 @@ until October 2030.
   Phase 2 keeps it off).
 - It boots, updates to the current Android 17, and the battery holds a charge.
 
-## The phone line (Spectrum Mobile)
+## The phone line
 
-Activate the line (SIM or eSIM) **before Phase 2**: Phase 2 blocks SIM and eSIM changes.
+Activate the line (SIM or eSIM) **before Phase 2**: once a parent turns on the eSIM lock, no eSIM
+can be added, the phone's own included. A physical SIM swap isn't blocked; Belay reports it.
 When you factory reset, keep the eSIM: don't tick the option to erase eSIMs.
 
 ## Setting it up
@@ -48,15 +49,17 @@ Create a separate Google account that you, the parent, own, only for this phone:
   device owner ([platform-notes.md A1](platform-notes.md#a1-family-link-child-account-next-to-a-device-owner)).
   Belay does the supervising.
 
-Phase 2 locks the phone to this account and turns on the Play Store's own parental
-controls with a PIN.
+With the accounts lock on, no other account can be added, and with this account listed on the
+phone's page (hardening's "Play Store: the parent-owned Google accounts Play may use"), Play's `allowed_accounts`
+keeps Play to it. The Play Store's own parental controls and their PIN are yours to set, by hand,
+in Play's settings: Belay doesn't set them.
 
 ## Returning the phone to normal
 
 - **Release build:** factory reset from Settings (Settings > System > Reset options > Erase
   all data). That's the only way: Android has no other way to remove a release device
-  owner. From Phase 2 on, Belay blocks factory reset, so lift that first from the parent
-  page (Phase 2 maintenance mode).
+  owner. If a parent turned on "Lock factory reset", turn it off first on the phone's page
+  (maintenance mode lifts only the debugging lock, not this one).
 - **Debug build:** `android/scripts/unprovision.sh`, no reset needed.
 - **Reset from Settings, not from recovery mode,** while the parent account is on the
   phone: a recovery reset triggers factory reset protection and asks for that account.

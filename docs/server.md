@@ -4,6 +4,9 @@ The server keeps the family's data, talks to the phones, serves the parent pages
 MCP interface. One server is for one family. It's a single Docker image with a SQLite
 database in `/data`.
 
+Setting Belay up for the first time? [guide.md](guide.md) is the whole path for a parent, from
+a used Pixel 8 to the first day and the years after, and links back here for the details.
+
 It needs a **public HTTPS address**:
 
 - the phone reaches it over cellular, not only at home;
@@ -30,7 +33,11 @@ Any small Linux VPS with Docker works (1 GB of memory is plenty).
    git clone https://github.com/brooker-fam/belay.git && cd belay/server
    cp Caddyfile.example Caddyfile
    ```
-3. Put your name in `Caddyfile` and in `BELAY_PUBLIC_URL` in `docker-compose.yml`.
+3. Put your name in `Caddyfile`, and the same name in a file called `.env` next to
+   `docker-compose.yml`:
+   ```bash
+   echo BELAY_PUBLIC_URL=https://belay.example.org > .env
+   ```
 4. Start it, and read the one-time setup link from the log:
    ```bash
    docker compose up -d --build
@@ -39,8 +46,11 @@ Any small Linux VPS with Docker works (1 GB of memory is plenty).
 5. Open the link (it works once, for 24 hours) and create the first parent account. You
    can invite a second parent from Settings.
 
-Caddy gets and renews the certificate on its own. `Caddyfile` stays out of git: it names
-your server.
+Caddy gets and renews the certificate on its own. `Caddyfile` and `.env` stay out of git:
+they name your server. **Don't edit `docker-compose.yml`:** your own changes (the backup
+passphrase, a tunnel instead of Caddy) go in `docker-compose.override.yml` next to it, which
+Docker Compose reads with it and git ignores, so [upgrading](#upgrades) is always a plain
+`git pull`.
 
 ## Option 2: a computer at home, behind a tunnel
 
@@ -53,9 +63,20 @@ the home router. Use a tunnel that gives it a public HTTPS name:
 - **Tailscale Funnel:** `tailscale funnel 8080` gives `https://<machine>.<tailnet>.ts.net`
   with a Let's Encrypt certificate, and TLS ends on your machine.
 
-Run the `belay` service from `docker-compose.yml` without Caddy, publish port 8080 on
-localhost (`ports: ["127.0.0.1:8080:8080"]`), set `BELAY_PUBLIC_URL` to the tunnel's
-address, and set `BELAY_TRUST_PROXY=1` (the tunnel is the one proxy in front).
+Put the tunnel's address in `.env` (`echo BELAY_PUBLIC_URL=https://<the tunnel's name> > .env`),
+and in `docker-compose.override.yml`, next to `docker-compose.yml`, leave Caddy out and
+publish port 8080 on this machine only:
+
+```yaml
+services:
+  belay:
+    ports: ["127.0.0.1:8080:8080"]
+  caddy:
+    profiles: ["caddy"]   # not started: the tunnel is the one proxy in front
+```
+
+`BELAY_TRUST_PROXY` stays `1`: the tunnel is the one proxy in front. Then
+`docker compose up -d --build`.
 
 The phone always uses the public name, at home too, so it never needs the local-network
 permission for this. (Belay pre-grants `ACCESS_LOCAL_NETWORK` anyway, for servers on the
@@ -357,7 +378,7 @@ Off until a parent sets a limit or a schedule, or turns measuring on: until then
 `screen_time` is `null`, and the phone counts nothing. The phone counts and enforces by
 itself, offline too; the server keeps the rules and what the phone reports.
 
-- **Rules** (a phone's Rules tab): daily limits (one app, a group, or a daily total of every
+- **Rules** (a phone's Screen-time rules tab): daily limits (one app, a group, or a daily total of every
   app), school, bedtime and custom schedules, apps never counted or paused, self-serve minutes
   the kid may take without asking, what happens when Belay can't count (pause the apps with a
   limit, the default, or keep them open), the warning before a limit or schedule, extra time
@@ -495,7 +516,8 @@ rules are kept for next time.
   refused; whom the kid can call (any number, or only contacts); quiet times (during bedtime and
   school schedules, only parents ring); and whether Belay keeps a record of calls.
 - **Contacts** (at most 500, each with a name the kid sees, at most 60 characters, and 1 to 5
-  numbers in E.164, each one contact's): whether they can call and text, and whether they're a
+  numbers in E.164, each one contact's): whether they can call and text (texts aren't managed
+  yet: the phone ignores that part until Phase 5's texts are built), and whether they're a
   parent, who always rings and is on the kid's emergency card. The page warns when a number on
   the emergency card isn't a contact, with a button to add it as a parent. Belay keeps contacts
   in its own storage on the phone; it never writes them into Android's Contacts.
@@ -624,7 +646,8 @@ to keep anywhere off the machine on its own. Without the passphrase nobody can r
 included: keep it in a password manager, and on paper with the family's papers, not only on
 the server.
 
-With Docker, keep the passphrase in a secret rather than in `docker-compose.yml`:
+With Docker, keep the passphrase in a secret, in `docker-compose.override.yml` (next to
+`docker-compose.yml`; add to it if you have one already):
 
 ```yaml
 services:
@@ -636,6 +659,13 @@ services:
 secrets:
   belay_backup:
     file: ./backup-passphrase.txt     # one line; git ignores it
+```
+
+Docker Compose hands the file to the container as it is, and Belay runs as the container's
+`node` user (uid 1000), so make it that user's, readable by no one else:
+
+```bash
+sudo chown 1000 backup-passphrase.txt && sudo chmod 600 backup-passphrase.txt
 ```
 
 A passphrase that's set but unusable (shorter than 15 characters, or a file that can't be
@@ -786,6 +816,11 @@ monitor tells you even when nobody looks at the parent page.
 git pull
 docker compose up -d --build
 ```
+
+Your settings are in `.env`, `Caddyfile` and `docker-compose.override.yml`, which git doesn't
+touch. (On a server set up before they were, with the address in `docker-compose.yml`
+itself: put it in `.env` and any other change you made in the override, then
+`git checkout docker-compose.yml` and pull.)
 
 Back up first (`backup /data/before-upgrade.db`: the daily one may be hours old). The
 database schema upgrades itself when the server starts (versioned SQL migrations in

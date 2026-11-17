@@ -17,7 +17,7 @@ import { type Labels, clock, days as daysWords, duration } from "../../family/sc
 import type { Enforcement } from "../../device/schemas.js";
 import { STATUS_WORDS } from "../../family/requests.js";
 import { isValidTimeZone } from "../../time.js";
-import { Csrf, Layout, Notice, PostButton, Time, type View } from "../ui.js";
+import { Csrf, Layout, Notice, OnThisPage, PostButton, Time, type View } from "../ui.js";
 
 const DAY_SHORT: Record<Weekday, string> = { mon: "Mon", tue: "Tue", wed: "Wed", thu: "Thu", fri: "Fri", sat: "Sat", sun: "Sun" };
 const DAY_LONG: Record<Weekday, string> = { mon: "Monday", tue: "Tuesday", wed: "Wednesday", thu: "Thursday", fri: "Friday", sat: "Saturday", sun: "Sunday" };
@@ -112,7 +112,7 @@ export const HourChart: FC<{ day: UsageDayView; zone: string }> = ({ day, zone }
         <line class="grid" x1="0" x2={W} y1={BASE - 60 * scale} y2={BASE - 60 * scale} />
         <line class="grid" x1="0" x2={W} y1={BASE} y2={BASE} />
         {day.byHour.map((minutes, h) => (
-          <g tabindex="0">
+          <g>
             <title>{`${hourWords(h)}: ${minutes} min${gaps.has(h) ? ". Belay couldn't count part of this hour" : ""}`}</title>
             <rect class="hit" x={h * COLUMN} y="0" width={COLUMN} height={BASE} />
             {gaps.has(h) && <rect class="gap-band" x={h * COLUMN + 1} y={TOP} width={COLUMN - 2} height={BASE - TOP} />}
@@ -483,7 +483,7 @@ const AppPicker: FC<{ name: string; apps: AppChoice[]; picked: ReadonlySet<strin
       <label for={`${id}-more`} class="small">
         Other apps, by package name, one per line (like com.example.game)
       </label>
-      <textarea id={`${id}-more`} name={`${name}_more`}>
+      <textarea id={`${id}-more`} name={`${name}_more`} autocapitalize="off" autocorrect="off" spellcheck={false}>
         {others.join("\n")}
       </textarea>
     </fieldset>
@@ -565,7 +565,7 @@ const ScheduleFields: FC<{ schedule: Schedule | null; apps: AppChoice[]; id: str
       <AppPicker name="allow" apps={apps} picked={new Set(schedule?.allow ?? [])} id={`${id}-allow`} />
     </details>
     <label for={`${id}-skip`}>Days it doesn't start, like 2026-11-26 (one per line, optional)</label>
-    <textarea id={`${id}-skip`} name="skip">
+    <textarea id={`${id}-skip`} name="skip" autocapitalize="off" autocorrect="off" spellcheck={false}>
       {(schedule?.skip ?? []).join("\n")}
     </textarea>
   </>
@@ -819,6 +819,16 @@ export const RulesPage: FC<{ view: View; data: RulesPageData; message?: string; 
       <div class="card">
         <Preview rules={phone.rules} />
       </div>
+      <OnThisPage
+        links={[
+          ["#stage", "Stage"],
+          ["#limits", "Time limits"],
+          ["#schedules", "Schedules"],
+          ["#other", "Exempt apps, self-serve and more"],
+          ["#extra", "Extra time today"],
+          ["#measuring", "Measuring and days"],
+        ]}
+      />
 
       <h2 id="stage">Stage</h2>
       <div class="card">

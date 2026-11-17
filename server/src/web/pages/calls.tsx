@@ -15,7 +15,7 @@ import type { DeviceView } from "../../family/devices.js";
 import type { ContactRequestView } from "../../family/requests.js";
 import type { ParentNumber } from "../../settings.js";
 import { formatDuration } from "../../time.js";
-import { Csrf, Layout, Notice, PostButton, Time, type View } from "../ui.js";
+import { Csrf, Layout, Notice, OnThisPage, PostButton, Time, type View } from "../ui.js";
 import { PhoneTabs } from "./screentime.js";
 
 export interface CallsPageData {
@@ -281,6 +281,17 @@ export const CallsPage: FC<{ view: View; data: CallsPageData; message?: string; 
       <PhoneTabs view={view} device={device} current="calls" />
       {message && <Notice>{message}</Notice>}
       {error && <Notice kind="error">{error}</Notice>}
+      <OnThisPage
+        links={[
+          ["#calls", "Calls"],
+          ["#rules", "Rules"],
+          ["#contacts", "Contacts"],
+          ...(data.requests.length > 0 ? [["#requests", "The kid's contact requests"] as const] : []),
+          ["#blocked", "Blocked numbers"],
+          ["#private", "Private numbers"],
+          ["#recent", "Recent calls"],
+        ]}
+      />
 
       <h2 id="calls">Calls</h2>
       <div class="card">
@@ -340,16 +351,26 @@ export const CallsPage: FC<{ view: View; data: CallsPageData; message?: string; 
         {data.contacts.map((c) => (
           <div class="rule">
             <div class="row spread">
-              <strong>{c.name}</strong>
-              <span class="small muted">
-                {c.parent ? "parent · " : ""}
-                {c.calls ? "calls" : "no calls"} · {c.texts ? "texts" : "no texts"}
+              <span>
+                <strong>{c.name}</strong>{" "}
+                <span class="small muted">
+                  {c.parent ? "parent · " : ""}
+                  {c.calls ? "calls" : "no calls"} · {c.texts ? "texts" : "no texts"}
+                </span>
+                <br />
+                <span class="pkg">{c.numbers.join(", ")}</span>
               </span>
               <PostButton view={view} action={`/devices/${device.id}/calls/contacts/${c.id}/remove`} kind="danger" confirm={`Remove ${c.name}?`}>
-                Remove
+                Remove<span class="sr-only"> {c.name}</span>
               </PostButton>
             </div>
-            <ContactForm view={view} device={device} contact={c} />
+            {/* Folded away: five fields a contact, open, made the list hard to read on a phone. */}
+            <details>
+              <summary>
+                Change<span class="sr-only"> {c.name}</span>
+              </summary>
+              <ContactForm view={view} device={device} contact={c} />
+            </details>
           </div>
         ))}
         {data.contacts.length < CALL_LIMITS.maxContacts && (

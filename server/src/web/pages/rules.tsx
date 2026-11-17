@@ -207,7 +207,18 @@ export const WebCard: FC<{ view: View; device: DeviceView; rules: Rules }> = ({ 
         <label class="check">
           <input type="radio" name="filter" value="custom" checked={filter === "custom"} /> Another Private DNS host
         </label>
-        <input type="text" name="custom_host" aria-label="Private DNS host" value={filter === "custom" ? (rules.privateDns ?? "") : ""} placeholder="dns.example.org" maxlength={253} />
+        <input
+          type="text"
+          name="custom_host"
+          aria-label="Private DNS host"
+          value={filter === "custom" ? (rules.privateDns ?? "") : ""}
+          placeholder="dns.example.org"
+          maxlength={253}
+          inputmode="url"
+          autocapitalize="off"
+          autocorrect="off"
+          spellcheck={false}
+        />
         <label class="check">
           <input type="radio" name="filter" value="off" checked={filter === "off"} /> Off
         </label>
@@ -247,11 +258,11 @@ export const WebCard: FC<{ view: View; device: DeviceView; rules: Rules }> = ({ 
         <label class="check">
           <input type="checkbox" name="allowlist_mode" value="1" checked={chrome.url_allowlist !== null} /> Only open the sites listed here
         </label>
-        <textarea name="allowlist" aria-label="Sites Chrome may open, one per line" placeholder="example.org">
+        <textarea name="allowlist" aria-label="Sites Chrome may open, one per line" placeholder="example.org" autocapitalize="off" autocorrect="off" spellcheck={false}>
           {(chrome.url_allowlist ?? []).join("\n")}
         </textarea>
         <label for="blocklist">Block these sites, one per line</label>
-        <textarea id="blocklist" name="blocklist" placeholder="example.com">
+        <textarea id="blocklist" name="blocklist" placeholder="example.com" autocapitalize="off" autocorrect="off" spellcheck={false}>
           {chrome.url_blocklist.join("\n")}
         </textarea>
       </fieldset>
@@ -387,7 +398,7 @@ export const HardeningCard: FC<{ view: View; device: DeviceView; rules: Rules }>
         <input type="checkbox" name="debugging" value="1" checked={rules.restrictions.debugging} /> Lock developer options and USB debugging
       </label>
       <label for="frp">Reset protection: the parent-owned Google account ids, one per line</label>
-      <textarea id="frp" name="frp_accounts" placeholder="112233445566778899000">
+      <textarea id="frp" name="frp_accounts" placeholder="112233445566778899000" autocapitalize="off" autocorrect="off" spellcheck={false}>
         {rules.frpAccounts.join("\n")}
       </textarea>
       <details>
@@ -416,7 +427,7 @@ export const HardeningCard: FC<{ view: View; device: DeviceView; rules: Rules }>
         </p>
       </details>
       <label for="play">Play Store: the parent-owned Google accounts Play may use, by email address, one per line</label>
-      <textarea id="play" name="play_accounts" placeholder="parent@gmail.com">
+      <textarea id="play" name="play_accounts" placeholder="parent@gmail.com" autocapitalize="off" autocorrect="off" spellcheck={false}>
         {rules.playAccounts.join("\n")}
       </textarea>
       <p class="muted small">
@@ -427,7 +438,7 @@ export const HardeningCard: FC<{ view: View; device: DeviceView; rules: Rules }>
       <label for="confirm">
         To turn any of these on, type the phone's name: <strong>{device.name}</strong>
       </label>
-      <input id="confirm" type="text" name="confirm" autocomplete="off" maxlength={60} />
+      <input id="confirm" type="text" name="confirm" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck={false} inputmode="text" maxlength={60} />
       <div>
         <button type="submit" class="danger">
           Save
@@ -486,7 +497,9 @@ export const AskAgainPage: FC<{ view: View; device: DeviceView; again: AskAgain 
       )}
       <div class="row">
         <button type="submit">Switch to Ask</button>
-        <a href={`/devices/${device.id}#new-apps`}>Cancel</a>
+        <a class="go" href={`/devices/${device.id}#new-apps`}>
+          Cancel
+        </a>
       </div>
     </form>
   </Layout>
@@ -524,13 +537,13 @@ export const RequestAnswer: FC<{ view: View; request: RequestView }> = ({ view, 
       </textarea>
       <div class="row">
         <button type="submit" form={form} name="answer" value="approved">
-          Approve
+          Approve<span class="sr-only"> {request.label}</span>
         </button>
         <button type="submit" form={form} name="answer" value="talk" class="quiet">
-          Let's talk
+          Let's talk<span class="sr-only"> about {request.label}</span>
         </button>
         <button type="submit" form={form} name="answer" value="declined" class="quiet">
-          Decline
+          Decline<span class="sr-only"> {request.label}</span>
         </button>
       </div>
     </div>

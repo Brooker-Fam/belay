@@ -78,7 +78,7 @@ export const OtherUsersCard: FC<{ view: View; device: DeviceView; commands: Comm
       </>
     ) : null;
   return others > 0 ? (
-    <Notice kind="error">
+    <Notice kind="error" standing>
       <p id="users">
         <strong>{others === 1 ? "Another user or profile is on this phone." : `${others} other users or profiles are on this phone.`}</strong> This usually
         means Android's own Parental Controls were set up in Settings.
@@ -125,7 +125,9 @@ export const RecoveryKeyPage: FC<{ view: View; device: DeviceView; grouped: stri
       {replaced && " The earlier key stops working once the phone has this one."} Belay keeps only the check too.
     </p>
     <p>
-      <a href={`/devices/${device.id}#hardening`}>Back to {device.name}</a>
+      <a class="go" href={`/devices/${device.id}#hardening`}>
+        Back to {device.name}
+      </a>
     </p>
   </Layout>
 );

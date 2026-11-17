@@ -258,7 +258,17 @@ export const ActivityPage: FC<{ view: View; entries: AuditEntry[]; includeReads:
     <Layout view={view} title="Activity">
       <h1>Activity</h1>
       <p class="muted">Who did what: parents on the web, AI apps through MCP, and the phones.</p>
-      <p>{includeReads ? <a href="/activity">Hide what AI apps read</a> : <a href="/activity?reads=1">Also show what AI apps read</a>}</p>
+      <p>
+        {includeReads ? (
+          <a class="go" href="/activity">
+            Hide what AI apps read
+          </a>
+        ) : (
+          <a class="go" href="/activity?reads=1">
+            Also show what AI apps read
+          </a>
+        )}
+      </p>
       {days.length === 0 && <p class="muted">Nothing yet.</p>}
       {days.map((day) => (
         <section class="day">
@@ -279,7 +289,9 @@ export const ActivityPage: FC<{ view: View; entries: AuditEntry[]; includeReads:
       ))}
       {next !== null && (
         <p>
-          <a href={`/activity?${more.toString()}`}>Older</a>
+          <a class="go" href={`/activity?${more.toString()}`}>
+            Older
+          </a>
         </p>
       )}
     </Layout>

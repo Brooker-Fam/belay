@@ -48,7 +48,7 @@ registration may later need the paid account ($25 and ID).
 ## Step 1: provision with adb, release build (about 20 minutes)
 
 1. **Factory reset:** Settings > System > Reset options > Erase all data (factory reset).
-   If the Spectrum line is an eSIM, keep it: don't tick the option to erase eSIMs.
+   If the phone's line is an eSIM, keep it: don't tick the option to erase eSIMs.
 2. **Setup wizard:** connect to Wi-Fi. **Skip the Google account** ("Skip", then "Skip"
    again if asked). A screen lock is fine; you'll unlock once after the restart in 5.
    Accept or decline the rest as you like.

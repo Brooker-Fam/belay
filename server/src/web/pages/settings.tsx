@@ -5,7 +5,7 @@ import type { PushSubscription } from "../../push.js";
 import { ACTIVITY_DAYS, AI_SCOPES, CALL_DAYS, LOCATION_DAYS, MAP_SITES, MAX_PARENT_NUMBERS, NETWORK_DAYS, OFF_BY_DEFAULT, type Settings, USAGE_MONTHS } from "../../settings.js";
 import { formatAgo, timeZones } from "../../time.js";
 import { ChangePasswordForm } from "./auth.js";
-import { Csrf, Layout, Notice, PostButton, Time, type View } from "../ui.js";
+import { Csrf, Layout, Notice, OnThisPage, PostButton, Time, type View } from "../ui.js";
 
 /** Web Push on this browser: the buttons only show once app.js finds the browser can do it. */
 const Notifications: FC<{ view: View; publicKey: string; browsers: PushSubscription[] }> = ({ view, publicKey, browsers }) => (
@@ -86,8 +86,18 @@ export const SettingsPage: FC<{
       <h1>Settings</h1>
       {message && <Notice>{message}</Notice>}
       {error && <Notice kind="error">{error}</Notice>}
+      <OnThisPage
+        links={[
+          ["#family", "Family"],
+          ["#numbers", "The emergency card"],
+          ["#notifications", "Notifications"],
+          ["#ai", "AI access"],
+          ["#parents", "Parents"],
+          ["#account", "Your account"],
+        ]}
+      />
 
-      <h2>Family</h2>
+      <h2 id="family">Family</h2>
       <form class="stack card" method="post" action="/settings">
         <Csrf view={view} />
         <label for="timezone">Timezone</label>
@@ -194,7 +204,7 @@ export const SettingsPage: FC<{
       <Notifications view={view} publicKey={push.publicKey} browsers={push.browsers} />
       {digest}
 
-      <h2>AI access</h2>
+      <h2 id="ai">AI access</h2>
       <div class="card">
         <p>
           Connect Claude or another MCP client to <code>{mcpUrl}</code>. It can read what you allow above, mark apps reviewed, block an app, pause
@@ -245,7 +255,7 @@ export const SettingsPage: FC<{
         </form>
       </div>
 
-      <h2>Parents</h2>
+      <h2 id="parents">Parents</h2>
       <div class="card">
         {parents.map((p) => (
           <div class="row spread">
@@ -267,7 +277,7 @@ export const SettingsPage: FC<{
         </p>
       </div>
 
-      <h2>Your account</h2>
+      <h2 id="account">Your account</h2>
       <div class="card">
         <ChangePasswordForm view={view} />
       </div>
@@ -308,7 +318,9 @@ export const ShownOncePage: FC<{ view: View; title: string; intro: string; secre
     )}
     {after && <p class="muted">{after}</p>}
     <p>
-      <a href="/settings">Back to Settings</a>
+      <a class="go" href="/settings">
+        Back to Settings
+      </a>
     </p>
   </Layout>
 );

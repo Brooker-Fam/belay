@@ -45,7 +45,7 @@ export const AgreementPage: FC<{ view: View; device: DeviceView; versions: Agree
       {current ? (
         <div class="card">
           <div class="row spread">
-            <strong>Version {current.version}</strong>
+            <h2 class="in-card">Version {current.version}</h2>
             <KidAnswer view={view} a={current} />
           </div>
           <p class="small muted">

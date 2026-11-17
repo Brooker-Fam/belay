@@ -14,7 +14,7 @@ import type { Check, PlaceEventView } from "../../family/location/fixes.js";
 import { LOCATION_LIMITS, LOST_MESSAGE, type FixView, type LocationSettings, type Place } from "../../family/location/store.js";
 import type { HelpView } from "../../family/requests.js";
 import { MAX_PARENT_NUMBERS, type ParentNumber } from "../../settings.js";
-import { Csrf, Layout, Notice, PostButton, Time, type View } from "../ui.js";
+import { Csrf, Layout, Notice, OnThisPage, PostButton, Time, type View } from "../ui.js";
 import { FixLine, HelpCard, type Where } from "./help.js";
 import { PhoneTabs } from "./screentime.js";
 
@@ -186,7 +186,9 @@ const PlaceForm: FC<{ view: View; device: DeviceView; place?: Place; canUseFix: 
         name="center"
         value={place ? `${place.lat.toFixed(5)}, ${place.lng.toFixed(5)}` : ""}
         placeholder="40.10000, -73.20000"
-        inputmode="decimal"
+        autocapitalize="off"
+        autocorrect="off"
+        spellcheck={false}
       />
       {canUseFix && (
         <label class="check">
@@ -265,6 +267,17 @@ export const LocationPage: FC<{ view: View; data: LocationPageData; message?: st
       {data.unseenHelp.map((r) => (
         <HelpCard view={view} request={r} showDevice={false} kidNumber={data.help.kidNumber} where={where} back="location" />
       ))}
+      <OnThisPage
+        links={[
+          ["#where", "Where the phone is"],
+          ["#sharing", "Sharing"],
+          ["#checks", "Checks"],
+          ["#events", "Arrivals and departures"],
+          ["#places", "Places"],
+          ["#lost", "Lost mode"],
+          ["#numbers", "Help and the emergency card"],
+        ]}
+      />
 
       <h2 id="where">Where the phone is</h2>
       <div class="card">
@@ -357,12 +370,26 @@ export const LocationPage: FC<{ view: View; data: LocationPageData; message?: st
         {data.places.map((p) => (
           <div class="rule">
             <div class="row spread">
-              <strong>{p.name}</strong>
+              <span>
+                <strong>{p.name}</strong>
+                <br />
+                <span class="small muted">
+                  within {p.radiusM} m of <span class="coords">{`${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`}</span>
+                  {p.notify.length > 0 &&
+                    ` · tells you when the phone ${p.notify.includes("arrive") && p.notify.includes("leave") ? "arrives and leaves" : p.notify.includes("arrive") ? "arrives" : "leaves"}`}
+                </span>
+              </span>
               <PostButton view={view} action={`/devices/${device.id}/location/places/${p.id}/remove`} kind="danger" confirm={`Remove ${p.name}?`}>
-                Remove
+                Remove<span class="sr-only"> {p.name}</span>
               </PostButton>
             </div>
-            <PlaceForm view={view} device={device} place={p} canUseFix={data.latest !== null} />
+            {/* Folded away, as a contact's form is on the Calls tab: open, each place was a screenful on a phone. */}
+            <details>
+              <summary>
+                Change<span class="sr-only"> {p.name}</span>
+              </summary>
+              <PlaceForm view={view} device={device} place={p} canUseFix={data.latest !== null} />
+            </details>
           </div>
         ))}
         {data.places.length < LOCATION_LIMITS.maxPlaces && (

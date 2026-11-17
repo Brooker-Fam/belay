@@ -25,6 +25,17 @@ for (const button of document.querySelectorAll("button[data-copy]")) {
     }
   });
 }
+// A form that came back with a problem: start there, so a screen reader reads it first.
+const problem = document.querySelector(".notice.error:not([data-standing])");
+if (problem instanceof HTMLElement) {
+  problem.tabIndex = -1;
+  problem.focus();
+}
+// On a phone the menu and a phone's tabs are rows that scroll sideways: start each at the current page.
+for (const link of document.querySelectorAll('header.top nav [aria-current="page"], nav.tabs [aria-current="page"]')) {
+  const strip = link.parentElement;
+  if (strip && strip.scrollWidth > strip.clientWidth) strip.scrollLeft = link.offsetLeft - (strip.clientWidth - link.offsetWidth) / 2;
+}
 for (const box of document.querySelectorAll("input[data-select-all]")) {
   box.addEventListener("change", () => {
     for (const other of document.querySelectorAll(`input[name="${box.dataset.selectAll}"]`)) other.checked = box.checked;

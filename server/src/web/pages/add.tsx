@@ -97,7 +97,9 @@ export const CodePage: FC<{
     </div>
     <p class="pkg">{link}</p>
     <p>
-      <a href="/">Back to phones</a>
+      <a class="go" href="/">
+        Back to phones
+      </a>
     </p>
   </Layout>
 );

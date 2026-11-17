@@ -109,13 +109,13 @@ const OpenContact: FC<{ view: View; request: ContactRequestView; showDevice: boo
         </textarea>
         <div class="row">
           <button type="submit" name="answer" value="approved">
-            Approve
+            Approve<span class="sr-only"> {request.contactName}</span>
           </button>
           <button type="submit" name="answer" value="talk" class="quiet">
-            Let's talk
+            Let's talk<span class="sr-only"> about {request.contactName}</span>
           </button>
           <button type="submit" name="answer" value="declined" class="quiet">
-            Decline
+            Decline<span class="sr-only"> {request.contactName}</span>
           </button>
         </div>
         <p class="muted small">Approving adds them to the phone's contacts. Declining or "let's talk" adds no one.</p>
@@ -255,13 +255,13 @@ const OpenRequest: FC<{ view: View; request: AppRequestView; showDevice: boolean
       </textarea>
       <div class="row">
         <button type="submit" name="answer" value="approved">
-          Approve
+          Approve<span class="sr-only"> {request.label}</span>
         </button>
         <button type="submit" name="answer" value="talk" class="quiet">
-          Let's talk
+          Let's talk<span class="sr-only"> about {request.label}</span>
         </button>
         <button type="submit" name="answer" value="declined" class="quiet">
-          Decline
+          Decline<span class="sr-only"> {request.label}</span>
         </button>
       </div>
       <p class="muted small">Approving also allows the app. Declining or "let's talk" leaves it as it is.</p>
