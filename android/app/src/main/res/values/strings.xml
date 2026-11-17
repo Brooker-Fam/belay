@@ -104,6 +104,13 @@
         <item quantity="other">%d new apps are paused until your parent says yes. Tap to tell them why you want them.</item>
     </plurals>
 
+    <!-- Phases 6 and 10: quiet notifications when a parent changes Belay itself. %1$s is Belay's version. -->
+    <string name="parent_channel_name">Changes your parent makes to Belay</string>
+    <string name="parent_channel_description">Tells you when your parent updates Belay, or removes another user or profile from this phone.</string>
+    <string name="parent_notice_title">From your parent</string>
+    <string name="parent_updated">Belay was updated to version %1$s by your parent.</string>
+    <string name="parent_removing_other_users">Your parent is removing Android\'s own Parental Controls from this phone, because Belay does that job.</string>
+
     <string name="section_waiting">Waiting for your parent</string>
     <string name="waiting_intro">These apps are new, so they stay paused until your parent says yes. You can tell your parent why you want each one.</string>
     <string name="waiting_asked">Belay already asked your parent for you.</string>

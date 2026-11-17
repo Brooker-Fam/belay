@@ -12,6 +12,7 @@ import family.brooker.belay.enforce.PrivateDns
 import family.brooker.belay.settings.ConnectionStore
 import family.brooker.belay.settings.TokenVault
 import family.brooker.belay.store.AgentStore
+import family.brooker.belay.update.AgentUpdater
 import okhttp3.Call
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
@@ -171,6 +172,7 @@ object PolicyPoll {
             override fun onAvailable(network: Network) {
                 kick()
                 PrivateDns.networkBack(app)
+                AgentUpdater.networkBack(app)
             }
         }
         try {
