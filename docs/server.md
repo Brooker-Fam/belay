@@ -205,7 +205,7 @@ activity log on the parent page is where parents see who did what.
 ```bash
 cd server
 npm ci --ignore-scripts
-npm test                 # Vitest: device API, snapshots, login, CSRF, OAuth, every MCP tool
+npm test                 # Vitest: device API, the policy and its long-poll, snapshots, login, CSRF, OAuth, Web Push, every MCP tool, the CLI
 npm run typecheck && npm run lint
 BELAY_PUBLIC_URL=http://localhost:8080 npm run dev
 ```
