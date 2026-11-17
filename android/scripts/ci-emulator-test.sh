@@ -346,6 +346,15 @@ if [ -n "$UPDATE_APK" ]; then
   for _ in $(seq 1 60); do service_running && break; sleep 1; done
   service_running || { diagnose; die "BelayService didn't come back after the update"; }
   server_status | jq -c '.phones[0] | {agent_version_code, agent_signing_sha256, agent_update: .enforcement.agent_update}'
+  # The signing certificate's SHA-256 the phone reports is apksigner's (platform notes I6).
+  reported="$(server_status | jq -r '.phones[0].agent_signing_sha256 // empty')"
+  signer="$(apk_signer "$UPDATE_APK" || true)"
+  if [ -n "$reported" ] && [ -n "${signer%%|*}" ]; then
+    [ "$reported" = "${signer%%|*}" ] || die "the phone reports signing certificate $reported; apksigner says ${signer%%|*}"
+    echo "signing certificate SHA-256: $reported, as apksigner prints it"
+  else
+    echo "the signing certificate wasn't compared (no agent_signing_sha256 in the status, or no apksigner here)"
+  fi
 
   step "Phase 6: the recovery key opens repair access on the phone, with no server needed"
   key="$(server_cli_out recovery-key "$phone")"
