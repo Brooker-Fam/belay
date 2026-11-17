@@ -9,7 +9,7 @@ import { e164 } from "../device/schemas.js";
 import { type ParentNumber, type Settings, type SettingsChange, getSettings, parentNumbersProblem, updateSettings } from "../settings.js";
 import { oneLine } from "../text.js";
 import { phoneHelp } from "./kidside.js";
-import { type Changed, type Person, type PolicyContext, RuleRefused, changePolicies, changePolicy, LIMITS } from "./policy.js";
+import { type Changed, type Person, type PolicyContext, RuleRefused, changePolicies, changePolicy, kidWords, LIMITS } from "./policy.js";
 
 function onlyPeople(who: { kind: string }): void {
   if (who.kind === "ai") throw new Error("Only a person changes this");
@@ -38,7 +38,8 @@ export function markHelpSeen(ctx: PolicyContext, deviceId: string, requestId: st
       .get(deviceId, requestId);
     if (!row || row.kind !== "help") return null;
     if (row.seen_at !== null) return { already: true, seenAt: row.seen_at };
-    const note = noteText?.trim().slice(0, LIMITS.answerNote) || null;
+    // Shown to the kid with the answer: nothing hidden or reordered.
+    const note = kidWords(noteText, LIMITS.answerNote);
     db.prepare("UPDATE requests SET seen_at = ?, seen_by = ? WHERE device_id = ? AND id = ?").run(now, parentOf(who), deviceId, requestId);
     if (row.status === "pending") {
       db.prepare("UPDATE requests SET status = 'approved', note = ?, answered_by = ?, answered_at = ? WHERE device_id = ? AND id = ?").run(note, parentOf(who), now, deviceId, requestId);

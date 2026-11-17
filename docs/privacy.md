@@ -390,8 +390,12 @@ Where the phone was (Phase 4) doesn't wait either, and is kept much less: fixes 
 schedule 7 days, a parent's checks 30 days, arrivals and departures 90 days, lost-mode fixes
 until 7 days after lost mode ends (the family chooses each in Settings, within limits), then
 deleted by the hourly clean-up ([server.md](server.md) has the details). The one fix a kid
-shares with "I need help" is kept with that request, which, like every request, stays until the
-phone is deleted. Turning location off stops new fixes; the ones kept stay until they age out.
+shares with "I need help" is kept with that request, which stays until the phone is deleted.
+Turning location off stops new fixes; the ones kept stay until they age out.
+
+The kid's other requests stay while they wait for a parent. Once they wait for no one any more
+(answered, withdrawn, or asked again), the server keeps them a year after they last changed, and
+at most the newest 1,000 per phone; then the hourly clean-up deletes them.
 The AI scope "location" is off by default: while it's off, AI apps see that a phone has location
 on, never a fix or a place event.
 

@@ -14,7 +14,7 @@ import { receiveReport } from "../family/reports.js";
 import { saveRequests, type SavedRequests } from "../family/requests.js";
 import { recordAgreementAnswers } from "../family/screentime/changes.js";
 import { phoneRow, phoneRules } from "../family/screentime/rules.js";
-import { saveUsage } from "../family/screentime/usage.js";
+import { retentionCutoff, saveUsage } from "../family/screentime/usage.js";
 import { bearerToken, checkJson, clientAddress, parseRange, readJson, readJsonBody, type Bindings } from "../http.js";
 import { helpNotice, notifyParents, placeNotice, recoveryUsedNotice, requestsNotice, updateFailedNotice } from "../push.js";
 import type { Verdict } from "../ratelimit.js";
@@ -203,8 +203,10 @@ export function deviceRoutes(deps: Deps): Hono<DeviceEnv> {
       }
     };
     const actor = { kind: "phone", deviceId: phone.id } as const;
+    // New requests this hour, help aside: what's past the limit waits for the phone to send it again.
+    const budget = limits.requestsPerPhone.remaining(phone.id);
     const save = (log: (action: string, detail?: Record<string, unknown>) => void): SavedRequests => {
-      const s = saveRequests(db, phone.id, body.value.requests, now);
+      const s = saveRequests(db, phone.id, body.value.requests, now, { budget });
       for (const r of s.created) log("request.made", { ...detail(r), ...(r.again ? { again: true } : {}), ...(r.withdrawn ? { withdrawn: true } : {}) });
       for (const w of s.withdrawn) log("request.withdrawn", { kind: w.kind });
       return s;
@@ -216,6 +218,7 @@ export function deviceRoutes(deps: Deps): Hono<DeviceEnv> {
       : save((action, d) => {
           audit(db, now, actor, action, { detail: d });
         });
+    if (saved.made) limits.requestsPerPhone.hit(phone.id, saved.made);
     // The kid's answers to the agreement: the policy's kid_agreed_at follows, in a new version.
     recordAgreementAnswers(ctx, phone.id, saved.agreement);
     // "I need help" is urgent: each one, at once, to every parent, apart from the other notices' limit.
@@ -230,6 +233,10 @@ export function deviceRoutes(deps: Deps): Hono<DeviceEnv> {
     const fresh = saved.created.flatMap((r) => (r.kind !== "help" && !r.again && !r.withdrawn ? [{ ...r, kind: r.kind }] : []));
     if (fresh.length && limits.noticesPerPhone.hit(phone.id).ok) notifyParents(deps, requestsNotice(phone.name, fresh, (id) => limitNames.get(id) ?? null));
     if (saved.refused) return fail(429, "rate_limited", "Too many requests are waiting for a parent already", 3600);
+    if (saved.limited) {
+      const wait = limits.requestsPerPhone.check(phone.id);
+      return fail(429, "rate_limited", "This phone made more new requests this hour than Belay takes: send the rest later", wait.ok ? 60 : wait.retryAfterSeconds);
+    }
     return c.json({ server_time: now, accepted: saved.accepted });
   });
 
@@ -237,6 +244,7 @@ export function deviceRoutes(deps: Deps): Hono<DeviceEnv> {
    * Phase 4: fixes and arrivals and departures, kept only as the phone's rules ask (family/location/
    * fixes.ts); the rest is dropped and still answered as accepted, so the phone stops sending it.
    * Idempotent by each item's id. A fix answering a check wakes the parent waiting on "Check now".
+   * At most 600 new ones kept an hour per phone: past that, 429, and the phone sends them again.
    */
   app.post("/locations", limit(LIMITS.locationsBytes), async (c) => {
     const body = await readJson(c, LocationsRequest);
@@ -244,7 +252,9 @@ export function deviceRoutes(deps: Deps): Hono<DeviceEnv> {
     const now = deps.now();
     const phone = c.var.phone;
     db.prepare("UPDATE devices SET last_seen_at = ? WHERE id = ?").run(now, phone.id);
-    const saved = saveLocations(db, phone.id, body.value, now);
+    // New fixes and arrivals this hour: what's past the limit waits for the phone to send it again.
+    const saved = saveLocations(db, phone.id, body.value, now, { budget: limits.locationsPerPhone.remaining(phone.id) });
+    if (saved.stored) limits.locationsPerPhone.hit(phone.id, saved.stored);
     if (saved.stored > 0 || saved.answered.length > 0) deps.fixWaiters.arrived(phone.id);
     if (saved.dropped > 0) deps.log(`A phone sent ${saved.dropped} location item${saved.dropped === 1 ? "" : "s"} its rules didn't ask for: not kept.`);
     // Arrivals and departures a parent asked to hear about: at most one per place and direction each 10 minutes.
@@ -254,6 +264,10 @@ export function deviceRoutes(deps: Deps): Hono<DeviceEnv> {
       markNotified(db, phone.id, e.id, now);
       const late = now - e.at > 10 * 60_000 ? (now - e.at > 12 * 3_600_000 ? formatDateTime(e.at, tz) : formatTime(e.at, tz)) : null;
       notifyParents(deps, placeNotice(phone, e.placeName, e.kind, late));
+    }
+    if (saved.limited) {
+      const wait = limits.locationsPerPhone.check(phone.id);
+      return fail(429, "rate_limited", "This phone sent more new fixes this hour than Belay keeps: send the rest later", wait.ok ? 60 : wait.retryAfterSeconds);
     }
     return c.json({ server_time: now, accepted: saved.accepted });
   });
@@ -287,7 +301,8 @@ export function deviceRoutes(deps: Deps): Hono<DeviceEnv> {
   /**
    * Phase 3: what the phone counted, one local day per entry. Idempotent by (day, zone): a day
    * sent again replaces the stored one when its as_of is the same or newer. Kept only while the phone's
-   * rules measure (a parent's choice); never-blocked apps' time is never kept.
+   * rules measure (a parent's choice); never-blocked apps' time is never kept, and nor is a day that
+   * can't have been counted yet, one older than the family keeps, or a date in a fourth zone.
    */
   app.post("/usage", limit(LIMITS.usageBytes), async (c) => {
     const body = await readJson(c, UsageRequest);
@@ -296,7 +311,11 @@ export function deviceRoutes(deps: Deps): Hono<DeviceEnv> {
     const phone = c.var.phone;
     db.prepare("UPDATE devices SET last_seen_at = ? WHERE id = ?").run(now, phone.id);
     const never = neverBlockedOn(db, phone.id);
-    const saved = saveUsage(db, phone.id, body.value.days, now, { measure: phoneRow(db, phone.id).settings.measure, keep: (pkg) => never(pkg) === null });
+    const saved = saveUsage(db, phone.id, body.value.days, now, {
+      measure: phoneRow(db, phone.id).settings.measure,
+      keep: (pkg) => never(pkg) === null,
+      oldest: retentionCutoff(now, getSettings(db).usageMonths),
+    });
     return c.json({ server_time: now, accepted: saved.accepted });
   });
 

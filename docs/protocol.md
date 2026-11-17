@@ -169,6 +169,15 @@ is installed again: the old one leaves the policy's `requests`, and the kid's ea
 stays with the new one until they write another. At most 200 apps can have a request
 waiting per phone; past that, new ones are answered `429`.
 
+What the server keeps, whatever a phone sends: at most 300 new requests an hour per phone,
+ones that arrive already withdrawn included (help requests aside: other requests never hold
+one back); past that, the call is answered `429` with `Retry-After`, nothing past the limit is
+kept, and the phone sends those again. Of the requests that wait for no one any more
+(answered, withdrawn, asked again, the kid's "I agree"), it keeps the newest 1,000 per phone,
+help requests aside: past that, the oldest go, the ones the phone settled itself before the
+ones a parent answered; and it deletes them a year after they last changed. Help requests are
+kept until the phone is deleted.
+
 Phase 3 makes Request a union on `kind`: `app`, `more_time` (more minutes for a limit
 today) and `agreement` (the kid's answer to the family agreement). Only a parent answers;
 an approved `more_time` answer carries the `minutes` given, and the policy's
@@ -219,7 +228,10 @@ off is answered `200`, counted in `accepted`, and dropped, as is one whose `day`
 real date. It leaves out of `apps` every app it never blocks (the phone's `never_blocked`,
 and the well-known dialers, texting apps and emergency apps), even if a phone sends one.
 `accepted` counts the days the phone can stop sending, kept or not. Days are deleted after
-the family's retention (13 months by default).
+the family's retention (13 months by default). Also accepted and dropped: a day the phone
+can't have counted yet (after tomorrow in its `zone`, or, in a zone that isn't a real one,
+after the day after tomorrow in UTC), one older than the retention, and a date in a fourth
+`zone` (a date is kept in at most 3).
 
 ## `GET /api/v1/agent/<sha256>.apk`
 
@@ -251,8 +263,10 @@ locks are lifted, so adb and Settings' reset work.
   then a wait of a minute that doubles with each further wrong try, kept across restarts.
 - A key's `version` works once on the phone: after it's used, the phone refuses it
   even if the policy still has it. The phone reports the use in `enforcement.recovery`
-  when it can; the server then drops that check from the policy and asks a parent to
-  make a new key.
+  when it can. The server takes a report only for the key the policy carries now (the
+  phone's newest), and once: it then drops that check from the policy and tells the parents
+  the phone reports the key was used, asking for a new one. A report about an earlier key,
+  or one already taken, changes nothing.
 
 ## `POST /api/v1/locations`
 
@@ -279,7 +293,15 @@ commands (a newer check that replaced it counts as answered by it too); a place 
 in `periodic` mode, for one of the phone's places as the policy has them now; a `lost` or
 `help` fix always. Everything else is dropped and counted (the phone's Location page says
 how many). `accepted` counts every item in the call, kept, already kept or dropped: none of
-them needs sending again. A fix marked `mock` is kept, and shown as made up.
+them needs sending again. A fix marked `mock` is kept, and shown as made up. The server shows
+and orders fixes (and picks the latest) by their `at`, but never later than 5 minutes after it
+got them: a phone whose clock is ahead can't keep a fix on top. Both times are kept.
+
+The server keeps at most 600 new fixes and place events an hour per phone, of any reason
+(lost-mode and help fixes too): past that, the call is answered `429` with `Retry-After`, and
+the phone sends the ones not kept again. It keeps at most 10,000 fixes per phone (the fix a kid
+shared with a help request aside: that one is kept with the request) and 2,000 place events:
+past that, the oldest go, by when they arrived.
 
 ## `POST /api/v1/calls`
 
@@ -458,7 +480,8 @@ What the server does with them:
   request is its own (none takes another's place); sending a pending one again takes the kid's
   new words and a newer shared fix, which takes the place of the one before (it isn't kept),
   as `reason` does, and the parents hear again; one sent again without either keeps what it
-  has. At most 100 help requests no parent has seen, and 60 waiting `talk` requests, per
+  has. At most 100 help requests no parent has seen (one that arrives already withdrawn
+  counts: it stays at the top until a parent sees it), and 60 waiting `talk` requests, per
   phone; past that, new ones are answered `429`.
 - **A check the server never issued** (the phone's own test `locate_now`, say): its result in
   `enforcement.commands` is ignored, and a fix naming it is dropped and counted, answered `200`
@@ -542,6 +565,12 @@ server decides whether a change tightens or loosens.
   Debug builds of Belay never apply them. `maintenance_until` lifts `debugging` so adb
   works for repairs.
 - **Offline**, the phone keeps enforcing the last policy it got. Belay stores it.
+- **The family's words** in the policy (the names of limits, schedules, stages and places, a
+  pause's note, the support message, a parent's answers and name, Off belay's words and the
+  hand-over's parent): the server sends them
+  without control characters (new lines aside in notes) or the characters that hide or reorder
+  text, and a name on one line. An AI app writes none of them: Belay names a limit or schedule
+  it adds or renames, and its pause or lock has no note.
 - **Versions:** the phone applies any version that differs from the one it has, lower ones
   too (a server restored from a backup), and checks in within seconds of applying one. A
   policy can be larger than other answers: the phone accepts up to 1 MB, and the server never
@@ -614,7 +643,7 @@ server decides whether a change tightens or loosens.
 | `version` | int | increases with every change, per phone |
 | `issued_at` | int | |
 | `apps` | `{new_apps: "allow"\|"ask", decisions: [{package, state: "allowed"\|"blocked"}]}` | |
-| `pause` | `{until?, note?}`? | null: not paused; `until` null: until a parent resumes |
+| `pause` | `{until?, note?}`? | null: not paused; `until` null: until a parent resumes; `note` is a parent's words (an AI app's pause has none) |
 | `restrictions` | `{safe_boot, add_user, unknown_sources, config_vpn, config_private_dns, config_date_time, config_default_apps, modify_accounts, sim, factory_reset, debugging}`, all bool | true: the kid can't (see the rules above for the last two) |
 | `web` | `{private_dns?, chrome?, hide_browsers}` | `private_dns`: a host like `family-filter-dns.cleanbrowsing.org`; `chrome`: `{incognito, safe_search, youtube_restrict: "off"\|"moderate"\|"strict", safe_sites, allow_downloads, url_allowlist?, url_blocklist}` |
 | `maintenance_until` | int? | adb works until then |
@@ -663,7 +692,7 @@ The answers in `requests` gain `minutes?` (Phase 3: an approved `more_time`).
 | `measure` | bool | count app time and send it with `POST /usage` |
 | `zone` | string | an IANA zone, or `"phone"` |
 | `day_starts` | `"HH:MM"` | when a day's limits reset |
-| `limits` | `[{id, name, packages, minutes, by_day?: {mon…sun}}]` | at most 50; `name` is the family's words (60); `packages: ["*"]` is a daily total; `minutes` 0 to 1440 |
+| `limits` | `[{id, name, packages, minutes, by_day?: {mon…sun}}]` | at most 50; `name` is the family's words, or Belay's for one an AI app added (60, one line); `packages: ["*"]` is a daily total; `minutes` 0 to 1440 |
 | `schedules` | `[{id, kind: "school"\|"bedtime"\|"custom", name, days: ["mon"…], start, end, allow, lock, skip: ["YYYY-MM-DD"]}]` | at most 20 |
 | `exempt` | string[] | never counted or paused |
 | `if_unmeasured` | `"pause_limited"` \| `"keep_open"` | |

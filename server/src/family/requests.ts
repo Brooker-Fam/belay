@@ -16,7 +16,7 @@
 import type { DB } from "../db.js";
 import type { Request } from "../device/schemas.js";
 import { cleanText, oneLine } from "../text.js";
-import { type FixView, FIX_COLUMNS, type FixRow, insertFix, toFix } from "./location/store.js";
+import { type FixView, FIX_COLUMNS, FIX_TIME, type FixRow, insertFix, toFix } from "./location/store.js";
 import { REQUEST_WINDOW_MS } from "./policy.js";
 
 export type RequestStatus = "pending" | "approved" | "declined" | "talk";
@@ -139,7 +139,7 @@ function toView(db: DB, r: RequestRow): RequestView {
 /** The fix the kid shared with a help request, if they did. */
 function helpFix(db: DB, deviceId: string, requestId: string): FixView | null {
   const row = db
-    .prepare<[string, string], FixRow>(`SELECT ${FIX_COLUMNS} FROM fixes WHERE device_id = ? AND request_id = ? ORDER BY at DESC, rowid DESC LIMIT 1`)
+    .prepare<[string, string], FixRow>(`SELECT ${FIX_COLUMNS} FROM fixes WHERE device_id = ? AND request_id = ? ORDER BY ${FIX_TIME} DESC, rowid DESC LIMIT 1`)
     .get(deviceId, requestId);
   return row ? toFix(row) : null;
 }
@@ -184,17 +184,54 @@ export interface SavedRequests {
   agreement: { version: number; answer: "agree" | "talk"; at: number }[];
   /** New ones not kept, because the phone already has too many waiting. */
   refused: number;
+  /** New ones not kept, because the phone made more new requests this hour than it may (`budget`). */
+  limited: number;
+  /** New requests made in this call that count toward the hourly limit (help requests don't). */
+  made: number;
 }
 
 /** A phone can't have more than this many requests for apps waiting for a parent, one per app: a flood is refused. */
 export const MAX_PENDING_REQUESTS = 200;
 /** Nor more than this many "more time" requests waiting: one per limit, and there are at most 50 limits and "*". */
 export const MAX_PENDING_MORE_TIME = 60;
-/** Nor more than this many help requests that no parent has seen, or talk requests waiting: each is its own. */
+/**
+ * Nor more than this many help requests that no parent has seen (pending or withdrawn, one that
+ * arrived withdrawn included), or talk requests waiting: each is its own.
+ */
 export const MAX_UNSEEN_HELP = 100;
 export const MAX_PENDING_TALK = 60;
 /** Phase 5: nor more than this many contact requests waiting, one per number. */
 export const MAX_PENDING_CONTACT = 60;
+/**
+ * Of a phone's requests that wait for no one any more (answered, withdrawn, asked again, the kid's
+ * "I agree"), the server keeps the newest this many, help requests aside: past that, the oldest
+ * go, the ones the phone settled itself (withdrawn, asked again, "I agree") before the ones a
+ * parent answered. A phone token can't make the server keep more than that, however it sends them.
+ */
+export const MAX_SETTLED_REQUESTS = 1000;
+/** And the hourly clean-up deletes those a year after they last changed. Help requests stay until the phone is deleted. */
+export const SETTLED_REQUEST_DAYS = 365;
+
+/** In SQL, for a request: it waits for no one any more, and isn't help (kept with the phone). */
+const SETTLED = "(kind != 'help' AND status != 'pending')";
+/** Settled by the phone alone: withdrawn, asked again, or the kid's "I agree" (answered as it arrives). */
+const BY_THE_PHONE = "(status IN ('superseded', 'withdrawn') OR (kind = 'agreement' AND agreement_answer = 'agree'))";
+/** When a request last changed, by the server's clock. */
+const LAST_CHANGE = "MAX(received_at, updated_at, COALESCE(answered_at, 0))";
+
+/** Deletes a phone's settled requests past MAX_SETTLED_REQUESTS: the phone's own first, then the oldest. */
+function keepSettled(db: DB, deviceId: string): void {
+  db.prepare(
+    `DELETE FROM requests WHERE rowid IN (
+       SELECT rowid FROM requests WHERE device_id = ? AND ${SETTLED}
+       ORDER BY ${BY_THE_PHONE}, ${LAST_CHANGE} DESC, rowid DESC LIMIT -1 OFFSET ?)`,
+  ).run(deviceId, MAX_SETTLED_REQUESTS);
+}
+
+/** The hourly clean-up: settled requests a year after they last changed (help requests stay). Returns how many went. */
+export function pruneRequests(db: DB, now: number): number {
+  return db.prepare(`DELETE FROM requests WHERE ${SETTLED} AND ${LAST_CHANGE} <= ?`).run(now - SETTLED_REQUEST_DAYS * 86_400_000).changes;
+}
 
 /** The name the kid gave a contact, made safe to keep: on one line, at most 60 characters. */
 const contactNameOf = (name: string): string => oneLine(name, 60);
@@ -210,14 +247,27 @@ const contactNameOf = (name: string): string => oneLine(name, 60);
  * take another's place: each is its own. The kid's "I agree" needs no parent: it's recorded as
  * answered at once, and a parent sees it on the Requests page; "I want to talk about it" waits for
  * a parent.
+ *
+ * `budget` is how many new requests the phone may still make this hour (help aside: a help
+ * request is never held back by other requests); past it, new ones aren't kept (`limited`), and
+ * the phone sends them again later. What the phone settled is kept to MAX_SETTLED_REQUESTS.
  */
-export function saveRequests(db: DB, deviceId: string, requests: Request[], now: number): SavedRequests {
+export function saveRequests(db: DB, deviceId: string, requests: Request[], now: number, opts: { budget?: number } = {}): SavedRequests {
   return db.transaction((): SavedRequests => {
     const created: SavedRequests["created"] = [];
     const withdrawn: SavedRequests["withdrawn"] = [];
     const helpUpdated: SavedRequests["helpUpdated"] = [];
     const agreement: SavedRequests["agreement"] = [];
     let refused = 0;
+    let limited = 0;
+    let made = 0;
+    /** Whether the hour's limit leaves room for one more new request of this kind; counts it. */
+    const take = (kind: RequestKind): boolean => {
+      if (kind === "help") return true;
+      if (made >= (opts.budget ?? Infinity)) return false;
+      made++;
+      return true;
+    };
     const pendingOf = db.prepare<[string, RequestKind], { n: number }>("SELECT COUNT(*) AS n FROM requests WHERE device_id = ? AND kind = ? AND status = 'pending'");
     const unseenHelp = db.prepare<[string], { n: number }>(`SELECT COUNT(*) AS n FROM requests r WHERE r.device_id = ? AND ${UNSEEN_HELP}`);
     const pending: Record<RequestKind, number> = {
@@ -293,6 +343,16 @@ export function saveRequests(db: DB, deviceId: string, requests: Request[], now:
       const at = Math.min(r.asked_at, now);
       if (r.withdrawn_at != null) {
         // Made and withdrawn before it reached the server: kept, as withdrawn, so the parents can see it; it takes no one's place.
+        // A help one stays at the top until a parent sees it, so it counts toward the help no one has seen.
+        if (r.kind === "help" && pending.help >= cap.help) {
+          refused++;
+          continue;
+        }
+        if (!take(r.kind)) {
+          limited++;
+          continue;
+        }
+        if (r.kind === "help") pending.help++;
         insertNew(db, deviceId, r, reason, now, { status: "withdrawn", withdrawnAt: r.withdrawn_at });
         const shared = shareFix(r.id, r);
         created.push({
@@ -324,6 +384,10 @@ export function saveRequests(db: DB, deviceId: string, requests: Request[], now:
         refused++;
         continue;
       }
+      if (!take(r.kind)) {
+        limited++;
+        continue;
+      }
       for (const o of older) supersede.run(r.id, deviceId, o.id);
       pending[r.kind] += (waits ? 1 : 0) - older.length;
       // The kid's words from the request it replaces stay with it, until they write new ones.
@@ -344,7 +408,8 @@ export function saveRequests(db: DB, deviceId: string, requests: Request[], now:
         created.push({ id: r.id, kind: "talk", package: null, label: null, again: false, reason: words });
       }
     }
-    return { accepted: requests.length - refused, created, withdrawn, helpUpdated, agreement, refused };
+    keepSettled(db, deviceId);
+    return { accepted: requests.length - refused - limited, created, withdrawn, helpUpdated, agreement, refused, limited, made };
   })();
 }
 

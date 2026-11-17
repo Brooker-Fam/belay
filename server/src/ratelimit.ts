@@ -22,6 +22,11 @@ export class RateLimiter {
     return list;
   }
 
+  /** How many more hits would be allowed now, without counting any. */
+  remaining(key: string): number {
+    return Math.max(0, this.limit - this.recent(key).length);
+  }
+
   /** Whether `n` more hits would be allowed, without counting them. */
   check(key: string, n = 1): Verdict {
     const list = this.recent(key);
@@ -88,6 +93,18 @@ export interface Limiters {
   /** Phase 4: arrival and departure notices, per phone, place and direction: at most one each 10 minutes. */
   placeNotices: RateLimiter;
   /**
+   * New requests a phone makes, per phone, help aside (help has its own cap, and is never held
+   * back by other requests): what a phone token can make the server keep, and the activity log
+   * record, stays small. Past it, the phone is answered 429 and sends the rest later.
+   */
+  requestsPerPhone: RateLimiter;
+  /**
+   * Phase 4: new fixes and arrivals or departures a phone makes the server keep, per phone (any
+   * reason: a lost-mode or help fix too). Generous for a phone sending a day it spent offline in
+   * lost mode; past it, 429.
+   */
+  locationsPerPhone: RateLimiter;
+  /**
    * Phase 5: call records, per phone, counted apart from its other calls, so a phone sending a
    * backlog of records never holds back its check-ins or requests.
    */
@@ -110,6 +127,8 @@ export function createLimiters(now: () => number): Limiters {
     agentPerPhone: new RateLimiter(30, 60 * MIN, now),
     helpNoticesPerPhone: new RateLimiter(20, 60 * MIN, now),
     placeNotices: new RateLimiter(1, 10 * MIN, now),
+    requestsPerPhone: new RateLimiter(300, 60 * MIN, now),
+    locationsPerPhone: new RateLimiter(600, 60 * MIN, now),
     callsPerPhone: new RateLimiter(30, MIN, now),
   };
 }

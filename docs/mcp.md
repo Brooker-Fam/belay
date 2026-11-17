@@ -154,9 +154,9 @@ most 20, and each message in it counts.
 | `get_rules(device)` | Phase 3: the phone's screen-time rules (measuring, limits with their ids, schedules, exempt apps, self-serve, what happens when Belay can't count), extra time given today, the last "lock now", and proposals waiting. With the Screen time category, where each limit stands today; with Requests, more-time requests waiting; with Stage and agreement, the stage, what the next one changes, and the agreement with the kid's answer. |
 | `get_screen_time(device, from?, to?)` | Phase 3: day by day, in the phone's days: screen minutes, unlocks, minutes by hour, the most used apps with minutes and opens, and the times Belay couldn't count, with why. A day the phone sent nothing for says so: that's unknown, not zero. The last 7 days by default, at most 92. Needs the Screen time category. |
 | `block_app(device, package, note?)` | Blocks an app at once (tightening). It refuses the apps the phone never blocks, so 911 and 988 always work: Belay itself, the dialer and the services that place calls, the texting app, the keyboard, the home screen, emergency and safety apps, System UI, Settings, and anything else the phone reports it never blocks. An app that isn't on the phone yet can be blocked ahead of time, but AI apps may have at most 50 of those per phone; a parent clears them on the phone's page. |
-| `pause_phone(device, minutes?, note?)` | Pauses the phone at once, for some minutes or until a parent resumes it; the note is shown to the kid. It can't shorten a pause already running, and against one at least as long it changes nothing, its note included. |
-| `lock_phone(device, minutes, note?)` | Phase 3: pauses the phone for 5 to 240 minutes and locks its screen, if the phone gets it within 10 minutes. Calls, texts, 911 and 988 still work. A phone that couldn't lock says why, word for word, under `untrusted` in `get_rules`. |
-| `change_screen_time(device, change, reason)` | Phase 3: limits (new, or changed by id), schedules, removing either, exempt apps, self-serve, what happens when Belay can't count, or `stage` (a stage's name, on its own). The server decides: a change whose every part tightens applies at once; anything else, or a mix, becomes a proposal for a parent, and so does moving to another stage, always. |
+| `pause_phone(device, minutes?)` | Pauses the phone at once, for some minutes or until a parent resumes it. The kid's phone says so in Belay's own words ("Your parent paused this phone until 6:30 PM."): the AI app writes no note (a parent can, on the parent page). It can't shorten a pause already running, and against one at least as long it changes nothing; a longer one keeps a parent's note. |
+| `lock_phone(device, minutes)` | Phase 3: pauses the phone for 5 to 240 minutes and locks its screen, if the phone gets it within 10 minutes, with no note, like `pause_phone`. Calls, texts, 911 and 988 still work. A phone that couldn't lock says why, word for word, under `untrusted` in `get_rules`. |
+| `change_screen_time(device, change, reason)` | Phase 3: limits (new, or changed by id), schedules, removing either, exempt apps, self-serve, what happens when Belay can't count, or `stage` (a stage's name, on its own). The server decides: a change whose every part tightens applies at once; anything else, or a mix, becomes a proposal for a parent, and so does moving to another stage, always. Belay names a limit or schedule it adds or renames (below): a `name` the AI app gives isn't used as written. |
 | `get_server_health` | The family's server itself: its problems (urgent first), the last backup and daily try, when a backup was last verified and the last restore drill, free disk space, the database's size, and whether its clock agrees with the phones'. No family data. |
 | `propose_change(device, change, reason)` | Proposes loosening a rule (`allow_app` with a package, `resume`, `lift_restriction` with a restriction, `web_filter_off`, `new_apps_allow`) for a parent to approve on the parent page. It changes nothing itself. |
 
@@ -201,6 +201,18 @@ too, since whoever holds a phone's token can send any text.
   rules as they are then, and one whose subject changed since makes it out of date. Moving a
   phone to another stage is always a proposal, and to Off belay (Phase 11), the last stage, is
   refused: only a parent moves a phone there. `lock_phone` pauses and locks at once.
+- The kid never reads an AI app's words. The kid's phone shows each limit's and schedule's
+  name ("Time's up for Chess Club today"), so Belay names one an AI app adds, or asks to rename,
+  after what it is: a limit after its apps, as the phone names them ("Chess Club and Puzzle
+  Pop", "Chess Club, Puzzle Pop and 2 more apps", or "3 apps" for apps the phone never
+  reported, whose package names could be anything), a daily total "Screen time", a schedule
+  after its kind ("School", "Bedtime", "Schedule"). Renaming is a proposal, like any change
+  that doesn't tighten, and it proposes Belay's name, not the AI app's. A name Belay wrote
+  follows its limit when apps are added or removed, by anyone; a name a parent wrote stays as
+  it is. A pause or lock an AI app makes has no note: the phone says it in Belay's words, and
+  a longer one keeps a parent's note. Parents name rules and write notes freely, on the parent
+  page and with the CLI; every name and note the kid sees, whoever wrote it, reaches the phone
+  without control, invisible or direction-changing characters, and a name on one line.
 - Measuring screen time (whether the phone sends how long apps are used) has no tool and no
   proposal: only a parent turns it on or off.
 - Location (Phase 4) is the same: whether the phone shares where it is and how often, its
@@ -247,6 +259,11 @@ the kid. Report it plainly, don't guess why, and don't moralize."
   reason, and suggests how the parent might answer (approve, decline or let's talk, with a
   note). If the parent wants to approve, it offers a proposal; the parent still decides.
 
+The prompts follow the categories a parent allows, as the tools do: with Apps off,
+`review_app` and `review_request` say nothing about the phone's apps (not even whether the
+app is on it) and tell the AI app it's off; with Requests off, `review_request` says so too.
+Each use of `review_app` and `review_request` is in the activity log, like a tool's read.
+
 ## Things to ask
 
 - "Is Sam's phone OK? When did it last check in?"
@@ -255,7 +272,8 @@ the kid. Report it plainly, don't guess why, and don't moralize."
 - "Which apps on Sam's phone can use the microphone or the camera?"
 - "Block Chatter Box on Sam's phone."
 - "Who can call Sam's phone? Turn on quiet times, so only we ring at bedtime."
-- "Pause Sam's phone for an hour, with the note: dinner time."
+- "Pause Sam's phone for an hour." (Sam's phone says "Your parent paused this phone until …";
+  a note of your own goes on the parent page.)
 - "What does Sam's phone enforce right now, and has it applied the latest rules?"
 - "Propose allowing Trail Maps: it's for the hiking trip." (Then approve it on the
   Proposals page.)
@@ -263,7 +281,7 @@ the kid. Report it plainly, don't guess why, and don't moralize."
 - "How much did Sam use the phone this week, and which apps took the time?"
 - "Make Sam's games limit 45 minutes on school days." (A lower limit applies at once; a
   higher one becomes a proposal.)
-- "Lock Sam's phone for 30 minutes: dinner."
+- "Lock Sam's phone for 30 minutes."
 - "Let's do the family check-in for Sam's phone."
 - "Is anything urgent? Did Sam ask for help?"
 - With the Location category on: "Where's Sam's phone?", "Check where Sam's phone is now."

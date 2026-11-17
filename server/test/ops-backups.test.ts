@@ -2,13 +2,13 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, utimesSync,
 import { join } from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { loadMigrations } from "../src/db.js";
+import { loadMigrations, openDatabase } from "../src/db.js";
 import { BACKUPS_KEPT, backupDir, backupPassphrase, dailyBackupDue, latestBackup, listBackups, runDailyBackup, writeBackup } from "../src/ops/backups.js";
 import { decryptFile } from "../src/ops/crypt.js";
 import { opsTick } from "../src/ops/jobs.js";
 import { setOpsOptions } from "../src/ops/options.js";
 import { enrollPhone, T0 } from "./helpers.js";
-import { FAST_SCRYPT, PASSPHRASE, dailyContext, opsServer, scratchDir } from "./ops-helpers.js";
+import { FAST_SCRYPT, PASSPHRASE, ROOMY_DISK, dailyContext, opsServer, scratchDir } from "./ops-helpers.js";
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -164,6 +164,66 @@ describe("writeBackup", () => {
     await expect(writeBackup(t.deps.db, join(dir, "nope", "x.db"), { passphrase: null })).rejects.toThrow(/doesn't exist/);
     expect(readFileSync(join(dir, "taken.db"), "utf8")).toBe("keep me");
     expect(readdirSync(dir)).toEqual(["taken.db"]);
+  });
+
+  /** What's in a folder: each file's name, mode and whether it's a plain SQLite database. */
+  const contents = (dir: string) =>
+    readdirSync(dir, { recursive: true, encoding: "utf8" }).map((name) => {
+      const path = join(dir, name);
+      const st = statSync(path);
+      const plain = st.isFile() && readFileSync(path).subarray(0, 15).toString("latin1") === "SQLite format 3";
+      return { name, mode: (st.mode & 0o777).toString(8), plain };
+    });
+
+  it("encrypting, never puts the database in the clear in the backup's folder: it's made in a private folder next to the database, and deleted", async () => {
+    const dataDir = scratchDir();
+    const db = openDatabase(dataDir);
+    const offsite = scratchDir(); // a USB stick, or a synced folder
+    const target = join(offsite, "belay-now.db.enc");
+    const pending = writeBackup(db, target, { passphrase: PASSPHRASE, scrypt: FAST_SCRYPT, disk: () => ROOMY_DISK });
+    // VACUUM INTO ran before writeBackup's first await: look now, while it seals.
+    expect(contents(offsite).filter((f) => f.plain)).toEqual([]);
+    const staged = contents(dataDir).filter((f) => f.name.startsWith(".belay-backup-"));
+    expect(staged).toEqual([
+      { name: expect.stringMatching(/^\.belay-backup-[A-Za-z0-9]{6}$/) as unknown, mode: "700", plain: false },
+      { name: expect.stringMatching(/^\.belay-backup-[A-Za-z0-9]{6}\/belay\.db$/) as unknown, mode: "600", plain: true },
+    ]);
+    expect(await pending).toMatchObject({ encrypted: true });
+    expect(contents(offsite)).toEqual([{ name: "belay-now.db.enc", mode: "600", plain: false }]);
+    expect(contents(dataDir).filter((f) => f.name.startsWith(".belay-backup-"))).toEqual([]);
+    const out = join(scratchDir(), "plain.db");
+    await decryptFile(target, out, PASSPHRASE);
+    const copy = openCopy(out);
+    expect(copy.pragma("integrity_check", { simple: true })).toBe("ok");
+    copy.close();
+    db.close();
+  });
+
+  it("encrypting, deletes the unencrypted copy when sealing fails too, and what a crash left an hour on", async () => {
+    const dataDir = scratchDir();
+    const db = openDatabase(dataDir);
+    const offsite = scratchDir();
+    const left = join(dataDir, ".belay-backup-crash1");
+    mkdirSync(left, { mode: 0o700 });
+    writeFileSync(join(left, "belay.db"), "what a crash left");
+    utimesSync(left, new Date(Date.now() - 2 * HOUR), new Date(Date.now() - 2 * HOUR));
+    const fresh = join(dataDir, ".belay-backup-running");
+    mkdirSync(fresh, { mode: 0o700 });
+    await expect(writeBackup(db, join(offsite, "x.db.enc"), { passphrase: PASSPHRASE, scrypt: { logN: 1, r: 8, p: 1 }, disk: () => ROOMY_DISK })).rejects.toThrow(/scrypt/);
+    expect(readdirSync(offsite)).toEqual([]);
+    // The crash's copy went; another backup's, still running, stays.
+    expect(readdirSync(dataDir).filter((n) => n.startsWith(".belay-backup-"))).toEqual([".belay-backup-running"]);
+    db.close();
+  });
+
+  it("encrypting, needs room for both copies when they share a disk", async () => {
+    const dataDir = scratchDir();
+    const db = openDatabase(dataDir);
+    const bytes = (db.pragma("page_count", { simple: true }) as number) * (db.pragma("page_size", { simple: true }) as number);
+    const room = { freeBytes: bytes + 64 * 1024 * 1024 + 1, totalBytes: 500e9 };
+    await expect(writeBackup(db, join(dataDir, "a.db.enc"), { passphrase: PASSPHRASE, scrypt: FAST_SCRYPT, disk: () => room })).rejects.toThrow(/^Not enough free disk space: /);
+    expect(await writeBackup(db, join(dataDir, "a.db"), { passphrase: null, disk: () => room })).toMatchObject({ encrypted: false });
+    db.close();
   });
 });
 

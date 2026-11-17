@@ -413,9 +413,9 @@ export function updateFailedNotice(phone: { id: string; name: string }, version:
   return { title: "Belay", body: `${oneLine(phone.name, 60)}: Belay couldn't update to ${oneLine(version, 70)}. The phone's page says why.`, url: `/devices/${phone.id}` };
 }
 
-/** "The recovery key was used on Sam's phone". */
+/** "Sam's phone reports the recovery key was used on it": the phone's word, so the notice says so. */
 export function recoveryUsedNotice(phone: { id: string; name: string }): Notice {
-  return { title: "Belay", body: `The recovery key was used on ${oneLine(phone.name, 60)}. Make a new one on the phone's page.`, url: `/devices/${phone.id}` };
+  return { title: "Belay", body: `${oneLine(phone.name, 60)} reports the recovery key was used on it. Make a new one on the phone's page.`, url: `/devices/${phone.id}` };
 }
 
 /** `Sam's phone: Claude proposes allowing "Chatter Box"`. */

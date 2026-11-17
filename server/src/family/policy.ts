@@ -14,7 +14,7 @@ import { type Actor, audit } from "../audit.js";
 import { newId } from "../crypto.js";
 import type { DB } from "../db.js";
 import { Policy } from "../device/schemas.js";
-import { oneLine } from "../text.js";
+import { cleanText, oneLine } from "../text.js";
 import { addRequestedContact } from "./calls/approve.js";
 import { callsFor, contactsFor, numbersOf } from "./calls/store.js";
 import { deviceFacts } from "./devices.js";
@@ -195,6 +195,16 @@ export class RuleRefused extends Error {
 }
 
 export const TOO_LARGE = `That change would make this phone's rules too large to send (over ${LIMITS.maxPolicyBytes / 1024} KB). Clear some apps under "Blocked before install" on the phone's page, or shorten Chrome's lists of sites, then try again.`;
+
+/**
+ * Words the kid sees (a note, the support message), as they're saved and as the policy sends
+ * them: without control characters (new lines aside) or the characters that hide or reorder
+ * text (text.ts's cleanText), and capped; empty is none. A parent's and the CLI's alike: an AI
+ * app writes none (applyPause).
+ */
+export function kidWords(text: string | null | undefined, max: number): string | null {
+  return text == null ? null : cleanText(text, max) || null;
+}
 
 // ── Stored rules ─────────────────────────────────────────────────────────
 
@@ -519,9 +529,10 @@ function requestAnswers(db: DB, deviceId: string, now: number): Policy["requests
     .map((r) => ({
       id: r.id,
       status: r.status,
-      note: r.note?.slice(0, LIMITS.answerNote) ?? null,
+      // The parent's words and name, as the kid sees them: nothing hidden or reordered (kidWords).
+      note: kidWords(r.note, LIMITS.answerNote),
       answered_at: r.answered_at,
-      answered_by: r.answered_by?.slice(0, 60) ?? null,
+      answered_by: r.answered_by === null ? null : oneLine(r.answered_by, 60) || null,
       // Phase 3: the minutes a parent gave, for an approved more_time request.
       minutes: r.status === "approved" ? r.given_minutes : null,
     }));
@@ -583,12 +594,12 @@ export function buildPolicy(db: DB, deviceId: string, now: number): Policy {
       new_apps: rules.newApps,
       decisions: [...currentDecisions(db, deviceId).values()].map((d) => ({ package: d.package, state: d.state })),
     },
-    pause: pause ? { until: pause.until, note: pause.note } : null,
+    pause: pause ? { until: pause.until, note: kidWords(pause.note, LIMITS.pauseNote) } : null,
     restrictions: { ...rules.restrictions },
     web: { private_dns: rules.privateDns, chrome: rules.chrome ? { ...rules.chrome } : null, hide_browsers: rules.hideBrowsers },
     maintenance_until: activeMaintenance(rules, now),
     frp_accounts: [...rules.frpAccounts],
-    support_message: rules.supportMessage,
+    support_message: kidWords(rules.supportMessage, LIMITS.supportMessage),
     requests: requestAnswers(db, deviceId, now),
     agent_update: agentUpdate(db, deviceId),
     recovery: recoveryCheck(db, deviceId),
@@ -851,7 +862,7 @@ function approveOpenRequests(db: DB, now: number, deviceId: string, pkg: string,
     .run(note, parentOf(who), now, deviceId, pkg).changes;
 }
 
-const clean = (text: string | null | undefined, max: number): string | null => text?.trim().slice(0, max) || null;
+const clean = kidWords;
 
 /**
  * Whether new apps wait for a parent. Turning "ask" on again later allows only the apps in
@@ -971,9 +982,9 @@ export function clearPreDecisions(ctx: PolicyContext, deviceId: string, which: {
 
 /**
  * Pauses the phone: every app but the never-blocked ones is suspended until then (null: until
- * a parent resumes it). An AI app can only make a pause longer, never shorter, and its note,
- * which the kid sees, only goes with a pause it sets or lengthens: against a pause at least as
- * long, nothing changes (`kept`).
+ * a parent resumes it). An AI app can only make a pause longer, never shorter (against a pause
+ * at least as long, nothing changes: `kept`), and never writes the note the kid sees: its pause
+ * keeps the note there is, a parent's, or has none, and the kid's phone says it in Belay's words.
  */
 export function pausePhone(
   ctx: PolicyContext,
@@ -990,7 +1001,8 @@ function applyPause(now: number, rules: Rules, input: { minutes: number | null; 
   const minutes = input.minutes === null ? null : Math.min(Math.max(1, Math.round(input.minutes)), LIMITS.maxPauseMinutes);
   let until = minutes === null ? null : now + minutes * 60_000;
   const kept = who.kind === "ai" && current !== null && (current.until === null || (until !== null && current.until >= until));
-  const given = input.note !== undefined && input.note !== null ? clean(input.note, LIMITS.pauseNote) : undefined;
+  // The kid sees the note: a person's words only, never an AI app's.
+  const given = who.kind !== "ai" && input.note !== undefined && input.note !== null ? clean(input.note, LIMITS.pauseNote) : undefined;
   let note: string | null;
   let setAt: number | null = now;
   if (kept) {
@@ -998,7 +1010,7 @@ function applyPause(now: number, rules: Rules, input: { minutes: number | null; 
     note = current.note;
     setAt = current.setAt;
   } else {
-    // Without a note of its own, an AI app's longer pause keeps the note there is.
+    // An AI app's longer pause keeps the note there is.
     note = given !== undefined ? given : who.kind === "ai" ? (current?.note ?? null) : null;
   }
   rules.pause = { until, note, setAt };
@@ -1030,9 +1042,9 @@ export function insertCommandRow(db: DB, deviceId: string, kind: CommandKind, no
 
 /**
  * Locks the phone now (MCP's lock_phone): a pause of 5 to 240 minutes (an AI app's only ever
- * lengthens one running, as pausePhone says) and a lock_now command, which the phone runs once if
- * it gets it within 10 minutes; one still waiting is replaced. Calls, texts, 911, 988 and Belay
- * keep working, as in any pause. Tightening, so an AI app may.
+ * lengthens one running, and has no note of its own, as pausePhone says) and a lock_now command,
+ * which the phone runs once if it gets it within 10 minutes; one still waiting is replaced. Calls,
+ * texts, 911, 988 and Belay keep working, as in any pause. Tightening, so an AI app may.
  */
 export function lockPhone(ctx: PolicyContext, deviceId: string, input: { minutes: number; note?: string | null }, who: Changer): Changed<{ until: number | null; kept: boolean; command: string }> {
   const minutes = Math.min(Math.max(LOCK_MINUTES.min, Math.round(input.minutes)), LOCK_MINUTES.max);

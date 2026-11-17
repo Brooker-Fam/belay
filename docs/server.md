@@ -330,8 +330,10 @@ be repaired or reset from Settings. It works once.
   the new check), and so does `recovery-key`, with or without the locks on.
 - The policy carries only a check of the key (a salted SHA-256, `recovery` in
   docs/protocol.md); the server keeps only that check too, never the key.
-- When the phone reports a use, the server records it, the parents get a notice ("The recovery
-  key was used on Sam's phone"), and the phone's page asks for a new key.
+- When the phone reports a use of its current key, the server records it, once, the parents
+  get a notice ("Sam's phone reports the recovery key was used on it"), and the phone's page
+  asks for a new key. It's the phone's word: if no one in the family used the key, the phone
+  may be out of the family's hands. A report about an earlier key changes nothing.
 - AI apps see only whether a phone has a key, and when one was last used.
 
 ## Other users and profiles (Phase 10)
@@ -376,7 +378,10 @@ itself, offline too; the server keeps the rules and what the phone reports.
 Every change gives the phone a new rules version and is in the activity log. AI apps can
 tighten screen time and lock the phone directly; anything that loosens, or moves the phone to
 another stage, is a proposal ([mcp.md](mcp.md)). They can't turn measuring on or off, or
-answer the kid.
+answer the kid, and what the kid reads is never their words: Belay names a limit or schedule an
+AI app adds or renames after what it is (a limit after its apps, a schedule after its kind), and
+an AI app's pause or lock has no note. Every name and note the kid sees, whoever wrote it, goes
+to the phone without control, invisible or direction-changing characters.
 
 Screen time is kept 13 months by default (Settings, 1 to 36 months): the hourly clean-up
 deletes older days, and the extra time given for them. When a phone that measures or has a
@@ -395,8 +400,10 @@ Only a parent changes any of it, there or with the CLI; AI apps can't, and can't
   for its places). Keep location on stops the kid turning it off. The provider is GPS only
   (the phone's own receiver: private, slower indoors) or Android's combined provider (faster
   and indoors too, but on a Pixel it's Google's location service that answers).
-- **Where the phone is:** the last fix, described by the family's places ("At School, within
-  40 m", "1.2 km from Home"), worked out on the server, with how old and how accurate it is,
+- **Where the phone is:** the last fix (by the phone's clock, but never more than 5 minutes after
+  the server got it, so a fix dated in the future doesn't stay on top), described by the
+  family's places ("At School, within 40 m", "1.2 km from Home"), worked out on the server, with
+  how old and how accurate it is,
   and **Open in a map**, a plain link to OpenStreetMap (or Google Maps, in Settings) that only
   the parent's browser follows, when clicked. The server never asks a map, tile or address
   service anything, and the page embeds no map. What Belay on the phone says (permission,
@@ -507,6 +514,27 @@ The end of the rules, for when the kid outgrows Belay: each step is a parent's, 
   delete everything about it, on its page. [phase11-checklist.md](phase11-checklist.md) walks
   through it on a Pixel.
 
+## What a phone can make the server keep
+
+A phone's token stays good until a parent disconnects the phone, so a stolen, sold or rooted
+phone can send anything a phone may. Whatever it sends, the server keeps at most, per phone:
+
+- **Requests:** 300 new ones an hour (help requests aside: nothing holds one back), and 100 help
+  requests no parent has seen. Of the requests that wait for no one any more (answered,
+  withdrawn, asked again, the kid's "I agree"), the newest 1,000: past that the oldest go, the
+  ones the phone settled itself before the ones a parent answered, and the hourly clean-up
+  deletes them a year after they last changed. Help requests stay until the phone is deleted.
+- **Where the phone was:** 600 new fixes and arrivals or departures an hour, lost-mode and help
+  fixes included, and 10,000 fixes and 2,000 arrivals and departures in all (the fix a kid shared
+  with a help request is kept with it): past that, the oldest go.
+- **Screen time:** one day per date and zone, for dates the phone can have counted (up to
+  tomorrow in its zone), in at most 3 zones, and for no longer than the family keeps it.
+- **Calls** (Phase 5): records only while Belay records calls, at most 1000 a day.
+
+Past an hour's limit the phone is answered `429` with `Retry-After`, and sends the rest later;
+every device call is limited to 120 a minute per phone too. Disconnecting a phone stops its
+token at once, and deleting it deletes everything it sent.
+
 ## Backups
 
 Every day, from 2 AM in the family's timezone, the server makes a consistent copy of its
@@ -515,8 +543,12 @@ database while it runs (SQLite's `VACUUM INTO`): `/data/backups/belay-YYYY-MM-DD
 and deletes the older ones (only its own `belay-YYYY-MM-DD` files: anything else you put in
 `/data/backups` stays). Every try is recorded; a failed one is tried again an hour later,
 and the parent page and [health monitoring](#health-monitoring) say so. One backup runs at a
-time, a backup never overwrites a file, and none is started when it would leave the disk
-nearly full (it needs the database's size free, twice that when encrypting, and 64 MB more).
+time, a backup never overwrites a file, and none is started when it would leave a disk nearly
+full (it needs the database's size free where the backup goes, and 64 MB more; encrypting, the
+same again where it makes the unencrypted copy). An encrypted backup makes that copy in a
+private folder next to the database (the data dir, which holds the database anyway), never in
+the backup's own folder, and deletes it once it's sealed or failed; only the sealed copy goes
+where the backup goes.
 
 These copies live on the same disk as the database: they help after a mistake or a damaged
 database, not a lost disk. [Copy them off the machine](#off-site-copies) too.
@@ -527,6 +559,9 @@ To make one now, to a file of your choice:
 docker compose exec belay node dist/cli.js backup /data/belay-now.db
 docker compose exec belay node dist/cli.js backup /data/belay-now.db.enc --encrypt   # with the backup passphrase (asks for one if it isn't set)
 ```
+
+With `--encrypt`, the file can go straight onto a USB stick or a synced folder: nothing but the
+sealed copy is ever written there.
 
 ### Encrypted backups
 

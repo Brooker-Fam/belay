@@ -13,11 +13,13 @@
 import { newId } from "../../crypto.js";
 import type { DB } from "../../db.js";
 import { ScreenTime } from "../../device/schemas.js";
+import { cleanText, oneLine } from "../../text.js";
 import { isValidTimeZone } from "../../time.js";
 import { type Changed, type Changer, NEVER_BLOCKED, type Person, type PolicyContext, RuleRefused, changePolicies, changePolicy, neverBlockedOn } from "../policy.js";
 import { type Section, cleanSections, insertAgreement, recordKidAnswer } from "./agreement.js";
 import { type Classification, classifyScreenTimeChange } from "./classify.js";
 import { clockMinutes } from "./days.js";
+import { appNamesOn, followNames, noAppNames, tidyNames } from "./names.js";
 import {
   NO_OWN,
   NO_RULES,
@@ -89,25 +91,29 @@ export function checkRuleSet(rules: RuleSet, never: (pkg: string) => string | nu
 const neverAnywhere = (pkg: string): string | null => (NEVER_BLOCKED.has(pkg) ? "The phone never pauses it, so 911 and 988 always work." : null);
 
 /**
- * Sets the phone's rules to `wanted` (what a stage bundles: limits, schedules, exempt apps,
+ * Sets the phone's rules to `rules` (what a stage bundles: limits, schedules, exempt apps,
  * self-serve, "can't count", warnings), keeping its stage: what differs from the stage's is the
- * phone's own. An AI app may only make a change that only tightens.
+ * phone's own. An AI app may only make a change that only tightens. Every name is tidied, and the
+ * names Belay wrote follow what they name (names.ts): the kid sees them.
  */
 export function setPhoneRules(
   ctx: PolicyContext,
   deviceId: string,
-  wanted: RuleSet,
+  rules: RuleSet,
   who: Changer,
   opts: { proposalId?: string } = {},
 ): Changed<{ classification: Classification }> {
   const { db } = ctx;
+  const appNames = appNamesOn(db, deviceId);
+  const wanted = tidyNames(rules, appNames);
   checkRuleSet(wanted, neverBlockedOn(db, deviceId));
   return changePolicy(ctx, deviceId, who, (log) => {
     const current = phoneRules(db, deviceId);
     const classification = classifyScreenTimeChange(sideOf(current.settings, current.rules), sideOf(current.settings, wanted));
     if (who.kind === "ai" && !classification.onlyTightens) throw new Error("An AI app can only tighten screen time: anything else is a proposal for a parent");
     if (classification.none) return { classification };
-    savePhoneRow(db, deviceId, current.settings, ownFor(current.stage?.stage.rules ?? null, wanted), ctx.now);
+    // A name Belay wrote follows the change, as no change of its own: the words say what changed.
+    savePhoneRow(db, deviceId, current.settings, ownFor(current.stage?.stage.rules ?? null, followNames(current.rules, wanted, appNames)), ctx.now);
     const names = new Map(current.rules.limits.map((l) => [l.id, l.name]));
     log("screen_time.changed", {
       effect: classification.effect,
@@ -215,8 +221,10 @@ function checkOffBelay(existing: StageView | null, offBelay: StageView | null, n
 export function saveStage(ctx: PolicyContext, id: string | null, input: StageInput, who: Person): { stage: StageView; phonesChanged: number } {
   onlyPeople(who);
   const { db, now } = ctx;
-  const name = input.name.replace(/\s+/g, " ").trim().slice(0, STAGE_LIMITS.name);
+  // The kid sees them, so they're tidied like every name (names.ts): one line, nothing hidden or reordered.
+  const name = oneLine(input.name.replace(/\s+/g, " "), STAGE_LIMITS.name);
   if (!name) throw new RuleRefused("Name the stage.");
+  input = { ...input, rules: tidyNames(input.rules, noAppNames) };
   const existing = id === null ? null : getStage(db, id);
   if (id !== null && !existing) throw new RuleRefused("There's no such stage.");
   const others = listStages(db).filter((s) => s.id !== id);
@@ -233,7 +241,7 @@ export function saveStage(ctx: PolicyContext, id: string | null, input: StageInp
   const phones = existing?.offBelay
     ? db.prepare<[], { id: string }>("SELECT id FROM devices").all().map((r) => r.id)
     : db.prepare<[], { device_id: string }>("SELECT device_id FROM phone_stages").all().map((r) => r.device_id);
-  const how = input.how?.trim().slice(0, STAGE_LIMITS.how) || null;
+  const how = input.how ? cleanText(input.how, STAGE_LIMITS.how) || null : null;
   const stageId = id ?? newId();
   const done = changePolicies(ctx, phones, who, (log) => {
     const taken = others.find((s) => s.number === number);

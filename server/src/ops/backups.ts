@@ -6,7 +6,8 @@
  * recorded and retried an hour later, never thrown. One backup runs at a time.
  */
 import { randomBytes } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, statfsSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, statfsSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { DB } from "../db.js";
 import { getSettings } from "../settings.js";
@@ -231,41 +232,87 @@ export interface Written {
   encrypted: boolean;
 }
 
+/** The private folders an encrypted backup makes its unencrypted copy in (writeBackup). */
+const STAGE_PREFIX = ".belay-backup-";
+
 /**
- * Writes a backup of the database to `file`, which must not exist yet: `VACUUM INTO` a
- * temporary file next to it (mode 0600), encrypted into another if there's a passphrase, then
- * renamed, so `file` is never half-written. Refuses when it would leave the disk nearly full.
+ * Where an encrypted backup makes its unencrypted copy: next to the database itself (the data
+ * dir already holds it in the clear, and is as private), never in the backup's own folder, which
+ * may be a USB stick or a synced folder. An in-memory database's: the system's temporary folder.
+ */
+function stagingHome(db: DB): string {
+  return db.memory ? tmpdir() : dirname(db.name);
+}
+
+/** Deletes what a crash left of an encrypted backup's unencrypted copy, after an hour. */
+function clearStaleStages(home: string): void {
+  const now = Date.now();
+  for (const name of readdirSync(home)) {
+    if (!name.startsWith(STAGE_PREFIX)) continue;
+    try {
+      if (now - statSync(join(home, name)).mtimeMs > durations.HOUR) rmSync(join(home, name), { recursive: true, force: true });
+    } catch {
+      // Gone already.
+    }
+  }
+}
+
+/**
+ * Writes a backup of the database to `file`, which must not exist yet, so `file` is never
+ * half-written: without a passphrase, `VACUUM INTO` a temporary file next to it (mode 0600),
+ * then renamed. With one, the unencrypted copy is made in a private folder (0700) next to the
+ * database, never in the backup's folder, and only the sealed copy is written there and renamed;
+ * the private folder is deleted however it ends. Refuses when it would leave a disk nearly full.
  */
 export async function writeBackup(db: DB, file: string, opts: WriteOptions): Promise<Written> {
   if (existsSync(file)) throw new BackupError(`${file} already exists.`);
   const dir = dirname(file);
   if (!existsSync(dir)) throw new BackupError(`The folder ${dir} doesn't exist.`);
   const dbBytes = databaseBytes(db);
-  const disk = (opts.disk ?? diskSpace)(dir);
-  const needed = dbBytes * (opts.passphrase === null ? 1 : 2) + HEADROOM_BYTES;
-  if (disk.freeBytes < needed) {
-    throw new BackupError(`Not enough free disk space: a backup needs about ${formatBytes(needed)} free, and there's ${formatBytes(disk.freeBytes)}.`);
-  }
+  const space = opts.disk ?? diskSpace;
+  const need = (path: string, bytes: number, where = "") => {
+    const free = space(path).freeBytes;
+    const needed = bytes + HEADROOM_BYTES;
+    if (free < needed) throw new BackupError(`Not enough free disk space${where}: a backup needs about ${formatBytes(needed)} free, and there's ${formatBytes(free)}.`);
+  };
   const partial = () => `${file}.partial-${randomBytes(6).toString("hex")}`;
-  const plain = partial();
+  if (opts.passphrase === null) {
+    need(dir, dbBytes);
+    const plain = partial();
+    try {
+      db.prepare("VACUUM INTO ?").run(plain);
+      chmodSync(plain, 0o600);
+      renameSync(plain, file);
+    } finally {
+      rmSync(plain, { force: true });
+    }
+    return { bytes: statSync(file).size, dbBytes, encrypted: false };
+  }
+  const home = stagingHome(db);
+  if (statSync(home).dev === statSync(dir).dev) {
+    need(dir, 2 * dbBytes);
+  } else {
+    need(home, dbBytes, ` next to the database (${home}), for the copy it encrypts`);
+    need(dir, dbBytes);
+  }
+  clearStaleStages(home);
+  const stage = mkdtempSync(join(home, STAGE_PREFIX));
   try {
+    chmodSync(stage, 0o700);
+    const plain = join(stage, "belay.db");
     db.prepare("VACUUM INTO ?").run(plain);
     chmodSync(plain, 0o600);
-    if (opts.passphrase === null) {
-      renameSync(plain, file);
-    } else {
-      const sealed = partial();
-      try {
-        await encryptFile(plain, sealed, opts.passphrase, opts.scrypt ?? DEFAULT_SCRYPT);
-        renameSync(sealed, file);
-      } finally {
-        rmSync(sealed, { force: true });
-      }
+    const sealed = partial();
+    try {
+      await encryptFile(plain, sealed, opts.passphrase, opts.scrypt ?? DEFAULT_SCRYPT);
+      renameSync(sealed, file);
+    } finally {
+      rmSync(sealed, { force: true });
     }
   } finally {
-    rmSync(plain, { force: true });
+    rmSync(stage, { recursive: true, force: true });
   }
-  return { bytes: statSync(file).size, dbBytes, encrypted: opts.passphrase !== null };
+  return { bytes: statSync(file).size, dbBytes, encrypted: true };
 }
 
 // ── The daily job ───────────────────────────────────────────────────────
