@@ -433,6 +433,17 @@ by manifest receivers." It is bound with `BIND_FOREGROUND_SERVICE` and re-bound 
 process dies. TestDPC registers its package receiver there. Belay has one
 (`BelayAdminService`) in addition to the foreground service. CI checks it is bound.
 
+- **A force stop that gets past B5 isn't undone for an hour.** `am instrument` force-stops
+  its target when the tests start and again when they finish (AOSP 17
+  `ActivityManagerService.startInstrumentation`, "start instr", and
+  `finishInstrumentationLocked`, "finished inst"; `--no-restart` skips both). That call is
+  internal, so the protected-package check in B5 doesn't apply. Belay's jobs and alarms go
+  with it, and the dead DeviceAdminService binding is rebound only after a backoff
+  (`DevicePolicyConstants`: 1 hour, doubling up to a day). Seen on the API 37.0 emulator:
+  after the instrumented tests nothing ran Belay or its long-poll until it was opened, so
+  `ci-emulator-test.sh` opens it. Only adb can do this on a real phone, which the
+  debugging lock closes.
+
 ---
 
 ## Permissions and targetSdk 37

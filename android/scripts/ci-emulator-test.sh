@@ -216,6 +216,16 @@ out="$(ash am instrument -w "$TEST_PKG/androidx.test.runner.AndroidJUnitRunner")
 printf '%s\n' "$out"
 grep -q '^OK (' <<<"$out" || die "instrumented tests failed"
 
+# `am instrument` force-stops Belay before and after the tests (AOSP 17
+# ActivityManagerService: "start instr", "finished inst"). That also cancels its jobs and
+# alarms, and the system rebinds its DeviceAdminService only after an hour, so nothing
+# runs Belay (or its long-poll) until something starts it. Open it, as a person would.
+step "Opening Belay after the instrumented tests starts it again"
+ash am start -W -n "$PKG/.ui.MainActivity" >/dev/null
+for _ in $(seq 1 60); do service_running && break; sleep 1; done
+service_running || { diagnose; die "BelayService didn't start when Belay was opened"; }
+ash input keyevent KEYCODE_HOME
+
 if [ -n "$E2E_SERVER" ] && [ -n "$FIXTURE_V1" ]; then
   step "The server got the fixture app's install, update and removal"
   for kind in installed updated removed; do
