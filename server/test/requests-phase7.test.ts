@@ -116,15 +116,38 @@ describe("I need help", () => {
     });
   });
 
-  it("takes the fix the kid shared even with location off, kept with the request; a later resend doesn't replace it", async () => {
-    const { t, phone, policy } = await family();
+  it("takes the fix the kid shared even with location off, kept with the request; sent again, a newer one takes its place, as a new reason does", async () => {
+    const { t, phone, ctx, parent, policy } = await family();
     expect(policy().location).toBeNull();
+    const fixOf = (id: string) => {
+      const r = getRequest(t.deps.db, phone.deviceId, id);
+      return r?.kind === "help" ? r.fix : undefined;
+    };
+    const count = () => t.deps.db.prepare("SELECT COUNT(*) AS n FROM fixes").get();
+    // The phone sends the request at once, then again with the words and the fix (the same id).
+    await send(t, phone.token, help(t, "request-0001"));
+    expect(fixOf("request-0001")).toBeNull();
     const shared = fix({ reason: "help", lat: 40.123456789, lng: -72.987654321 });
+    await send(t, phone.token, help(t, "request-0001", { reason: "Lost", location: shared }));
+    expect(fixOf("request-0001")).toMatchObject({ id: shared.id, lat: 40.12346, lng: -72.98765, reason: "help", requestId: "request-0001" });
+    // The same one again changes nothing, and nor does a resend without one.
     await send(t, phone.token, help(t, "request-0001", { location: shared }));
+    await send(t, phone.token, help(t, "request-0001"));
+    expect(fixOf("request-0001")?.id).toBe(shared.id);
+    // A newer one takes its place: the older isn't kept.
+    const newer = fix({ reason: "help", lat: 40.2, lng: -72.9 });
+    await send(t, phone.token, help(t, "request-0001", { location: newer }));
+    expect(fixOf("request-0001")).toMatchObject({ id: newer.id, lat: 40.2, lng: -72.9 });
+    expect(count()).toEqual({ n: 1 });
+    // A fix id the phone already used for another kind of fix never takes its place.
+    await deviceCall(t, phone.token, "locations", { fixes: [fix({ id: "fix-elsewhere", reason: "lost" })], place_events: [] });
+    await send(t, phone.token, help(t, "request-0001", { location: fix({ id: "fix-elsewhere", reason: "help" }) }));
+    expect(fixOf("request-0001")?.id).toBe(newer.id);
+    // Once a parent has seen it, it's answered: a resend changes nothing.
+    markHelpSeen(ctx(), phone.deviceId, "request-0001", parent);
     await send(t, phone.token, help(t, "request-0001", { location: fix({ reason: "help", lat: 1, lng: 1 }) }));
-    const r = getRequest(t.deps.db, phone.deviceId, "request-0001");
-    expect(r?.kind === "help" && r.fix).toMatchObject({ id: shared.id, lat: 40.12346, lng: -72.98765, reason: "help", requestId: "request-0001" });
-    expect(t.deps.db.prepare("SELECT COUNT(*) AS n FROM fixes").get()).toEqual({ n: 1 });
+    expect(fixOf("request-0001")?.id).toBe(newer.id);
+    expect(count()).toEqual({ n: 2 });
   });
 
   it("caps help no parent has seen at 100 a phone", async () => {

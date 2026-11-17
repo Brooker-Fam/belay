@@ -335,10 +335,14 @@ What the server does with them:
   `answered_by` the same as its `help_seen` entry, and the parent's optional note; show it as
   seen, not as approved. A help request the kid withdrew before a parent saw it stays at the
   top of the parent page until one does, and still gets a `help_seen` entry. Each help
-  request is its own (none takes another's place); sending a pending one again adds the kid's
-  words, or the shared fix if it had none (a later fix doesn't replace it), and the parents
-  hear again. At most 100 help requests no parent has seen, and 60 waiting `talk` requests,
-  per phone; past that, new ones are answered `429`.
+  request is its own (none takes another's place); sending a pending one again takes the kid's
+  new words and a newer shared fix, which takes the place of the one before (it isn't kept),
+  as `reason` does, and the parents hear again; one sent again without either keeps what it
+  has. At most 100 help requests no parent has seen, and 60 waiting `talk` requests, per
+  phone; past that, new ones are answered `429`.
+- **A check the server never issued** (the phone's own test `locate_now`, say): its result in
+  `enforcement.commands` is ignored, and a fix naming it is dropped and counted, answered `200`
+  like any other.
 - **Withdrawing:** a request with `withdrawn_at` is withdrawn only while it's `pending`; the
   phone gets a new policy version without it. One that arrives already withdrawn (made and
   withdrawn offline) is kept as withdrawn, takes no other request's place, and isn't

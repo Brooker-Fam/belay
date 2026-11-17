@@ -178,9 +178,9 @@ export const MAX_PENDING_TALK = 60;
 
 /**
  * Saves the kid's requests. Idempotent by id: sending one again updates its reason while it's
- * still pending (a resend without a reason keeps the one there is), adds the fix a help request
- * shares if it had none, and changes nothing else; sent again with `withdrawn_at`, a pending one
- * is withdrawn (an answered one stays as it is). A new request that asks what a waiting one asks
+ * still pending, and a help request's shared fix the same way (a resend without either keeps the
+ * one there is), and changes nothing else; sent again with `withdrawn_at`, a pending one is
+ * withdrawn (an answered one stays as it is). A new request that asks what a waiting one asks
  * takes its place: for the same app (the phone asks again after an app is installed again), for
  * the same limit, or about the agreement. The old one is "superseded", leaves the policy's
  * answers, and stops counting, so the limits count apps and limits. Help and talk requests never
@@ -226,14 +226,22 @@ export function saveRequests(db: DB, deviceId: string, requests: Request[], now:
       ),
     };
     const supersede = db.prepare("UPDATE requests SET status = 'superseded', superseded_by = ? WHERE device_id = ? AND id = ?");
-    const hasFix = db.prepare<[string, string], { n: number }>("SELECT COUNT(*) AS n FROM fixes WHERE device_id = ? AND request_id = ?");
-    /** A help request's shared fix, kept with the request (and linked if the phone sent the same fix by itself). */
+    const linked = db.prepare<[string, string, string], { n: number }>("SELECT COUNT(*) AS n FROM fixes WHERE device_id = ? AND id = ? AND request_id = ?");
+    /**
+     * A help request's shared fix, kept with the request (and linked if the phone sent the same fix
+     * by itself). Sent again with another, the newer takes its place, as a new reason does; the
+     * same one again changes nothing. Whether the request has a new fix now.
+     */
     const shareFix = (requestId: string, r: Request): boolean => {
       if (r.kind !== "help" || !r.location) return false;
-      if ((hasFix.get(deviceId, requestId)?.n ?? 0) > 0) return false;
+      const fixId = r.location.id;
+      if ((linked.get(deviceId, fixId, requestId)?.n ?? 0) > 0) return false;
       insertFix(db, deviceId, r.location, now, { reason: "help", commandId: null, requestId });
-      db.prepare("UPDATE fixes SET request_id = ? WHERE device_id = ? AND id = ? AND reason = 'help' AND request_id IS NULL").run(requestId, deviceId, r.location.id);
-      return (hasFix.get(deviceId, requestId)?.n ?? 0) > 0;
+      db.prepare("UPDATE fixes SET request_id = ? WHERE device_id = ? AND id = ? AND reason = 'help' AND request_id IS NULL").run(requestId, deviceId, fixId);
+      // Only once the newer one is the request's: a fix id the phone used for something else never takes its place.
+      if ((linked.get(deviceId, fixId, requestId)?.n ?? 0) === 0) return false;
+      db.prepare("DELETE FROM fixes WHERE device_id = ? AND request_id = ? AND id != ?").run(deviceId, requestId, fixId);
+      return true;
     };
     for (const r of requests) {
       const reason = r.reason ? cleanText(r.reason, 500) || null : null;
