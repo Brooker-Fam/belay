@@ -117,6 +117,8 @@ jobs:
         env:
           BELAY_E2E_SERVER: http://10.0.2.2:8080
           BELAY_E2E_STATUS: BELAY_PUBLIC_URL=http://10.0.2.2:8080 BELAY_DATA_DIR=${{ runner.temp }}/belay-data node server/dist/cli.js status --json
+          # Phase 2: the server's CLI, for setting rules and answering requests during the test.
+          BELAY_E2E_CLI: BELAY_PUBLIC_URL=http://10.0.2.2:8080 BELAY_DATA_DIR=${{ runner.temp }}/belay-data node server/dist/cli.js
         with:
           api-level: "37.0"
           target: ${{ matrix.target }}
