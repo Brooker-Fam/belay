@@ -14,14 +14,31 @@ interface Migration {
 
 /** `NNN_name.sql` files in src/migrations, in order. */
 export function loadMigrations(): Migration[] {
-  return readdirSync(MIGRATIONS_DIR)
-    .filter((file) => file.endsWith(".sql"))
-    .map((file) => {
-      const match = /^(\d+)_([\w-]+)\.sql$/.exec(file);
-      if (!match?.[1] || !match[2]) throw new Error(`Migration file name must be NNN_name.sql: ${file}`);
-      return { version: Number(match[1]), name: match[2], sql: readFileSync(new URL(file, MIGRATIONS_DIR), "utf8") };
-    })
-    .sort((a, b) => a.version - b.version);
+  return inOrder(
+    readdirSync(MIGRATIONS_DIR)
+      .filter((file) => file.endsWith(".sql"))
+      .map((file) => {
+        const match = /^(\d+)_([\w-]+)\.sql$/.exec(file);
+        if (!match?.[1] || !match[2]) throw new Error(`Migration file name must be NNN_name.sql: ${file}`);
+        return { version: Number(match[1]), name: match[2], sql: readFileSync(new URL(file, MIGRATIONS_DIR), "utf8") };
+      }),
+  );
+}
+
+/**
+ * Migrations by number, each number once. Two with one number (work done side by side, then
+ * merged) would apply both to a new database but only one to a database that already has the
+ * other, so they're refused: the newer one takes the next free number.
+ */
+export function inOrder(migrations: Migration[]): Migration[] {
+  const sorted = [...migrations].sort((a, b) => a.version - b.version);
+  for (const [i, m] of sorted.entries()) {
+    const before = sorted[i - 1];
+    if (before?.version === m.version) {
+      throw new Error(`Two migrations are number ${String(m.version)} (${before.name} and ${m.name}): give the newer one the next free number.`);
+    }
+  }
+  return sorted;
 }
 
 /** A migration failed. Its transaction rolled back: the database is still at the version before it. */

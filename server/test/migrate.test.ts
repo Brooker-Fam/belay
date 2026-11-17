@@ -1,7 +1,7 @@
 /** Upgrading a database from version 2 (Phase 2) or 4 (Phase 6) keeps what it holds. Made-up data only. */
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
-import { type DB, loadMigrations, migrate } from "../src/db.js";
+import { type DB, inOrder, loadMigrations, migrate } from "../src/db.js";
 
 const T = Date.UTC(2026, 10, 16, 15, 0, 0);
 
@@ -269,5 +269,17 @@ describe("migration 10 (Play's accounts)", () => {
     expect(db.prepare("SELECT version, frp_accounts, restrictions, play_accounts FROM policies").all()).toEqual([
       { version: 4, frp_accounts: '["112233445566778899000"]', restrictions: '{"factory_reset":true}', play_accounts: "[]" },
     ]);
+  });
+});
+
+describe("the migrations", () => {
+  it("are numbered once each: two with one number are refused, as parallel work merged would make them", () => {
+    const versions = loadMigrations().map((m) => m.version);
+    expect(new Set(versions).size).toBe(versions.length);
+    const m = (version: number, name: string) => ({ version, name, sql: "" });
+    expect(inOrder([m(2, "b"), m(1, "a")]).map((x) => x.name)).toEqual(["a", "b"]);
+    expect(() => inOrder([m(8, "off_belay"), m(9, "one_side"), m(9, "other_side")])).toThrow(
+      "Two migrations are number 9 (one_side and other_side): give the newer one the next free number.",
+    );
   });
 });
