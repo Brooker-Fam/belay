@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
-# The Phase 0 path, end to end, on an emulator (CI runs it on Android 17).
+# Provisioning and change detection, end to end, on an emulator (CI runs it on Android 17).
 # It REFUSES to run on anything but an emulator: it makes Belay the device owner.
 #
-# Usage: android/scripts/ci-emulator-test.sh <debug APK> <androidTest APK>
+# Usage: android/scripts/ci-emulator-test.sh <debug APK> <androidTest APK> [<fixture v1 APK> <fixture v2 APK>]
 #
 # 1. provision.sh (debug build), including its restart
 # 2. device owner, foreground service, the managed notice (and that it can't be dismissed),
 #    the standby bucket, uninstall blocked
 # 3. installing, updating and removing a package are detected (by any layer)
-# 4. the instrumented tests
+# 4. the instrumented tests; with the two fixture APKs (./gradlew :fixture:assembleV1Debug
+#    :fixture:assembleV2Debug), they also install, update and remove the fixture app and
+#    check the outbox got the three events
 # 5. a restart: Belay comes back by itself and its change log survives
 # 6. unprovision.sh releases device owner and uninstalls
 set -euo pipefail
@@ -17,7 +19,12 @@ set -euo pipefail
 
 APK="${1:?debug APK}"
 TEST_APK="${2:?androidTest APK}"
+FIXTURE_V1="${3:-}"
+FIXTURE_V2="${4:-}"
 TEST_PKG="$PKG.test"
+if [ -n "$FIXTURE_V1$FIXTURE_V2" ]; then
+  [ -f "$FIXTURE_V1" ] && [ -f "$FIXTURE_V2" ] || die "fixture APKs not found: '$FIXTURE_V1' '$FIXTURE_V2'"
+fi
 
 find_adb
 pick_device
@@ -122,6 +129,12 @@ adb install -r -t "$TEST_APK"
 wait_log "change: UPDATED $TEST_PKG by " || { diagnose; die "update not detected"; }
 
 step "Instrumented tests"
+if [ -n "$FIXTURE_V1" ]; then
+  adb push "$FIXTURE_V1" /data/local/tmp/belay-fixture-v1.apk
+  adb push "$FIXTURE_V2" /data/local/tmp/belay-fixture-v2.apk
+else
+  echo "no fixture APKs given: the fixture test is skipped"
+fi
 out="$(ash am instrument -w "$TEST_PKG/androidx.test.runner.AndroidJUnitRunner")"
 printf '%s\n' "$out"
 grep -q '^OK (' <<<"$out" || die "instrumented tests failed"
@@ -150,4 +163,4 @@ step "Unprovision (debug builds only)"
 if has_owner; then die "still has an owner" "$(owners_text)"; fi
 if ash pm path "$PKG" | contains 'package:'; then die "Belay is still installed"; fi
 
-step "All Phase 0 emulator checks passed"
+step "All emulator checks passed"

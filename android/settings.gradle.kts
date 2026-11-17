@@ -24,4 +24,5 @@ rootProject.name = "belay-android"
 
 // :core is plain Kotlin (models, inventory diffing, events, protocol types), tested on the JVM.
 // :app is the device-owner agent: receivers, service, workers and UI.
-include(":core", ":app")
+// :fixture is a tiny app that :app's instrumented test installs, updates and removes.
+include(":core", ":app", ":fixture")

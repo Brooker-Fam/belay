@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Nothing to run: it only exists to be installed, updated and removed by a test. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application
+        android:allowBackup="false"
+        android:label="Belay test fixture" />
+</manifest>
