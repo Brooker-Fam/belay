@@ -14,6 +14,8 @@ export interface Waiters {
    * signal aborts (false).
    */
   wait(deviceId: string, have: number, ms: number, signal?: AbortSignal): Promise<boolean>;
+  /** Answers every waiting request now (with 204), so the server can stop without holding them. */
+  close(): void;
   /** How many requests are waiting, for tests. */
   readonly size: number;
 }
@@ -93,6 +95,9 @@ export function createWaiters(versionOf: (deviceId: string) => number, opts: { p
           timer.unref();
         }
       });
+    },
+    close() {
+      for (const set of [...byPhone.values()]) for (const w of [...set]) w.finish(false);
     },
     get size() {
       let n = 0;

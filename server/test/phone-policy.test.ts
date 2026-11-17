@@ -126,6 +126,14 @@ describe("waiting phones", () => {
     expect(waiters.size).toBe(0);
   });
 
+  it("are all answered when the server stops", async () => {
+    const waiters = createWaiters(() => 0, { pollMs: 10_000 });
+    const pending = [waiters.wait("phone-1", 0, 5000), waiters.wait("phone-2", 0, 5000)];
+    waiters.close();
+    expect(await Promise.all(pending)).toEqual([false, false]);
+    expect(waiters.size).toBe(0);
+  });
+
   it("keep at most two per phone: a third answers the oldest", async () => {
     const waiters = createWaiters(() => 0, { pollMs: 10_000 });
     const first = waiters.wait("phone-1", 0, 5000);
