@@ -5,14 +5,21 @@ Open-source, AI-first parental controls for a kid's first Android phone.
 > A belayer doesn't climb for you. They hold the rope so a fall stays short, and they give
 > more slack as you get better.
 
-**Status: Phase 2, safe to hand over once it's checked on the real phone.** The phone
-reports its apps to the family's own server, new apps wait until a parent approves them, the
-web is filtered, and the settings that undo Belay are locked when a parent turns protection
-on. A parent manages it by asking Claude or on the parent page. Locking factory reset and USB
-debugging is a separate step a parent takes when ready. What a determined kid can still do is
-in [docs/threat-model.md](docs/threat-model.md); [docs/phase2-checklist.md](docs/phase2-checklist.md)
-is the real-phone check, and [ROADMAP.md](ROADMAP.md) has what comes next (screen time,
-location, calls and texts, and more).
+**Status: built, and run end to end on the Android 17 emulator in CI; not yet checked on a
+real Pixel.** Phases 1 to 8, 10 and 11 are built: the phone reports its apps to the family's
+own server, new apps wait until a parent approves them, the web is filtered, and the settings
+that undo Belay are locked when a parent turns protection on; screen time, location, calls,
+the kid's help button, self-updates, backups, the setup kit and the hand-over at the end are
+there too. Phase 5's texts and Phase 9 (more families) aren't built yet. A parent manages it
+by asking Claude or on the parent page. Locking factory reset and USB debugging is a separate
+step a parent takes when ready. What a determined kid can still do is in
+[docs/threat-model.md](docs/threat-model.md); the phase checklists, from
+[docs/phase0-checklist.md](docs/phase0-checklist.md) on, are the real-phone checks still to do
+before it's safe to hand over, and [ROADMAP.md](ROADMAP.md) has what comes next.
+
+**Setting up a phone for your kid?** Start with [docs/guide.md](docs/guide.md): one guide, for
+a parent who has never used adb, from a used Pixel 8 to a phone your kid uses, and the years
+after.
 
 ## What Belay is for
 
@@ -22,7 +29,10 @@ no monthly fee and no company that can change or disappear. A parent mostly mana
 asking Claude (or any MCP client) things like "what did they install this week, and is it
 OK?", with a web page as the fallback.
 
-## What exists today (Phases 1 and 2, and parts of 3, 4, 5, 6, 7, 8, 10 and 11)
+## What exists today (Phases 1 to 8, 10 and 11, except Phase 5's texts)
+
+All of it is built, and runs end to end on the Android 17 emulator in CI; none of it has been
+checked on a real Pixel yet. Phase 9 (more families) isn't built either.
 
 - **`android/`: the device-owner agent.** Provisioned over adb, it becomes device owner and
   blocks its own uninstall. It always shows "This phone is managed by your parent", and its
@@ -132,7 +142,7 @@ OK?", with a web page as the fallback.
   calls and other people's numbers only if a parent turns that on (it starts off), may tighten
   the rules, and proposes anything else; it never turns calls on, records them or answers a
   request.
-- **Phase 6, so far: backups that are proven to restore, and health monitoring.** The server
+- **Phase 6: backups that are proven to restore, and health monitoring.** The server
   backs itself up every day (the newest 14 kept, encrypted with the family's passphrase if
   they set one); `verify-backup` proves a backup restores, `restore` puts one back, and the
   parent page asks for a restore drill every 3 months. The server reports its own problems
@@ -166,10 +176,11 @@ OK?", with a web page as the fallback.
 - **CI:** Android build, unit tests and lint, an Android 17 emulator job that provisions
   the agent and checks it end to end, the server's tests and Docker image, and the setup
   kit's tests, with an informational emulator job that provisions with the kit's runner.
-- **Docs:** [running the server](docs/server.md), [connecting Claude](docs/mcp.md),
-  [privacy](docs/privacy.md), the [threat model](docs/threat-model.md), the
-  [device API](docs/protocol.md), and [platform notes](docs/platform-notes.md): every
-  Android behavior Belay relies on, checked against the docs and the Android 17 source.
+- **Docs:** [the guide for parents](docs/guide.md), [running the server](docs/server.md),
+  [connecting Claude](docs/mcp.md), [privacy](docs/privacy.md), the
+  [threat model](docs/threat-model.md), the [device API](docs/protocol.md), and
+  [platform notes](docs/platform-notes.md): every Android behavior Belay relies on, checked
+  against the docs and the Android 17 source.
 
 ## Principles
 
@@ -261,7 +272,7 @@ they install this week?"
 | `android/scripts` | Provisioning (its plan, `provision-plan.json`, and the plan's fixture tests), release key, QR test, the emulator tests. |
 | `setup-kit/` | Setting up a phone without the Android SDK: the plan's second interpreter, the page, the container ([docs/setup-kit.md](docs/setup-kit.md)). Vitest tests. |
 | `server/` | The family's server: device API, parent pages, OAuth and MCP. Vitest tests. |
-| `docs/` | [server](docs/server.md), [MCP](docs/mcp.md), [privacy](docs/privacy.md), [threat model](docs/threat-model.md), [device API](docs/protocol.md), [platform notes](docs/platform-notes.md), [emulator](docs/emulator.md), [Pixel 8](docs/pixel.md), [Phase 0](docs/phase0-checklist.md), [Phase 1](docs/phase1-checklist.md), [Phase 2](docs/phase2-checklist.md), [Phase 3](docs/phase3-checklist.md), [Phase 4](docs/phase4-checklist.md), [Phase 6](docs/phase6-checklist.md), [Phase 7](docs/phase7-checklist.md) and [Phase 11](docs/phase11-checklist.md) checklists, [signing](docs/signing.md), [prior art](docs/prior-art.md) |
+| `docs/` | [the guide for parents](docs/guide.md), [server](docs/server.md), [MCP](docs/mcp.md), [privacy](docs/privacy.md), [threat model](docs/threat-model.md), [device API](docs/protocol.md), [platform notes](docs/platform-notes.md), [emulator](docs/emulator.md), [Pixel 8](docs/pixel.md), [Phase 0](docs/phase0-checklist.md), [Phase 1](docs/phase1-checklist.md), [Phase 2](docs/phase2-checklist.md), [Phase 3](docs/phase3-checklist.md), [Phase 4](docs/phase4-checklist.md), [Phase 5](docs/phase5-checklist.md), [Phase 6](docs/phase6-checklist.md), [Phase 7](docs/phase7-checklist.md) and [Phase 11](docs/phase11-checklist.md) checklists, [signing](docs/signing.md), [prior art](docs/prior-art.md) |
 | `ROADMAP.md` | Phases 2 to 5 and later. |
 | `CLAUDE.md` | Conventions and commands, for people and for Claude. |
 
