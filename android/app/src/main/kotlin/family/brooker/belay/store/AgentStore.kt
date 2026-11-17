@@ -216,11 +216,14 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
     fun policyVersion(): Int? = enforcement.policyVersion()
 
     /**
-     * Keeps [incoming] if it replaces the stored policy (core's PolicyRules), in one
-     * transaction, so the long-poll and a check-in can't race. True when it was kept.
+     * Keeps [incoming], the answer to a request sent at [sentAt] and received [at], if it
+     * replaces the stored policy (core's PolicyRules), in one transaction, so the long-poll
+     * and a check-in can't race. True when it was kept.
      */
-    fun savePolicy(incoming: WirePolicy, fromLongPoll: Boolean, at: Long): Boolean = db.runInTransaction<Boolean> {
-        if (!PolicyRules.replaces(policy(), incoming, fromLongPoll)) return@runInTransaction false
+    fun savePolicy(incoming: WirePolicy, sentAt: Long, at: Long): Boolean = db.runInTransaction<Boolean> {
+        val row = enforcement.policy()
+        val stored = row?.let { decode(it.policy, WirePolicy.serializer()) }
+        if (!PolicyRules.replaces(stored, row?.receivedAt, incoming, sentAt)) return@runInTransaction false
         enforcement.setPolicy(PolicyRow(version = incoming.version, policy = Wire.json.encodeToString(WirePolicy.serializer(), incoming), receivedAt = at))
         true
     }

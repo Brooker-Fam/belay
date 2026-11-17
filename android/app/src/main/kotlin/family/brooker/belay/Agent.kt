@@ -128,7 +128,9 @@ object Agent {
                 )
                 publish(store, health, device ?: readDevice(), outcome.baseline.inventory, enforcement.view)
                 DebugTools.afterStep(app) { StateDump.json(store, connection) }
-                Sync.request(app, checkin = trigger.checkin || enforcement.reportChanged)
+                Sync.request(app, checkin = trigger.checkin)
+                // The parent page shows the policy as applied once the server hears so.
+                if (enforcement.reportChanged) Sync.checkinSoon(app)
                 // A new connection: the long-poll asks the new server at once.
                 if (trigger == Trigger.ENROLLED) PolicyPoll.kick()
             } catch (t: Throwable) {

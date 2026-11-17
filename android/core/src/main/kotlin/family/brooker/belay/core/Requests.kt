@@ -101,16 +101,17 @@ object PolicyRules {
     const val POLL_BACKOFF_MAX_MS = 5L * 60 * 1000
 
     /**
-     * Whether [incoming] replaces [stored]. A newer version always does. From the long-poll,
-     * any other version does too: the server answers it with its current policy, even one
-     * with a lower version (a restored backup). A check-in's answer may have been made just
-     * before the long-poll's, so from a check-in only a newer version counts.
+     * Whether [incoming] replaces [stored], which arrived at [storedAt]. Any version that
+     * differs does, lower ones too (the family restored an older server backup), as long as
+     * its request was sent ([sentAt]) after the stored policy arrived: then the answer is the
+     * server's state since. An answer to a request sent earlier (a check-in that crossed the
+     * long-poll) only counts if it is newer, so it can't roll the phone back.
      */
-    fun replaces(stored: WirePolicy?, incoming: WirePolicy, fromLongPoll: Boolean): Boolean = when {
+    fun replaces(stored: WirePolicy?, storedAt: Long?, incoming: WirePolicy, sentAt: Long): Boolean = when {
         stored == null -> true
+        incoming.version == stored.version -> false
         incoming.version > stored.version -> true
-        fromLongPoll -> incoming.version != stored.version
-        else -> false
+        else -> storedAt == null || sentAt >= storedAt
     }
 
     /**

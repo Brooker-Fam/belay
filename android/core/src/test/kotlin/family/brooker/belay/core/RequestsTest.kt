@@ -95,19 +95,19 @@ class RequestsTest {
     // Which policy the phone keeps.
 
     @Test
-    fun `a newer policy replaces the stored one, from either path`() {
+    fun `a newer policy replaces the stored one, and the same version doesn't`() {
         val stored = WirePolicy(version = 4)
-        assertTrue(PolicyRules.replaces(null, WirePolicy(version = 0), fromLongPoll = false))
-        assertTrue(PolicyRules.replaces(stored, WirePolicy(version = 5), fromLongPoll = false))
-        assertTrue(PolicyRules.replaces(stored, WirePolicy(version = 5), fromLongPoll = true))
-        assertFalse(PolicyRules.replaces(stored, WirePolicy(version = 4), fromLongPoll = true))
+        assertTrue(PolicyRules.replaces(null, null, WirePolicy(version = 0), sentAt = T0))
+        assertTrue(PolicyRules.replaces(stored, T0, WirePolicy(version = 5), sentAt = T0 - HOUR))
+        assertTrue(PolicyRules.replaces(stored, T0, WirePolicy(version = 5), sentAt = T0 + HOUR))
+        assertFalse(PolicyRules.replaces(stored, T0, WirePolicy(version = 4), sentAt = T0 + HOUR))
     }
 
     @Test
-    fun `an older version only counts from the long-poll, which always has the server's current one`() {
+    fun `a lower version counts too, unless its request crossed a newer answer`() {
         val stored = WirePolicy(version = 9)
-        assertFalse(PolicyRules.replaces(stored, WirePolicy(version = 8), fromLongPoll = false), "a check-in answered before the long-poll")
-        assertTrue(PolicyRules.replaces(stored, WirePolicy(version = 2), fromLongPoll = true), "a server restored from a backup")
+        assertTrue(PolicyRules.replaces(stored, T0, WirePolicy(version = 2), sentAt = T0 + 1), "a server restored from a backup")
+        assertFalse(PolicyRules.replaces(stored, T0, WirePolicy(version = 8), sentAt = T0 - 1), "a check-in sent before the long-poll's answer")
     }
 
     @Test

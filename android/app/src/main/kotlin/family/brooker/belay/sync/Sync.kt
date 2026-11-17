@@ -110,17 +110,35 @@ object Sync {
     }
 
     /**
-     * A policy from the server: kept if it replaces the stored one (core's PolicyRules), and
-     * then applied in an agent step. True when it was new.
+     * A policy from the server, the answer to a request sent at [sentAt]: kept if it replaces
+     * the stored one (core's PolicyRules: any other version, unless the request crossed a
+     * newer answer), and then applied in an agent step. True when it was new.
      */
-    fun received(app: Context, policy: WirePolicy, fromLongPoll: Boolean, at: Long): Boolean {
-        val kept = AgentStore.get(app).savePolicy(policy, fromLongPoll, at)
+    fun received(app: Context, policy: WirePolicy, via: String, sentAt: Long, at: Long): Boolean {
+        val kept = AgentStore.get(app).savePolicy(policy, sentAt, at)
         if (kept) {
-            Log.i(Agent.TAG, "policy ${policy.version} received (${if (fromLongPoll) "long-poll" else "check-in"})")
+            Log.i(Agent.TAG, "policy ${policy.version} received ($via)")
             Agent.handle(app, Trigger.POLICY)
         }
         return kept
     }
+
+    /**
+     * A check-in soon, so the parent sees within seconds that a new policy is applied. Calls
+     * within [CHECKIN_DEBOUNCE_MS] of each other (several policies in a row) make one.
+     */
+    fun checkinSoon(context: Context) {
+        val app = context.applicationContext
+        if (!checkinScheduled.compareAndSet(false, true)) return
+        timer.schedule({
+            checkinScheduled.set(false)
+            request(app, checkin = true)
+        }, CHECKIN_DEBOUNCE_MS, TimeUnit.MILLISECONDS)
+    }
+
+    private const val CHECKIN_DEBOUNCE_MS = 2_000L
+    private val checkinScheduled = AtomicBoolean(false)
+    private val timer = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "belay-sync-timer") }
 
     fun online(app: Context): Boolean {
         val connectivity = app.getSystemService(ConnectivityManager::class.java) ?: return true
@@ -177,7 +195,7 @@ private class SyncRun(private val app: Context) {
                 Log.i(Agent.TAG, "checked in (clock skew ${skew / 1000} s)")
                 // The long-poll's fallback: the answer carries the server's current policy.
                 try {
-                    Sync.received(app, answer.body.policy, fromLongPoll = false, at = answer.receivedAt)
+                    Sync.received(app, answer.body.policy, "check-in", sentAt = answer.sentAt, at = answer.receivedAt)
                 } catch (e: RuntimeException) {
                     Log.e(Agent.TAG, "the check-in's policy couldn't be stored", e)
                 }

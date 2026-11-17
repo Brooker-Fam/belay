@@ -210,12 +210,14 @@ class AgentStoreInstrumentedTest {
     // Phase 2.
 
     @Test
-    fun aNewerPolicyReplacesTheStoredOneAndAnOlderOneOnlyFromTheLongPoll() {
-        assertTrue(store.savePolicy(WirePolicy(version = 3), fromLongPoll = false, at = T0))
-        assertFalse(store.savePolicy(WirePolicy(version = 3), fromLongPoll = true, at = T0))
-        assertFalse(store.savePolicy(WirePolicy(version = 2), fromLongPoll = false, at = T0))
+    fun anyOtherPolicyVersionReplacesTheStoredOneUnlessItsRequestCrossedANewerAnswer() {
+        assertTrue(store.savePolicy(WirePolicy(version = 3), sentAt = T0, at = T0 + 10))
+        assertFalse(store.savePolicy(WirePolicy(version = 3), sentAt = T0 + 20, at = T0 + 30))
+        assertFalse("sent before version 3 arrived", store.savePolicy(WirePolicy(version = 2), sentAt = T0 + 5, at = T0 + 40))
         assertEquals(3, store.policy()?.version)
-        assertTrue(store.savePolicy(WirePolicy(version = 2, apps = WireAppPolicy(WireNewApps.ASK)), fromLongPoll = true, at = T0))
+        assertEquals(3, store.policyVersion())
+        // A restored backup: a lower version, asked for after version 3 arrived.
+        assertTrue(store.savePolicy(WirePolicy(version = 2, apps = WireAppPolicy(WireNewApps.ASK)), sentAt = T0 + 50, at = T0 + 60))
         assertEquals(WireNewApps.ASK, store.policy()?.apps?.newApps)
     }
 

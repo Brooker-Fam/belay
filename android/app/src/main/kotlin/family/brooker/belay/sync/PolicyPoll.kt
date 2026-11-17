@@ -140,7 +140,7 @@ object PolicyPoll {
         return when (answer) {
             is DeviceApi.Answer.Ok -> {
                 val body = answer.body
-                val new = body != null && Sync.received(app, body.policy, fromLongPoll = true, at = answer.receivedAt)
+                val new = body != null && Sync.received(app, body.policy, "long-poll", sentAt = answer.sentAt, at = answer.receivedAt)
                 if (new || answer.receivedAt - answer.sentAt >= TOO_QUICK_MS) Poll.Again else Poll.Failed
             }
             is DeviceApi.Answer.Refused -> {
