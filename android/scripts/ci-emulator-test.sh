@@ -814,9 +814,17 @@ elif [ -n "$E2E_SERVER" ]; then
   echo "BELAY_E2E_CLI not given: the Phase 5 calls checks are skipped"
 fi
 
-# Phase 3: whether Android's network logging is on for Belay, from the admins' dump (AOSP 17
-# ActiveAdmin.dump prints "isNetworkLoggingEnabled=<bool>"; Belay is the only admin): true or false.
-android_logs() { ash dumpsys device_policy | grep -m 1 -o 'isNetworkLoggingEnabled=[a-z]*' | cut -d= -f2 || true; }
+# Phase 3: whether Android's network logging is on for Belay: true or false, from Belay's own entry
+# in the admins' dump (AOSP 17 DevicePolicyData.dump prints each admin as "<component>:", then
+# ActiveAdmin.dump its fields, "isNetworkLoggingEnabled=<bool>" among them; an image with Google
+# services has other admins too).
+android_logs() {
+  ash dumpsys device_policy | awk -v admin="$PKG/.AdminReceiver:" '
+    { line = $0; sub(/^[ \t]+/, "", line) }
+    line == admin { mine = 1; next }
+    mine && line ~ /^isNetworkLoggingEnabled=/ { sub(/^isNetworkLoggingEnabled=/, "", line); print line; exit }
+  ' || true
+}
 
 if [ -n "$E2E_CLI" ] && ! server_status | jq -e '.phones[0] | has("network")' >/dev/null 2>&1; then
   echo "the server's status has no network (its network logging isn't there yet): the network logging checks are skipped"
