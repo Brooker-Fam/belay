@@ -401,6 +401,26 @@ while it's on), and the fix the kid shared with a help request as long as the re
 the phone is deleted). A fix counts from its own time, or from when it arrived if the phone's
 clock was ahead. Fixes and place events the rules didn't ask for aren't kept at all.
 
+## What a phone can make the server keep
+
+A phone's token stays good until a parent disconnects the phone, so a stolen, sold or rooted
+phone can send anything a phone may. Whatever it sends, the server keeps at most, per phone:
+
+- **Requests:** 300 new ones an hour (help requests aside: nothing holds one back), and 100 help
+  requests no parent has seen. Of the requests that wait for no one any more (answered,
+  withdrawn, asked again, the kid's "I agree"), the newest 1,000: past that the oldest go, the
+  ones the phone settled itself before the ones a parent answered, and the hourly clean-up
+  deletes them a year after they last changed. Help requests stay until the phone is deleted.
+- **Where the phone was:** 600 new fixes and arrivals or departures an hour, lost-mode and help
+  fixes included, and 10,000 fixes and 2,000 arrivals and departures in all (the fix a kid shared
+  with a help request is kept with it): past that, the oldest go.
+- **Screen time:** one day per date and zone, for dates the phone can have counted (up to
+  tomorrow in its zone), in at most 3 zones, and for no longer than the family keeps it.
+
+Past an hour's limit the phone is answered `429` with `Retry-After`, and sends the rest later;
+every device call is limited to 120 a minute per phone too. Disconnecting a phone stops its
+token at once, and deleting it deletes everything it sent.
+
 ## Backups
 
 Every day, from 2 AM in the family's timezone, the server makes a consistent copy of its

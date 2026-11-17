@@ -19,6 +19,14 @@ import { FIX_COLUMNS, type FixReason, type FixRow, type FixView, type LocationSe
 const DAY = 86_400_000;
 /** Periodic fixes a little outside the hours still count: the phone's alarms aren't to the second. */
 const HOURS_SLACK_MINUTES = 5;
+/**
+ * The most fixes the server keeps for one phone, whatever their reason (a lost-mode or help fix
+ * too), the fix a kid shared with a help request aside (it's kept with the request): past that,
+ * the oldest go, by when they arrived. A phone sharing every 15 minutes keeps about 700 a week.
+ */
+export const MAX_KEPT_FIXES = 10_000;
+/** And the most arrivals and departures: past that, the oldest go. */
+export const MAX_KEPT_PLACE_EVENTS = 2_000;
 
 export interface NewPlaceEvent {
   id: string;
@@ -38,6 +46,8 @@ export interface SavedLocations {
   stored: number;
   /** Fixes and place events the rules didn't ask for: not kept. */
   dropped: number;
+  /** New ones the rules asked for, not kept because the phone made more this hour than it may (`budget`): it sends them again. */
+  limited: number;
   /** Checks a fix in this call answers. */
   answered: string[];
   /** New arrivals and departures, for the parents' notices. */
@@ -75,11 +85,17 @@ function wanted(db: DB, deviceId: string, fix: Fix, s: LocationSettings | null, 
   }
 }
 
-export function saveLocations(db: DB, deviceId: string, body: LocationsRequest, now: number): SavedLocations {
+/**
+ * Saves what the phone sent, as its rules ask. `budget` is how many new fixes and place events the
+ * phone may still make the server keep this hour; past it, they aren't kept (`limited`), and the
+ * phone sends them again later. The phone keeps at most MAX_KEPT_FIXES and MAX_KEPT_PLACE_EVENTS.
+ */
+export function saveLocations(db: DB, deviceId: string, body: LocationsRequest, now: number, opts: { budget?: number } = {}): SavedLocations {
   return db.transaction((): SavedLocations => {
     const s = locationSettings(db, deviceId);
     const zone = deviceFacts(db, deviceId)?.timezone;
-    const out: SavedLocations = { accepted: body.fixes.length + body.place_events.length, stored: 0, dropped: 0, answered: [], events: [] };
+    const out: SavedLocations = { accepted: body.fixes.length + body.place_events.length, stored: 0, dropped: 0, limited: 0, answered: [], events: [] };
+    const budget = opts.budget ?? Infinity;
     const known = db.prepare<[string, string], { reason: FixReason; command_id: string | null }>("SELECT reason, command_id FROM fixes WHERE device_id = ? AND id = ?");
     for (const fix of body.fixes) {
       const already = known.get(deviceId, fix.id);
@@ -89,6 +105,10 @@ export function saveLocations(db: DB, deviceId: string, body: LocationsRequest, 
       }
       if (!wanted(db, deviceId, fix, s, zone)) {
         out.dropped++;
+        continue;
+      }
+      if (out.stored >= budget) {
+        out.limited++;
         continue;
       }
       // A lost-mode fix sent after lost mode ended is kept as long as that lost mode's others.
@@ -109,6 +129,10 @@ export function saveLocations(db: DB, deviceId: string, body: LocationsRequest, 
         out.dropped++;
         continue;
       }
+      if (out.stored >= budget) {
+        out.limited++;
+        continue;
+      }
       if (insertEvent.run(deviceId, e.id, e.place_id, place.name, e.kind, e.at, e.fix_id, now).changes === 1) {
         out.stored++;
         const direction: Notify = e.kind === "arrived" ? "arrive" : "leave";
@@ -116,6 +140,15 @@ export function saveLocations(db: DB, deviceId: string, body: LocationsRequest, 
       }
     }
     if (out.dropped > 0 && s) db.prepare("UPDATE location_settings SET dropped = dropped + ?, dropped_at = ? WHERE device_id = ?").run(out.dropped, now, deviceId);
+    out.accepted -= out.limited;
+    // However the phone sends them, it keeps at most so many: the ones that arrived first go.
+    db.prepare(
+      "DELETE FROM fixes WHERE rowid IN (SELECT rowid FROM fixes WHERE device_id = ? AND request_id IS NULL ORDER BY received_at DESC, rowid DESC LIMIT -1 OFFSET ?)",
+    ).run(deviceId, MAX_KEPT_FIXES);
+    db.prepare("DELETE FROM place_events WHERE rowid IN (SELECT rowid FROM place_events WHERE device_id = ? ORDER BY received_at DESC, rowid DESC LIMIT -1 OFFSET ?)").run(
+      deviceId,
+      MAX_KEPT_PLACE_EVENTS,
+    );
     return out;
   })();
 }

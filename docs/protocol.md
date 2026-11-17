@@ -169,6 +169,15 @@ is installed again: the old one leaves the policy's `requests`, and the kid's ea
 stays with the new one until they write another. At most 200 apps can have a request
 waiting per phone; past that, new ones are answered `429`.
 
+What the server keeps, whatever a phone sends: at most 300 new requests an hour per phone,
+ones that arrive already withdrawn included (help requests aside: other requests never hold
+one back); past that, the call is answered `429` with `Retry-After`, nothing past the limit is
+kept, and the phone sends those again. Of the requests that wait for no one any more
+(answered, withdrawn, asked again, the kid's "I agree"), it keeps the newest 1,000 per phone,
+help requests aside: past that, the oldest go, the ones the phone settled itself before the
+ones a parent answered; and it deletes them a year after they last changed. Help requests are
+kept until the phone is deleted.
+
 Phase 3 makes Request a union on `kind`: `app`, `more_time` (more minutes for a limit
 today) and `agreement` (the kid's answer to the family agreement). Only a parent answers;
 an approved `more_time` answer carries the `minutes` given, and the policy's
@@ -219,7 +228,10 @@ off is answered `200`, counted in `accepted`, and dropped, as is one whose `day`
 real date. It leaves out of `apps` every app it never blocks (the phone's `never_blocked`,
 and the well-known dialers, texting apps and emergency apps), even if a phone sends one.
 `accepted` counts the days the phone can stop sending, kept or not. Days are deleted after
-the family's retention (13 months by default).
+the family's retention (13 months by default). Also accepted and dropped: a day the phone
+can't have counted yet (after tomorrow in its `zone`, or, in a zone that isn't a real one,
+after the day after tomorrow in UTC), one older than the retention, and a date in a fourth
+`zone` (a date is kept in at most 3).
 
 ## `GET /api/v1/agent/<sha256>.apk`
 
@@ -280,6 +292,12 @@ in `periodic` mode, for one of the phone's places as the policy has them now; a 
 `help` fix always. Everything else is dropped and counted (the phone's Location page says
 how many). `accepted` counts every item in the call, kept, already kept or dropped: none of
 them needs sending again. A fix marked `mock` is kept, and shown as made up.
+
+The server keeps at most 600 new fixes and place events an hour per phone, of any reason
+(lost-mode and help fixes too): past that, the call is answered `429` with `Retry-After`, and
+the phone sends the ones not kept again. It keeps at most 10,000 fixes per phone (the fix a kid
+shared with a help request aside: that one is kept with the request) and 2,000 place events:
+past that, the oldest go, by when they arrived.
 
 ## `POST /api/v1/calls`
 
@@ -387,7 +405,8 @@ What the server does with them:
   request is its own (none takes another's place); sending a pending one again takes the kid's
   new words and a newer shared fix, which takes the place of the one before (it isn't kept),
   as `reason` does, and the parents hear again; one sent again without either keeps what it
-  has. At most 100 help requests no parent has seen, and 60 waiting `talk` requests, per
+  has. At most 100 help requests no parent has seen (one that arrives already withdrawn
+  counts: it stays at the top until a parent sees it), and 60 waiting `talk` requests, per
   phone; past that, new ones are answered `429`.
 - **A check the server never issued** (the phone's own test `locate_now`, say): its result in
   `enforcement.commands` is ignored, and a fix naming it is dropped and counted, answered `200`
