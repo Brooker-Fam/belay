@@ -118,16 +118,22 @@ changes, tests and the family's decisions. Build order: Phase 2; then Phase 10's
 and Phase 6's self-update and recovery key; then Phase 3 with Phase 7's core; Phase 4;
 Phase 5 (calls, then texts); Phases 8, 9 and 11 when they're needed.
 
-**Built since Phase 2** (on `main`, checked end to end in CI on the Android 17 emulator): Phase 6's
-self-update, recovery key, backups and health checks, Phase 10's removal of another user or
-profile, and the fixes from a security review of the Phase 2 server. **In progress:** Phase 3,
-whose contract is in [docs/protocol.md](docs/protocol.md): its phone side is built (the engine in
-`:core`, and the app: counting, enforcing, notices, lock now, uploads and the kid's screens;
-[phase3-checklist.md](docs/phase3-checklist.md) is for the Pixel), and so is its server side
-(each phone's rules, stages, the agreement, more-time answers, usage storage, the Screen time
-page, the CLI and the MCP tools). Network logging comes after.
+**Built since Phase 2** (on `main`, checked end to end in CI on the Android 17 emulator): Phase 3's
+screen time (limits, schedules, lock now, measuring, more time, stages and the agreement), Phase
+6's self-update, recovery key, backups and health checks, Phase 10's removal of another user or
+profile, and the fixes from a security review of the Phase 2 server. The contracts are in
+[docs/protocol.md](docs/protocol.md); each phase's Pixel checklist is in `docs/`. Phase 8's setup kit is
+built too: one provisioning plan that `provision.sh` and the kit both run, the kit's page and
+runner, and its container; CI provisions the emulator with the kit's runner. **In progress:**
+Phase 7 (the kid's side: Home, help, the emergency card, talk) and Phase 4 (location, off by
+default). Network logging (Phase 3) comes after.
 
-### Phase 3: screen time, schedules and stages ([design](docs/design/phase3-screen-time.md))
+### Phase 3: screen time, schedules and stages ([design](docs/design/phase3-screen-time.md)) (built)
+
+Built and run end to end in CI, except opt-in network logging. **Still open:**
+[docs/phase3-checklist.md](docs/phase3-checklist.md) on the Pixel (after updating, the phone
+needs one restart before lock now works: platform notes, S5).
+
 
 - Per-app time counted on the phone from usage events (the system's usage-limit observers are
   closed to Belay); daily limits and school, bedtime and custom schedules as a pure function in
@@ -178,7 +184,13 @@ self-update uses a non-test-only debug build: platform notes, I5).
   can see and what Belay told them, an "I need help" button and an emergency card that work even
   while the phone is paused, and "talk to my parent".
 
-### Phase 8: setup without the Android SDK ([design](docs/design/phase8-setup-without-sdk.md))
+### Phase 8: setup without the Android SDK ([design](docs/design/phase8-setup-without-sdk.md)) (built)
+
+Built ([docs/setup-kit.md](docs/setup-kit.md)): `provision.sh`'s steps are a plan,
+`android/scripts/provision-plan.json`, run by lib.sh and by the kit, both held to the same
+fixtures; the kit's container, page and command-line runner; CI's informational emulator job with
+the kit's runner. **Still open:** a factory-fresh Pixel 8 with desktop Chrome on Linux, macOS and
+Windows (and Windows' USB driver).
 
 - A setup kit on the parent's computer that makes the key, builds and signs the APK, and provisions
   the phone from a local page in desktop Chrome over WebUSB (Tango, MIT). One provisioning plan

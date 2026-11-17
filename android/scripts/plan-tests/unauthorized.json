@@ -1,0 +1,16 @@
+{
+  "name": "The phone hasn't allowed this computer yet.",
+  "base": "fresh-debug",
+  "plan": "provision",
+  "args": [
+    "--yes",
+    "{apk}"
+  ],
+  "exit": 1,
+  "devices": [
+    {
+      "serial": "38151FDJH00DXZ",
+      "state": "unauthorized"
+    }
+  ]
+}

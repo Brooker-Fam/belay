@@ -1,0 +1,248 @@
+:root {
+  --ink: #1d232b;
+  --muted: #5b6572;
+  --line: #d9dee5;
+  --paper: #ffffff;
+  --page: #f4f6f8;
+  --accent: #2557a7;
+  --good: #1f7a3d;
+  --bad: #b3261e;
+  --warn: #8a5a00;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #e6e9ee;
+    --muted: #a3acb8;
+    --line: #39414c;
+    --paper: #1c2128;
+    --page: #13171c;
+    --accent: #8ab4f8;
+    --good: #7fd197;
+    --bad: #f2b8b5;
+    --warn: #f0c36d;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--ink);
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+main {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 3rem;
+}
+
+h1 {
+  font-size: 1.7rem;
+  margin: 0 0 0.5rem;
+}
+
+h2 {
+  font-size: 1.2rem;
+  margin: 0 0 0.75rem;
+}
+
+section,
+details,
+.notice {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+  margin: 1rem 0;
+}
+
+.notice.bad {
+  border-color: var(--bad);
+}
+
+.optional,
+.aside,
+footer {
+  color: var(--muted);
+}
+
+.optional {
+  font-weight: normal;
+  font-size: 0.95rem;
+}
+
+code,
+pre,
+.log {
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 0.88rem;
+}
+
+code {
+  overflow-wrap: anywhere;
+}
+
+label {
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+input[type="text"],
+input[type="url"] {
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  font: inherit;
+  color: inherit;
+  background: var(--page);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+button {
+  font: inherit;
+  padding: 0.55rem 1rem;
+  margin: 0 0.5rem 0.5rem 0;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--page);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--paper);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.card {
+  border-left: 4px solid var(--line);
+  padding-left: 1rem;
+}
+
+.card.good {
+  border-left-color: var(--good);
+}
+
+.card.bad {
+  border-left-color: var(--bad);
+}
+
+dt {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+dd {
+  margin: 0 0 0.5rem;
+}
+
+.good {
+  color: var(--good);
+}
+
+.bad,
+.problem {
+  color: var(--bad);
+}
+
+.warn {
+  color: var(--warn);
+}
+
+#progress {
+  list-style: none;
+  padding: 0;
+}
+
+#progress li {
+  padding: 0.2rem 0 0.2rem 1.8rem;
+  position: relative;
+  color: var(--muted);
+}
+
+#progress li::before {
+  position: absolute;
+  left: 0.2rem;
+  content: "○";
+}
+
+#progress li.active {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+#progress li.active::before {
+  content: "…";
+}
+
+#progress li.done {
+  color: var(--ink);
+}
+
+#progress li.done::before {
+  content: "✓";
+  color: var(--good);
+}
+
+#progress li.stopped::before {
+  content: "✗";
+  color: var(--bad);
+}
+
+#progress li.skipped::before {
+  content: "–";
+}
+
+.log {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--page);
+  border-radius: 6px;
+  padding: 0.75rem;
+  max-height: 28rem;
+  overflow-y: auto;
+}
+
+.log:empty {
+  display: none;
+}
+
+.log .warn,
+.log .bad {
+  font-weight: 600;
+}
+
+pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+dialog {
+  max-width: 34rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+  color: var(--ink);
+  padding: 1.25rem 1.5rem;
+}
+
+dialog::backdrop {
+  background: rgb(0 0 0 / 45%);
+}
+
+dialog .buttons {
+  text-align: right;
+  margin-bottom: 0;
+}

@@ -1,0 +1,20 @@
+{
+  "name": "Android 11: too old.",
+  "base": "fresh-debug",
+  "plan": "provision",
+  "args": [
+    "--yes",
+    "{apk}"
+  ],
+  "exit": 1,
+  "phone": [
+    {
+      "run": "getprop ro.build.version.release",
+      "out": "11"
+    },
+    {
+      "run": "getprop ro.build.version.sdk",
+      "out": "30"
+    }
+  ]
+}

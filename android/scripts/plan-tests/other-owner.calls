@@ -1,0 +1,7 @@
+devices
+shell getprop ro.product.manufacturer
+shell getprop ro.product.model
+shell getprop ro.build.version.release
+shell getprop ro.build.version.sdk
+shell getprop ro.build.version.security_patch
+shell dpm list-owners

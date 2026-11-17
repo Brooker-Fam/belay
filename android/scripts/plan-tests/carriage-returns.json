@@ -1,0 +1,36 @@
+{
+  "name": "An older adb ends lines with carriage returns: they're removed.",
+  "base": "fresh-debug",
+  "plan": "provision",
+  "args": [
+    "--yes",
+    "--no-reboot",
+    "{apk}"
+  ],
+  "phone": [
+    {
+      "run": "getprop ro.product.manufacturer",
+      "out": "Google\r"
+    },
+    {
+      "run": "getprop ro.product.model",
+      "out": "Pixel 8\r"
+    },
+    {
+      "run": "getprop ro.build.version.sdk",
+      "out": "37\r"
+    },
+    {
+      "run": "pm list users",
+      "out": "Users:\r\n\tUserInfo{0:Owner:4c13} running\r"
+    },
+    {
+      "run": "dumpsys deviceidle whitelist",
+      "out": "system,com.android.shell,2000\r\nuser,family.brooker.belay,10183\r"
+    },
+    {
+      "run": "am get-standby-bucket family.brooker.belay",
+      "out": "5\r"
+    }
+  ]
+}

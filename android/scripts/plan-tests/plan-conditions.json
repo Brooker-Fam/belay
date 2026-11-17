@@ -1,0 +1,6 @@
+{
+  "name": "Conditions, templates, the output levels, groups and exit.",
+  "plan": "plans/conditions.json",
+  "vars": {"a": "one", "b": "two", "n": "08", "word": "abc", "curly": "{a}", "lines": "first\nsecond"},
+  "exit": 3
+}

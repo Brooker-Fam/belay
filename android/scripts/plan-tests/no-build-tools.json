@@ -1,0 +1,14 @@
+{
+  "name": "Without aapt2 and apksigner: a warning, test-only unknown, and the release build's warning.",
+  "base": "fresh-debug",
+  "plan": "provision",
+  "args": [
+    "--yes",
+    "--no-reboot",
+    "{apk}"
+  ],
+  "apk": {
+    "aapt2": false,
+    "apksigner": false
+  }
+}

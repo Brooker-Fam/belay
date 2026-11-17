@@ -1,0 +1,18 @@
+Belay: provisioning
+APK: {apk}
+  test-only (debug) build: yes
+  signed by: C=US, O=Android, CN=Android Debug
+  certificate SHA-256: fb72cb7ed181acfc60dfb82e7791dd67725f55ba939616929e1e762c516ef853
+  Phone: Google sdk_gphone64_x86_64, Android 17 (API 37), security update 2026-10-05, serial emulator-5554
+  No accounts, one user, no device owner: ready.
+This is a debug (test-only) build: unprovision.sh can release it later without a reset.
+Installing...
+  If the phone shows a Play Protect prompt, note its exact words for
+  docs/platform-notes.md before you answer it.
+  Performing Streamed Install
+  Success
+Making Belay the device owner...
+  Success: Device owner set to package ComponentInfo{family.brooker.belay/family.brooker.belay.AdminReceiver}
+  Active admin set to component {family.brooker.belay/family.brooker.belay.AdminReceiver}
+Granting usage access (for Phase 3 screen time)...
+Error: java.lang.SecurityException: uid 2000 does not have android.permission.MANAGE_APP_OPS_MODES.

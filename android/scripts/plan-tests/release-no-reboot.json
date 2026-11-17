@@ -1,0 +1,17 @@
+{
+  "name": "A release build with --yes and --no-reboot, and no server: no restart, and the result says nothing about a server.",
+  "base": "fresh-debug",
+  "plan": "provision",
+  "args": [
+    "--yes",
+    "--no-reboot",
+    "{apk}"
+  ],
+  "apk": {
+    "package": "family.brooker.belay",
+    "testOnly": false,
+    "signed": true,
+    "sha256": "64ed03ab327f851e45c14054f192a8d594cbb898ec2ef57bb4ff66fef32f1ec1",
+    "dn": "CN=Belay release key"
+  }
+}

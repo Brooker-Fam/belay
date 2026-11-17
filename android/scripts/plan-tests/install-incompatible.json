@@ -1,0 +1,14 @@
+{
+  "name": "A Belay signed with another key is installed: adb install refuses, and it says what to do.",
+  "base": "fresh-debug",
+  "plan": "provision",
+  "args": [
+    "--yes",
+    "{apk}"
+  ],
+  "exit": 1,
+  "install": {
+    "out": "Performing Streamed Install\nadb: failed to install belay.apk: Failure [INSTALL_FAILED_UPDATE_INCOMPATIBLE: Existing package family.brooker.belay signatures do not match newer version; ignoring!]",
+    "exit": 1
+  }
+}

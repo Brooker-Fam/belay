@@ -1,0 +1,6 @@
+{
+  "name": "Anything but y or yes at the question is no; dry runs and --yes don't ask.",
+  "plan": "plans/confirm.json",
+  "stdin": "Y es\n",
+  "exit": 1
+}

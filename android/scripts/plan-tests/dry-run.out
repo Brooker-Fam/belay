@@ -1,0 +1,23 @@
+Belay: provisioning (dry run: nothing on the phone changes)
+APK: {apk}
+  test-only (debug) build: yes
+  signed by: C=US, O=Android, CN=Android Debug
+  certificate SHA-256: fb72cb7ed181acfc60dfb82e7791dd67725f55ba939616929e1e762c516ef853
+  Phone: Google sdk_gphone64_x86_64, Android 17 (API 37), security update 2026-10-05, serial emulator-5554
+  No accounts, one user, no device owner: ready.
+This is a debug (test-only) build: unprovision.sh can release it later without a reset.
+Installing...
+  If the phone shows a Play Protect prompt, note its exact words for
+  docs/platform-notes.md before you answer it.
+  [dry run] adb install -r -t {apk}
+Making Belay the device owner...
+  [dry run] adb shell dpm set-device-owner family.brooker.belay/.AdminReceiver
+Granting usage access (for Phase 3 screen time)...
+  [dry run] adb shell appops set family.brooker.belay GET_USAGE_STATS allow
+Exempting Belay from battery optimization (Doze still applies to everything else)...
+  [dry run] adb shell dumpsys deviceidle whitelist +family.brooker.belay
+Starting Belay...
+  [dry run] adb shell am start -n family.brooker.belay/.ui.MainActivity
+Connecting Belay to https://belay.example.org...
+  [dry run] adb shell am broadcast -a family.brooker.belay.ENROLL -n family.brooker.belay/.EnrollReceiver --es server 'https://belay.example.org' --es code '7KQ2M9XA'
+Dry run finished: the checks passed, and nothing on the phone changed.

@@ -1,7 +1,24 @@
 # Phase 8: setup without the Android SDK
 
-**Status: design.** A new phase, from ROADMAP's "Later". Android and tool facts cite
-[platform-notes-drafts.md](platform-notes-drafts.md) (X1) and the existing notes (P1 to P5).
+**Status: built, not yet tried with a real Pixel 8.** How to use it is in
+[docs/setup-kit.md](../setup-kit.md); the facts it relies on are platform notes X1 to X4 (moved
+from [platform-notes-drafts.md](platform-notes-drafts.md) and re-checked) and P1 to P5.
+
+What was built differs from the design below in four ways:
+
+- **The Node runner uses an adb server**, through Tango's TCP client, not the `usb` package: CI
+  provisions the emulator with it (informational for now), and the kit's tests run every
+  provisioning fixture through it, against a fake adb server.
+- **No image is published.** The parent builds it from the repository's Dockerfile, with its base
+  images pinned by digest, so there's no image digest to pin in the docs.
+- **The CI comparison is by fixtures.** Both interpreters must print and ask exactly what the
+  fixtures say, and those match the `provision.sh` from before the plan; on the emulator, the
+  kit's runner is checked against the end state `provision.sh` leaves, not against
+  `ci-emulator-test.sh`'s whole run.
+- **The image is linux/amd64 only**, because Google only makes the SDK's build tools for x86_64
+  Linux: a Mac with Apple silicon runs it under emulation.
+
+The design, as it was written:
 
 ## Goals
 
@@ -103,7 +120,12 @@ in the image, with its MIT license in NOTICE).
 ## Open questions
 
 - Does Tango's shell and install path handle everything `provision.sh` does (the ordered broadcast
-  reply from `am broadcast`, the reboot and reconnect)?
+  reply from `am broadcast`, the reboot and reconnect)? **Partly answered:** through an adb
+  server, yes: every provisioning fixture, broadcast, retries and restart included, runs through
+  Tango's client to a fake adb server, and CI runs the kit's runner on the emulator. Over WebUSB,
+  the restart's reconnection (the phone comes back as a new USB device) is untested until a
+  Pixel 8.
 - Windows: does the Pixel 8's ADB interface bind to WinUSB without the Google USB driver?
+  (Still open: platform notes X1.)
 - Is a container with the Android SDK acceptable to download (several GB)? A slimmer path: the kit
   downloads only the build tools it needs, pinned by hash.
