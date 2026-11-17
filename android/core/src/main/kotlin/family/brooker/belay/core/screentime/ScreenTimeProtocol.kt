@@ -193,6 +193,11 @@ data class WireAgreement(
     @SerialName("parents_agreed_at") val parentsAgreedAt: Long? = null,
 )
 
+/**
+ * The policy's `network_log`: a parent's choice alone, off by default. While it's on, Belay has
+ * Android log DNS lookups and sends how many times each app looked up each domain, per day
+ * (`POST /api/v1/network`, core's network package).
+ */
 @Serializable
 data class WireNetworkLog(val enabled: Boolean = false)
 
@@ -247,10 +252,15 @@ data class WireScreenTimeStatus(
     @SerialName("self_serve") val selfServe: List<WireSelfServeTake> = emptyList(),
 )
 
+/**
+ * `enforcement.network_log`: null while the policy has logging off and Android's is off too
+ * (core's NetworkLog.report).
+ */
 @Serializable
 data class WireNetworkLogStatus(
+    /** Android's network logging is on for Belay (DevicePolicyManager.isNetworkLoggingEnabled). */
     val enabled: Boolean,
-    /** Android paused logging (another user or profile exists). */
+    /** Android paused logging: another user or profile is on the phone, so it hands Belay nothing. */
     val paused: Boolean = false,
 )
 

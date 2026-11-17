@@ -180,4 +180,22 @@ object DataCategories {
 
     /** What screen time collects under a policy that [measures] or doesn't. */
     fun screenTime(measures: Boolean): DataCategory = if (measures) SCREEN_TIME else SCREEN_TIME_LIMITS
+
+    /** Phase 3: the network category's id, which is also the server's AI scope. */
+    const val NETWORK_ID = "network"
+
+    /**
+     * Phase 3, while the policy's `network_log` is on: the domains each app looks up, per day, that
+     * Belay sends (POST /api/v1/network), reduced on the phone to counts (core's NetworkDigest).
+     */
+    val NETWORK = DataCategory(
+        id = NETWORK_ID,
+        title = "Which websites and services apps look up, per day",
+        details = listOf(
+            "The names of the websites and online services each app looks up, like example.com, and how " +
+                "many times a day. Not the pages, messages, searches or anything you type.",
+            "Not what the phone app, your texting app or the other apps that always work look up, and " +
+                "never 988's websites",
+        ),
+    )
 }
