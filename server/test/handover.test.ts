@@ -13,7 +13,7 @@ import { revokeDevice } from "../src/family/devices.js";
 import { cancelHandover, handOver } from "../src/family/offbelay/changes.js";
 import { RuleRefused, buildPolicy, getRules, protect, setHardening, setRestrictions, type PolicyContext } from "../src/family/policy.js";
 import { listGrants } from "../src/oauth/store.js";
-import { enrollPhone, get, postForm, signIn, testServer, type TestServer } from "./helpers.js";
+import { device, deviceCall, enrollPhone, get, postForm, signIn, testServer, type TestServer } from "./helpers.js";
 
 const ACCOUNT = "112233445566778899000";
 
@@ -115,6 +115,32 @@ describe("handing a phone over", () => {
     // Now hardening can go back on.
     setHardening(ctx(), phone.deviceId, { factoryReset: true, debugging: true, frpAccounts: [ACCOUNT] }, parent);
     expect(policy().restrictions).toMatchObject({ factory_reset: true, debugging: true });
+  });
+
+  it("on the phone's page: only after the parent types the phone's name; then what's next, and taking it back", async () => {
+    const { t, phone, form, page, policy } = await family();
+    const before = await page(`/devices/${phone.deviceId}`);
+    expect(before).toContain("Hand this phone over");
+    expect(before).toContain("isn&#39;t on Off belay yet");
+    expect(before).toContain("Belay still holds new apps for you, filters the web on this phone");
+    const wrong = await form(`/devices/${phone.deviceId}/handover`, { confirm: "Alex" });
+    expect(wrong.status).toBe(400);
+    expect(await wrong.text()).toContain("type the phone&#39;s name, Alex&#39;s phone, in the box");
+    expect(policy().handover).toBeNull();
+    const done = await form(`/devices/${phone.deviceId}/handover`, { confirm: " alex's PHONE " });
+    expect(done.status).toBe(302);
+    expect(done.headers.get("location")).toBe(`/devices/${phone.deviceId}?saved=handed_over#handover`);
+    expect(policy().handover).toEqual({ at: t.now(), by: "Sam" });
+    const waiting = await page(`/devices/${phone.deviceId}?saved=handed_over`);
+    expect(waiting).toContain("Handed over. The phone shows the kid what happens next");
+    expect(waiting).toContain(`Waiting for the phone to get it (rules version ${policy().version})`);
+    // The phone reports it applied that version.
+    await deviceCall(t, phone.token, "checkin", { status: device({ enforcement: { policy_version: policy().version } }) });
+    const has = await page(`/devices/${phone.deviceId}`);
+    expect(has).toContain(`The phone has it (it applied rules version ${policy().version})`);
+    expect(has).toContain("Disconnect it below, then delete everything about it");
+    expect((await form(`/devices/${phone.deviceId}/handover/cancel`, {})).headers.get("location")).toBe(`/devices/${phone.deviceId}?saved=handover_cancelled#handover`);
+    expect(policy().handover).toBeNull();
   });
 
   it('the CLI: handover "<phone>" prints one sentence, and status --json shows it', async () => {

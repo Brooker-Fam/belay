@@ -12,7 +12,7 @@ import { savePlace, setLocation, setLost } from "../src/family/location/changes.
 import { answerRequest, buildPolicy, decideApp, RuleRefused, type PolicyContext } from "../src/family/policy.js";
 import { markHelpSeen } from "../src/family/kidside-changes.js";
 import { setPhoneSettings } from "../src/family/screentime/changes.js";
-import { deviceCall, enrollPhone, pkg, signIn, snapshot, SPOT, testServer, T0, type TestServer } from "./helpers.js";
+import { deviceCall, enrollPhone, get, pkg, postForm, signIn, snapshot, SPOT, testServer, T0, type TestServer } from "./helpers.js";
 
 const DAY = 86_400_000;
 
@@ -195,6 +195,28 @@ describe("what the server keeps about a phone", () => {
     expect(rows(t, "fixes", phone.deviceId)).toBe(3);
     const ai = { kind: "ai", parentId: sam.parent.id, clientName: "Claude" };
     expect(() => stopCollecting(ctx(), phone.deviceId, "apps", ai as unknown as Parameters<typeof stopCollecting>[3], "x")).toThrow(/an AI app can't/);
+  });
+
+  it("on the phone's page: the list, a confirmation with exactly what goes, then the stop", async () => {
+    const { t, sam, phone } = await family();
+    const page = await (await get(t, `/devices/${phone.deviceId}`, sam.cookie)).text();
+    expect(page).toContain("What the server keeps about this phone");
+    expect(page).toContain(`href="/devices/${phone.deviceId}/collection/location"`);
+    const confirm = await (await get(t, `/devices/${phone.deviceId}/collection/location`, sam.cookie)).text();
+    expect(confirm).toContain("Stop collecting where the phone is for Alex&#39;s phone?");
+    expect(confirm).toContain("<li>1 place: School</li>");
+    const fingerprint = /name="fingerprint" value="([^"]+)"/.exec(confirm)?.[1] ?? "";
+    expect(fingerprint).not.toBe("");
+    const stale = await postForm(t, `/devices/${phone.deviceId}/collection/location`, { _csrf: sam.csrf, fingerprint: "stale" }, { cookie: sam.cookie });
+    expect(stale.status).toBe(409);
+    expect(await stale.text()).toContain("changed since you looked");
+    const done = await postForm(t, `/devices/${phone.deviceId}/collection/location`, { _csrf: sam.csrf, fingerprint }, { cookie: sam.cookie });
+    expect(done.status).toBe(302);
+    expect(done.headers.get("location")).toBe(`/devices/${phone.deviceId}?saved=collection_stopped#collecting`);
+    expect(rows(t, "fixes", phone.deviceId)).toBe(0);
+    expect((await get(t, `/devices/${phone.deviceId}/collection/contacts`, sam.cookie)).status).toBe(404);
+    // Without the CSRF token, nothing happens.
+    expect((await postForm(t, `/devices/${phone.deviceId}/collection/apps`, { fingerprint }, { cookie: sam.cookie })).status).toBe(403);
   });
 
   it("every table with a phone's rows is in a category, or is a record kept with the phone", () => {
