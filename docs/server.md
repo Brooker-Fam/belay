@@ -432,8 +432,12 @@ database while it runs (SQLite's `VACUUM INTO`): `/data/backups/belay-YYYY-MM-DD
 and deletes the older ones (only its own `belay-YYYY-MM-DD` files: anything else you put in
 `/data/backups` stays). Every try is recorded; a failed one is tried again an hour later,
 and the parent page and [health monitoring](#health-monitoring) say so. One backup runs at a
-time, a backup never overwrites a file, and none is started when it would leave the disk
-nearly full (it needs the database's size free, twice that when encrypting, and 64 MB more).
+time, a backup never overwrites a file, and none is started when it would leave a disk nearly
+full (it needs the database's size free where the backup goes, and 64 MB more; encrypting, the
+same again where it makes the unencrypted copy). An encrypted backup makes that copy in a
+private folder next to the database (the data dir, which holds the database anyway), never in
+the backup's own folder, and deletes it once it's sealed or failed; only the sealed copy goes
+where the backup goes.
 
 These copies live on the same disk as the database: they help after a mistake or a damaged
 database, not a lost disk. [Copy them off the machine](#off-site-copies) too.
@@ -444,6 +448,9 @@ To make one now, to a file of your choice:
 docker compose exec belay node dist/cli.js backup /data/belay-now.db
 docker compose exec belay node dist/cli.js backup /data/belay-now.db.enc --encrypt   # with the backup passphrase (asks for one if it isn't set)
 ```
+
+With `--encrypt`, the file can go straight onto a USB stick or a synced folder: nothing but the
+sealed copy is ever written there.
 
 ### Encrypted backups
 
