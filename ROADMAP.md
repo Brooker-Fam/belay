@@ -79,9 +79,10 @@ requests through end-to-end encrypted Web Push.
   kid sees (approved, declined, or "let's talk") with the parent's note. Hard blocks use
   `setApplicationHidden`. There is no pre-install hook, so a short window right after an
   install remains (threat model).
-- **Play:** stays signed in with the parent-owned account; `DISALLOW_MODIFY_ACCOUNTS` and
-  Play's `allowed_accounts`; Play's own parental controls behind a PIN, and
-  authentication for every purchase.
+- **Play:** stays signed in with the parent-owned account, and `DISALLOW_MODIFY_ACCOUNTS` keeps
+  the kid from adding their own; Play's own parental controls behind a PIN, and authentication for
+  every purchase. Play's `allowed_accounts` managed configuration (platform notes A4) isn't set
+  yet: that's still to build.
 - **Hardening:**
   - `DISALLOW_FACTORY_RESET`, plus a factory-reset-protection policy with the parent's
     Google ID (`people/me`), then the `FRP_CONFIG_CHANGED` broadcast to Play services.
