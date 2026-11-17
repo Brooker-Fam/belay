@@ -186,7 +186,9 @@ const PlaceForm: FC<{ view: View; device: DeviceView; place?: Place; canUseFix: 
         name="center"
         value={place ? `${place.lat.toFixed(5)}, ${place.lng.toFixed(5)}` : ""}
         placeholder="40.10000, -73.20000"
-        inputmode="decimal"
+        autocapitalize="off"
+        autocorrect="off"
+        spellcheck={false}
       />
       {canUseFix && (
         <label class="check">

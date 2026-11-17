@@ -195,7 +195,7 @@ export function oauthRoutes(deps: Deps, assets: Assets): Hono<{ Bindings: Bindin
         <form class="stack" method="post" action="/oauth/authorize">
           <Hidden params={p} />
           <label for="username">Username</label>
-          <input id="username" type="text" name="username" autocomplete="username" required />
+          <input id="username" type="text" name="username" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck={false} required />
           <label for="password">Password</label>
           <input id="password" type="password" name="password" autocomplete="current-password" required />
           <button type="submit">Sign in</button>

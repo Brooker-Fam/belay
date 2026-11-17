@@ -23,7 +23,7 @@ export const SetupPage: FC<{ view: View; token: string; error?: string; values?:
       <label for="name">Your name</label>
       <input id="name" type="text" name="name" maxlength={60} required value={values.name} placeholder="Sam" />
       <label for="username">Username, for signing in</label>
-      <input id="username" type="text" name="username" autocomplete="username" maxlength={64} required value={values.username} />
+      <input id="username" type="text" name="username" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck={false} maxlength={64} required value={values.username} />
       <PasswordFields />
       <label for="timezone">Your family's timezone</label>
       <input id="timezone" type="text" name="timezone" list="zones" required value={values.timezone ?? "UTC"} data-browser-timezone />
@@ -44,7 +44,7 @@ export const LoginPage: FC<{ view: View; error?: string; username?: string; next
     <form class="stack" method="post" action="/login">
       <input type="hidden" name="next" value={next ?? "/"} />
       <label for="username">Username</label>
-      <input id="username" type="text" name="username" autocomplete="username" required value={username} />
+      <input id="username" type="text" name="username" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck={false} required value={username} />
       <label for="password">Password</label>
       <input id="password" type="password" name="password" autocomplete="current-password" required />
       <button type="submit">Sign in</button>
@@ -62,7 +62,7 @@ export const InvitePage: FC<{ view: View; token: string; error?: string; values?
       <label for="name">Your name</label>
       <input id="name" type="text" name="name" maxlength={60} required value={values.name} />
       <label for="username">Username, for signing in</label>
-      <input id="username" type="text" name="username" autocomplete="username" maxlength={64} required value={values.username} />
+      <input id="username" type="text" name="username" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck={false} maxlength={64} required value={values.username} />
       <PasswordFields />
       <button type="submit">Create account</button>
     </form>

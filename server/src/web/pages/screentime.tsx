@@ -483,7 +483,7 @@ const AppPicker: FC<{ name: string; apps: AppChoice[]; picked: ReadonlySet<strin
       <label for={`${id}-more`} class="small">
         Other apps, by package name, one per line (like com.example.game)
       </label>
-      <textarea id={`${id}-more`} name={`${name}_more`}>
+      <textarea id={`${id}-more`} name={`${name}_more`} autocapitalize="off" autocorrect="off" spellcheck={false}>
         {others.join("\n")}
       </textarea>
     </fieldset>
@@ -565,7 +565,7 @@ const ScheduleFields: FC<{ schedule: Schedule | null; apps: AppChoice[]; id: str
       <AppPicker name="allow" apps={apps} picked={new Set(schedule?.allow ?? [])} id={`${id}-allow`} />
     </details>
     <label for={`${id}-skip`}>Days it doesn't start, like 2026-11-26 (one per line, optional)</label>
-    <textarea id={`${id}-skip`} name="skip">
+    <textarea id={`${id}-skip`} name="skip" autocapitalize="off" autocorrect="off" spellcheck={false}>
       {(schedule?.skip ?? []).join("\n")}
     </textarea>
   </>

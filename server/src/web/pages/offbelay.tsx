@@ -78,7 +78,7 @@ const HandOverForm: FC<{ view: View; data: OffBelayData }> = ({ view, data }) =>
           <label for="handover-confirm">
             To hand it over, type the phone's name: <strong>{device.name}</strong>
           </label>
-          <input id="handover-confirm" type="text" name="confirm" autocomplete="off" maxlength={60} />
+          <input id="handover-confirm" type="text" name="confirm" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck={false} inputmode="text" maxlength={60} />
           <div>
             <button type="submit" class="danger">
               Hand this phone over
