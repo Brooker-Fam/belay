@@ -95,9 +95,9 @@ cd android
 scripts/provision.sh --debug --server https://belay.example.org --code 7KQ2M9XA
 ```
 
-For a real Pixel 8, follow [docs/pixel.md](docs/pixel.md) and
-[docs/phase0-checklist.md](docs/phase0-checklist.md); a release build needs the release
-key first ([docs/signing.md](docs/signing.md)).
+For a real Pixel 8, follow [docs/pixel.md](docs/pixel.md), then the
+[Phase 0](docs/phase0-checklist.md) and [Phase 1](docs/phase1-checklist.md) checklists; a
+release build needs the release key first ([docs/signing.md](docs/signing.md)).
 
 **3. Claude.** Add a custom connector with the URL `https://belay.example.org/mcp`, sign
 in, and approve ([docs/mcp.md](docs/mcp.md)). Then ask: "Is Sam's phone OK, and what did
@@ -111,7 +111,7 @@ they install this week?"
 | `android/app` | The agent: device owner, receivers, services, sync, enrollment, the screens. |
 | `android/scripts` | Provisioning, release key, QR test, the emulator test. |
 | `server/` | The family's server: device API, parent pages, OAuth and MCP. Vitest tests. |
-| `docs/` | [server](docs/server.md), [MCP](docs/mcp.md), [privacy](docs/privacy.md), [threat model](docs/threat-model.md), [device API](docs/protocol.md), [platform notes](docs/platform-notes.md), [emulator](docs/emulator.md), [Pixel 8](docs/pixel.md), [Phase 0 checklist](docs/phase0-checklist.md), [signing](docs/signing.md), [prior art](docs/prior-art.md) |
+| `docs/` | [server](docs/server.md), [MCP](docs/mcp.md), [privacy](docs/privacy.md), [threat model](docs/threat-model.md), [device API](docs/protocol.md), [platform notes](docs/platform-notes.md), [emulator](docs/emulator.md), [Pixel 8](docs/pixel.md), [Phase 0](docs/phase0-checklist.md) and [Phase 1](docs/phase1-checklist.md) checklists, [signing](docs/signing.md), [prior art](docs/prior-art.md) |
 | `ROADMAP.md` | Phases 2 to 5 and later. |
 | `CLAUDE.md` | Conventions and commands, for people and for Claude. |
 

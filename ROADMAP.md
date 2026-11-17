@@ -16,6 +16,10 @@ adb-provisioned device owner is blocked on the real phone, the plan changes.
 
 ## Phase 1: foundation and monitoring, no blocking (built)
 
+Built as described below, and checked end to end on the Android 17 emulator against a
+real server in CI. **Still open:** [docs/phase1-checklist.md](docs/phase1-checklist.md) on
+the Pixel 8, over cellular, with Claude.
+
 The plumbing and the AI interface. **Not safe to hand to a kid:** they could still reset
 the phone from Settings, install anything, or browse anything.
 
