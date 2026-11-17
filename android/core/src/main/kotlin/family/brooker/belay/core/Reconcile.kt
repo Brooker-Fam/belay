@@ -21,29 +21,51 @@ sealed interface ScanPlan {
 @Serializable
 data class Heartbeat(val at: Long, val trigger: String, val note: String? = null)
 
-/** Everything the Phase 0 agent keeps on the phone. Phase 1 moves this to Room. */
+/**
+ * What every scan is compared with: the last known inventory, and where getChangedPackages
+ * left off. The agent keeps it in Room, and updates it in the same transaction that puts
+ * the changes it found in the outbox.
+ */
+data class Baseline(
+    val inventory: Map<String, PackageRecord> = emptyMap(),
+    /** When the last full scan finished; null before the first one. */
+    val lastFullScanAt: Long? = null,
+    val cursor: ChangeCursor? = null,
+)
+
+/**
+ * The Phase 0 agent's state file (no_backup/agent-state.json). Phase 1 imports it into
+ * Room once, then deletes it.
+ */
 @Serializable
 data class AgentState(
     val inventory: Map<String, PackageRecord> = emptyMap(),
-    /** When the last full scan finished; null before the first one. */
     val lastFullScanAt: Long? = null,
     val cursor: ChangeCursor? = null,
     /** Newest last. */
     val changes: List<AppChange> = emptyList(),
     /** Newest last. */
     val heartbeats: List<Heartbeat> = emptyList(),
-)
+) {
+    val baseline: Baseline get() = Baseline(inventory, lastFullScanAt, cursor)
+}
 
 object Reconcile {
+    /** How many changes and heartbeats the phone keeps for its own screen. */
     const val MAX_CHANGES = 300
     const val MAX_HEARTBEATS = 200
     const val FULL_SCAN_INTERVAL_MS = 24L * 60 * 60 * 1000
 
-    fun plan(state: AgentState, bootCount: Int?, now: Long): ScanPlan {
-        val cursor = state.cursor
-        val last = state.lastFullScanAt
+    /**
+     * [fullScanWanted] is a reason to read everything now whatever the cursor says, such as
+     * a new enrollment (the server wants a full inventory right away).
+     */
+    fun plan(baseline: Baseline, bootCount: Int?, now: Long, fullScanWanted: String? = null): ScanPlan {
+        val cursor = baseline.cursor
+        val last = baseline.lastFullScanAt
         return when {
             last == null -> ScanPlan.Full("first scan")
+            fullScanWanted != null -> ScanPlan.Full(fullScanWanted)
             bootCount == null -> ScanPlan.Full("boot count unavailable")
             cursor == null -> ScanPlan.Full("no change cursor")
             cursor.bootCount != bootCount -> ScanPlan.Full("phone restarted")
@@ -52,32 +74,26 @@ object Reconcile {
         }
     }
 
-    data class Result(val state: AgentState, val changes: List<AppChange>)
+    data class Result(val baseline: Baseline, val changes: List<AppChange>)
 
     /**
      * A full scan. The very first one is a baseline: it records the inventory without
      * reporting every preinstalled app as "installed".
      */
     fun fullScan(
-        state: AgentState,
+        baseline: Baseline,
         current: Map<String, PackageRecord>,
         cursor: ChangeCursor?,
         now: Long,
         newId: () -> String,
     ): Result {
-        val baseline = state.lastFullScanAt == null && state.inventory.isEmpty()
-        val changes = if (baseline) {
+        val first = baseline.lastFullScanAt == null && baseline.inventory.isEmpty()
+        val changes = if (first) {
             emptyList()
         } else {
-            InventoryDiff.diff(state.inventory, current, null, now, { Detection.SNAPSHOT }, newId)
+            InventoryDiff.diff(baseline.inventory, current, null, now, { Detection.SNAPSHOT }, newId)
         }
-        val next = state.copy(
-            inventory = current,
-            lastFullScanAt = now,
-            cursor = cursor,
-            changes = (state.changes + changes).takeLast(MAX_CHANGES),
-        )
-        return Result(next, changes)
+        return Result(Baseline(inventory = current, lastFullScanAt = now, cursor = cursor), changes)
     }
 
     /**
@@ -85,7 +101,7 @@ object Reconcile {
      * [current] holds the packages of the scope that are still installed.
      */
     fun scopedScan(
-        state: AgentState,
+        baseline: Baseline,
         scope: Map<String, Detection>,
         current: Map<String, PackageRecord>,
         cursor: ChangeCursor?,
@@ -94,16 +110,12 @@ object Reconcile {
     ): Result {
         val names = scope.keys
         val changes = InventoryDiff.diff(
-            state.inventory, current, names, now, { scope[it] ?: Detection.CHANGED_PACKAGES }, newId,
+            baseline.inventory, current, names, now, { scope[it] ?: Detection.CHANGED_PACKAGES }, newId,
         )
-        val next = state.copy(
-            inventory = InventoryDiff.merge(state.inventory, current, names),
-            cursor = cursor ?: state.cursor,
-            changes = (state.changes + changes).takeLast(MAX_CHANGES),
+        val next = baseline.copy(
+            inventory = InventoryDiff.merge(baseline.inventory, current, names),
+            cursor = cursor ?: baseline.cursor,
         )
         return Result(next, changes)
     }
-
-    fun withHeartbeat(state: AgentState, heartbeat: Heartbeat): AgentState =
-        state.copy(heartbeats = (state.heartbeats + heartbeat).takeLast(MAX_HEARTBEATS))
 }

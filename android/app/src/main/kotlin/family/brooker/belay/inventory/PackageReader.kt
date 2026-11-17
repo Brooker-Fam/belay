@@ -1,46 +1,55 @@
 package family.brooker.belay.inventory
 
+import android.app.admin.DevicePolicyManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.os.Build
+import android.provider.Settings
 import family.brooker.belay.core.DataCategories
 import family.brooker.belay.core.InstallerInfo
 import family.brooker.belay.core.PackageRecord
+import family.brooker.belay.core.SensitivePermissions
 
 /**
  * The apps collector (data category [DataCategories.APPS]): reads PackageManager into
  * [PackageRecord]s. Metadata only. Seeing every package relies on QUERY_ALL_PACKAGES.
  */
 class PackageReader(context: Context) {
-    private val pm: PackageManager = context.packageManager
+    private val app = context.applicationContext
+    private val pm: PackageManager = app.packageManager
 
     fun readAll(): Map<String, PackageRecord> {
         val launchable = pm.queryActivitiesCompat(launcherIntent())
             .mapNotNullTo(HashSet()) { it.activityInfo?.packageName }
-        return pm.installedPackagesCompat(0)
-            .mapNotNull { toRecord(it, it.packageName in launchable) }
+        val access = readSpecialAccess()
+        return pm.installedPackagesCompat(PackageManager.GET_PERMISSIONS)
+            .mapNotNull { toRecord(it, it.packageName in launchable, access) }
             .associateBy { it.packageName }
     }
 
     /** Only [names]; a package that isn't installed is simply absent from the result. */
-    fun read(names: Collection<String>): Map<String, PackageRecord> = names.mapNotNull { name ->
-        val info = try {
-            pm.packageInfoCompat(name, 0)
-        } catch (e: PackageManager.NameNotFoundException) {
-            return@mapNotNull null
-        }
-        toRecord(info, pm.queryActivitiesCompat(launcherIntent().setPackage(name)).isNotEmpty())
-    }.associateBy { it.packageName }
+    fun read(names: Collection<String>): Map<String, PackageRecord> {
+        val access = readSpecialAccess()
+        return names.mapNotNull { name ->
+            val info = try {
+                pm.packageInfoCompat(name, PackageManager.GET_PERMISSIONS)
+            } catch (e: PackageManager.NameNotFoundException) {
+                return@mapNotNull null
+            }
+            toRecord(info, pm.queryActivitiesCompat(launcherIntent().setPackage(name)).isNotEmpty(), access)
+        }.associateBy { it.packageName }
+    }
 
     private fun launcherIntent() = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
 
-    private fun toRecord(info: PackageInfo, launchable: Boolean): PackageRecord? {
+    private fun toRecord(info: PackageInfo, launchable: Boolean, access: SpecialAccess): PackageRecord? {
         val app = info.applicationInfo ?: return null
+        val name = info.packageName
         return PackageRecord(
-            packageName = info.packageName,
+            packageName = name,
             label = app.loadLabel(pm).toString().trim().take(MAX_TEXT),
             versionName = info.versionName?.take(MAX_TEXT),
             versionCode = info.longVersionCode,
@@ -52,8 +61,23 @@ class PackageReader(context: Context) {
             launchable = launchable,
             targetSdk = app.targetSdkVersion,
             category = app.category,
-            installer = installerInfo(info.packageName),
+            installer = installerInfo(name),
+            permissions = SensitivePermissions.held(
+                grantedPermissions = granted(info),
+                notificationListener = name in access.notificationListeners,
+                accessibilityService = name in access.accessibilityServices,
+                deviceAdmin = name in access.deviceAdmins,
+            ),
         )
+    }
+
+    /** The runtime permissions it requested and holds right now. */
+    private fun granted(info: PackageInfo): List<String> {
+        val names = info.requestedPermissions ?: return emptyList()
+        val flags = info.requestedPermissionsFlags ?: return emptyList()
+        return names.indices
+            .filter { it < flags.size && flags[it] and PackageInfo.REQUESTED_PERMISSION_GRANTED != 0 }
+            .map { names[it] }
     }
 
     private fun installerInfo(name: String): InstallerInfo = try {
@@ -69,8 +93,34 @@ class PackageReader(context: Context) {
         InstallerInfo()
     }
 
+    /**
+     * Special access is granted in Settings, not by a permission dialog, so it isn't in an
+     * app's permission flags. Read once per scan, not per package.
+     */
+    private class SpecialAccess(
+        val notificationListeners: Set<String>,
+        val accessibilityServices: Set<String>,
+        val deviceAdmins: Set<String>,
+    )
+
+    private fun readSpecialAccess(): SpecialAccess {
+        val resolver = app.contentResolver
+        // Both keys are @Readable in Android 17's Settings.java, so an app targeting 37 may
+        // read them. The listener key is hidden from the SDK, hence the literal.
+        val listeners = SensitivePermissions.packagesInComponentList(
+            Settings.Secure.getString(resolver, ENABLED_NOTIFICATION_LISTENERS),
+        )
+        val accessibility = SensitivePermissions.packagesInComponentList(
+            Settings.Secure.getString(resolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES),
+        )
+        val admins = app.getSystemService(DevicePolicyManager::class.java).activeAdmins
+            .orEmpty().mapTo(HashSet()) { it.packageName }
+        return SpecialAccess(listeners, accessibility, admins)
+    }
+
     private companion object {
         /** Labels and version names come from developers: untrusted, and capped. */
         const val MAX_TEXT = 200
+        const val ENABLED_NOTIFICATION_LISTENERS = "enabled_notification_listeners"
     }
 }

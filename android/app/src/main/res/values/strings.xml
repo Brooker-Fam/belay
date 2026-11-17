@@ -27,7 +27,62 @@
         <item quantity="other">%d packages in all, counting the system\'s own</item>
     </plurals>
     <string name="section_can_see">What your parent can see</string>
-    <string name="data_stays_here">For now, all of this stays on this phone. Nothing is sent anywhere yet.</string>
+    <string name="data_stays_here">For now, all of this stays on this phone. Nothing is sent anywhere yet. When your parent connects the phone to their Belay server, Belay will send this there, including the app changes it noticed before.</string>
+    <string name="data_sent_to_server">Belay sends this to your parent\'s Belay server at %1$s, and nowhere else. It doesn\'t send anything that isn\'t on this list.</string>
+    <string name="data_disconnected">Belay isn\'t sending any of this right now, because this phone was disconnected from your parent\'s Belay server. It stays on this phone.</string>
+
+    <!-- The connection to the family's Belay server. -->
+    <string name="section_connection">Belay server</string>
+    <string name="connection_connected">Connected to your parent\'s Belay server at %1$s.</string>
+    <string name="connection_device_name">The server calls this phone \"%1$s\".</string>
+    <string name="connection_last_sync">Last sent: %1$s</string>
+    <string name="connection_never_synced">Nothing has been sent yet.</string>
+    <plurals name="connection_waiting">
+        <item quantity="one">%d thing waiting to be sent</item>
+        <item quantity="other">%d things waiting to be sent</item>
+    </plurals>
+    <string name="connection_nothing_waiting">Nothing waiting to be sent.</string>
+    <string name="connection_trouble">The last try to reach the server didn\'t work. Belay will try again by itself.</string>
+    <string name="connection_version">Belay version %1$s</string>
+    <string name="connection_none">Not connected to a Belay server yet.</string>
+    <string name="connection_none_detail">Your parent connects this phone to their Belay server, with a QR code or a short code from it.</string>
+    <string name="connection_connect">Connect to a Belay server</string>
+    <string name="connection_disconnected">This phone was disconnected from Belay.</string>
+    <string name="connection_disconnected_detail">Your parent\'s Belay server doesn\'t accept this phone anymore, so Belay stopped sending. Your parent can connect it again.</string>
+    <string name="connection_connect_again">Connect again</string>
+
+    <!-- The enrollment screen. -->
+    <string name="enroll_title">Connect to your parent\'s Belay server</string>
+    <string name="enroll_intro">Your parent\'s Belay server shows a QR code and a short code on its \"Add a phone\" page. Scan the QR code, or type the server\'s address and the code.</string>
+    <string name="enroll_scan">Scan the QR code</string>
+    <string name="enroll_scan_hint">Point the camera at the QR code.</string>
+    <string name="enroll_scan_stop">Stop scanning</string>
+    <string name="enroll_camera_note">Belay uses the camera only on this screen, only to read the QR code. Nothing from the camera is saved or sent.</string>
+    <string name="enroll_camera_locked_after">When you leave this screen, Belay turns off its own camera access, and Settings shows that.</string>
+    <string name="enroll_camera_denied">Belay can\'t use the camera, so it can\'t scan. You can type the server and the code instead.</string>
+    <string name="enroll_no_camera">The camera isn\'t available. You can type the server and the code instead.</string>
+    <string name="enroll_not_belay_qr">That QR code isn\'t from a Belay server. Scan the one on your parent\'s \"Add a phone\" page.</string>
+    <string name="enroll_or_type">Or type them</string>
+    <string name="enroll_server_label">Server address</string>
+    <string name="enroll_server_hint">like belay.example.org</string>
+    <string name="enroll_code_label">Code</string>
+    <string name="enroll_code_hint">8 letters and numbers</string>
+    <string name="enroll_connect">Connect</string>
+    <string name="enroll_connecting">Connecting to %1$s…</string>
+    <string name="enroll_done_title">Connected</string>
+    <string name="enroll_done_text">This phone is now connected to your parent\'s Belay server at %1$s. The server calls it \"%2$s\".</string>
+    <string name="enroll_done">Done</string>
+    <string name="enroll_back">Back</string>
+    <string name="enroll_problem_bad_server">That doesn\'t look like a server address. It should look like belay.example.org.</string>
+    <string name="enroll_problem_bad_code">A code has 8 letters and numbers, like 7KQ2 M9XA.</string>
+    <string name="enroll_problem_code_refused">The server didn\'t accept that code. It may have a typo, it may have been used already, or it may be more than 30 minutes old. Your parent can make a new one.</string>
+    <string name="enroll_problem_rate_limited">There were too many tries. Wait a few minutes, then try again.</string>
+    <string name="enroll_problem_unreachable">Belay couldn\'t reach the server. Check the address, and that the phone is online.</string>
+    <string name="enroll_problem_not_belay">Something answered at that address, but it isn\'t a Belay server. Check the address.</string>
+    <string name="enroll_problem_refused">The server turned the request down. Belay or the server may need an update.</string>
+    <string name="enroll_problem_server_error">The server had a problem. Try again in a few minutes.</string>
+    <string name="enroll_problem_already_connected">This phone is already connected to a Belay server. Only your parent can change that.</string>
+    <string name="enroll_problem_phone_error">Something went wrong on this phone. Try again. If it keeps happening, your parent can check Belay.</string>
     <string name="section_changes">Recent app changes</string>
     <string name="no_changes">No app changes yet.</string>
     <string name="kind_installed">Installed</string>
@@ -51,6 +106,13 @@
     <string name="section_background">Background checks</string>
     <string name="section_phone">Phone</string>
     <string name="section_self">Belay itself</string>
+    <string name="phone_battery">Battery</string>
+    <string name="phone_battery_value">%1$d%%</string>
+    <string name="phone_battery_charging">%1$d%%, charging</string>
+    <string name="phone_storage">Storage</string>
+    <string name="phone_storage_value">%1$s free of %2$s</string>
+    <string name="phone_time_zone">Time zone</string>
+    <string name="unknown">unknown</string>
 
     <!-- Debug builds only. -->
     <string name="release_button">Release this phone (debug build)</string>

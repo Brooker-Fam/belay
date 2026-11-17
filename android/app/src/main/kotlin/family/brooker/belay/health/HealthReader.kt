@@ -19,6 +19,7 @@ import family.brooker.belay.core.DataCategories
 import family.brooker.belay.service.BelayService
 import family.brooker.belay.service.ManagedNotice
 
+/** [fixedByPolicy]: granted or denied by Belay's own device-owner policy, so Settings can't change it. */
 data class PermissionHealth(val name: String, val granted: Boolean, val fixedByPolicy: Boolean)
 
 data class PhoneFacts(
@@ -66,12 +67,14 @@ class HealthReader(context: Context) {
             uninstallBlocked = if (owner) dpm.isUninstallBlocked(admin, pkg) else null,
             notificationsShown = nm.areNotificationsEnabled() &&
                 channel != null && channel.importance != NotificationManager.IMPORTANCE_NONE,
-            permissions = DeviceOwnerSetup.runtimePermissions(app).map { name ->
+            // Every runtime permission Belay declares, CAMERA included: it is never granted by
+            // policy, and denied by policy except while the enrollment screen scans.
+            permissions = DeviceOwnerSetup.declaredRuntimePermissions(app).map { name ->
                 PermissionHealth(
                     name = name.substringAfterLast('.'),
                     granted = app.checkSelfPermission(name) == PackageManager.PERMISSION_GRANTED,
-                    fixedByPolicy = owner && dpm.getPermissionGrantState(admin, pkg, name) ==
-                        DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED,
+                    fixedByPolicy = owner && dpm.getPermissionGrantState(admin, pkg, name) !=
+                        DevicePolicyManager.PERMISSION_GRANT_STATE_DEFAULT,
                 )
             },
             batteryExempt = app.getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(pkg),

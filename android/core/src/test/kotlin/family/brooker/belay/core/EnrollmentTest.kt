@@ -50,6 +50,17 @@ class EnrollmentTest {
     }
 
     @Test
+    fun `the server's answers become problems the screen can explain`() {
+        assertEquals(EnrollProblem.CODE_REFUSED, Enrollment.problemFor(400, "invalid_code"))
+        assertEquals(EnrollProblem.REFUSED, Enrollment.problemFor(400, "invalid_request"))
+        assertEquals(EnrollProblem.RATE_LIMITED, Enrollment.problemFor(429, "rate_limited"))
+        assertEquals(EnrollProblem.SERVER_ERROR, Enrollment.problemFor(502, null))
+        assertEquals(EnrollProblem.NOT_BELAY, Enrollment.problemFor(404, null))
+        assertEquals(EnrollProblem.NOT_BELAY, Enrollment.problemFor(403, null), "no Belay error code: something else answered")
+        assertEquals("invalid_code", EnrollProblem.CODE_REFUSED.code)
+    }
+
+    @Test
     fun `other links don't`() {
         assertNull(Enrollment.parseLink("https://belay.example.org/enroll?code=7KQ2M9XA"))
         assertNull(Enrollment.parseLink("belay://enroll?server=https%3A%2F%2Fbelay.example.org"))

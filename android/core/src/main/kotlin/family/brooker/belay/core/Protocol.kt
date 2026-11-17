@@ -46,6 +46,11 @@ data class WireEvent(
     @SerialName("happened_at") val happenedAt: Long? = null,
     @SerialName("detected_at") val detectedAt: Long,
     val detection: WireDetection,
+    /**
+     * The package as it is now, for installed, updated and reinstalled events, so the server
+     * has its source and permissions at once instead of at the next inventory. Null for removals.
+     */
+    val app: WirePackage? = null,
 )
 
 @Serializable
@@ -204,7 +209,11 @@ fun PackageRecord.toWire(): WirePackage = WirePackage(
     permissions = permissions,
 )
 
-fun AppChange.toWire(): WireEvent = WireEvent(
+/**
+ * [record] is the package as the scan that found this change read it; it becomes the
+ * event's `app`, except for a removal, which has none.
+ */
+fun AppChange.toWire(record: PackageRecord? = null): WireEvent = WireEvent(
     id = id,
     kind = when (kind) {
         ChangeKind.INSTALLED -> WireChangeKind.INSTALLED
@@ -223,4 +232,5 @@ fun AppChange.toWire(): WireEvent = WireEvent(
         Detection.CHANGED_PACKAGES -> WireDetection.CHANGED_PACKAGES
         Detection.SNAPSHOT -> WireDetection.SNAPSHOT
     },
+    app = if (kind == ChangeKind.REMOVED) null else record?.takeIf { it.packageName == packageName }?.toWire(),
 )

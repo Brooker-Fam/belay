@@ -15,11 +15,11 @@ class ReconcileTest {
     private val base = inventory(app("com.example.a"), app("com.android.settings", system = true))
 
     private fun scanned(at: Long = T0, boot: Int = 7, seq: Int = 3) =
-        Reconcile.fullScan(AgentState(), base, ChangeCursor(boot, seq), at, ids()).state
+        Reconcile.fullScan(Baseline(), base, ChangeCursor(boot, seq), at, ids()).baseline
 
     @Test
     fun `first ever scan is a full scan`() {
-        assertEquals(ScanPlan.Full("first scan"), Reconcile.plan(AgentState(), bootCount = 7, now = T0))
+        assertEquals(ScanPlan.Full("first scan"), Reconcile.plan(Baseline(), bootCount = 7, now = T0))
     }
 
     @Test
@@ -49,11 +49,21 @@ class ReconcileTest {
     }
 
     @Test
+    fun `a wanted full scan happens even when the cursor is fine`() {
+        assertEquals(
+            ScanPlan.Full("enrolled"),
+            Reconcile.plan(scanned(), bootCount = 7, now = T0 + HOUR, fullScanWanted = "enrolled"),
+        )
+        // The very first scan is still a baseline, whatever the reason.
+        assertEquals(ScanPlan.Full("first scan"), Reconcile.plan(Baseline(), 7, T0, fullScanWanted = "enrolled"))
+    }
+
+    @Test
     fun `first full scan is a baseline without events`() {
-        val result = Reconcile.fullScan(AgentState(), base, ChangeCursor(7, 0), T0, ids())
+        val result = Reconcile.fullScan(Baseline(), base, ChangeCursor(7, 0), T0, ids())
         assertTrue(result.changes.isEmpty())
-        assertEquals(base, result.state.inventory)
-        assertEquals(T0, result.state.lastFullScanAt)
+        assertEquals(base, result.baseline.inventory)
+        assertEquals(T0, result.baseline.lastFullScanAt)
     }
 
     @Test
@@ -65,24 +75,36 @@ class ReconcileTest {
             result.changes.map { it.packageName to it.kind },
         )
         assertTrue(result.changes.all { it.detection == Detection.SNAPSHOT })
-        assertEquals(ChangeCursor(8, 0), result.state.cursor)
+        assertEquals(ChangeCursor(8, 0), result.baseline.cursor)
+        assertEquals(T0 + HOUR, result.baseline.lastFullScanAt)
     }
 
     @Test
     fun `running the same scan twice reports nothing the second time`() {
         val later = inventory(app("com.example.new"))
         val once = Reconcile.fullScan(scanned(), later, ChangeCursor(7, 4), T0 + HOUR, ids())
-        val twice = Reconcile.fullScan(once.state, later, ChangeCursor(7, 4), T0 + 2 * HOUR, ids())
+        val twice = Reconcile.fullScan(once.baseline, later, ChangeCursor(7, 4), T0 + 2 * HOUR, ids())
         assertTrue(twice.changes.isEmpty())
-        assertEquals(once.state.changes, twice.state.changes)
+        assertEquals(once.baseline.inventory, twice.baseline.inventory)
+    }
+
+    @Test
+    fun `a permission change alone is no app change, but the baseline keeps it`() {
+        val granted = inventory(
+            app("com.example.a").copy(permissions = listOf(SensitivePermissions.CAMERA)),
+            app("com.android.settings", system = true),
+        )
+        val result = Reconcile.fullScan(scanned(), granted, ChangeCursor(7, 4), T0 + HOUR, ids())
+        assertTrue(result.changes.isEmpty())
+        assertEquals(listOf("camera"), result.baseline.inventory.getValue("com.example.a").permissions)
     }
 
     @Test
     fun `scoped scan credits each change to the layer that pointed at it`() {
-        val state = scanned()
+        val baseline = scanned()
         val read = inventory(app("com.example.game"), app("com.example.a", code = 5))
         val result = Reconcile.scopedScan(
-            state,
+            baseline,
             scope = mapOf(
                 "com.example.game" to Detection.BROADCAST,
                 "com.example.a" to Detection.CHANGED_PACKAGES,
@@ -100,8 +122,9 @@ class ReconcileTest {
             result.changes.map { Triple(it.packageName, it.kind, it.detection) },
         )
         // The system app outside the scope is untouched.
-        assertEquals(setOf("com.example.a", "com.example.game", "com.android.settings"), result.state.inventory.keys)
-        assertEquals(ChangeCursor(7, 9), result.state.cursor)
+        assertEquals(setOf("com.example.a", "com.example.game", "com.android.settings"), result.baseline.inventory.keys)
+        assertEquals(ChangeCursor(7, 9), result.baseline.cursor)
+        assertEquals(baseline.lastFullScanAt, result.baseline.lastFullScanAt, "a scoped scan isn't a full one")
     }
 
     @Test
@@ -110,34 +133,25 @@ class ReconcileTest {
             scanned(), mapOf("com.example.a" to Detection.BROADCAST), inventory(), null, T0 + HOUR, ids(),
         )
         assertEquals(ChangeKind.REMOVED, result.changes.single().kind)
-        assertEquals(ChangeCursor(7, 3), result.state.cursor, "a null cursor keeps the stored one")
-        assertTrue("com.example.a" !in result.state.inventory)
+        assertEquals(ChangeCursor(7, 3), result.baseline.cursor, "a null cursor keeps the stored one")
+        assertTrue("com.example.a" !in result.baseline.inventory)
     }
 
     @Test
-    fun `the change log keeps only the newest entries`() {
-        var state = scanned()
-        repeat(Reconcile.MAX_CHANGES + 20) { i ->
-            val read = inventory(app("com.example.a", code = (i + 2).toLong()))
-            state = Reconcile.scopedScan(state, mapOf("com.example.a" to Detection.BROADCAST), read, null, T0 + i, ids()).state
-        }
-        assertEquals(Reconcile.MAX_CHANGES, state.changes.size)
-        assertEquals((Reconcile.MAX_CHANGES + 21).toLong(), state.changes.last().to?.code)
-    }
-
-    @Test
-    fun `heartbeats are capped`() {
-        var state = AgentState()
-        repeat(Reconcile.MAX_HEARTBEATS + 5) { state = Reconcile.withHeartbeat(state, Heartbeat(T0 + it, "test")) }
-        assertEquals(Reconcile.MAX_HEARTBEATS, state.heartbeats.size)
-        assertEquals(T0 + Reconcile.MAX_HEARTBEATS + 4, state.heartbeats.last().at)
-    }
-
-    @Test
-    fun `state survives a JSON round trip`() {
+    fun `the Phase 0 state file still parses, and gives its baseline`() {
         val json = Json { ignoreUnknownKeys = true }
-        val state = Reconcile.withHeartbeat(scanned(), Heartbeat(T0, "boot", "full scan"))
-        val decoded = json.decodeFromString(AgentState.serializer(), json.encodeToString(AgentState.serializer(), state))
-        assertEquals(state, decoded)
+        val phase0 = AgentState(
+            inventory = base,
+            lastFullScanAt = T0,
+            cursor = ChangeCursor(7, 3),
+            heartbeats = listOf(Heartbeat(T0, "phone started", "full scan")),
+        )
+        val decoded = json.decodeFromString(AgentState.serializer(), json.encodeToString(AgentState.serializer(), phase0))
+        assertEquals(phase0, decoded)
+        assertEquals(Baseline(base, T0, ChangeCursor(7, 3)), decoded.baseline)
+        // A Phase 0 file written before `permissions` existed reads with none.
+        val old = """{"inventory":{"com.example.a":{"packageName":"com.example.a","label":"A","versionCode":1,""" +
+            """"firstInstallTime":1,"lastUpdateTime":1,"system":false}},"lastFullScanAt":1}"""
+        assertEquals(emptyList(), json.decodeFromString(AgentState.serializer(), old).inventory.getValue("com.example.a").permissions)
     }
 }

@@ -1,6 +1,7 @@
 package family.brooker.belay.ui
 
 import android.text.format.DateUtils
+import android.text.format.Formatter
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.LinearProgressIndicator
@@ -33,6 +35,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import family.brooker.belay.AgentView
+import family.brooker.belay.BuildConfig
 import family.brooker.belay.R
 import family.brooker.belay.core.AppChange
 import family.brooker.belay.core.ChangeKind
@@ -40,12 +43,24 @@ import family.brooker.belay.core.DataCategory
 import family.brooker.belay.core.Detection
 import family.brooker.belay.core.Heartbeat
 import family.brooker.belay.core.PackageRecord
+import family.brooker.belay.core.WireDevice
 import family.brooker.belay.health.Health
 import family.brooker.belay.health.HealthReader
 import family.brooker.belay.inventory.Collectors
+import family.brooker.belay.settings.Connection
 
+/**
+ * [connection] is null while it loads; [waiting] is how many outbox items wait to be sent.
+ */
 @Composable
-fun MainScreen(view: AgentView?, onAllowBattery: () -> Unit, onRelease: (() -> Unit)?) {
+fun MainScreen(
+    view: AgentView?,
+    connection: Connection?,
+    waiting: Int,
+    onConnect: () -> Unit,
+    onAllowBattery: () -> Unit,
+    onRelease: (() -> Unit)?,
+) {
     Scaffold { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
@@ -53,17 +68,18 @@ fun MainScreen(view: AgentView?, onAllowBattery: () -> Unit, onRelease: (() -> U
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item { Header() }
-            if (view == null) {
+            if (view == null || connection == null) {
                 item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
                 return@LazyColumn
             }
             item { StatusCard(view) }
-            item { CanSeeCard(Collectors.categories) }
-            item { ChangesCard(view.state.changes.asReversed().take(30), view.state.inventory) }
+            item { ConnectionCard(connection, waiting, onConnect) }
+            item { CanSeeCard(Collectors.categories, connection) }
+            item { ChangesCard(view.changes, view.inventory) }
             item { ChecksCard(view.health, onAllowBattery) }
-            item { PhoneCard(view.health) }
-            item { SelfCard(view.health, view.state.inventory[LocalContext.current.packageName]) }
-            item { HeartbeatsCard(view.state.heartbeats.asReversed().take(24)) }
+            item { PhoneCard(view.health, view.device) }
+            item { SelfCard(view.health, view.inventory[LocalContext.current.packageName]) }
+            item { HeartbeatsCard(view.heartbeats) }
             if (onRelease != null && view.health.deviceOwner) item { ReleaseButton(onRelease) }
         }
     }
@@ -89,7 +105,7 @@ private fun Section(title: String, content: @Composable () -> Unit) {
 
 @Composable
 private fun StatusCard(view: AgentView) {
-    val apps = view.state.inventory.values
+    val apps = view.inventory.values
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (view.health.deviceOwner) {
@@ -111,14 +127,61 @@ private fun StatusCard(view: AgentView) {
     }
 }
 
+/** Which server, if any; what was sent and what waits. */
 @Composable
-private fun CanSeeCard(categories: List<DataCategory>) {
+private fun ConnectionCard(connection: Connection, waiting: Int, onConnect: () -> Unit) {
+    Section(stringResource(R.string.section_connection)) {
+        when {
+            connection.connected -> {
+                Text(stringResource(R.string.connection_connected, connection.host.orEmpty()), style = MaterialTheme.typography.bodyLarge)
+                connection.deviceName?.let {
+                    Text(stringResource(R.string.connection_device_name, it), style = MaterialTheme.typography.bodyMedium)
+                }
+                Text(
+                    connection.lastSyncAt?.let { stringResource(R.string.connection_last_sync, formatTime(it)) }
+                        ?: stringResource(R.string.connection_never_synced),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    if (waiting == 0) {
+                        stringResource(R.string.connection_nothing_waiting)
+                    } else {
+                        pluralStringResource(R.plurals.connection_waiting, waiting, waiting)
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                if (connection.lastFailureAt != null) {
+                    Text(stringResource(R.string.connection_trouble), style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            connection.enrolled -> {
+                Text(stringResource(R.string.connection_disconnected), style = MaterialTheme.typography.bodyLarge)
+                Text(stringResource(R.string.connection_disconnected_detail), style = MaterialTheme.typography.bodyMedium)
+                OutlinedButton(onClick = onConnect) { Text(stringResource(R.string.connection_connect_again)) }
+            }
+            else -> {
+                Text(stringResource(R.string.connection_none), style = MaterialTheme.typography.bodyLarge)
+                Text(stringResource(R.string.connection_none_detail), style = MaterialTheme.typography.bodyMedium)
+                Button(onClick = onConnect) { Text(stringResource(R.string.connection_connect)) }
+            }
+        }
+        Text(stringResource(R.string.connection_version, BuildConfig.VERSION_NAME), style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+@Composable
+private fun CanSeeCard(categories: List<DataCategory>, connection: Connection) {
     Section(stringResource(R.string.section_can_see)) {
         categories.forEach { category ->
             Text(category.title, style = MaterialTheme.typography.titleSmall)
             category.details.forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium) }
         }
-        Text(stringResource(R.string.data_stays_here), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+        val whereItGoes = when {
+            connection.connected -> stringResource(R.string.data_sent_to_server, connection.host.orEmpty())
+            connection.enrolled -> stringResource(R.string.data_disconnected)
+            else -> stringResource(R.string.data_stays_here)
+        }
+        Text(whereItGoes, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
     }
 }
 
@@ -173,14 +236,35 @@ private fun ChecksCard(health: Health, onAllowBattery: () -> Unit) {
 }
 
 @Composable
-private fun PhoneCard(health: Health) {
+private fun PhoneCard(health: Health, device: WireDevice) {
     Section(stringResource(R.string.section_phone)) {
         val phone = health.phone
+        val context = LocalContext.current
         Fact("Model", "${phone.manufacturer} ${phone.model}")
         Fact("Android", "${phone.androidRelease} (API ${phone.sdk})")
         Fact("Security update", phone.securityPatch)
         Fact("Boot count", health.bootCount?.toString() ?: "unavailable")
         Fact("Last restart", formatTime(health.lastBootAt))
+        val percent = device.batteryPercent
+        Fact(
+            stringResource(R.string.phone_battery),
+            when {
+                percent == null -> stringResource(R.string.unknown)
+                device.charging == true -> stringResource(R.string.phone_battery_charging, percent)
+                else -> stringResource(R.string.phone_battery_value, percent)
+            },
+        )
+        val free = device.storageFreeBytes
+        val total = device.storageTotalBytes
+        Fact(
+            stringResource(R.string.phone_storage),
+            if (free == null || total == null) {
+                stringResource(R.string.unknown)
+            } else {
+                stringResource(R.string.phone_storage_value, Formatter.formatShortFileSize(context, free), Formatter.formatShortFileSize(context, total))
+            },
+        )
+        Fact(stringResource(R.string.phone_time_zone), device.timezone)
     }
 }
 

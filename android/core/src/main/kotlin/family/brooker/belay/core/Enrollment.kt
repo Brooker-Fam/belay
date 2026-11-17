@@ -7,6 +7,38 @@ import java.nio.charset.StandardCharsets
 /** The two things a phone needs to enroll: the server and a one-time code. */
 data class EnrollTarget(val server: String, val code: String)
 
+/**
+ * Why an enrollment didn't work, so the screen can say it plainly and provision.sh can
+ * print it. [code] is what `provision.sh` shows.
+ */
+enum class EnrollProblem(val code: String) {
+    /** Not an https address (or, in debug builds, the emulator's host over http). */
+    BAD_SERVER("bad_server"),
+
+    /** Not 8 characters of Crockford base32. */
+    BAD_CODE("bad_code"),
+
+    /** The server's `invalid_code`: mistyped, already used, or expired. */
+    CODE_REFUSED("invalid_code"),
+    RATE_LIMITED("rate_limited"),
+
+    /** No connection: the address is wrong, the server is down, or the phone is offline. */
+    UNREACHABLE("unreachable"),
+
+    /** Something answered, but not like a Belay server. */
+    NOT_BELAY("not_belay"),
+
+    /** A Belay server refused the request itself (a bug on one side). */
+    REFUSED("refused"),
+    SERVER_ERROR("server_error"),
+
+    /** Connected to a server already: only the parent (adb) can move the phone. */
+    ALREADY_CONNECTED("already_connected"),
+
+    /** Something failed on the phone itself, such as storing the token. */
+    PHONE_ERROR("phone_error"),
+}
+
 object Enrollment {
     const val CODE_LENGTH = 8
 
@@ -51,6 +83,16 @@ object Enrollment {
         }
         val port = if (uri.port == -1) "" else ":${uri.port}"
         return "$scheme://$host$port"
+    }
+
+    /** What an error answer from `POST /api/v1/enroll` means (docs/protocol.md, "Errors"). */
+    fun problemFor(status: Int, error: String?): EnrollProblem = when {
+        status == 400 && error == "invalid_code" -> EnrollProblem.CODE_REFUSED
+        status == 429 -> EnrollProblem.RATE_LIMITED
+        status >= 500 -> EnrollProblem.SERVER_ERROR
+        // A wrong address answers with a page that isn't the device API.
+        status == 404 || status == 405 || error == null -> EnrollProblem.NOT_BELAY
+        else -> EnrollProblem.REFUSED
     }
 
     /** Parses `belay://enroll?server=…&code=…` (docs/protocol.md, "Enrollment link"). */

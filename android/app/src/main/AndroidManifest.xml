@@ -28,11 +28,19 @@
         android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"
         tools:ignore="BatteryLife" />
 
-    <!-- Phase 0 makes no network calls. These two are declared now so the Phase 0 tests on
-         the real phone (Play Protect, pre-granting by policy) cover the permissions the
-         Phase 1 agent will have when it talks to the family's own server. -->
+    <!-- Talking to the family's own server, and only that (sync/DeviceApi.kt). A server on
+         the home network needs ACCESS_LOCAL_NETWORK (targetSdk 37), granted by policy. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- Only to scan the enrollment QR code, and only if the person scanning allows it:
+         never granted by policy, and denied by policy whenever the enrollment screen is
+         closed (enroll/CameraGate.kt). Typing the code works without it. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
 
     <application
         android:name=".BelayApp"
@@ -61,6 +69,23 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Connect to a Belay server: scan its QR code or type it. Only Belay opens it. -->
+        <activity
+            android:name=".ui.EnrollActivity"
+            android:exported="false"
+            android:parentActivityName=".ui.MainActivity" />
+
+        <!-- provision.sh enrolls the phone through this receiver. Exported, but only senders
+             holding WRITE_SECURE_SETTINGS (the adb shell; ordinary apps can't) can reach it. -->
+        <receiver
+            android:name=".EnrollReceiver"
+            android:exported="true"
+            android:permission="android.permission.WRITE_SECURE_SETTINGS">
+            <intent-filter>
+                <action android:name="family.brooker.belay.ENROLL" />
+            </intent-filter>
+        </receiver>
 
         <!-- Android 12+ managed provisioning (QR code, NFC, zero-touch). Only the system,
              which holds BIND_DEVICE_ADMIN, can start these. -->

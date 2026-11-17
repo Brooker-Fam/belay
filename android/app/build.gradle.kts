@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.ksp)
 }
 
 // Release signing.
@@ -29,8 +30,8 @@ android {
         applicationId = "family.brooker.belay"
         minSdk = 31
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.0.1-phase0"
+        versionCode = 2
+        versionName = "0.1.0-phase1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -78,6 +79,11 @@ android {
     }
 }
 
+// Room writes each schema version here (checked in), for future migrations.
+ksp {
+    arg("room.schemaLocation", layout.projectDirectory.dir("schemas").asFile.path)
+}
+
 dependencies {
     implementation(project(":core"))
 
@@ -92,6 +98,15 @@ dependencies {
     debugImplementation(libs.compose.ui.tooling)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
+    implementation(libs.androidx.datastore.preferences)
+    implementation(libs.okhttp)
+    implementation(libs.camerax.camera2)
+    implementation(libs.camerax.lifecycle)
+    implementation(libs.camerax.view)
+    implementation(libs.zxing.core)
 
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.ext.junit)
