@@ -9,8 +9,8 @@ import family.brooker.belay.core.screentime.KidText
 import family.brooker.belay.core.screentime.RelativeDay
 import java.time.DayOfWeek
 import java.time.LocalTime
-import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
+import java.util.Date
 import java.util.Locale
 
 /**
@@ -97,10 +97,15 @@ class KidWords(private val context: Context, private val label: (String) -> Stri
         }
     }
 
-    /** A time of day in the phone's 12- or 24-hour format: "9:00 PM", "21:00". */
+    /**
+     * A time of day in the phone's 12- or 24-hour format and its language: "9:00 PM", "21:00".
+     * ICU's own formatter, from a skeleton: a localized pattern can hold symbols java.time on
+     * older Androids doesn't read. The time is a wall time, so it's formatted in UTC.
+     */
     fun time(time: LocalTime): String {
-        val pattern = DateFormat.getBestDateTimePattern(locale, if (DateFormat.is24HourFormat(context)) "Hm" else "hma")
-        return DateTimeFormatter.ofPattern(pattern, locale).format(time)
+        val format = android.icu.text.DateFormat.getInstanceForSkeleton(if (DateFormat.is24HourFormat(context)) "Hm" else "hm", locale)
+        format.timeZone = android.icu.util.TimeZone.GMT_ZONE
+        return format.format(Date(time.toSecondOfDay() * 1000L))
     }
 
     /** "every day", "Monday to Friday", "Saturday and Sunday", "Monday, Wednesday and Friday". */
