@@ -100,7 +100,3 @@ export function issueCommand(ctx: PolicyContext, deviceId: string, kind: Command
     return { command, already: false };
   });
 }
-
-export const COMMAND_WORDS: Record<CommandKind, string> = {
-  remove_other_users: "remove other users and profiles",
-};
