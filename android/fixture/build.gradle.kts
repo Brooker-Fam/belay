@@ -1,6 +1,7 @@
 // A tiny app for the instrumented test in :app (FixtureEventsInstrumentedTest): installing
 // it, updating it and removing it must put INSTALLED, UPDATED and REMOVED events in Belay's
-// outbox. Two versions as product flavors; no code, no permissions, a made-up name.
+// outbox. Two versions as product flavors; no permissions, a made-up name, and (Phase 3) one
+// blank screen with a launcher icon, so screen time can count it and pause it.
 //
 //   ./gradlew :fixture:assembleV1Debug :fixture:assembleV2Debug
 //   adb push fixture/build/outputs/apk/v1/debug/fixture-v1-debug.apk /data/local/tmp/belay-fixture-v1.apk
