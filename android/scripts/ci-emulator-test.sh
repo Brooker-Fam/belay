@@ -328,6 +328,11 @@ fi
 out="$(ash am instrument -w "$TEST_PKG/androidx.test.runner.AndroidJUnitRunner")"
 printf '%s\n' "$out"
 grep -q '^OK (' <<<"$out" || die "instrumented tests failed"
+# EnforcementInstrumentedTest sets a global proxy from the shell for a few seconds (platform
+# notes H2): none may be left for the steps below, which talk to the server.
+proxy_host="$(ash settings get global global_http_proxy_host | tr -d '[:space:]')"
+[ -z "$proxy_host" ] || [ "$proxy_host" = "null" ] || die "the instrumented tests left a global proxy behind" "$proxy_host"
+echo "no global proxy left behind"
 
 # `am instrument` force-stops Belay before and after the tests (AOSP 17
 # ActivityManagerService: "start instr", "finished inst"). That also cancels its jobs and
