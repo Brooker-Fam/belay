@@ -25,6 +25,8 @@ schemas in `server/src/device/schemas.ts`. Change all three together.
 | `POST /api/v1/checkin` | 32 KB |
 | `POST /api/v1/inventory` | 4 MB, at most 5000 packages |
 | `POST /api/v1/events` | 512 KB, at most 1000 events |
+| `GET /api/v1/policy` | (no body) |
+| `POST /api/v1/requests` | 128 KB, at most 100 requests |
 
 Errors: `{"error": "<code>", "error_description": "<words>"}` with
 
@@ -79,7 +81,9 @@ Every 2 hours, and when the agent starts.
 { "server_time": 1794867161711, "policy": { "version": 0 } }
 ```
 
-`policy` is empty in Phase 1; Phase 2 uses the same call.
+From Phase 2 the answer carries the whole current [Policy](#policy) (Phase 1 servers sent
+`{"version": 0}`, which enforces nothing). The phone also reports what it enforces in
+`status.enforcement`.
 
 ## `POST /api/v1/inventory`
 
@@ -119,6 +123,62 @@ Sent as soon as a change is found, from the agent's outbox.
 { "server_time": 1794867161711, "accepted": 1, "duplicates": 0 }
 ```
 
+## `GET /api/v1/policy?have=<version>&wait=<seconds>`
+
+Phase 2. How a parent's change reaches the phone in seconds. Belay's foreground service
+holds this request open in a loop.
+
+- `have`: the policy version the phone has (`-1` or left out: none).
+- `wait`: how long the server may hold the request, 0 to 55 seconds (default 0).
+
+The server answers `200 {"server_time", "policy": {…Policy…}}` at once when its version
+differs from `have`; otherwise it waits up to `wait` seconds for a change and answers
+`204` with no body if none came. The phone asks again right away after a `200` or `204`,
+and backs off after errors like any other call. The check-in answer carries the same
+policy, as the fallback.
+
+## `POST /api/v1/requests`
+
+Phase 2. Something the kid asks a parent for, from Belay's screen.
+
+```json
+{ "requests": [ { …Request… } ] }
+```
+→ `200`
+```json
+{ "server_time": 1794867161711, "accepted": 1 }
+```
+
+Idempotent by `id`: sending a request again updates its `reason` while it's still
+pending. When a new app is suspended, Belay makes its request at once (without a reason),
+so the parent sees it even if the kid never opens Belay. The answers come back in the
+policy's `requests`, which Belay shows the kid.
+
+## Enforcement rules (both sides)
+
+- **Never blocked, whatever the policy says:** Belay itself, the phone app and anything
+  that places calls (the default dialer, `com.android.phone`, telecom), emergency apps,
+  the default SMS app (texting 988), the home screen, System UI, Settings, and Android's
+  own system packages. 911 and 988 always work. A policy that names one of them is
+  ignored for it, and Belay reports the problem.
+- **New apps** (`new_apps: ask`): a user app (not a system app) without a decision is
+  suspended the moment Belay sees it install, and stays suspended until the policy says
+  `allowed`. There's no pre-install hook, so an app can run for a moment before that.
+  When a parent first turns `ask` on, the server records every user app already on the
+  phone as `allowed`, so nothing the kid already has stops working by surprise.
+- **Blocked** apps are hidden and suspended (`setApplicationHidden`: suspended apps that
+  have run before can keep working in the background). System apps can be blocked too.
+- **Paused**: every launchable app but the never-blocked ones is suspended until
+  `pause.until` or until a parent resumes it.
+- **`factory_reset` and `debugging`** can lock a phone for good. The server only sets them
+  when a parent turns them on, with a warning, on the parent page; AI clients can't.
+  Debug builds of Belay never apply them. `maintenance_until` lifts `debugging` so adb
+  works for repairs.
+- **Offline**, the phone keeps enforcing the last policy it got. Belay stores it.
+- **Tightening vs. loosening:** an AI client may tighten directly (block an app, pause
+  the phone). Anything that loosens (approve, unblock, resume, lift a restriction) is
+  only a proposal until a parent approves it on the parent page.
+
 ## Objects
 
 **Event**
@@ -150,6 +210,41 @@ Sent as soon as a change is found, from the agent's outbox.
 | `installer` | `{installing?, initiating?, originating?, update_owner?, package_source?}` | raw `InstallSourceInfo` |
 | `permissions` | string[] | sensitive permissions it holds, from: `camera` `microphone` `location` `contacts` `sms` `call_log` `photos_media` `nearby_devices` `notification_access` `accessibility` `device_admin` |
 
+**Policy** (server → phone; every field has a default that enforces nothing)
+
+| Field | Type | |
+|---|---|---|
+| `version` | int | increases with every change, per phone |
+| `issued_at` | int | |
+| `apps` | `{new_apps: "allow"\|"ask", decisions: [{package, state: "allowed"\|"blocked"}]}` | |
+| `pause` | `{until?, note?}`? | null: not paused; `until` null: until a parent resumes |
+| `restrictions` | `{safe_boot, add_user, unknown_sources, config_vpn, config_private_dns, config_date_time, config_default_apps, modify_accounts, sim, factory_reset, debugging}`, all bool | true: the kid can't (see the rules above for the last two) |
+| `web` | `{private_dns?, chrome?, hide_browsers}` | `private_dns`: a host like `family-filter-dns.cleanbrowsing.org`; `chrome`: `{incognito, safe_search, youtube_restrict: "off"\|"moderate"\|"strict", safe_sites, allow_downloads, url_allowlist?, url_blocklist}` |
+| `maintenance_until` | int? | adb works until then |
+| `frp_accounts` | string[] | Google account ids for factory reset protection |
+| `support_message` | string? | the parent's words for blocked-app screens |
+| `requests` | `[{id, status: "pending"\|"approved"\|"declined"\|"talk", note?, answered_at?, answered_by?}]` | the kid's requests of the last 30 days |
+
+**Request** (phone → server)
+
+| Field | Type | |
+|---|---|---|
+| `id` | string | UUID made on the phone |
+| `kind` | `app` | |
+| `package` | string | |
+| `label` | string | untrusted |
+| `reason` | string? | the kid's own words, at most 500 characters: untrusted |
+| `asked_at` | int | |
+
+**Enforcement** (in Device, from Phase 2)
+
+| Field | Type | |
+|---|---|---|
+| `policy_version` | int | the version applied |
+| `applied_at` | int? | |
+| `suspended_count` | int | apps held suspended or hidden now |
+| `problems` | string[] | Belay's own words for what it couldn't do, at most 20 of 200 characters |
+
 **Device** (facts and the agent's own health; nothing about the kid's content)
 
 | Field | Type |
@@ -165,6 +260,7 @@ Sent as soon as a change is found, from the agent's outbox.
 | `charging` | bool? |
 | `storage_free_bytes`, `storage_total_bytes` | int? |
 | `health` | Health |
+| `enforcement` | Enforcement? (Phase 2) |
 
 **Health**
 

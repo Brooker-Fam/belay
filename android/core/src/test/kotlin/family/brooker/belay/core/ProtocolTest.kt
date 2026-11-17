@@ -117,6 +117,50 @@ class ProtocolTest {
     }
 
     @Test
+    fun `a Phase 1 policy enforces nothing`() {
+        val policy = Wire.json.decodeFromString(CheckinResponse.serializer(), """{"server_time":1,"policy":{"version":0}}""").policy
+        assertEquals(WireNewApps.ALLOW, policy.apps.newApps)
+        assertEquals(null, policy.pause)
+        assertFalse(policy.restrictions.factoryReset || policy.restrictions.debugging || policy.restrictions.safeBoot)
+        assertEquals(null, policy.web.privateDns)
+    }
+
+    @Test
+    fun `a Phase 2 policy parses, with the server's snake_case names`() {
+        val json = """{"server_time":5,"policy":{"version":7,"issued_at":4,
+            "apps":{"new_apps":"ask","decisions":[{"package":"com.example.chat","state":"blocked"}]},
+            "pause":{"until":null,"note":"Dinner"},
+            "restrictions":{"safe_boot":true,"add_user":true,"unknown_sources":true,"config_vpn":true,
+              "config_private_dns":true,"config_date_time":true,"config_default_apps":true,
+              "modify_accounts":false,"sim":false,"factory_reset":false,"debugging":false},
+            "web":{"private_dns":"family-filter-dns.cleanbrowsing.org","chrome":{"incognito":false,"safe_search":true,
+              "youtube_restrict":"strict","safe_sites":true,"allow_downloads":false,"url_allowlist":null,"url_blocklist":[]},
+              "hide_browsers":false},
+            "maintenance_until":null,"frp_accounts":[],"support_message":"Ask a parent",
+            "requests":[{"id":"request-0001","status":"talk","note":"Let's talk at dinner","answered_at":3,"answered_by":"Sam"}]}}"""
+        val policy = Wire.json.decodeFromString(PolicyResponse.serializer(), json).policy
+        assertEquals(7, policy.version)
+        assertEquals(WireNewApps.ASK, policy.apps.newApps)
+        assertEquals(WireAppState.BLOCKED, policy.apps.decisions.single().state)
+        assertEquals("Dinner", policy.pause?.note)
+        assertTrue(policy.restrictions.safeBoot)
+        assertEquals("family-filter-dns.cleanbrowsing.org", policy.web.privateDns)
+        assertEquals("strict", policy.web.chrome?.youtubeRestrict)
+        assertEquals(WireRequestStatus.TALK, policy.requests.single().status)
+    }
+
+    @Test
+    fun `a request uses the names the server expects`() {
+        val json = Wire.json.encodeToString(
+            RequestsRequest.serializer(),
+            RequestsRequest(listOf(WireRequest("request-0001", WireRequestKind.APP, "com.example.chat", "Chatter Box", "My friends use it", T0))),
+        )
+        val request = (Json.parseToJsonElement(json).jsonObject["requests"] as kotlinx.serialization.json.JsonArray).single().jsonObject
+        assertEquals(setOf("id", "kind", "package", "label", "reason", "asked_at"), request.keys)
+        assertEquals("\"app\"", request["kind"].toString())
+    }
+
+    @Test
     fun `responses with fields the agent doesn't know still parse`() {
         val response = Wire.json.decodeFromString(
             CheckinResponse.serializer(),

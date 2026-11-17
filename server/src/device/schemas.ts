@@ -12,6 +12,13 @@ export const LIMITS = {
   maxPackages: 5000,
   maxEvents: 1000,
   maxLabel: 200,
+  requestsBytes: 128 * 1024,
+  maxRequests: 100,
+  maxReason: 500,
+  maxProblems: 20,
+  maxProblem: 200,
+  /** Longest a policy long-poll is held, in seconds. */
+  maxWaitSeconds: 55,
 } as const;
 
 const time = z.int().min(0);
@@ -108,6 +115,15 @@ export const Health = z.strictObject({
 });
 export type Health = z.infer<typeof Health>;
 
+/** Phase 2: which policy the phone enforces, and what it couldn't (Belay's own words). */
+export const Enforcement = z.strictObject({
+  policy_version: z.int().min(0),
+  applied_at: time.nullish(),
+  suspended_count: z.int().min(0).optional(),
+  problems: z.array(text(LIMITS.maxProblem)).max(LIMITS.maxProblems).optional(),
+});
+export type Enforcement = z.infer<typeof Enforcement>;
+
 export const Device = z.strictObject({
   manufacturer: text(),
   model: text(),
@@ -126,6 +142,7 @@ export const Device = z.strictObject({
   storage_free_bytes: z.int().min(0).nullish(),
   storage_total_bytes: z.int().min(0).nullish(),
   health: Health,
+  enforcement: Enforcement.nullish(),
 });
 export type Device = z.infer<typeof Device>;
 
@@ -140,3 +157,80 @@ export const InventoryRequest = z.strictObject({
 });
 export type InventoryRequest = z.infer<typeof InventoryRequest>;
 export const EventsRequest = z.strictObject({ events: z.array(Event).max(LIMITS.maxEvents) });
+
+// ── Phase 2 ─────────────────────────────────────────────────────────────
+
+/** Something the kid asks a parent for. Sending the same id again updates a pending request's reason. */
+export const Request = z.strictObject({
+  id: clientId,
+  kind: z.enum(["app"]),
+  package: packageName,
+  label: text(LIMITS.maxLabel),
+  reason: text(LIMITS.maxReason).nullish(),
+  asked_at: time,
+});
+export type Request = z.infer<typeof Request>;
+export const RequestsRequest = z.strictObject({ requests: z.array(Request).min(1).max(LIMITS.maxRequests) });
+
+export const PolicyQuery = z.strictObject({
+  /** The version the phone has; the server answers at once if it has a different one. */
+  have: z.coerce.number().int().min(-1).optional(),
+  /** Seconds to hold the request open for a change (long-poll); 0 answers at once. */
+  wait: z.coerce.number().int().min(0).max(LIMITS.maxWaitSeconds).optional(),
+});
+
+/**
+ * The policy the server sends (docs/protocol.md, "Policy"). The agent's Protocol.kt mirrors
+ * it; every field has a default there that enforces nothing.
+ */
+export const RequestStatus = z.enum(["pending", "approved", "declined", "talk"]);
+export const Policy = z.strictObject({
+  version: z.int().min(0),
+  issued_at: time,
+  apps: z.strictObject({
+    new_apps: z.enum(["allow", "ask"]),
+    decisions: z.array(z.strictObject({ package: packageName, state: z.enum(["allowed", "blocked"]) })),
+  }),
+  pause: z.strictObject({ until: time.nullable(), note: text(500).nullable() }).nullable(),
+  restrictions: z.strictObject({
+    safe_boot: z.boolean(),
+    add_user: z.boolean(),
+    unknown_sources: z.boolean(),
+    config_vpn: z.boolean(),
+    config_private_dns: z.boolean(),
+    config_date_time: z.boolean(),
+    config_default_apps: z.boolean(),
+    modify_accounts: z.boolean(),
+    sim: z.boolean(),
+    factory_reset: z.boolean(),
+    debugging: z.boolean(),
+  }),
+  web: z.strictObject({
+    private_dns: text(253).nullable(),
+    chrome: z
+      .strictObject({
+        incognito: z.boolean(),
+        safe_search: z.boolean(),
+        youtube_restrict: z.enum(["off", "moderate", "strict"]),
+        safe_sites: z.boolean(),
+        allow_downloads: z.boolean(),
+        url_allowlist: z.array(text(500)).nullable(),
+        url_blocklist: z.array(text(500)),
+      })
+      .nullable(),
+    hide_browsers: z.boolean(),
+  }),
+  maintenance_until: time.nullable(),
+  frp_accounts: z.array(text(64)),
+  support_message: text(200).nullable(),
+  requests: z.array(
+    z.strictObject({
+      id: clientId,
+      status: RequestStatus,
+      note: text(1000).nullable(),
+      answered_at: time.nullable(),
+      answered_by: text(60).nullable(),
+    }),
+  ),
+});
+export type Policy = z.infer<typeof Policy>;
