@@ -1,5 +1,6 @@
 package family.brooker.belay.core
 
+import family.brooker.belay.core.location.WireFix
 import family.brooker.belay.core.screentime.AgreementAnswer
 import family.brooker.belay.core.screentime.MoreTime
 import family.brooker.belay.core.screentime.ScreenTimeWireLimits
@@ -10,13 +11,15 @@ import kotlinx.serialization.Serializable
  * Something the kid asked a parent for, as the phone keeps it (data category
  * [DataCategories.REQUESTS]). The server keeps the same id; its answer comes back in the
  * policy's `requests`. Phase 3 adds two [kind]s, each with its own fields: more time for a
- * limit today, and the kid's answer to the family agreement.
+ * limit today, and the kid's answer to the family agreement. Phase 7 adds "I need help" (with
+ * where the phone is, only when the kid shares it) and "Talk to my parent", and lets the kid
+ * change the words of a pending request or take it back ([withdrawnAt]).
  */
 @Serializable
 data class KidRequest(
     /** UUID made on the phone. */
     val id: String,
-    /** The app (`app`), the app the kid was in (`more_time`, or "" for none), or "" (`agreement`). */
+    /** The app (`app`), the app the kid was in (`more_time`, or "" for none), or "" (the other kinds). */
     val packageName: String,
     /** The app's name, from its developer: untrusted. "" when there's no app. */
     val label: String,
@@ -35,12 +38,24 @@ data class KidRequest(
     val version: Int? = null,
     /** agreement: "I agree" or "I want to talk about it". */
     val answer: WireAgreementAnswer? = null,
+    /** Phase 7, help: where the phone was, only when the kid chose to share it. */
+    val location: WireFix? = null,
+    /** Phase 7: when the kid took it back, while it was pending. */
+    val withdrawnAt: Long? = null,
+    /** Phase 7, help: the kid asked to share where the phone is, and Belay is finding it. */
+    val sharing: Boolean = false,
 )
 
-/** A request with the server's answer, if it has one yet. */
-data class AnsweredRequest(val request: KidRequest, val answer: WireRequestAnswer?) {
-    /** Still open: not answered, or only "pending". Sending again updates the reason. */
-    val open: Boolean get() = answer == null || answer.status == WireRequestStatus.PENDING
+/**
+ * A request with the server's answer, if it has one yet, and (Phase 7, help) when a parent saw
+ * it ([seen], from the policy's `help_seen`).
+ */
+data class AnsweredRequest(val request: KidRequest, val answer: WireRequestAnswer?, val seen: WireHelpSeen? = null) {
+    /** The kid took it back (Phase 7). */
+    val withdrawn: Boolean get() = request.withdrawnAt != null
+
+    /** Still open: not answered, or only "pending", and not taken back. Sending again updates the reason. */
+    val open: Boolean get() = !withdrawn && (answer == null || answer.status == WireRequestStatus.PENDING)
 
     /** A Phase 2 request for an app (not more time or an agreement answer). */
     val forApp: Boolean get() = request.kind == WireRequestKind.APP
@@ -54,10 +69,65 @@ object Requests {
     fun cleanReason(text: String?): String? =
         text?.trim()?.take(WireLimits.MAX_REASON)?.takeIf { it.isNotEmpty() }
 
-    /** Each request with the policy's answer for it, newest first. */
+    /** Each request with the policy's answer for it, and when a parent saw it (help), newest first. */
     fun answered(requests: List<KidRequest>, policy: WirePolicy?): List<AnsweredRequest> {
         val answers = policy?.requests.orEmpty().associateBy { it.id }
-        return requests.sortedByDescending { it.askedAt }.map { AnsweredRequest(it, answers[it.id]) }
+        val seen = policy?.helpSeen.orEmpty().groupBy { it.requestId }.mapValues { (_, all) -> all.minBy { it.at } }
+        return requests.sortedByDescending { it.askedAt }.map { AnsweredRequest(it, answers[it.id], seen[it.id]) }
+    }
+
+    /**
+     * Phase 7: "I need help", sent at once with no words needed. The kid's [reason] (optional) and
+     * [sharing] (they chose to share where the phone is, which Belay is finding) go with it.
+     */
+    fun help(reason: String?, sharing: Boolean, now: Long, newId: () -> String): KidRequest = KidRequest(
+        id = newId(),
+        packageName = "",
+        label = "",
+        reason = cleanReason(reason),
+        askedAt = now,
+        kind = WireRequestKind.HELP,
+        sharing = sharing,
+    )
+
+    /** Phase 7: "Talk to my parent", with the kid's words; null when there are none (the server needs them). */
+    fun talk(reason: String?, now: Long, newId: () -> String): KidRequest? {
+        val words = cleanReason(reason) ?: return null
+        return KidRequest(id = newId(), packageName = "", label = "", reason = words, askedAt = now, kind = WireRequestKind.TALK)
+    }
+
+    /**
+     * Phase 7: the kid changes the words of an open request [id] to [reason]: sent again (the server
+     * takes a new reason while it's pending). Null when it isn't open, or a `talk` would be left
+     * without words, or nothing changed.
+     */
+    fun edit(answered: List<AnsweredRequest>, id: String, reason: String?): KidRequest? {
+        val open = answered.firstOrNull { it.request.id == id && it.open }?.request ?: return null
+        val words = cleanReason(reason)
+        if (open.kind == WireRequestKind.TALK && words == null) return null
+        if (words == open.reason) return null
+        return open.copy(reason = words, revision = open.revision + 1)
+    }
+
+    /**
+     * Phase 7: the kid takes back the open request [id]: sent again with `withdrawn_at`, and it
+     * leaves the policy's requests. An answered one can't be taken back (null), nor an agreement
+     * answer "I agree", which the server answers as it arrives.
+     */
+    fun withdraw(answered: List<AnsweredRequest>, id: String, now: Long): KidRequest? {
+        val open = answered.firstOrNull { it.request.id == id && it.open }?.request ?: return null
+        if (open.kind == WireRequestKind.AGREEMENT && open.answer == WireAgreementAnswer.AGREE) return null
+        return open.copy(withdrawnAt = now, revision = open.revision + 1)
+    }
+
+    /**
+     * Phase 7: the help request [id] with where the phone was ([fix], reason `help`), sent again;
+     * or, with no fix, only marked as no longer finding it. Null when there's no such request.
+     */
+    fun withHelpFix(requests: List<KidRequest>, id: String, fix: WireFix?): KidRequest? {
+        val help = requests.firstOrNull { it.id == id && it.kind == WireRequestKind.HELP } ?: return null
+        if (fix == null) return help.copy(sharing = false).takeIf { help.sharing }
+        return help.copy(location = fix, sharing = false, revision = help.revision + 1)
     }
 
     /** The newest open request for the app [packageName], which sending again updates. */
@@ -163,7 +233,10 @@ object Requests {
             )
     }
 
-    /** The request as the server takes it: each kind with only its own fields. */
+    /**
+     * The request as the server takes it: each kind with only its own fields, and (Phase 7)
+     * `withdrawn_at` once the kid took it back. A help request carries its shared fix.
+     */
     fun toWire(request: KidRequest): WireRequest = when (request.kind) {
         WireRequestKind.APP -> WireRequest(
             id = request.id,
@@ -188,14 +261,20 @@ object Requests {
             askedAt = request.askedAt,
             reason = request.reason,
         )
-        // Phase 7 (the phone side builds them; the contract is here already).
-        WireRequestKind.HELP, WireRequestKind.TALK -> WireRequest(
+        WireRequestKind.HELP -> WireRequest(
             id = request.id,
-            kind = request.kind,
+            kind = WireRequestKind.HELP,
+            reason = cleanReason(request.reason),
+            askedAt = request.askedAt,
+            location = request.location,
+        )
+        WireRequestKind.TALK -> WireRequest(
+            id = request.id,
+            kind = WireRequestKind.TALK,
             reason = cleanReason(request.reason),
             askedAt = request.askedAt,
         )
-    }
+    }.copy(withdrawnAt = request.withdrawnAt)
 
     /** The outbox item id for this send of [request]: unique per send, ordered by revision. */
     fun itemId(request: KidRequest): String = "request:${request.id}:${request.revision}"
@@ -251,6 +330,9 @@ object KidRules {
 
         /** Phase 6: the recovery key opened repair access (debugging and factory reset) for a while. */
         RECOVERY_OPEN,
+
+        /** Phase 4: location is locked on (keep_on, or lost mode). */
+        LOCATION_LOCKED_ON,
         WEB_FILTER,
         NO_BROWSERS,
         CHROME_NO_INCOGNITO,
@@ -281,6 +363,7 @@ object KidRules {
         if (Lock.CONFIG_DEFAULT_APPS in locks) rules += Rule.DEFAULT_APPS_LOCKED
         if (Lock.MODIFY_ACCOUNTS in locks) rules += Rule.ACCOUNTS_LOCKED
         if (Lock.SIM in locks) rules += Rule.NO_NEW_ESIM
+        if (Lock.CONFIG_LOCATION in locks) rules += Rule.LOCATION_LOCKED_ON
         if (Lock.FACTORY_RESET in locks) rules += Rule.NO_FACTORY_RESET
         if (applied.frpAccounts != null) rules += Rule.RESET_PROTECTION
         if (Lock.DEBUGGING in locks) rules += Rule.NO_DEBUGGING
