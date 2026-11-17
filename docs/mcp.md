@@ -103,7 +103,7 @@ most 20, and each message in it counts.
 | `list_requests(device?, status?)` | What the kid asked for, with their reason and each answer: waiting, approved, declined, let's talk. Waiting first, then the last 30 days. Needs the Requests category. |
 | `get_policy(device)` | What a phone enforces now, in words, with the rules' version and whether the phone has applied it; blocked and waiting apps; proposals waiting for a parent. |
 | `block_app(device, package, note?)` | Blocks an app at once (tightening). It refuses the apps the phone never blocks, so 911 and 988 always work: Belay itself, the dialer and the services that place calls, the texting app, the keyboard, the home screen, emergency and safety apps, System UI, Settings, and anything else the phone reports it never blocks. An app that isn't on the phone yet can be blocked ahead of time, but AI apps may have at most 50 of those per phone; a parent clears them on the phone's page. |
-| `pause_phone(device, minutes?, note?)` | Pauses the phone at once, for some minutes or until a parent resumes it; the note is shown to the kid. It can't shorten a pause already running. |
+| `pause_phone(device, minutes?, note?)` | Pauses the phone at once, for some minutes or until a parent resumes it; the note is shown to the kid. It can't shorten a pause already running, and against one at least as long it changes nothing, its note included. |
 | `propose_change(device, change, reason)` | Proposes loosening a rule (`allow_app` with a package, `resume`, `lift_restriction` with a restriction, `web_filter_off`, `new_apps_allow`) for a parent to approve on the parent page. It changes nothing itself. |
 
 The read tools are marked read-only; `block_app` and `pause_phone` are marked destructive

@@ -92,6 +92,7 @@ function what(e: AuditEntry): string {
     case "policy.new_apps":
       return d.mode === "ask" ? `made new apps wait for a parent's approval${device}` : `let new apps run without asking${device}`;
     case "phone.paused":
+      if (d.kept === true) return `asked to pause the phone${device}, which was already paused at least that long: nothing changed`;
       return `paused the phone${device}${typeof d.until === "number" ? "" : " until a parent resumes it"}`;
     case "phone.resumed":
       return `resumed the phone${device}`;

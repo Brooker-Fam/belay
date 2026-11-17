@@ -724,7 +724,11 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
       return result({
         phone: row.name,
         paused_until: done.result.until === null ? "a parent resumes it" : iso(done.result.until),
-        ...(done.result.kept ? { note: "It was already paused for longer, and that stays." } : {}),
+        ...(done.result.kept
+          ? {
+              note: `It was already paused at least that long, and that stays: nothing changed${note?.trim() ? ", and your note isn't shown on the phone (the note there stays as it was)" : ""}.`,
+            }
+          : {}),
         version: done.version,
         still_works: "The phone app and texting, so 911 and 988 always work.",
         reminder: "Only a parent can resume it early, on the parent page. To suggest that, use propose_change with kind resume.",

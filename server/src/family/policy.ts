@@ -746,7 +746,9 @@ export function clearPreDecisions(ctx: PolicyContext, deviceId: string, which: {
 
 /**
  * Pauses the phone: every app but the never-blocked ones is suspended until then (null: until
- * a parent resumes it). An AI app can only make a pause longer, never shorter.
+ * a parent resumes it). An AI app can only make a pause longer, never shorter, and its note,
+ * which the kid sees, only goes with a pause it sets or lengthens: against a pause at least as
+ * long, nothing changes (`kept`).
  */
 export function pausePhone(
   ctx: PolicyContext,
@@ -758,14 +760,18 @@ export function pausePhone(
     const current = activePause(rules, ctx.now);
     const minutes = input.minutes === null ? null : Math.min(Math.max(1, Math.round(input.minutes)), LIMITS.maxPauseMinutes);
     let until = minutes === null ? null : ctx.now + minutes * 60_000;
-    let kept = false;
-    if (who.kind === "ai" && current && (current.until === null || (until !== null && current.until > until))) {
+    const kept = who.kind === "ai" && current !== null && (current.until === null || (until !== null && current.until >= until));
+    const given = input.note !== undefined && input.note !== null ? clean(input.note, LIMITS.pauseNote) : undefined;
+    let note: string | null;
+    if (kept) {
       until = current.until;
-      kept = true;
+      note = current.note;
+    } else {
+      // Without a note of its own, an AI app's longer pause keeps the note there is.
+      note = given !== undefined ? given : who.kind === "ai" ? (current?.note ?? null) : null;
     }
-    const note = input.note !== undefined && input.note !== null ? clean(input.note, LIMITS.pauseNote) : who.kind === "ai" ? (current?.note ?? null) : null;
     rules.pause = { until, note };
-    log("phone.paused", { until, minutes, note: note ?? undefined });
+    log("phone.paused", { until, minutes, note: note ?? undefined, ...(kept ? { kept: true } : {}) });
     return { until, kept };
   });
 }

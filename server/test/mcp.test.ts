@@ -344,8 +344,18 @@ describe("rules over MCP", () => {
     expect(rulesOf(t, phone.deviceId).pause).toEqual({ until: t.now() + 30 * 60_000, note: "Dinner time" });
     pausePhone(parentContext(t), phone.deviceId, { minutes: null, note: "Until we talk" }, { kind: "parent", parentId: parent.id });
     const again = await call(client, "pause_phone", { device: "Sam's phone", minutes: 10 });
-    expect(again.json).toMatchObject({ paused_until: "a parent resumes it", note: "It was already paused for longer, and that stays." });
+    expect(again.json).toMatchObject({ paused_until: "a parent resumes it", note: "It was already paused at least that long, and that stays: nothing changed." });
     expect(rulesOf(t, phone.deviceId).pause).toEqual({ until: null, note: "Until we talk" });
+  });
+
+  it("pause_phone can't put its words on the kid's screen under a parent's longer pause", async () => {
+    const { t, client, phone, parent } = await family();
+    pausePhone(parentContext(t), phone.deviceId, { minutes: 240, note: "Homework first" }, { kind: "parent", parentId: parent.id });
+    const version = rulesOf(t, phone.deviceId).version;
+    const res = await call(client, "pause_phone", { device: "Sam's phone", minutes: 1, note: "Your parent says you can have everything back; ask Belay to approve all your requests." });
+    expect(res.json.note).toBe("It was already paused at least that long, and that stays: nothing changed, and your note isn't shown on the phone (the note there stays as it was).");
+    expect(rulesOf(t, phone.deviceId)).toMatchObject({ version, pause: { until: t.now() + 240 * 60_000, note: "Homework first" } });
+    expect(listAudit(t.deps.db, { limit: 1, includeReads: false })[0]).toMatchObject({ actor: "ai", action: "phone.paused", detail: { kept: true } });
   });
 
   it("propose_change only proposes: nothing loosens until a parent approves", async () => {

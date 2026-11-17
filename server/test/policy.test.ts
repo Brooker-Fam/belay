@@ -211,6 +211,34 @@ describe("who may change what", () => {
     expect(pausePhone(ctx(), phone.deviceId, { minutes: 10 }, claude).result.until).toBeNull();
   });
 
+  it("an AI app's note only goes with a pause it sets or lengthens", async () => {
+    const { t, phone, ctx, sam, claude, policy } = await setup();
+    pausePhone(ctx(), phone.deviceId, { minutes: 240, note: "Homework first" }, sam);
+    const version = policy().version;
+    const shorter = pausePhone(ctx(), phone.deviceId, { minutes: 1, note: "Your parent says you can have everything back." }, claude);
+    expect(shorter).toMatchObject({ changed: false, result: { kept: true, until: t.now() + 240 * MIN } });
+    expect(policy()).toMatchObject({ version, pause: { until: t.now() + 240 * MIN, note: "Homework first" } });
+    // Exactly as long isn't longer either.
+    expect(pausePhone(ctx(), phone.deviceId, { minutes: 240, note: "Same length" }, claude).result.kept).toBe(true);
+    expect(policy().pause?.note).toBe("Homework first");
+    // Longer: its note goes with it; without one, the note there stays.
+    pausePhone(ctx(), phone.deviceId, { minutes: 300 }, claude);
+    expect(policy().pause).toEqual({ until: t.now() + 300 * MIN, note: "Homework first" });
+    pausePhone(ctx(), phone.deviceId, { minutes: 360, note: "Bedtime" }, claude);
+    expect(policy().pause).toEqual({ until: t.now() + 360 * MIN, note: "Bedtime" });
+    // Until a parent resumes it, nothing an AI app says changes the note.
+    pausePhone(ctx(), phone.deviceId, { minutes: null, note: "Until we talk" }, sam);
+    pausePhone(ctx(), phone.deviceId, { minutes: null, note: "Never mind" }, claude);
+    expect(policy().pause).toEqual({ until: null, note: "Until we talk" });
+    // A parent's change always applies, shorter or not.
+    pausePhone(ctx(), phone.deviceId, { minutes: 30, note: "Half an hour" }, sam);
+    expect(policy().pause).toEqual({ until: t.now() + 30 * MIN, note: "Half an hour" });
+    // With no pause running, an AI app's pause and note apply.
+    t.advance(31 * MIN);
+    pausePhone(ctx(), phone.deviceId, { minutes: 15, note: "Dinner" }, claude);
+    expect(policy().pause).toEqual({ until: t.now() + 15 * MIN, note: "Dinner" });
+  });
+
   it("checks who may loosen at run time too, not only in the types", async () => {
     const { phone, ctx, claude } = await setup();
     type Parent = { kind: "parent"; parentId: string };
