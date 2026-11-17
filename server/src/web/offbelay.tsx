@@ -9,6 +9,7 @@ import { type Context, Hono } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { DB } from "../db.js";
 import type { Deps } from "../deps.js";
+import { callSettings } from "../family/calls/store.js";
 import { isCollected, keptAbout, keptFor, stopCollecting } from "../family/collection.js";
 import { type DeviceView, getDevice } from "../family/devices.js";
 import { cancelHandover, handOver } from "../family/offbelay/changes.js";
@@ -33,12 +34,15 @@ function blockingWords(db: DB, deviceId: string, now: number): string[] {
   const screen = phoneRules(db, deviceId).rules;
   const present = new Set(db.prepare<[string], { package: string }>("SELECT package FROM apps WHERE device_id = ? AND present = 1").all(deviceId).map((a) => a.package));
   const blocked = [...currentDecisions(db, deviceId).values()].filter((d) => d.state === "blocked" && present.has(d.package)).length;
+  const calls = callSettings(db, deviceId);
   return [
     ...(activePause(rules, now) ? ["pauses the phone"] : []),
     ...(rules.newApps === "ask" ? ["holds new apps for you"] : []),
     ...(blocked ? [`hides ${blocked === 1 ? "an app" : `${blocked} apps`} you blocked`] : []),
     ...(rules.privateDns || rules.chrome || rules.hideBrowsers ? ["filters the web"] : []),
     ...(screen.limits.length || screen.schedules.length ? ["has screen-time limits or schedules"] : []),
+    // Phase 5: Belay as the phone app, with rules that keep someone from ringing or being called.
+    ...(calls?.enabled && (calls.mode === "contacts" || calls.outgoing === "contacts" || calls.quiet) ? ["decides who can call and be called"] : []),
   ];
 }
 
