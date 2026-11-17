@@ -74,8 +74,10 @@ home network; see docs/platform-notes.md.)
 | `BELAY_BACKUP_PASSPHRASE` | none | Encrypts the daily backups with this passphrase, at least 15 characters ([Encrypted backups](#encrypted-backups)). Without it they're plain SQLite files. Prefer the `_FILE` form. |
 | `BELAY_BACKUP_PASSPHRASE_FILE` | none | A file that holds the passphrase instead, like a Docker secret (`/run/secrets/belay_backup`); a final new line is ignored. Set one of the two, not both. |
 
-The family's timezone, the silent threshold, what AI apps may read, how long screen time is
-kept, notifications and the daily summary are set on the Settings page, not here.
+The family's timezone, the silent threshold, what AI apps may read, how long screen time and
+where the phone was are kept, which map site "Open in a map" goes to, the numbers on the
+kid's emergency card, notifications and the daily summary are set on the Settings page, not
+here.
 
 ## Notifications
 
@@ -96,6 +98,17 @@ same change is proposed again while it waits, and at most six notices an hour ab
 phone: past that, requests and proposals still show on the parent page. Also when something
 is urgent with the server itself ([Health monitoring](#health-monitoring)): at once, then at
 most once a day while it lasts.
+
+**"I need help"** (Phase 7) is urgent: each help request goes to every parent's browsers at
+once, apart from the six-an-hour limit (its own limit is 20 an hour per phone, for a flood),
+with Web Push's high urgency, and stays on the screen until the parent acts on it. It says
+`Sam's phone needs help: "I'm lost"` (the kid's words, if any, and whether they shared where
+the phone is: never where it is) and opens the Requests page. It goes again when the kid adds
+words or where the phone is to a help request no parent has seen yet.
+
+**Arrivals and departures** (Phase 4), for a place a parent asked to hear about:
+`Sam's phone arrived at School`, with the time when the phone sent it late, at most one per
+place and direction every 10 minutes. It opens the phone's Location page.
 
 **The daily summary:** Settings → Notifications → Daily summary. Off by default: each
 parent turns it on for themselves, and the hour (7 PM by default, in the family's timezone)
@@ -189,6 +202,27 @@ docker compose exec belay node dist/cli.js answer "Sam's phone" <request id> app
 changes it; `schedule` adds a custom schedule (`--allow` lists apps that stay open, comma
 separated; times are the phone's). Times like `21:00` to `07:00` end the next day.
 
+And for location and the kid's side (Phases 4 and 7), as the phone's Location and help page
+sets them:
+
+```bash
+docker compose exec belay node dist/cli.js location "Sam's phone" --mode periodic --every 30 --hours 07:00-21:00 --keep-on on   # or --mode off|on_demand; --provider gps|fused; --fallback on|off; --hours all
+docker compose exec belay node dist/cli.js place "Sam's phone" --name School --lat 40.1 --lng -73.2 --radius 150 --notify arrive,leave   # prints only its id
+docker compose exec belay node dist/cli.js place "Sam's phone" --remove <id>
+docker compose exec belay node dist/cli.js locate-now "Sam's phone"            # a check now; prints only the command's id, and doesn't wait
+docker compose exec belay node dist/cli.js lost "Sam's phone" --message "This phone is lost. Please call" --number 555-0100
+docker compose exec belay node dist/cli.js lost "Sam's phone" --off
+docker compose exec belay node dist/cli.js help-seen "Sam's phone" <request id>   # "I've seen it"; --note "…" goes to the phone
+docker compose exec belay node dist/cli.js parent-number "Sam's phone" --name Mom --number +15555550100   # or --remove Mom
+docker compose exec belay node dist/cli.js kid-number "Sam's phone" +15555550123   # for "Call"; --clear
+```
+
+`location` changes only what it's given (at least one flag). `place` with a name the phone
+already has changes that place, keeping its id; `--notify` is `arrive`, `leave` or both (none
+by default). `locate-now` refuses while location is off. `parent-number` gives the phone its
+own list for the emergency card, starting from the family's numbers, and changes the number of
+the one with that name.
+
 They're logged as the server's ("The server" on the Activity page), and a running server
 passes them to the phone within a second or two. `status --json` gives each phone's
 `policy_version` (the server's), `enforcement` (what the phone last said it applied, exactly
@@ -199,13 +233,22 @@ agreement), `agent_version_code` and `agent_signing_sha256` (as the phone report
 last_used}`: the key version the policy carries, or `null`), `commands` (the latest, with
 their results), `screen_time` (the policy's screen-time rules, or `null` while the phone has
 none) and `usage` (the days the phone sent, newest first, at most 31: `[{day, zone, as_of,
-screen_minutes, apps: [{package, minutes, opens}]}]`). Hardening (factory reset, debugging,
-reset protection) can only be turned on on the parent page.
+screen_minutes, apps: [{package, minutes, opens}]}]`). Phase 4 adds `location` (the policy's,
+`null` until a parent first sets it), `fixes` (newest first, at most 50: `[{id, at, lat, lng,
+accuracy_m, provider, reason, command_id, mock}]`) and `place_events` (newest first, at most
+50: `[{id, place_id, place_name, kind, at, fix_id}]`), their times as the phone sent them
+(milliseconds since the epoch). Phase 7 adds `help` and `talk` entries to `requests` (help
+ones with `seen_at`, in the family's timezone, `seen_by`, and `location`, the fix the kid
+shared: `{id, at, lat, lng, accuracy_m, mock}` or `null`), `withdrawn_at` (as the phone sent
+it) on any request the kid withdrew, and the policy's `help_seen`, `parent_numbers` and
+`ai_reads`. Hardening (factory reset, debugging, reset protection) can only be turned on on
+the parent page.
 
 For scripts: `agent-add` prints only the APK's SHA-256 (lowercase) on stdout,
 `recovery-key` prints only the key, grouped like `7KD2M-8Q4ZX-1HNP3-RT6VW-B9CF0G`, and
-`limit`, `schedule` and `lock-now` print only the id of the limit, schedule or command;
-everything else goes to stderr. They exit 1 with a reason on stderr when they can't.
+`limit`, `schedule`, `lock-now`, `place` and `locate-now` print only the id of the limit,
+schedule, place or command; everything else goes to stderr. They exit 1 with a reason on
+stderr when they can't.
 
 Outside Docker, use `npm run cli -- <command>` from `server/`.
 
@@ -306,6 +349,53 @@ deletes older days, and the extra time given for them. When a phone that measure
 limit reports it can't count, its page and the daily summary say so ("Usage access for Belay
 is turned off, so Belay can't count screen time", and what that does to the apps with a
 limit).
+
+## Location and the kid's side (Phases 4 and 7)
+
+Location is off until a parent turns it on, on the phone's **Location and help** page: until
+then the policy's `location` is `null`, and Belay holds no location permission on the phone.
+Only a parent changes any of it, there or with the CLI; AI apps can't, and can't propose it.
+
+- **Sharing:** off; on demand (only when a parent checks); or periodic (every 15 to 120
+  minutes, within hours in the phone's time if the family wants, with arrivals and departures
+  for its places). Keep location on stops the kid turning it off. The provider is GPS only
+  (the phone's own receiver: private, slower indoors) or Android's combined provider (faster
+  and indoors too, but on a Pixel it's Google's location service that answers).
+- **Where the phone is:** the last fix, described by the family's places ("At School, within
+  40 m", "1.2 km from Home"), worked out on the server, with how old and how accurate it is,
+  and **Open in a map**, a plain link to OpenStreetMap (or Google Maps, in Settings) that only
+  the parent's browser follows, when clicked. The server never asks a map, tile or address
+  service anything, and the page embeds no map. What Belay on the phone says (permission,
+  location on, its own words for a fix that failed) is there too, and a phone that should share
+  where it is but can't is flagged on the phone's page and in the daily summary.
+- **Check now** sends a check (`locate_now`, which lasts 2 minutes) and waits up to a minute
+  for the phone's fix, then shows it. **Checks** lists every one of the last 30 days, a
+  parent's or their AI app's: the same list the kid sees on the phone, where each check also
+  posts a notice.
+- **Places** (at most 20): a name the kid sees (at most 40 characters), a center from
+  coordinates pasted from a map or "Use where the phone is now", a radius of 50 to 1000 m,
+  and whether to tell the parents on arriving, leaving or both. They're used only in periodic
+  mode. There's no address search: it would need another company's service.
+- **Lost mode:** "This phone is lost": the lock screen shows the parent's message and a number,
+  location stays on, the phone shares where it is every 5 minutes and locks its screen once,
+  in any mode. Turning it off puts everything back.
+- **Help and the emergency card:** the kid's own number, for **Call** beside a help request (it
+  stays on the server: the phone never gets it, and AI apps never see it); and the numbers on
+  the kid's emergency card, the family's from Settings or the phone's own, at most 4.
+
+**"I need help"** comes first on the Requests page (and above the Phones page and the
+phone's page) until a parent presses **I've seen it**: what the kid wrote, where the phone
+was if they shared it, **Call** (a `tel:` link to the parent's own phone app), and "If they're
+in danger, call 911". The kid's phone then shows "Your parent saw this at 4:05 pm". **Talk to
+my parent** is answered like the agreement: "Let's talk", or "Got it". A request the kid
+withdraws leaves their phone's list; the Requests page keeps it, marked withdrawn.
+
+**Kept** (Settings, "How long Belay keeps where the phone was"), then deleted by the hourly
+clean-up: fixes shared on a schedule 7 days (1 to 30), checks 30 days (1 to 90), arrivals and
+departures 90 days (1 to 365), lost-mode fixes 7 days after lost mode ends (1 to 30; never
+while it's on), and the fix the kid shared with a help request as long as the request (until
+the phone is deleted). A fix counts from its own time, or from when it arrived if the phone's
+clock was ahead. Fixes and place events the rules didn't ask for aren't kept at all.
 
 ## Backups
 

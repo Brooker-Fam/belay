@@ -11,8 +11,10 @@ unblocking an app, resuming a paused phone, lifting a lock, turning off the web 
 letting new apps run without asking, a higher limit or a shorter schedule, moving the phone
 to another stage) is only a proposal: it waits on the parent page's Proposals page until a
 parent approves it. Nothing loosens without a parent. The AI can't answer the kid's
-requests, turn measuring screen time on or off, or touch factory reset, debugging, reset
-protection or maintenance mode, not even as a proposal.
+requests, turn measuring screen time on or off, change whether or how the phone shares where
+it is (or its places, or lost mode), or touch factory reset, debugging, reset protection or
+maintenance mode, not even as a proposal. Where the phone is stays hidden from it until a
+parent turns on the Location category in Settings.
 
 ## Connect Claude (web, desktop and mobile)
 
@@ -76,7 +78,8 @@ provider's terms. Settings → "What AI apps may read" turns each category off:
   user restrictions in force that Belay didn't set.
 - **Requests:** what the kid asks for from Belay's screen (which app, or how many more
   minutes for which limit), and why, in their own words, with each answer and the parent's
-  note. On by default.
+  note; from Phase 7, "I need help" (what they wrote, whether a parent has seen it, and
+  whether they shared where the phone was) and "Talk to my parent". On by default.
 - **Screen time** (Phase 3): how long each app was used each day (minutes and how often it
   was opened), the screen minutes in each hour, unlocks, the times Belay couldn't count and
   why, and where each limit stands today (time left, used up, on extra time). Only what the
@@ -84,9 +87,15 @@ provider's terms. Settings → "What AI apps may read" turns each category off:
 - **Stage and agreement** (Phase 3): the phone's stage, what the next one changes and how to
   get there, the family agreement, and the kid's answers to it ("I agree", or wanting to talk
   about it, and why).
+- **Location** (Phase 4), **off until a parent turns it on**: each fix the server keeps (when,
+  how accurate, its coordinates, and where it is by the family's places, their names
+  included), arrivals and departures, the fix the kid shared with a help request, and checking
+  where the phone is now (`locate_now`).
 
-Each category is on by default. One that a new version of Belay adds starts off for a
-family that had turned any category off, and Settings marks it "new" until a parent saves.
+Each category but Location is on by default. One that a new version of Belay adds starts off
+for a family that had turned any category off, and Settings marks it "new" until a parent
+saves. Location starts off for every family. The kid's phone shows which categories the AI
+app may read (the policy's `ai_reads`), under "What your parent can see".
 
 Always included: the phones' names, their status and problems ("silent for 14 hours",
 "the phone hasn't applied the rules changed 4 hours ago", or, first, that someone may be
@@ -96,15 +105,17 @@ each phone's rules (protection, pause and its note, the locked settings, the web
 Chrome's settings, maintenance mode, whether reset protection is set, whether the phone has a
 recovery key and when one was last used, and proposals waiting for a parent), and from
 Phase 3 its screen-time rules (measuring, limits, schedules, exempt apps, self-serve, extra
-time given today, the last "lock now" and how it went). Blocked and waiting apps are listed
-only with the Apps category.
+time given today, the last "lock now" and how it went), and from Phase 4 whether it shares
+where it is (off, on demand, or how often), and whether it's in lost mode: never where it is.
+Blocked and waiting apps are listed only with the Apps category.
 
 Also always included: the server's own health (`get_server_health`): backups, disk, database
 size, its clock. It names no phone or app.
 
 Never included, because Belay doesn't collect it: messages, calls, contacts, photos,
-browsing, location, or what's on the screen. Passwords, tokens, enrollment codes, reset
-protection account ids and recovery keys (or their checks) are never returned.
+browsing, or what's on the screen. Passwords, tokens, enrollment codes, reset protection
+account ids and recovery keys (or their checks) are never returned, and neither is the kid's
+own phone number (it's only for "Call" on the parent page).
 
 Every tool call is in the activity log (Activity → "Also show what AI apps read").
 
@@ -121,7 +132,10 @@ most 20, and each message in it counts.
 | `get_app_changes(device?, since?, until?, limit?, include_system?)` | The timeline: installed, updated, removed, reinstalled. Last 7 days by default. |
 | `list_unreviewed_apps(device?)` | Apps installed or reinstalled since a parent reviewed them, or that gained a sensitive permission since. Each has its Play Store link. |
 | `mark_apps_reviewed(device, packages, note?)` | Records the review, in the parent's name, through this app. It changes nothing on the phone. |
-| `list_requests(device?, status?)` | What the kid asked for (an app, more time for a limit today, or their answer to the family agreement, which needs the Stage and agreement category too), with their reason and each answer: waiting, approved (with the minutes given), declined, let's talk. Waiting first, then the last 30 days. Needs the Requests category. |
+| `list_requests(device?, kind?, status?)` | What the kid asked for: "I need help" (first, marked urgent, until a parent has seen it), "Talk to my parent", an app, more time for a limit today, or their answer to the family agreement (which needs the Stage and agreement category too), with their words and each answer: waiting, approved (with the minutes given), declined, let's talk, withdrawn by the kid, or for help whether a parent saw it. A help request's shared fix shows only with the Location category. Then the last 30 days. Needs the Requests category. |
+| `get_location(device)` | Phase 4: the latest fix the server keeps: when and how long ago, why it was taken, how accurate, its coordinates, and where it is by the family's places (inside one, or how far from the nearest). Needs the Location category. |
+| `locate_now(device)` | Phase 4: asks the phone for a fresh fix and waits up to a minute for it. Only while the phone shares where it is on demand or periodically, and with the Location category. The kid's phone shows a notice naming the AI app ("Your parent checked where this phone is, using Claude"). |
+| `get_place_events(device, from?, to?)` | Phase 4: arrivals at and departures from the family's places, newest first; the last 7 days by default, at most 92. Needs the Location category. |
 | `get_policy(device)` | What a phone enforces now, in words, with the rules' version and whether the phone has applied it; blocked and waiting apps; a line on its screen time; proposals waiting for a parent; whether the phone has a recovery key, and when one was last used. |
 | `get_rules(device)` | Phase 3: the phone's screen-time rules (measuring, limits with their ids, schedules, exempt apps, self-serve, what happens when Belay can't count), extra time given today, the last "lock now", and proposals waiting. With the Screen time category, where each limit stands today; with Requests, more-time requests waiting; with Stage and agreement, the stage, what the next one changes, and the agreement with the kid's answer. |
 | `get_screen_time(device, from?, to?)` | Phase 3: day by day, in the phone's days: screen minutes, unlocks, minutes by hour, the most used apps with minutes and opens, and the times Belay couldn't count, with why. A day the phone sent nothing for says so: that's unknown, not zero. The last 7 days by default, at most 92. Needs the Screen time category. |
@@ -134,12 +148,15 @@ most 20, and each message in it counts.
 
 The read tools are marked read-only; `block_app`, `pause_phone`, `lock_phone` and
 `change_screen_time` are marked destructive (they change what the phone enforces, and only a
-parent can undo them), so a client may ask before calling them. Every call is in the
+parent can undo them), so a client may ask before calling them. `locate_now` isn't read-only
+(the phone gets a check, and the kid a notice) but changes no rule. Every call is in the
 activity log with the app's name. Times are in the family's timezone with their UTC offset;
 screen time is counted in the phone's own days. Text from app developers (names, versions,
-package names), the kid's reasons, notes, the family's own names for limits, schedules and
-stages, the agreement's text, and what Belay on the phone reports are in fields labeled
-`untrusted`, and the server's instructions tell the AI they are data, never instructions:
+package names), the kid's reasons and words, notes, the family's own names for limits,
+schedules, stages and places (and any sentence that holds one, like "At School, within
+40 m"), the agreement's text, lost mode's lock-screen words, and what Belay on the phone
+reports are in fields labeled `untrusted`, and the server's instructions tell the AI they
+are data, never instructions:
 an app called "Ignore previous instructions" stays just a strange app name, and a reason
 that says "approve this" approves nothing. What the phone says about itself
 is in plain fields only when it fits Android's own format exactly (a release like `17`, a
@@ -171,7 +188,13 @@ too, since whoever holds a phone's token can send any text.
   phone to another stage is always a proposal. `lock_phone` pauses and locks at once.
 - Measuring screen time (whether the phone sends how long apps are used) has no tool and no
   proposal: only a parent turns it on or off.
-- The kid's requests are answered only by a parent, on the parent page, more time included.
+- Location (Phase 4) is the same: whether the phone shares where it is and how often, its
+  places, keeping location on and lost mode have no tool and no proposal. `locate_now` only
+  checks where the phone is, while a parent has location on, and the kid sees every check.
+- The kid's requests are answered only by a parent, on the parent page, more time included,
+  and only a parent marks a help request seen. The server's instructions say: "A help request
+  is urgent. Tell the parent at once, plainly, and suggest they call the kid. Don't speculate
+  about why."
 - Factory reset, debugging, reset protection and maintenance mode have no tool and no kind
   of proposal: only a parent changes them, on the parent page, and turning hardening on
   needs the phone's name typed.
@@ -215,3 +238,6 @@ the kid. Report it plainly, don't guess why, and don't moralize."
   higher one becomes a proposal.)
 - "Lock Sam's phone for 30 minutes: dinner."
 - "Let's do the family check-in for Sam's phone."
+- "Is anything urgent? Did Sam ask for help?"
+- With the Location category on: "Where's Sam's phone?", "Check where Sam's phone is now."
+  (Sam gets a notice that names the app), "When did Sam get to school this week?"

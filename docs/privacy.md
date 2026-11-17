@@ -84,8 +84,29 @@ Not collected: what's on the screen, what's typed, websites, notifications, or a
 an app. Network logging (which domains apps look up) is a later part of Phase 3, off by
 default, and not built yet.
 
+**Where this phone is (Phase 4), only while a parent turns it on.** Off by default: Belay then
+holds no location permission at all. A parent chooses, on the phone's Location and help page
+(never an AI app):
+
+- **On demand:** one fix each time a parent (or their AI app, if they allow it) checks. The kid
+  gets a notification for every check, naming the AI app when one asked.
+- **Periodic:** a fix every 15 to 120 minutes, within the hours the family sets, and when the
+  phone arrives at or leaves one of the family's places (their names are on the kid's screen).
+- **Lost mode**, in any mode: a fix every 5 minutes until a parent turns it off.
+
+Each fix is a time, a latitude and longitude to 5 decimal places (about a meter), how accurate
+it is, which of the phone's providers answered (its own GPS, or Android's combined provider,
+which on a Pixel is Google's location service), and whether Android says an app made it up. The
+server keeps only what the rules asked for, and drops the rest. Belay never collects a "trail":
+the parent page shows the last fix, each check, and arrivals and departures.
+
+**What the kid sends for help (Phase 7):** "I need help" (when, and a few words if they write
+some), and, only if they tap "Share where this phone is, this once", one fix, even while
+location is off. "Talk to my parent" with what they'd like to talk about. Withdrawing a
+request they made.
+
 **Not collected in Phase 1:** messages, calls, contacts, photos, files, browsing, searches,
-location, what's on the screen, or how long apps are used. Later phases add some of these
+location (Phase 4 adds it, off by default), what's on the screen, or how long apps are used. Later phases add some of these
 only as listed in [ROADMAP.md](../ROADMAP.md), each shown to the kid on the phone first,
 and some (location, network logs) off by default for AI.
 
@@ -133,7 +154,15 @@ form to anyone, and makes only two kinds of outbound request:
   Mozilla) carries them but can't read them. It only sees that a notification was sent.
   Notices about the server itself, and the daily summary a parent can turn on, carry only
   counts and kinds of problems ("2 things need you: a phone has been silent 14 hours, the
-  last backup failed"): no phone's or app's name, and nothing the kid wrote.
+  last backup failed"): no phone's or app's name, and nothing the kid wrote. A help request's
+  notice carries the kid's words, and an arrival's the place's name, encrypted like the rest;
+  never coordinates.
+
+Where the phone is never leaves the family's server either. The server describes a fix by the
+family's own places, by itself, and calls no map, tile or address service. "Open in a map" is a
+plain link on the parent page: only the parent's browser follows it, when the parent clicks,
+and then the map site the family picked (OpenStreetMap by default, or Google Maps) sees those
+coordinates, as it would if the parent typed them in.
 
 From Phase 2, when a parent turns protection on, the phone uses a filtering DNS service so
 adult sites don't load: CleanBrowsing Family by default (AdGuard Family, a host of your
@@ -148,10 +177,13 @@ sends outside the family's server, and the parent page says so where you choose 
   parents allow in Settings: apps, device status, (from Phase 2) requests, the kid's own
   words, and (from Phase 3) screen time, and the stage and agreement, all on by default (a
   category added in an upgrade starts off for a family that had turned one off, and Settings
-  marks it new). The server's own health (its backups, disk and clock) is open to them too;
-  it holds no family data. What an AI app reads goes to its provider under that provider's
-  terms. [mcp.md](mcp.md#what-reaches-the-ai-provider) lists exactly what that
-  is. Every read is in the activity log.
+  marks it new). **Location** (Phase 4) is the exception: off for every family until a parent
+  turns it on; until then an AI app sees whether a phone shares where it is, never where. The
+  server's own health (its backups, disk and clock) is open to them too; it holds no family
+  data. What an AI app reads goes to its provider under that provider's terms.
+  [mcp.md](mcp.md#what-reaches-the-ai-provider) lists exactly what that is. Every read is in
+  the activity log, and every check of where the phone is, a parent's or an AI app's, is on
+  the kid's phone too. The kid's own phone number (for "Call") is only on the parent page.
 
 ## What the kid sees (Phase 2)
 
@@ -196,6 +228,21 @@ sends outside the family's server, and the parent page says so where you choose 
   the family's), and how to get there; **your family agreement**, in full, with "I agree" and
   "I want to talk about it".
 
+## What the kid sees (Phases 4 and 7)
+
+- **What your parent can see** gains "Where this phone is" while location is on, with how
+  (when a parent checks, or every so many minutes between which hours, and the places' names),
+  and, for each category, "Your parent's AI app can read this" when Settings lets it (the
+  policy's `ai_reads`).
+- **Every check:** a notification each time ("Your parent checked where this phone is", "…using
+  Claude" when an AI app asked), and the list of the last 30 days' checks on Belay's screen,
+  from the phone's own record. Android itself tells the kid when an admin app is allowed their
+  location ("Your organization allows Belay to access your location"; platform note L1).
+- **Lost mode:** "This phone is in lost mode", and the parent's message on the lock screen.
+- **Help:** "I need help" (on every screen, even paused), what happens next, "Your parent saw
+  this at 4:05 pm" once a parent has, and the emergency card: 911 and 988, call or text, the
+  family's numbers, and Android's own emergency information.
+
 ## What the kid sees
 
 - A notification that never goes away: "This phone is managed by your parent".
@@ -215,6 +262,13 @@ automatically. The activity log is kept so parents can see what happened.
 Screen time (Phase 3) doesn't wait for a parent: the server keeps each day 13 months by
 default (the family chooses 1 to 36 in Settings), then deletes it, with the extra time given
 that day. Turning measuring off stops new days; the ones kept stay until they age out.
+
+Where the phone was (Phase 4) doesn't wait either, and is kept much less: fixes shared on a
+schedule 7 days, a parent's checks 30 days, arrivals and departures 90 days, lost-mode fixes
+until 7 days after lost mode ends (the family chooses each in Settings, within limits), then
+deleted by the hourly clean-up. The one fix a kid shares with "I need help" is kept with that
+request, which, like every request, stays until the phone is deleted. Turning location off
+stops new fixes; the ones kept stay until they age out.
 
 ## Respecting the kid
 
