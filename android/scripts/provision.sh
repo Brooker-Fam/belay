@@ -14,6 +14,9 @@
 #                android/scripts/build-release.sh).
 #   --debug      install the debug build instead (test-only: unprovision.sh can undo it)
 #   --serial S   the phone's adb serial, when more than one device is connected
+#   --server URL connect Belay to the family's Belay server at the end (needs --code):
+#                its address, like https://belay.example.org
+#   --code CODE  the one-time code from the server's "Add a phone" page
 #   --dry-run    run every check, change nothing, and print the commands it would run
 #   --yes        don't ask before making Belay the device owner
 #   --no-reboot  skip the restart at the end (see below)
@@ -23,10 +26,12 @@
 # device owner yet), checks the APK, installs it, runs
 # `dpm set-device-owner family.brooker.belay/.AdminReceiver`, then grants what only adb
 # can grant, so later phases never need another factory reset: usage access and the
-# battery-optimization exemption. Last, it restarts the phone once: Android only locks
+# battery-optimization exemption. Then it restarts the phone once: Android only locks
 # the managed notice's notification settings at boot, and the restart checks that Belay
-# comes back by itself. Run again on a provisioned phone, it installs the APK as an
-# update and grants again.
+# comes back by itself. With --server and --code, it last connects Belay to the family's
+# server, through a receiver only the adb shell can reach (the phone must be online).
+# Run again on a provisioned phone, it installs the APK as an update, grants again, and
+# connects again if asked.
 #
 # A release build that becomes device owner can only be removed by a factory reset.
 set -euo pipefail
@@ -38,11 +43,15 @@ usage() { sed -n '2,/^set -euo/p' "${BASH_SOURCE[0]}" | sed '$d' | sed 's/^# \{0
 APK=""
 USE_DEBUG=0
 REBOOT=1
+SERVER=""
+CODE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --debug) USE_DEBUG=1 ;;
     --no-reboot) REBOOT=0 ;;
     --serial) SERIAL="${2:?--serial needs a value}"; shift ;;
+    --server) SERVER="${2:?--server needs a value}"; shift ;;
+    --code) CODE="${2:?--code needs a value}"; shift ;;
     --dry-run) DRY_RUN=1 ;;
     --yes) ASSUME_YES=1 ;;
     -h | --help) usage; exit 0 ;;
@@ -57,6 +66,16 @@ if [ -z "$APK" ]; then
   else
     APK="$ANDROID_DIR/app/build/outputs/apk/release/app-release.apk"
   fi
+fi
+
+# The receiver checks both again. These checks keep the values safe to pass through
+# `adb shell`, which hands them to the phone's shell.
+if [ -n "$SERVER$CODE" ]; then
+  [ -n "$SERVER" ] && [ -n "$CODE" ] || die "--server and --code go together." "Run with --help to see the options."
+  [[ "$SERVER" =~ ^(https?://)?[A-Za-z0-9.-]+(:[0-9]+)?/?$ ]] ||
+    die "--server $SERVER doesn't look like a server address." "It should look like https://belay.example.org"
+  [[ "$CODE" =~ ^[A-Za-z0-9\ -]{8,12}$ ]] ||
+    die "--code $CODE doesn't look like a code." "A code has 8 letters and numbers, like 7KQ2M9XA."
 fi
 
 if [ "$DRY_RUN" = 1 ]; then say "Belay: provisioning (dry run: nothing on the phone changes)"; else say "Belay: provisioning"; fi
@@ -197,10 +216,43 @@ if [ "$DRY_RUN" = 0 ]; then
   fi
 fi
 
+# Connects Belay to the family's server. EnrollReceiver, which only senders holding
+# WRITE_SECURE_SETTINGS (the adb shell) can reach, enrolls and answers with a short
+# outcome. The answer never contains the device token.
+ENROLLED=""
+enroll() {
+  local cmd out result
+  say "Connecting Belay to $SERVER..."
+  cmd=(adb shell am broadcast -a "$PKG.ENROLL" -n "$PKG/.EnrollReceiver"
+    --es server "'$SERVER'" --es code "'$CODE'")
+  if [ "$DRY_RUN" = 1 ]; then
+    run "${cmd[@]}"
+    return
+  fi
+  out="$("${cmd[@]}" 2>&1 | tr -d '\r')" || true
+  result="$(sed -n 's/^Broadcast completed: //p' <<<"$out")"
+  case "$result" in
+    "result=-1, data="*)
+      ENROLLED="$(sed 's/^result=-1, data="//; s/"$//' <<<"$result")"
+      info "Belay: $ENROLLED"
+      ;;
+    *"data="*)
+      warn "Belay couldn't connect: $(sed 's/^result=[-0-9]*, data="//; s/"$//' <<<"$result")"
+      warn "Fix that, then run this again with --server and a new --code."
+      ;;
+    *)
+      warn "Belay didn't answer the enrollment broadcast:"
+      printf '%s\n' "$out" | sed 's/^/  /' >&2
+      warn "Is the phone unlocked, and is this a Phase 1 build of Belay?"
+      ;;
+  esac
+}
+
 # 6. Start Belay and check it is running.
 say "Starting Belay..."
 run_quiet adb shell am start -n "$PKG/.ui.MainActivity"
 if [ "$DRY_RUN" = 1 ]; then
+  if [ -n "$SERVER" ]; then enroll; fi
   say "Dry run finished: the checks passed, and nothing on the phone changed."
   exit 0
 fi
@@ -245,6 +297,10 @@ fi
 BATTERY_OK=0
 ash dumpsys deviceidle whitelist | contains ",$PKG," && BATTERY_OK=1
 
+# 8. Connect to the family's server. After the restart, so the phone is unlocked again
+#    (Belay's service only runs after that) and back online.
+if [ -n "$SERVER" ]; then enroll; fi
+
 say ""
 say "Result:"
 owners_text | sed 's/^/  owners: /'
@@ -255,6 +311,9 @@ else
 fi
 info "standby bucket: $(ash am get-standby-bucket "$PKG" 2>/dev/null) (5 means exempted)"
 [ "$BATTERY_OK" = 1 ] || warn "Battery exemption missing (see above)."
+if [ -n "$SERVER" ]; then
+  if [ -n "$ENROLLED" ]; then info "Belay server: $ENROLLED"; else warn "Not connected to a Belay server (see above)."; fi
+fi
 say ""
 say "Next: on the phone, open Belay. Under Setup checks everything should have a check mark."
 say "Then continue with docs/phase0-checklist.md."
