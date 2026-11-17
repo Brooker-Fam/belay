@@ -22,7 +22,7 @@ no monthly fee and no company that can change or disappear. A parent mostly mana
 asking Claude (or any MCP client) things like "what did they install this week, and is it
 OK?", with a web page as the fallback.
 
-## What exists today (Phases 1 and 2, and parts of 3, 6 and 10)
+## What exists today (Phases 1 and 2, and parts of 3, 4, 6, 7 and 10)
 
 - **`android/`: the device-owner agent.** Provisioned over adb, it becomes device owner and
   blocks its own uninstall. It always shows "This phone is managed by your parent", and its
@@ -53,6 +53,21 @@ OK?", with a web page as the fallback.
   If usage access is turned off, apps with a limit pause (or stay open, as the family
   chooses) and the kid is told how to turn it back on. Only while a parent has measuring on,
   each day's usage goes to the server; "What your parent can see" says so the moment it's on.
+  **Phase 4 (the phone's side):** location is off by default, and Belay holds the location
+  permission only while a parent has it on (granted and denied by policy, never by the kid). On
+  demand, a parent's check (or their AI app's, named to the kid) takes one fix from the phone's
+  GPS within a minute; periodic mode adds a fix every 15 to 120 minutes within set hours, sooner
+  near a place's edge, and "arrived" and "left" for the family's places, worked out on the phone;
+  lost mode puts the parent's message on the lock screen, locks it once and takes a fix every 5
+  minutes. `keep_on` keeps location on. Single fixes, never a stream, and no Play services code.
+  The kid gets a notification for every check and sees each one in "What Belay told your parent".
+  **Phase 7 (the phone's side):** Belay's screen becomes the kid's app: Home says the phone's state
+  in one line and what works now, with "I need help" (one tap tells the parents, with where the
+  phone is only if the kid chooses to share it, once, even with location off) and an emergency
+  card (911 and 988, call or text, the parents' numbers and Android's own emergency information)
+  that work while the phone is paused; My requests shows every answer and lets the kid change or
+  take back a waiting one; "Talk to my parent"; what the parent and their AI app can see; and what
+  Belay told the parent, from the phone's own record.
 - **`server/`: the family's server.** Node and SQLite in one Docker image. The device API,
   the parent pages (phones and their health, apps with "new" badges and reviews, the
   timeline, adding a phone, settings, the activity log), and OAuth 2.1 plus MCP for Claude.
@@ -163,7 +178,7 @@ they install this week?"
 | `android/app` | The agent: device owner, receivers, services, sync, enrollment, the screens. |
 | `android/scripts` | Provisioning, release key, QR test, the emulator test. |
 | `server/` | The family's server: device API, parent pages, OAuth and MCP. Vitest tests. |
-| `docs/` | [server](docs/server.md), [MCP](docs/mcp.md), [privacy](docs/privacy.md), [threat model](docs/threat-model.md), [device API](docs/protocol.md), [platform notes](docs/platform-notes.md), [emulator](docs/emulator.md), [Pixel 8](docs/pixel.md), [Phase 0](docs/phase0-checklist.md), [Phase 1](docs/phase1-checklist.md), [Phase 2](docs/phase2-checklist.md), [Phase 3](docs/phase3-checklist.md) and [Phase 6](docs/phase6-checklist.md) checklists, [signing](docs/signing.md), [prior art](docs/prior-art.md) |
+| `docs/` | [server](docs/server.md), [MCP](docs/mcp.md), [privacy](docs/privacy.md), [threat model](docs/threat-model.md), [device API](docs/protocol.md), [platform notes](docs/platform-notes.md), [emulator](docs/emulator.md), [Pixel 8](docs/pixel.md), [Phase 0](docs/phase0-checklist.md), [Phase 1](docs/phase1-checklist.md), [Phase 2](docs/phase2-checklist.md), [Phase 3](docs/phase3-checklist.md), [Phase 4](docs/phase4-checklist.md), [Phase 6](docs/phase6-checklist.md) and [Phase 7](docs/phase7-checklist.md) checklists, [signing](docs/signing.md), [prior art](docs/prior-art.md) |
 | `ROADMAP.md` | Phases 2 to 5 and later. |
 | `CLAUDE.md` | Conventions and commands, for people and for Claude. |
 

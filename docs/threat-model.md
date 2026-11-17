@@ -54,6 +54,28 @@ rules and keeps what the phone reports.
 | Ask for more time again and again | A new request for the same limit takes the waiting one's place, at most 60 can wait per phone (then `429`), and the parents get at most six notices an hour about one phone; asking again isn't news. |
 | Name a limit, an app or a reason to steer the AI | Limit, schedule and stage names, the agreement, app labels and the kid's reasons are untrusted data (principle 3). |
 
+## The kid and location (Phase 4)
+
+Off by default; on demand, or periodic with places, worked out on the phone, and lost mode.
+
+| What they could do | What Belay does |
+|---|---|
+| Turn location off | Blocked while `keep_on` holds (`DISALLOW_CONFIG_LOCATION`; Belay can still turn it on). Without it, the check-in says location is off and a check a parent asks for fails with "Location is turned off in the phone's settings…". |
+| Revoke Belay's location permission in Settings | Not possible: it's granted or denied by policy, and fixed. With location off, Belay holds none at all, so Settings shows that too. |
+| Fake the location | Mock locations need developer options (locked by Phase 2's debugging lock); a mock fix is marked `mock` and never counts for places. |
+| Airplane mode, or the phone off | No fixes; the check that couldn't happen fails with Belay's words, and silence is reported as in every phase. |
+| Leave the phone somewhere | Out of scope: Belay locates the phone, not the kid, and the kid's words say "where this phone is". |
+| Hover at a place's edge to make it flap | Two fixes in a row on the same side, beyond the radius plus or minus the accuracy, decide; a fix near the edge starts the count again. |
+
+## The kid's side (Phase 7)
+
+| What they could do | What Belay does |
+|---|---|
+| Send help requests to get attention | It's still a message to a parent, and the parents see them all. No penalty, by design. |
+| Write instructions in a request (help, talk, or a changed one) | The kid's words are `untrusted` for AI clients (principle 3), and no AI tool answers a request. |
+| Take back a request the parent should see | Only one that's still waiting; the server records it, and an answered one or "I agree" can't be taken back. |
+| Use "Share where this phone is" to turn location on | It's one fix, the kid's own choice, in the help request only; Belay turns location access (and location, if it turned it on) back off afterwards. |
+
 ## Other people
 
 | Who | Risk | What Belay does |
@@ -72,6 +94,10 @@ rules and keeps what the phone reports.
 | Someone between the phone and the server | Swapping the update in transit. | HTTPS with the system's CAs, and the SHA-256 and size from the policy must match the download before Android even sees it. |
 | A bad update (Phase 6) | A version of Belay that breaks, or doesn't start. | Updates are offered one phone at a time. No rollback: Android refuses downgrades, so a newer version fixes it. Each phone reports how the update went, word for word when Android refused it, and a failed one waits (a minute, doubling to six hours) instead of looping. The phone's page shows each step, the parents hear when an update fails, and a phone that goes quiet within an hour of updating is flagged; adb in maintenance mode still works. CI's emulator test runs a self-update. |
 | A lost server and no backup (Phase 6) | A phone locked against adb and reset, and nothing to unlock them. | The recovery key, kept printed or in a password manager, opens both for 24 hours, offline; the phone then needs a new server and enrolling again. The server keeps only its check, never the key. |
+| Someone with a parent's account (Phase 4) | Tracking the kid. | Every check is in the activity log and on the kid's phone: a notification each time (naming the AI app if one was used), and "What Belay told your parent" from the phone's own record, so a check can't be hidden from the kid (principle 4). Turning location on, the places, `keep_on` and lost mode are a parent's actions on the parent page, never an AI client's. |
+| The AI provider (Phase 4) | Seeing where the kid is. | Nothing while the `location` scope is off (the default): AI clients see that a phone has location on, never a fix or a place event. |
+| A stalker who installs Belay on someone's phone | Covert tracking. | Belay needs adb setup and a factory-fresh phone, always shows its notice, declares itself a monitoring tool (M1), and its screen and Android's own notices say location is shared. |
+| A family member's Google settings (Phase 4) | Google seeing location requests. | With `provider: "gps"` (the default) only the phone's satellite receiver answers; with "fused", Google's location service on a Pixel handles the requests (platform notes L3). |
 
 ## Out of scope
 
