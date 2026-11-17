@@ -1,4 +1,4 @@
-import type { FC } from "hono/jsx";
+import type { Child, FC } from "hono/jsx";
 import type { PendingCode } from "../../device/enroll.js";
 import { type App, type Change, type Review, PERMISSION_NAMES, SOURCE_NAMES, playStoreUrl, versionText } from "../../family/apps.js";
 import { type DeviceView, patchAgeDays } from "../../family/devices.js";
@@ -129,7 +129,7 @@ const Facts: FC<{ device: DeviceView; view: View }> = ({ device, view }) => {
   );
 };
 
-export const DevicesPage: FC<{ view: View; devices: DeviceSummary[]; pending: PendingCode[] }> = ({ view, devices, pending }) => (
+export const DevicesPage: FC<{ view: View; devices: DeviceSummary[]; pending: PendingCode[]; server?: Child }> = ({ view, devices, pending, server }) => (
   <Layout view={view} title="Phones">
     <h1>Phones</h1>
     {devices.length === 0 && pending.length === 0 && (
@@ -168,6 +168,7 @@ export const DevicesPage: FC<{ view: View; devices: DeviceSummary[]; pending: Pe
         </div>
       ))}
     </div>
+    {server}
   </Layout>
 );
 
