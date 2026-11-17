@@ -353,6 +353,8 @@ class Enforcer(context: Context) {
             putStringArray("URLBlocklist", config.urlBlocklist.toTypedArray())
             config.urlAllowlist?.let { putStringArray("URLAllowlist", it.toTypedArray()) }
             putString("DnsOverHttpsMode", config.dnsOverHttpsMode)
+            // A dictionary policy: Chrome on Android reads a string given for one as JSON (platform notes H2).
+            config.proxySettings?.let { putString("ProxySettings", it) }
         }
     }
 }

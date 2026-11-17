@@ -370,6 +370,7 @@ class EnforcementTest {
         assertEquals(emptyList(), config.urlBlocklist)
         assertNull(config.urlAllowlist)
         assertEquals("off", config.dnsOverHttpsMode)
+        assertEquals("""{"ProxyMode":"direct"}""", config.proxySettings)
 
         val open = ChromeConfig.of(WireChromePolicy(incognito = true, youtubeRestrict = "moderate", safeSites = false, allowDownloads = true))
         assertEquals(0, open.incognitoModeAvailability)
@@ -395,6 +396,18 @@ class EnforcementTest {
         val applied = apply(first)
         assertNull(Enforcement.changes(plan(withChrome, applied = applied), applied).chrome)
         assertEquals(Setting.Clear, Enforcement.changes(plan(policy(), applied = applied), applied).chrome)
+    }
+
+    @Test
+    fun `Chrome's settings an older Belay set are set again, with the proxy setting`() {
+        // An older Belay's record has no proxySettings: it reads back as null.
+        val stored = """{"incognitoModeAvailability":1,"forceGoogleSafeSearch":true,"forceYouTubeRestrict":2,""" +
+            """"safeSitesFilterBehavior":1,"downloadRestrictions":3,"urlBlocklist":[],"urlAllowlist":null,"dnsOverHttpsMode":"off"}"""
+        val older = Wire.json.decodeFromString(ChromeConfig.serializer(), stored)
+        assertNull(older.proxySettings)
+        val applied = Applied(policyVersion = 1, appliedAt = T0, chrome = older)
+        val changes = Enforcement.changes(plan(policy(web = WireWebPolicy(chrome = WireChromePolicy())), applied = applied), applied)
+        assertEquals(Setting.Set(older.copy(proxySettings = ChromeConfig.PROXY_DIRECT)), changes.chrome)
     }
 
     // Reset protection.

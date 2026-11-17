@@ -156,8 +156,18 @@ data class ChromeConfig(
      * Private DNS filter covers Chrome too.
      */
     val dnsOverHttpsMode: String = "off",
+    /**
+     * ProxySettings, a dictionary policy, which Chrome on Android takes as a JSON string:
+     * [PROXY_DIRECT], so Chrome never uses a proxy set on the phone's Wi-Fi or mobile network (a
+     * proxy looks names up itself, past Private DNS) and connects directly (platform notes H2).
+     * Null only in a record an older Belay stored, so updating Belay sets it.
+     */
+    val proxySettings: String? = null,
 ) {
     companion object {
+        /** Chrome's ProxySettings with ProxyMode "direct": never use a proxy server. */
+        const val PROXY_DIRECT = """{"ProxyMode":"direct"}"""
+
         fun of(chrome: WireChromePolicy) = ChromeConfig(
             incognitoModeAvailability = if (chrome.incognito) 0 else 1,
             forceGoogleSafeSearch = chrome.safeSearch,
@@ -171,6 +181,7 @@ data class ChromeConfig(
             // Allowlist mode: everything is blocked except the allowlist (Chrome's own recipe).
             urlBlocklist = (if (chrome.urlAllowlist != null) listOf("*") else emptyList()) + chrome.urlBlocklist,
             urlAllowlist = chrome.urlAllowlist,
+            proxySettings = PROXY_DIRECT,
         )
     }
 }

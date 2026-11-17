@@ -382,6 +382,9 @@ object KidRules {
         CHROME_YOUTUBE_RESTRICTED,
         CHROME_SAFE_SITES,
         CHROME_NO_DOWNLOADS,
+
+        /** Chrome never uses a proxy set on the phone's network (ChromeConfig.proxySettings). */
+        CHROME_NO_PROXY,
         CHROME_ALLOWLIST,
         CHROME_BLOCKLIST,
     }
@@ -424,6 +427,7 @@ object KidRules {
             if (chrome.forceYouTubeRestrict > 0) rules += Rule.CHROME_YOUTUBE_RESTRICTED
             if (chrome.safeSitesFilterBehavior == 1) rules += Rule.CHROME_SAFE_SITES
             if (chrome.downloadRestrictions == 3) rules += Rule.CHROME_NO_DOWNLOADS
+            if (chrome.proxySettings != null) rules += Rule.CHROME_NO_PROXY
             if (chrome.urlAllowlist != null) {
                 rules += Rule.CHROME_ALLOWLIST
             } else if (chrome.urlBlocklist.isNotEmpty()) {
