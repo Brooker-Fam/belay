@@ -1,7 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Installed, updated and removed by tests; from Phase 3 also opened (a blank screen), so
-     screen time can count it and a limit or a schedule can pause it. -->
+     screen time can count it and a limit or a schedule can pause it, and (network logging) asked
+     to look a made-up name up, so Belay has an app's DNS lookup to note. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Only to look a name up when a test asks (FixtureActivity's "lookup"): a normal
+         permission, granted at install, and not one Belay counts as sensitive. -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <application
         android:allowBackup="false"
         android:label="Belay test fixture">

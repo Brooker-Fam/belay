@@ -62,6 +62,14 @@
 # the role), Belay loses its call permissions and comes back. Made-up 555-01xx numbers only: never
 # a call to or from 911 or 988.
 #
+# Phase 3's network logging, with BELAY_E2E_CLI, the fixture APKs and a server whose status has
+# network: `network --on` turns Android's network logging on (its admin dump says
+# isNetworkLoggingEnabled=true) and the phone reports it; the fixture app looks up a made-up name
+# under example.com, `dpm force-network-logs` has Android hand Belay the batch at once, and the
+# server's network activity lists the fixture app with example.com (Belay sends each batch's days
+# as soon as it has them, so no debug-only path is needed); `network --off` turns Android's logging
+# off again (and dpm refuses to force logs), and the phone reports none and keeps nothing.
+#
 # Phase 11, with BELAY_E2E_CLI and a server whose status has handover, just before the restart: a
 # parent hands the phone over; the phone applies that policy, and its debug state shows the hand-over
 # carried out, holding none of its locks and no reset protection (a debug build never sets it, and
@@ -179,6 +187,8 @@ diagnose() {
   state | grep -o '"reasons":.*' | cut -c 1-2000 || true
   echo "--- calls (Phase 5):"
   state 2>/dev/null | jq -c '.calls' 2>/dev/null || true
+  echo "--- network logging (Phase 3), as counts:"
+  state 2>/dev/null | jq -c '.network' 2>/dev/null || true
 }
 # Phase 3: "suspended=true" or "suspended=false" for package $1, user 0 (dumpsys package).
 package_suspended() {
@@ -802,6 +812,70 @@ elif [ -n "$E2E_CLI" ]; then
   echo "calls off: the default dialer is ${dialer_before:-none again} ($(default_dialer)), and Belay holds no call permission"
 elif [ -n "$E2E_SERVER" ]; then
   echo "BELAY_E2E_CLI not given: the Phase 5 calls checks are skipped"
+fi
+
+# Phase 3: whether Android's network logging is on for Belay, from the admins' dump (AOSP 17
+# ActiveAdmin.dump prints "isNetworkLoggingEnabled=<bool>"; Belay is the only admin): true or false.
+android_logs() { ash dumpsys device_policy | grep -m 1 -o 'isNetworkLoggingEnabled=[a-z]*' | cut -d= -f2 || true; }
+
+if [ -n "$E2E_CLI" ] && ! server_status | jq -e '.phones[0] | has("network")' >/dev/null 2>&1; then
+  echo "the server's status has no network (its network logging isn't there yet): the network logging checks are skipped"
+elif [ -n "$E2E_CLI" ] && [ -z "$FIXTURE_V1" ]; then
+  echo "the fixture APKs not given: the network logging checks are skipped"
+elif [ -n "$E2E_CLI" ]; then
+  phone="$(server_status | jq -r '.phones[0].name')"
+
+  step "Phase 3: network logging on: Android logs DNS lookups, and the phone says so"
+  server_cli network "$phone" --on
+  wait_applied
+  wait_server '.enforcement.network_log.enabled == true' "the phone's report that Android logs network lookups" 30
+  [ "$(android_logs)" = true ] || { diagnose; die "the phone reports network logging on, but Android's admin dump says isNetworkLoggingEnabled=$(android_logs)"; }
+  echo "Android logs: $(server_status | jq -c '.phones[0].enforcement.network_log')"
+
+  step "Phase 3: an app's lookup reaches the server's network activity, as its registrable domain"
+  adb install -r -t "$FIXTURE_V1" >/dev/null
+  wait_fixture "hidden=false suspended=false" 15 || { diagnose; die "the fixture app isn't installed and open to use"; }
+  wake_up
+  looked_up="[.network[]? | .entries[]? | select(.package == \"$FIXTURE_PKG\" and .domain == \"example.com\")] | length > 0"
+  got=0
+  # Android hears of a lookup after answering it, and finishes a batch only with events in it: a few tries.
+  for attempt in 1 2 3; do
+    ash am start -W -n "$FIXTURE_PKG/.FixtureActivity" --es lookup "ci-lookup-$attempt.example.com" >/dev/null
+    sleep 3
+    # A batch closes at 1200 events or after 90 minutes; the shell can close it now (platform notes W6).
+    forced="$(ash dpm force-network-logs 2>&1 || true)"
+    [[ "$forced" == *Success* ]] || { diagnose; die "dpm force-network-logs failed with network logging on" "$forced"; }
+    for _ in $(seq 1 15); do
+      if server_status | jq -e ".phones[0] | $looked_up" >/dev/null 2>&1; then
+        got=1
+        break 2
+      fi
+      sleep 2
+    done
+    echo "try $attempt: not on the server yet"
+  done
+  if [ "$got" != 1 ]; then
+    echo "--- the server's network activity:"
+    server_status | jq -c '.phones[0].network' || true
+    diagnose
+    die "the server's network activity never listed the fixture app's lookup of example.com"
+  fi
+  server_status | jq -c ".phones[0].network[0] | {day, zone, as_of, dropped, entries: [.entries[] | select(.package == \"$FIXTURE_PKG\")]}"
+  echo "the phone: $(state | jq -c '.network | {report, last_token, last_batch_lookups, days}')"
+
+  step "Phase 3: network logging off: Android's is off too, and the phone keeps nothing"
+  server_cli network "$phone" --off
+  wait_applied
+  wait_server '(.enforcement.network_log // null) == null' "the phone's report without network logging" 30
+  [ "$(android_logs)" = false ] || { diagnose; die "network logging is off, but Android's admin dump says isNetworkLoggingEnabled=$(android_logs)"; }
+  forced="$(ash dpm force-network-logs 2>&1 || true)"
+  [[ "$forced" == *"logging is not available"* ]] || { diagnose; die "dpm force-network-logs still works with network logging off" "$forced"; }
+  kept="$(state | jq -c '.network | {on, android, days, unsent}')"
+  [ "$(jq -r '.days == [] and .unsent == 0 and .on == false' <<<"$kept")" = true ] || { diagnose; die "the phone still keeps network days with logging off" "$kept"; }
+  echo "the phone: $kept"
+  adb uninstall "$FIXTURE_PKG" >/dev/null
+elif [ -n "$E2E_SERVER" ]; then
+  echo "BELAY_E2E_CLI not given: the network logging checks are skipped"
 fi
 
 if [ -n "$E2E_CLI" ] && ! server_status | jq -e '.phones[0] | has("handover")' >/dev/null 2>&1; then
