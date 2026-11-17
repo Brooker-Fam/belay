@@ -30,5 +30,16 @@
                 <action android:name="family.brooker.belay.DEBUG_UPLOAD_USAGE" />
             </intent-filter>
         </receiver>
+
+        <!-- Phase 7: ci-emulator-test.sh taps "I need help" with adb (DebugHelpReceiver.kt).
+             Debug builds only; only the adb shell can send it. -->
+        <receiver
+            android:name=".DebugHelpReceiver"
+            android:exported="true"
+            android:permission="android.permission.WRITE_SECURE_SETTINGS">
+            <intent-filter>
+                <action android:name="family.brooker.belay.DEBUG_HELP" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>
