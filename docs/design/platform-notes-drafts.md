@@ -33,7 +33,7 @@ back the designs in this folder, and re-check some Phase 2 facts.
 | I2 | A device owner installs and updates apps with no prompt | Confirmed; the kid sees "Updated by your admin" | AOSP (moved to platform-notes.md) |
 | I3 | Developer verification of the device owner's own installs | No device-owner bypass in AOSP 17; Google's exemption wording doesn't settle Belay's case | AOSP; Docs (moved to platform-notes.md) |
 | I4 | Hard-restricted permissions (`READ_SMS`) for an adb-installed app | Confirmed: adb allowlists them, and the allowlist only grows | AOSP |
-| A4 | Play's `allowed_accounts` managed configuration **(Phase 2)** | Confirmed | Docs |
+| A4 | Play's `allowed_accounts` managed configuration **(Phase 2)** | Moved to platform-notes.md (Phase 2) | |
 | F1 | Factory reset protection policy and its broadcasts **(Phase 2)** | Confirmed; send `FRP_CONFIG_CHANGED` as well | AOSP; Docs |
 | H1 | `DISALLOW_SIM_GLOBALLY` stops SIM swaps **(Phase 2)** | **Contradicted**: it only blocks eSIM downloads | AOSP; Docs |
 | H2 | `DISALLOW_CONFIG_DATE_TIME` covers the time zone | Confirmed | AOSP |
@@ -331,6 +331,8 @@ To check on the emulator: `dumpsys package <belay>` shows `RESTRICTION_INSTALLER
 `READ_SMS` after an adb install, and still after a self-update.
 
 ### A4. Play's `allowed_accounts` (Phase 2)
+
+**Moved** to [platform-notes.md](../platform-notes.md#a4-plays-allowed_accounts) and checked again, with AOSP 17's side, when Belay started setting it (2026-11-17); this draft stays as it was written.
 
 **Confirmed.** Verified on: Docs. developer.android.com/work/dpc/security [2026-11-15]: a managed
 configuration for `com.android.vending` with the key `allowed_accounts`, the account emails as one

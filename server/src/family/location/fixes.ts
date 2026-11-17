@@ -227,18 +227,23 @@ export interface PlaceEventView {
   /** The place's name when it happened (the family's words). */
   placeName: string;
   kind: PlaceEvent["kind"];
-  /** The phone's clock. */
+  /** The phone's clock, but never more than FIX_SKEW_MS after the server got it, as a fix's. */
   at: number;
   fixId: string;
   receivedAt: number;
   notifiedAt: number | null;
 }
 
-/** Arrivals and departures, newest first, from `from` (inclusive) to `to` (exclusive). */
+/**
+ * Arrivals and departures, newest first, from `from` (inclusive) to `to` (exclusive), by their
+ * own time but never later than a few minutes after they arrived (FIX_TIME, as fixes): one dated
+ * in the future doesn't stay on top, nor show as from then.
+ */
 export function listPlaceEvents(db: DB, deviceId: string, opts: { from?: number; to?: number; limit?: number } = {}): PlaceEventView[] {
   return db
     .prepare<[string, number, number, number], { id: string; place_id: string; place_name: string; kind: PlaceEvent["kind"]; at: number; fix_id: string; received_at: number; notified_at: number | null }>(
-      "SELECT id, place_id, place_name, kind, at, fix_id, received_at, notified_at FROM place_events WHERE device_id = ? AND at >= ? AND at < ? ORDER BY at DESC, rowid DESC LIMIT ?",
+      `SELECT id, place_id, place_name, kind, ${FIX_TIME} AS at, fix_id, received_at, notified_at FROM place_events
+       WHERE device_id = ? AND ${FIX_TIME} >= ? AND ${FIX_TIME} < ? ORDER BY ${FIX_TIME} DESC, rowid DESC LIMIT ?`,
     )
     .all(deviceId, opts.from ?? 0, opts.to ?? Number.MAX_SAFE_INTEGER, opts.limit ?? 50)
     .map((r) => ({ id: r.id, placeId: r.place_id, placeName: r.place_name, kind: r.kind, at: r.at, fixId: r.fix_id, receivedAt: r.received_at, notifiedAt: r.notified_at }));

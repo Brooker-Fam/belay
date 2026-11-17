@@ -81,6 +81,15 @@ export function isHostname(host: string): boolean {
 }
 /** Phase 3: a domain an app looked up. Its developer chose it: untrusted. */
 export const domainName = z.string().min(3).max(253).refine(isHostname, "not a lowercase hostname");
+/**
+ * A Google account's email address, lowercase, as Play's `allowed_accounts` lists it (Play takes
+ * them comma-separated in one string, so there's never a comma, nor a space, in one): a local
+ * part of letters, digits and . _ % + ' -, then a domain of letters, digits and hyphens with a dot.
+ */
+export const googleAccount = z
+  .string()
+  .max(254)
+  .regex(/^[a-z0-9._%+'-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/, "not a Google account's email address, in lowercase");
 
 export const Version = z.strictObject({ name: text().nullish(), code: versionCode });
 
@@ -617,6 +626,8 @@ export const Policy = z.strictObject({
   }),
   maintenance_until: time.nullable(),
   frp_accounts: z.array(text(64)),
+  /** The parent-owned Google accounts Play may use (Play's `allowed_accounts`); empty: Belay leaves Play's configuration alone. */
+  play_accounts: z.array(googleAccount).max(5),
   support_message: text(200).nullable(),
   requests: z.array(
     z.strictObject({

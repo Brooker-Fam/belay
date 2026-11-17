@@ -11,7 +11,7 @@ import { createParent } from "../src/auth/parents.js";
 import { listAudit } from "../src/audit.js";
 import { Policy } from "../src/device/schemas.js";
 import { savePlace, setLocation } from "../src/family/location/changes.js";
-import { latestFix, listFixes } from "../src/family/location/fixes.js";
+import { latestFix, listFixes, listPlaceEvents } from "../src/family/location/fixes.js";
 import { buildPolicy, type PolicyContext } from "../src/family/policy.js";
 import { createPersonalToken } from "../src/oauth/store.js";
 import { updateSettings } from "../src/settings.js";
@@ -121,6 +121,32 @@ describe("location over MCP", () => {
     expect((await call("get_location", { device: "Alex's phone" })).json.latest).toMatchObject({ at: "2026-11-16T10:12:00-05:00", coordinates: { lat: 40.1, lng: -73.2 } });
     expect(listFixes(t.deps.db, phone.deviceId).map((f) => f.id)).toEqual([real.id, fake.id]);
     expect(latestFix(t.deps.db, phone.deviceId, { real: true })?.id).toBe(real.id);
+  });
+
+  it("get_place_events: an arrival dated in the future isn't the newest for long, nor shown as from then; a clock a little ahead is fine", async () => {
+    const { t, phone, ctx, sam, call, locations } = await family();
+    updateSettings(t.deps.db, { aiScopes: { location: true } });
+    setLocation(ctx(), phone.deviceId, { mode: "periodic" }, sam);
+    const school = savePlace(ctx(), phone.deviceId, { name: "School", ...SPOT, radiusM: 150, notify: [] }, sam).result.place;
+    // Made up with the phone's token: an arrival "in" 2099.
+    await locations([], [{ id: "event-future", place_id: school.id, kind: "arrived", at: Date.UTC(2099, 0, 1), fix_id: "fix-00001" }]);
+    t.advance(10 * 60_000);
+    // A real departure after that, from a phone whose clock is 2 minutes ahead: it keeps its own time, and is the newest.
+    await locations([], [{ id: "event-real", place_id: school.id, kind: "left", at: t.now() + 2 * 60_000, fix_id: "fix-00002" }]);
+    expect(listPlaceEvents(t.deps.db, phone.deviceId).map((e) => [e.id, e.at])).toEqual([
+      ["event-real", T0 + 12 * 60_000],
+      ["event-future", T0 + 5 * 60_000],
+    ]);
+    // Listed up to now by default, with the minutes a phone's clock may be ahead.
+    const { json } = await call("get_place_events", { device: "Alex's phone" });
+    expect(json.events).toEqual([
+      { when: "2026-11-16T10:12:00-05:00", event: "left", untrusted: { place: "School" } },
+      { when: "2026-11-16T10:05:00-05:00", event: "arrived", untrusted: { place: "School" } },
+    ]);
+    // Asked up to a time, it's by the same time.
+    expect((await call("get_place_events", { device: "Alex's phone", to: "2026-11-16T10:06" })).json.events).toEqual([
+      { when: "2026-11-16T10:05:00-05:00", event: "arrived", untrusted: { place: "School" } },
+    ]);
   });
 
   it("locate_now: only on demand or periodic; the check names the AI app for the kid's notice, waits for the fix, and returns it", async () => {

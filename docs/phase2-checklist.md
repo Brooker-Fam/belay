@@ -61,6 +61,12 @@ repository, and no account names, phone numbers or serial numbers.
 - Settings > System > Date & time: can't change.
 - After the account lock: Settings > Passwords & accounts: can't add or remove accounts.
 - After the SIM lock: can't add or switch an eSIM.
+- Play's accounts, before the account lock: on the phone's page (Hardening), list the
+  parent-owned account's email address for Play and save. Add a second Google account to the
+  phone (a test account), open the Play Store, and try to switch to it: Play shouldn't let it
+  install anything. Write down what Play shows, word for word, and Play's version (Play Store >
+  Settings > About). Remove the test account, then empty the list: the test account works in
+  Play again.
 
 ## 6. Hardening (only when you're ready)
 
@@ -90,4 +96,5 @@ Make sure you know the parent account's password, then:
 | 4 | SafeSearch, a filtered site, no incognito, Private DNS locked | pending | |
 | 5 | Safe mode, users, APK install, VPN, date/time blocked | pending | |
 | 5 | Account lock and SIM lock | pending | |
+| 5 | Play's accounts: another account refused in Play (Play's words, and its version); works again with the list empty | pending | |
 | 6 | Factory reset greyed out; adb blocked and back in maintenance mode | pending | |

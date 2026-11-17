@@ -157,6 +157,8 @@
     <string name="rule_default_apps_why">Belay always lets the default phone and texting apps work, so they stay the ones your parent set up.</string>
     <string name="rule_accounts">You can\'t add or remove accounts.</string>
     <string name="rule_accounts_why">The accounts on this phone stay the ones your parent set up.</string>
+    <string name="rule_play_accounts">The Play Store is set to use only the Google accounts your parent chose.</string>
+    <string name="rule_play_accounts_why">Belay tells the Play Store which accounts it may use.</string>
     <string name="rule_esim">You can\'t add an eSIM.</string>
     <string name="rule_esim_why">Adding a phone plan is up to your parent.</string>
     <string name="rule_factory_reset">You can\'t reset the phone from Settings.</string>

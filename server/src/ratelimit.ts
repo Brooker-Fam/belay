@@ -58,6 +58,12 @@ export class RateLimiter {
   }
 }
 
+/**
+ * How many times an hour one AI connection may check where a phone is, and pause or lock it
+ * (pauses and locks counted together), per phone.
+ */
+export const AI_PER_HOUR = { checks: 6, locks: 6 } as const;
+
 /** The limits the server applies. */
 export interface Limiters {
   /** Failed enrollment codes, per client address. */
@@ -114,6 +120,23 @@ export interface Limiters {
    * backlog of days (or Android's batches coming close together) never holds back its check-ins.
    */
   networkPerPhone: RateLimiter;
+  /**
+   * New app changes a phone makes the server keep, its own events and the changes found in its
+   * app lists together (device/apps.ts). Past it they're accepted and not kept, never answered
+   * 429: the phone sends its events in the same queue as the kid's requests, and its next app
+   * list catches the apps up. A phone that's been offline sends at most 5,000 events.
+   */
+  appChangesPerPhone: RateLimiter;
+  /**
+   * What an AI app does that reaches the kid, per connection (grant) and phone (mcp/limits.ts):
+   * its checks of where the phone is (`locate_now`: each posts a notice on the kid's phone), and
+   * its pauses and locks (`pause_phone` and `lock_phone` together). A few an hour; a parent, on
+   * the parent page or the CLI, isn't limited.
+   */
+  aiChecks: RateLimiter;
+  aiLocks: RateLimiter;
+  /** One "too many" line in the activity log per connection, phone and kind an hour, however often an AI app tries. */
+  aiLimitedLog: RateLimiter;
 }
 
 export function createLimiters(now: () => number): Limiters {
@@ -136,5 +159,9 @@ export function createLimiters(now: () => number): Limiters {
     locationsPerPhone: new RateLimiter(600, 60 * MIN, now),
     callsPerPhone: new RateLimiter(30, MIN, now),
     networkPerPhone: new RateLimiter(30, MIN, now),
+    appChangesPerPhone: new RateLimiter(5_000, 60 * MIN, now),
+    aiChecks: new RateLimiter(AI_PER_HOUR.checks, 60 * MIN, now),
+    aiLocks: new RateLimiter(AI_PER_HOUR.locks, 60 * MIN, now),
+    aiLimitedLog: new RateLimiter(1, 60 * MIN, now),
   };
 }

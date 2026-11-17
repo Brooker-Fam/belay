@@ -415,6 +415,15 @@ export const HardeningCard: FC<{ view: View; device: DeviceView; rules: Rules }>
           on together.
         </p>
       </details>
+      <label for="play">Play Store: the parent-owned Google accounts Play may use, by email address, one per line</label>
+      <textarea id="play" name="play_accounts" placeholder="parent@gmail.com">
+        {rules.playAccounts.join("\n")}
+      </textarea>
+      <p class="muted small">
+        With these, Play works only with these accounts, even if someone adds another account to the phone; leave it empty and Belay leaves Play's
+        settings alone. It needs Google Play version 80970100 or newer. It can't lock anyone out of the phone, so it needs no name typed. Handing
+        the phone over clears it, so the kid can use their own account.
+      </p>
       <label for="confirm">
         To turn any of these on, type the phone's name: <strong>{device.name}</strong>
       </label>

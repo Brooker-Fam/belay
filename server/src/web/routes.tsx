@@ -57,6 +57,7 @@ import {
   getRules,
   neverBlockedOn,
   pausePhone,
+  playAccountsOf,
   preDecisions,
   protect,
   resumePhone,
@@ -82,7 +83,7 @@ import { serverHealth } from "../ops/health.js";
 import { getDigest } from "../ops/notify.js";
 import { opsWebRoutes } from "../ops/web.js";
 import { browserName, listSubscriptions, removeSubscription, saveSubscription, sendNotice, subscriptionProblem, vapidKeys } from "../push.js";
-import { AI_SCOPES, type AiScope, CALL_DAYS, LOCATION_DAYS, type LocationRetention, MAP_SITES, type MapSite, NETWORK_DAYS, USAGE_MONTHS, getSettings, updateSettings } from "../settings.js";
+import { ACTIVITY_DAYS, AI_SCOPES, type AiScope, CALL_DAYS, LOCATION_DAYS, type LocationRetention, MAP_SITES, type MapSite, NETWORK_DAYS, USAGE_MONTHS, getSettings, updateSettings } from "../settings.js";
 import { isValidTimeZone } from "../time.js";
 import type { Assets } from "./assets.js";
 import { callsWebRoutes } from "./calls.js";
@@ -675,6 +676,8 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
     const debugging = first(body, "debugging") === "1";
     const accounts = accountIds(first(body, "frp_accounts"));
     if (!accounts.ok) return showDevice(c, device, { error: accounts.error }, 400);
+    // Play's allowed accounts, email addresses (one per line, or commas); a form without the field leaves them as they are.
+    const play = "play_accounts" in body ? playAccountsOf(first(body, "play_accounts").split(/[\s,;]+/)) : undefined;
     const rules = getRules(db, device.id);
     const tightens =
       (factoryReset && !rules.restrictions.factory_reset) ||
@@ -686,7 +689,7 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
     // Phase 6: turning on a lock that can strand the phone makes its recovery key, in the same request, if it has none to use.
     const locking = (factoryReset && !rules.restrictions.factory_reset) || (debugging && !rules.restrictions.debugging);
     const made = db.transaction(() => {
-      setHardening(policyContext(), device.id, { factoryReset, debugging, frpAccounts: accounts.ids }, asParent(c));
+      setHardening(policyContext(), device.id, { factoryReset, debugging, frpAccounts: accounts.ids, ...(play ? { playAccounts: play } : {}) }, asParent(c));
       return locking && !usableKey(recoveryState(db, device.id)) ? makePhoneRecoveryKey(policyContext(), device.id, asParent(c)).result : null;
     }).immediate();
     if (made) return render(c, <RecoveryKeyPage view={view(c)} device={device} grouped={made.grouped} replaced={made.replaced} because="hardening" />);
@@ -1042,6 +1045,12 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
     if (networkDays !== undefined && (!Number.isInteger(networkDays) || networkDays < NETWORK_DAYS.min || networkDays > NETWORK_DAYS.max)) {
       return settingsPage(c, { error: `Keep network activity ${NETWORK_DAYS.min} to ${NETWORK_DAYS.max} days.` }, 400);
     }
+    // How long the activity log is kept (left out: as it is).
+    const activityText = first(body, "activity_days");
+    const activityDays = activityText === "" ? undefined : Number(activityText);
+    if (activityDays !== undefined && (!Number.isInteger(activityDays) || activityDays < ACTIVITY_DAYS.min || activityDays > ACTIVITY_DAYS.max)) {
+      return settingsPage(c, { error: `Keep the activity log ${ACTIVITY_DAYS.min} to ${ACTIVITY_DAYS.max} days.` }, 400);
+    }
     const chosen = new Set(all(body, "ai_scope"));
     const aiScopes = Object.fromEntries(Object.keys(AI_SCOPES).map((k) => [k, chosen.has(k)])) as Record<AiScope, boolean>;
     // What AI apps may read is the policy's ai_reads, for the kid's screen: each phone's policy follows.
@@ -1056,6 +1065,7 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
         ...(site !== "" ? { mapSite: site as MapSite } : {}),
         ...(callDays !== undefined ? { callDays } : {}),
         ...(networkDays !== undefined ? { networkDays } : {}),
+        ...(activityDays !== undefined ? { activityDays } : {}),
       },
       asParent(c),
     );

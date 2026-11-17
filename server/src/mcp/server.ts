@@ -63,6 +63,8 @@ import { listPlaces, locationSettings } from "../family/location/store.js";
 import { phoneRules } from "../family/screentime/rules.js";
 import { registerOpsTools } from "../ops/mcp.js";
 import { notifyParents, proposalNotice } from "../push.js";
+import { AI_PER_HOUR } from "../ratelimit.js";
+import { aiCounted, aiLimited } from "./limits.js";
 import { type AiScope, AI_SCOPES, getSettings } from "../settings.js";
 import { durations, formatDuration, isoInZone, parseWhen } from "../time.js";
 
@@ -87,6 +89,8 @@ export const INSTRUCTIONS = `Belay is a family's own parental-controls server fo
 
 /** Who is calling: the grant a parent approved, and the app's name for the activity log. */
 export interface Caller {
+  /** The connection (an OAuth grant or a personal access token): what reaches the kid is limited per connection (limits.ts). */
+  grantId: string;
   parentId: string;
   parentName: string;
   clientName: string;
@@ -817,6 +821,9 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
         `Calls: ${callsSummary(callSettings(db, row.id))} (get_contacts has the rules and contacts). 911, 988 and emergency numbers always work.`,
         ...(maintenance ? [`Maintenance mode until ${iso(maintenance) ?? ""}: USB debugging works.`] : []),
         ...(rules.frpAccounts.length ? [`Factory reset protection: ${rules.frpAccounts.length} parent Google account${rules.frpAccounts.length === 1 ? "" : "s"}.`] : []),
+        ...(rules.playAccounts.length
+          ? [`Google Play may use only the ${rules.playAccounts.length === 1 ? "parent-owned Google account" : `${rules.playAccounts.length} parent-owned Google accounts`} a parent listed.`]
+          : []),
       ];
       let apps: Record<string, unknown> = { note: "App details are hidden: a parent turned off AI access to apps." };
       if (settings.aiScopes.apps) {
@@ -849,6 +856,8 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
           factory_reset_locked: rules.restrictions.factory_reset,
           debugging_locked: rules.restrictions.debugging,
           reset_protection_accounts: rules.frpAccounts.length,
+          // How many, never which: the parent's email addresses stay on the parent page.
+          play_accounts: rules.playAccounts.length,
           // Whether there's a key and when one was last used: never the key, its check or its version.
           recovery_key: ((state) => ({ exists: usableKey(state), last_used: iso(state.lastUse?.usedAt) }))(recoveryState(db, row.id)),
         },
@@ -911,7 +920,7 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
     {
       title: "Pause the phone",
       description:
-        "Pauses a phone at once: every app but the phone app, texting and Belay is suspended, for some minutes or until a parent resumes it. Tightening, so it acts directly; use it only when the parent asks. A pause you set can only be as long as one already running, or longer. The kid's phone says so in Belay's own words (\"Your parent paused this phone until 6:30 PM.\"), never yours: a parent can add a note of their own on the parent page. Only a parent can resume early, on the parent page (you can propose that with propose_change).",
+        `Pauses a phone at once: every app but the phone app, texting and Belay is suspended, for some minutes or until a parent resumes it. Tightening, so it acts directly; use it only when the parent asks. A pause you set can only be as long as one already running, or longer. The kid's phone says so in Belay's own words ("Your parent paused this phone until 6:30 PM."), never yours: a parent can add a note of their own on the parent page. Only a parent can resume early, on the parent page (you can propose that with propose_change). At most ${AI_PER_HOUR.locks} pauses and locks (lock_phone) an hour per phone through this connection: past that it says when to try again.`,
       inputSchema: {
         device: deviceParam,
         minutes: z.number().int().min(1).max(LIMITS.maxPauseMinutes).optional().describe("How long. Leave it out to pause until a parent resumes it."),
@@ -923,8 +932,12 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
       if (isRefusal(row)) return row;
       const gone = connected(row);
       if (gone) return gone;
+      const limited = aiLimited(deps, caller, "pause_phone", row);
+      if (limited) return limited;
       const done = refusedOr(() => pausePhone(policyContext(), row.id, { minutes: minutes ?? null }, ai));
       if ("content" in done) return done;
+      // A pause that changed nothing (one at least as long was running) didn't reach the kid.
+      if (done.changed) aiCounted(deps, caller, "pause_phone", row.id);
       return result({
         phone: row.name,
         paused_until: done.result.until === null ? "a parent resumes it" : iso(done.result.until),

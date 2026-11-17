@@ -74,6 +74,8 @@ function what(e: AuditEntry): string {
       return `connected ${str(d.client) || "an AI app"}`;
     case "ai.disconnected":
       return `disconnected ${str(d.client) || "an AI app"}`;
+    case "ai.limited":
+      return `was refused: it tried to ${d.what === "checks" ? "check where the phone is" : "pause or lock the phone"} more than ${str(d.limit)} times in an hour${device}`;
     case "token.created":
       return `made a personal access token, "${str(d.name)}"`;
     case "token.revoked":
@@ -162,7 +164,7 @@ function what(e: AuditEntry): string {
     case "policy.restrictions":
       return `changed the locked settings${device}`;
     case "policy.hardening":
-      return `changed factory reset, debugging or reset protection${device}`;
+      return `changed factory reset, debugging, reset protection or the accounts Play may use${device}`;
     case "policy.maintenance":
       return `turned on maintenance mode${device}`;
     case "policy.maintenance_ended":

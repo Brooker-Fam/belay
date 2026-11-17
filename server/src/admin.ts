@@ -391,7 +391,7 @@ async function run(argv: string[], io: CliIO): Promise<void> {
             command_id: f.commandId,
             mock: f.mock,
           })),
-          /** Phase 4: arrivals and departures, newest first, at most 50 (times as the phone sent them). */
+          /** Phase 4: arrivals and departures, newest first, at most 50 (the phone's times, but never more than 5 minutes after the server got them). */
           place_events: listPlaceEvents(db, d.id, { limit: STATUS_FIXES }).map((e) => ({ id: e.id, place_id: e.placeId, place_name: e.placeName, kind: e.kind, at: e.at, fix_id: e.fixId })),
           /** Phase 7: the policy's help_seen, parent_numbers and ai_reads. */
           help_seen: helpSeenFor(db, d.id, now),
@@ -487,7 +487,7 @@ async function run(argv: string[], io: CliIO): Promise<void> {
       io.out(
         done.result.already
           ? `${row.name} was already handed over (rules version ${done.result.handover.version}).`
-          : `${row.name} is handed over (rules version ${done.version}): factory reset, debugging and accounts are unlocked and reset protection is cleared, and the phone tells the kid to back up and reset it from Settings.`,
+          : `${row.name} is handed over (rules version ${done.version}): factory reset, debugging and accounts are unlocked, reset protection is cleared and Play may use any account, and the phone tells the kid to back up and reset it from Settings.`,
       );
       return;
     }

@@ -84,6 +84,8 @@ export interface Settings {
   callDays: number;
   /** Phase 3, network logging: how many days of network activity the server keeps; older ones are deleted. */
   networkDays: number;
+  /** How many days of the activity log the server keeps; older entries are deleted. */
+  activityDays: number;
 }
 
 export const USAGE_MONTHS = { default: 13, min: 1, max: 36 } as const;
@@ -91,6 +93,12 @@ export const USAGE_MONTHS = { default: 13, min: 1, max: 36 } as const;
 export const CALL_DAYS = { default: 90, min: 1, max: 365 } as const;
 /** Phase 3, network logging: network days' retention, in days. */
 export const NETWORK_DAYS = { default: 30, min: 1, max: 90 } as const;
+/**
+ * The activity log's retention, in days: a year and a month by default, so this time last year is
+ * still there. At least 30, so a parent can't make what they did vanish before the other parent
+ * could see it (changing this is in the log too).
+ */
+export const ACTIVITY_DAYS = { default: 400, min: 30, max: 3650 } as const;
 
 export const DEFAULT_SETTINGS: Settings = {
   timezone: "UTC",
@@ -103,6 +111,7 @@ export const DEFAULT_SETTINGS: Settings = {
   parentNumbers: [],
   callDays: CALL_DAYS.default,
   networkDays: NETWORK_DAYS.default,
+  activityDays: ACTIVITY_DAYS.default,
 };
 
 const SCOPE_KEYS = Object.keys(AI_SCOPES) as AiScope[];
@@ -127,6 +136,7 @@ function write(db: DB, key: string, value: unknown): void {
 const validMonths = (n: unknown): n is number => typeof n === "number" && Number.isInteger(n) && n >= USAGE_MONTHS.min && n <= USAGE_MONTHS.max;
 const validCallDays = (n: unknown): n is number => typeof n === "number" && Number.isInteger(n) && n >= CALL_DAYS.min && n <= CALL_DAYS.max;
 const validNetworkDays = (n: unknown): n is number => typeof n === "number" && Number.isInteger(n) && n >= NETWORK_DAYS.min && n <= NETWORK_DAYS.max;
+const validActivityDays = (n: unknown): n is number => typeof n === "number" && Number.isInteger(n) && n >= ACTIVITY_DAYS.min && n <= ACTIVITY_DAYS.max;
 const validDays = (key: keyof LocationRetention, n: unknown): n is number =>
   typeof n === "number" && Number.isInteger(n) && n >= LOCATION_DAYS[key].min && n <= LOCATION_DAYS[key].max;
 const RETENTION_KEYS = Object.keys(LOCATION_DAYS) as (keyof LocationRetention)[];
@@ -161,6 +171,7 @@ export function getSettings(db: DB): Settings {
   const mapSite = read(db, "map_site");
   const callDays = read(db, "call_days");
   const networkDays = read(db, "network_days");
+  const activityDays = read(db, "activity_days");
   const days = locationDays && typeof locationDays === "object" ? (locationDays as Partial<Record<keyof LocationRetention, unknown>>) : {};
   const stored = read(db, "ai_scopes");
   const scopes = stored && typeof stored === "object" ? (stored as Partial<Record<AiScope, unknown>>) : undefined;
@@ -187,6 +198,7 @@ export function getSettings(db: DB): Settings {
     parentNumbers: parentNumbersFrom(read(db, "parent_numbers")),
     callDays: validCallDays(callDays) ? callDays : DEFAULT_SETTINGS.callDays,
     networkDays: validNetworkDays(networkDays) ? networkDays : DEFAULT_SETTINGS.networkDays,
+    activityDays: validActivityDays(activityDays) ? activityDays : DEFAULT_SETTINGS.activityDays,
   };
 }
 
@@ -206,6 +218,7 @@ export interface SettingsChange {
   parentNumbers?: ParentNumber[];
   callDays?: number;
   networkDays?: number;
+  activityDays?: number;
 }
 
 export function updateSettings(db: DB, change: SettingsChange): Settings {
@@ -235,6 +248,10 @@ export function updateSettings(db: DB, change: SettingsChange): Settings {
   if (change.networkDays !== undefined) {
     if (!validNetworkDays(change.networkDays)) throw new Error(`Keep network activity ${NETWORK_DAYS.min} to ${NETWORK_DAYS.max} days`);
     write(db, "network_days", change.networkDays);
+  }
+  if (change.activityDays !== undefined) {
+    if (!validActivityDays(change.activityDays)) throw new Error(`Keep the activity log ${ACTIVITY_DAYS.min} to ${ACTIVITY_DAYS.max} days`);
+    write(db, "activity_days", change.activityDays);
   }
   if (change.parentNumbers !== undefined) {
     const problem = parentNumbersProblem(change.parentNumbers);

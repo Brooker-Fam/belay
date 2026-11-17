@@ -224,7 +224,7 @@ export function locationFor(db: DB, deviceId: string): Policy["location"] {
  * or one that lies, can't make a fix "the latest" for longer than it is.
  */
 export const FIX_SKEW_MS = 5 * 60_000;
-/** In SQL: a fix's time as the server uses it, to show, order and pick "the latest fix" by. */
+/** In SQL: a fix's (or an arrival's or departure's) time as the server uses it, to show, order and pick "the latest fix" by. */
 export const FIX_TIME = `MIN(at, received_at + ${FIX_SKEW_MS})`;
 
 export interface FixView {

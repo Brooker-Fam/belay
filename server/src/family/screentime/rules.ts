@@ -464,13 +464,13 @@ export function sideOf(settings: PhoneSettings, rules: RuleSet, stage: { number:
 /**
  * The policy's `stage`, for the kid's screen: the stage, and the next one with what it changes
  * in the kid's words (the same changes the phone's Stages.changes finds) and its rules, which
- * are what the phone gets when it moves there.
+ * are what the phone gets when it moves there. `label` names the apps in those words (the
+ * phone's own names for them); null counts them instead, for an AI app with the Apps category off.
  */
-export function stageFor(db: DB, deviceId: string, phone = phoneRules(db, deviceId)): Policy["stage"] {
+export function stageFor(db: DB, deviceId: string, phone = phoneRules(db, deviceId), label: Labels | null = phoneLabels(db, deviceId)): Policy["stage"] {
   if (!phone.stage) return null;
   const { stage, since } = phone.stage;
   const next = nextStage(db, stage.number);
-  const label = phoneLabels(db, deviceId);
   return {
     name: oneLine(stage.name, 60),
     number: stage.number,

@@ -33,8 +33,9 @@ OK?", with a web page as the fallback.
   with a one-time code: from `provision.sh`, a QR code, or typed. **Phase 2:** it enforces
   the family's rules within seconds of a change (a long-poll), and keeps enforcing them
   offline: new apps wait for a parent, blocked apps are hidden, the phone can be paused, and
-  safe mode, new users, sideloading, VPNs, Private DNS, the clock and default apps are locked.
-  Calls, texts, 911 and 988 always work. The kid sees every rule, asks for apps with a "Why I
+  safe mode, new users, sideloading, VPNs, Private DNS, the clock and default apps are locked,
+  and Play can be kept to the parent-owned accounts (`allowed_accounts`). Calls, texts, 911 and
+  988 always work. The kid sees every rule, asks for apps with a "Why I
   want it" box, and sees every answer. **Phase 6 (the phone's side):** it updates itself to
   the version a parent approved, without adb: downloaded (resuming), checked (Belay's own
   package, the offered and a newer version, exactly its own signing key) and installed
@@ -98,12 +99,12 @@ OK?", with a web page as the fallback.
   requests for more time (answered with 15, 30 or 60 minutes), lock now, and each phone's
   screen time by the hour and by day, drawn on the server with a table beside each chart.
   Usage is kept 13 months by default. Over MCP, an AI client reads screen time, locks the
-  phone and tightens the rules; the server decides whether a change only tightens, and
-  anything else, or a move to another stage, is a proposal. Network logging is off until a
-  parent turns it on, under Web on the phone's page (never an AI app, not even a proposal);
-  while it's on, the phone's Network tab lists each day's apps and the names they looked up,
-  kept 30 days by default, and an AI client reads it only if a parent turns that on too (it
-  starts off for every family).
+  phone (pauses and locks at most 6 times an hour per connection) and tightens the rules; the
+  server decides whether a change only tightens, and anything else, or a move to another stage,
+  is a proposal. Network logging is off until a parent turns it on, under Web on the phone's
+  page (never an AI app, not even a proposal); while it's on, the phone's Network tab lists each
+  day's apps and the names they looked up, kept 30 days by default, and an AI client reads it
+  only if a parent turns that on too (it starts off for every family).
 - **Phases 4 and 7 on the server: location, and the kid's side.** Location is off until a
   parent turns it on, on the phone's Location and help page: on demand (a parent's "Check
   now", which waits for the phone's fix) or every 15 to 120 minutes within set hours, with
@@ -117,7 +118,8 @@ OK?", with a web page as the fallback.
   kid's phone shows; "Talk to my parent" and withdrawing a request too. The policy tells the
   phone which data the parents' AI app may read, and the numbers for its emergency card.
   Over MCP, an AI client reads location only if a parent turns that on (it starts off), may
-  check where the phone is (the kid sees every check), and never changes any of it.
+  check where the phone is (the kid sees every check; at most 6 an hour per connection), and
+  never changes any of it.
 - **Phase 5 on the server: calls.** Calls are off until a parent turns them on, on the
   phone's Calls page; then the phone's policy makes Belay its phone app. The family decides who
   can call (anyone, or only contacts, and what happens to callers who aren't contacts or have no

@@ -47,7 +47,7 @@ const HandOverForm: FC<{ view: View; data: OffBelayData }> = ({ view, data }) =>
     <div class="card danger-zone">
       <p>
         <strong>Hand this phone over</strong> when it's time for it to be simply the kid's. Belay lifts the locks on factory reset, debugging and
-        accounts, and clears reset protection, so the phone isn't tied to your Google account any more. The phone then tells the kid what happens
+        accounts, and clears reset protection and the accounts Play may use, so the phone isn't tied to your Google account any more. The phone then tells the kid what happens
         next: back up their photos and anything else they want to their own account, remove your account, and reset the phone from Settings. After
         the reset, Belay isn't on it. Then disconnect it here, and delete everything about it.
       </p>

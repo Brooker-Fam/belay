@@ -122,6 +122,17 @@ A phone event that arrives later for the same change (same package and kind, sam
 `happened_at`; for a removal, the latest thing recorded for the package) takes the
 backfill's place, so each change is listed once.
 
+What the server keeps, whatever a phone sends: at most 5,000 new app changes an hour per phone,
+its events and the changes found in its snapshots together. Past that, a snapshot still updates
+what the server knows of the apps, but its changes aren't kept (`backfilled` counts the kept
+ones); and an event is counted in `accepted` but neither kept nor applied, so the phone stops
+sending it: never `429`, since events share the outbox's first lane with requests. The next
+snapshot records what it changed. So is an event that would make more than 5,000 apps on the
+phone (a snapshot's own limit). It keeps at most 20,000 app changes per phone (past that, the
+ones that arrived first go), 2,000 apps that aren't on the phone any more, besides every one a
+parent decided on or reviewed (the ones removed longest ago go), and the newest 1,000
+snapshots' records.
+
 ## `POST /api/v1/events`
 
 Sent as soon as a change is found, from the agent's outbox.
@@ -295,8 +306,9 @@ in `periodic` mode, for one of the phone's places as the policy has them now; a 
 `help` fix always. Everything else is dropped and counted (the phone's Location page says
 how many). `accepted` counts every item in the call, kept, already kept or dropped: none of
 them needs sending again. A fix marked `mock` is kept, and shown as made up. The server shows
-and orders fixes (and picks the latest) by their `at`, but never later than 5 minutes after it
-got them: a phone whose clock is ahead can't keep a fix on top. Both times are kept.
+and orders fixes (and picks the latest) and place events by their `at`, but never later than 5
+minutes after it got them: a phone whose clock is ahead can't keep a fix or an arrival on top.
+Both times are kept.
 
 The server keeps at most 600 new fixes and place events an hour per phone, of any reason
 (lost-mode and help fixes too): past that, the call is answered `429` with `Retry-After`, and
@@ -453,12 +465,14 @@ proposal), and the phone shows each step before it happens.
   parent). A request the phone still lists (60 days) keeps a bare record, without anyone's words,
   so the policy's `requests` still carries its answer.
 - **`handover`** (`{at, by}`: when, and the parent's name, or null from the CLI): the server also
-  lifts `factory_reset`, `debugging` and `modify_accounts`, empties `frp_accounts` (all ordinary
-  fields), and refuses to lock any of them again while the hand-over lasts. Belay sets no
-  `allowed_accounts` for Play, so lifting `modify_accounts` is what frees Play for the kid's own
-  account. While the policy has `handover`, the phone holds none of those three locks and no reset
-  protection policy, whatever the restrictions say. A release build clears the policy once per
-  hand-over (`setFactoryResetProtectionPolicy(null)`, then `FRP_CONFIG_CHANGED` to Play services),
+  lifts `factory_reset`, `debugging` and `modify_accounts`, empties `frp_accounts` and
+  `play_accounts` (all ordinary fields), and refuses to lock or set any of them again while the
+  hand-over lasts. So Play may use the kid's own account: emptying `play_accounts` takes Play's
+  `allowed_accounts` back, and lifting `modify_accounts` lets the kid add the account. While the
+  policy has `handover`, the phone holds none of those three locks, no reset protection policy and
+  no allowed accounts for Play, whatever the restrictions and `play_accounts` say. A release build
+  clears the policy once per hand-over (`setFactoryResetProtectionPolicy(null)`, then
+  `FRP_CONFIG_CHANGED` to Play services),
   even without a record of setting one, and again at the next step if that failed; a debug build,
   which never sets one, leaves it alone and records that it did. The phone shows the kid what
   happens next: back up to their own account, remove the parent's account, then Settings > System
@@ -629,6 +643,12 @@ server decides whether a change tightens or loosens.
   makes one larger than 256 KB (it refuses the change that would).
 - **`web.private_dns: null`** leaves the phone's setting alone, except that if the phone
   still has the host Belay set, Belay puts it back to Android's default (Automatic).
+- **`play_accounts`**: the phone sets Play's managed configuration `allowed_accounts` (for
+  `com.android.vending`) to them, as one string, comma-separated, keeping any other key Play's
+  configuration has (platform notes A4). Empty, it sets nothing, and takes back what it set by
+  removing the key: it never sends an empty string, which would keep every account out of Play.
+  An entry that isn't an email address is left out and reported. Debug builds set them too: they
+  can't lock anyone out of the phone. Only a parent sets them, on the phone's page.
 - **Withdrawing a request** (Phase 7) is the kid's choice, from Belay's screen: an app
   removed while it waits leaves its request pending until a parent answers it, or the kid
   withdraws it.
@@ -700,6 +720,7 @@ server decides whether a change tightens or loosens.
 | `web` | `{private_dns?, chrome?, hide_browsers}` | `private_dns`: a host like `family-filter-dns.cleanbrowsing.org`; `chrome`: `{incognito, safe_search, youtube_restrict: "off"\|"moderate"\|"strict", safe_sites, allow_downloads, url_allowlist?, url_blocklist}` |
 | `maintenance_until` | int? | adb works until then |
 | `frp_accounts` | string[] | Google account ids for factory reset protection |
+| `play_accounts` | string[] | Play's allowed accounts: the email addresses (lowercase, at most 5) of the parent-owned Google accounts Google Play may use; empty: the phone leaves Play's configuration alone (see the rules above) |
 | `support_message` | string? | the parent's words for blocked-app screens |
 | `requests` | `[{id, status: "pending"\|"approved"\|"declined"\|"talk", note?, answered_at?, answered_by?}]` | the kid's requests of the last 30 days |
 | `agent_update` | `{version_code, version_name?, sha256, size}`? | Phase 6: the version of Belay a parent approved for this phone |

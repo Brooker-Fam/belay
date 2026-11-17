@@ -13,8 +13,9 @@ does:
   2's blocking (new apps, blocked apps, the web filter) stops when a parent turns protection off,
   and the kid's sentence is "Belay isn't blocking any apps or websites on this phone any more.",
   shown only when that's true.
-- Belay never set Play's `allowed_accounts` (only `DISALLOW_MODIFY_ACCOUNTS`), so freeing Play's
-  accounts is lifting `modify_accounts`.
+- Play's `allowed_accounts` (the policy's `play_accounts`, set by a parent with hardening) came
+  after this design: the hand-over empties them, and lifting `modify_accounts` lets the kid add
+  their own account.
 - Stopping collecting has a switch only for screen time (measuring) and location; the phone sends
   its app list and the kid's requests while Belay is on it, so for those the server deletes what
   it keeps, and a request the phone still lists keeps a bare record with its answer.

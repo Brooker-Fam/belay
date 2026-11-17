@@ -1,20 +1,22 @@
 /**
  * What one phone token (a stolen, sold or rooted phone) can make the server keep, however it
- * sends it (docs/protocol.md, "What the server keeps"): new requests and fixes an hour, settled
- * requests, fixes and arrivals in all, and usage days only for dates a phone can have counted.
- * Answered 429 with Retry-After past a rate, like the other limits. Made-up apps and places only.
+ * sends it (docs/protocol.md, "What the server keeps"): new requests, fixes and app changes an
+ * hour, settled requests, fixes, arrivals, app changes, apps and app lists in all, and usage days
+ * only for dates a phone can have counted. Answered 429 with Retry-After past a rate, like the
+ * other limits, except app changes, which are accepted and not kept. Made-up apps and places only.
  */
 import { describe, expect, it } from "vitest";
+import { APP_LIMITS } from "../src/device/apps.js";
 import { savePlace, setLocation } from "../src/family/location/changes.js";
 import { MAX_KEPT_FIXES, MAX_KEPT_PLACE_EVENTS, saveLocations } from "../src/family/location/fixes.js";
 import { markHelpSeen } from "../src/family/kidside-changes.js";
-import { answerRequest, type PolicyContext } from "../src/family/policy.js";
+import { answerRequest, decideApp, type PolicyContext } from "../src/family/policy.js";
 import { MAX_SETTLED_REQUESTS, MAX_UNSEEN_HELP, getRequest, unseenHelp } from "../src/family/requests.js";
 import { setPhoneSettings } from "../src/family/screentime/changes.js";
 import { usageDays } from "../src/family/screentime/usage.js";
 import { cleanUp } from "../src/maintenance.js";
 import { databaseBytes } from "../src/ops/backups.js";
-import { deviceCall, enrollPhone, fix, signIn, SPOT, testServer, T0, type TestServer } from "./helpers.js";
+import { appState, deviceCall, enrollPhone, event, fix, pkg, signIn, snapshot, SPOT, testServer, T0, type TestServer } from "./helpers.js";
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -219,5 +221,142 @@ describe("usage days a phone sends", () => {
       .run(phone.deviceId);
     cleanUp(t.deps.db, t.now());
     expect(stored()).toEqual([]);
+  });
+});
+
+describe("app changes and app lists a phone sends", () => {
+  async function apps(more: string[] = []) {
+    const f = await family();
+    const { t, phone } = f;
+    const events = (list: unknown[]) => deviceCall(t, phone.token, "events", { events: list });
+    const inventory = (body: unknown) => deviceCall(t, phone.token, "inventory", body);
+    const rows = (table: string, where = "1") => t.deps.db.prepare<[string], { n: number }>(`SELECT COUNT(*) AS n FROM ${table} WHERE device_id = ? AND ${where}`).get(phone.deviceId)?.n ?? 0;
+    // The phone's first app list: the baseline, which records no changes.
+    expect((await inventory(snapshot(["com.example.chess", "com.example.maps", ...more].map((name) => pkg(name)), t.now()))).status).toBe(200);
+    /** The apps as the server has them now, as the phone would list them. */
+    const asKept = () =>
+      t.deps.db
+        .prepare<[string], { package: string; version_code: number; first_install_time: number; last_update_time: number }>(
+          "SELECT package, version_code, first_install_time, last_update_time FROM apps WHERE device_id = ? AND present = 1 ORDER BY package",
+        )
+        .all(phone.deviceId)
+        .map(({ package: name, ...times }) => pkg(name, times));
+    return { ...f, events, inventory, rows, asKept };
+  }
+  let made = 0;
+  /** Updates of apps on the phone, each a new event: the cheapest app changes a phone could send. */
+  const updates = (n: number, names: string[]) =>
+    Array.from({ length: n }, () => {
+      made++;
+      return event("updated", names[made % names.length] ?? "com.example.chess", { label: words(200), to: { name: `1.${made}`, code: 100 + made }, happened_at: T0 + made });
+    });
+
+  it("events: a few thousand new app changes kept an hour; past that accepted and not kept, never 429, and the phone's next app list catches the apps up", async () => {
+    // Spread over many apps, as a phone's updates are.
+    const many = Array.from({ length: 50 }, (_, i) => `com.example.app${String(i).padStart(2, "0")}`);
+    const { t, phone, events, inventory, rows, asKept } = await apps(many);
+    const budget = t.deps.limits.appChangesPerPhone.limit;
+    for (let call = 0; call < budget / 1000; call++) {
+      const res = await events(updates(1000, many));
+      expect(res.status).toBe(200);
+      expect(await res.json()).toMatchObject({ accepted: 1000, duplicates: 0 });
+    }
+    expect(rows("app_events")).toBe(budget);
+    // Past the hour's budget: answered 200 (the phone sends its events in the same queue as the kid's
+    // requests, which must never wait behind them), and neither kept nor applied.
+    const past = await events([...updates(10, many), event("updated", "com.example.chess", { to: { code: 555 }, happened_at: T0 + 1e7 }), event("installed", "com.example.newgame")]);
+    expect(past.status).toBe(200);
+    expect(await past.json()).toMatchObject({ accepted: 12 });
+    expect(rows("app_events")).toBe(budget);
+    expect(appState(t, phone.deviceId, "com.example.chess")?.version_code).toBe(10);
+    expect(appState(t, phone.deviceId, "com.example.newgame")).toBeUndefined();
+    // The next app list puts the apps right; its changes are past the budget too, so not kept as changes.
+    const changed = asKept().map((p) => (p.package === "com.example.chess" ? { ...p, version_code: 555, last_update_time: T0 + 1e7 } : p));
+    const list = await inventory(snapshot([...changed, pkg("com.example.newgame")], t.now()));
+    expect(await list.json()).toMatchObject({ duplicate: false, backfilled: 0 });
+    expect(appState(t, phone.deviceId, "com.example.chess")?.version_code).toBe(555);
+    expect(appState(t, phone.deviceId, "com.example.newgame")?.present).toBe(1);
+    expect(rows("app_events")).toBe(budget);
+    // An hour after the first, changes are kept again, the phone's and those found in its lists.
+    t.advance(HOUR);
+    expect(await (await events(updates(5, many))).json()).toMatchObject({ accepted: 5 });
+    const later = await inventory(snapshot(asKept().filter((p) => p.package !== "com.example.newgame"), t.now()));
+    expect(await later.json()).toMatchObject({ backfilled: 1 });
+    expect(rows("app_events")).toBe(budget + 6);
+  });
+
+  it(`keep at most ${APP_LIMITS.changes} app changes in all: the ones that arrived first go`, async () => {
+    const { t, phone, events, rows } = await apps();
+    // A year of changes already kept, made up straight in the database.
+    const insert = t.deps.db.prepare(
+      "INSERT INTO app_events (device_id, id, kind, package, label, detected_at, detection, backfilled, received_at, at) VALUES (?, ?, 'updated', 'com.example.chess', 'Chess', ?, 'broadcast', 0, ?, ?)",
+    );
+    t.deps.db.transaction(() => {
+      for (let i = 0; i < APP_LIMITS.changes; i++) insert.run(phone.deviceId, `old-${String(i).padStart(6, "0")}`, T0 - DAY + i, T0 - DAY + i, T0 - DAY + i);
+    })();
+    const fresh = updates(10, ["com.example.chess", "com.example.maps"]);
+    expect((await events(fresh)).status).toBe(200);
+    expect(rows("app_events")).toBe(APP_LIMITS.changes);
+    const kept = t.deps.db.prepare<[string], { id: string }>("SELECT id FROM app_events WHERE device_id = ? ORDER BY received_at, rowid LIMIT 1").get(phone.deviceId);
+    expect(kept?.id).toBe("old-000010");
+    expect(rows("app_events", `id IN (${fresh.map((e) => `'${e.id}'`).join(", ")})`)).toBe(10);
+  });
+
+  it(`at most ${APP_LIMITS.present} apps on the phone: a change that would add one more isn't kept`, async () => {
+    const { t, phone, events, rows } = await apps();
+    const insert = t.deps.db.prepare(
+      "INSERT INTO apps (device_id, package, label, version_code, present, first_seen_at, install_seen_at) VALUES (?, ?, 'Made up', 1, 1, ?, ?)",
+    );
+    t.deps.db.transaction(() => {
+      for (let i = rows("apps", "present = 1"); i < APP_LIMITS.present; i++) insert.run(phone.deviceId, `com.example.many${i}`, T0, T0);
+    })();
+    const install = event("installed", "com.example.onemore");
+    expect(await (await events([install])).json()).toMatchObject({ accepted: 1 });
+    expect(appState(t, phone.deviceId, "com.example.onemore")).toBeUndefined();
+    expect(rows("app_events", `id = '${install.id}'`)).toBe(0);
+    // One removed makes room for one more.
+    await events([event("removed", "com.example.many7"), event("installed", "com.example.onemore", { id: "event-onemore-again" })]);
+    expect(appState(t, phone.deviceId, "com.example.onemore")?.present).toBe(1);
+    expect(rows("apps", "present = 1")).toBe(APP_LIMITS.present);
+  });
+
+  it(`keep at most ${APP_LIMITS.removed} apps that aren't on the phone any more, besides every one a parent decided on or reviewed`, async () => {
+    const { t, phone, ctx, parent, inventory, rows } = await apps();
+    // Two removed long ago that a parent blocked and reviewed, then a flood of made-up removed apps.
+    const insert = t.deps.db.prepare(
+      "INSERT INTO apps (device_id, package, label, version_code, present, first_seen_at, install_seen_at, removed_at) VALUES (?, ?, 'Made up', 1, 0, ?, ?, ?)",
+    );
+    t.deps.db.transaction(() => {
+      insert.run(phone.deviceId, "com.example.blocked", T0 - 2 * DAY, T0 - 2 * DAY, T0 - 2 * DAY);
+      insert.run(phone.deviceId, "com.example.reviewed", T0 - 2 * DAY, T0 - 2 * DAY, T0 - 2 * DAY);
+      for (let i = 0; i < APP_LIMITS.removed; i++) insert.run(phone.deviceId, `com.example.gone${String(i).padStart(4, "0")}`, T0 - DAY, T0 - DAY, T0 - DAY + i);
+    })();
+    decideApp(ctx(), phone.deviceId, "com.example.blocked", "blocked", parent);
+    t.deps.db
+      .prepare("INSERT INTO reviews (device_id, package, reviewed_at, parent_id, via, note, version_code, permissions) VALUES (?, 'com.example.reviewed', ?, ?, 'web', 'Fine for now', 1, '[]')")
+      .run(phone.deviceId, T0 - 2 * DAY, parent.parentId);
+    // The phone's next list: maps removed, one more that isn't on the phone any more.
+    expect((await inventory(snapshot([pkg("com.example.chess")], t.now()))).status).toBe(200);
+    expect(rows("apps", "present = 0")).toBe(APP_LIMITS.removed + 2);
+    expect(appState(t, phone.deviceId, "com.example.maps")?.present).toBe(0);
+    expect(appState(t, phone.deviceId, "com.example.gone0000")).toBeUndefined();
+    expect(appState(t, phone.deviceId, "com.example.gone0001")?.present).toBe(0);
+    expect(appState(t, phone.deviceId, "com.example.blocked")?.present).toBe(0);
+    expect(appState(t, phone.deviceId, "com.example.reviewed")?.present).toBe(0);
+  });
+
+  it(`keep the record of the newest ${APP_LIMITS.lists} app lists`, async () => {
+    const { t, phone, inventory, rows } = await apps();
+    const insert = t.deps.db.prepare("INSERT INTO snapshots (device_id, snapshot_id, taken_at, package_count, received_at, backfilled) VALUES (?, ?, ?, 2, ?, 0)");
+    t.deps.db.transaction(() => {
+      // With the baseline, as many as are kept.
+      for (let i = 0; i < APP_LIMITS.lists - 1; i++) insert.run(phone.deviceId, `old-list-${String(i).padStart(5, "0")}`, T0 - DAY + i, T0 - DAY + i);
+    })();
+    const res = await inventory(snapshot([pkg("com.example.chess"), pkg("com.example.maps"), pkg("com.example.drawing")], t.now()));
+    // Still not a baseline: the new app is found.
+    expect(await res.json()).toMatchObject({ duplicate: false, backfilled: 1 });
+    expect(rows("snapshots")).toBe(APP_LIMITS.lists);
+    expect(rows("snapshots", "snapshot_id = 'old-list-00000'")).toBe(0);
+    expect(rows("snapshots", "snapshot_id = 'old-list-00001'")).toBe(1);
   });
 });

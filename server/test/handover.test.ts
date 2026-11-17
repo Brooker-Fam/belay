@@ -155,7 +155,7 @@ describe("handing a phone over", () => {
     const done = await cli(t, "handover", "alex's phone");
     expect(done).toEqual({
       code: 0,
-      out: `Alex's phone is handed over (rules version ${version + 1}): factory reset, debugging and accounts are unlocked and reset protection is cleared, and the phone tells the kid to back up and reset it from Settings.`,
+      out: `Alex's phone is handed over (rules version ${version + 1}): factory reset, debugging and accounts are unlocked, reset protection is cleared and Play may use any account, and the phone tells the kid to back up and reset it from Settings.`,
       err: "",
     });
     expect(policy()).toMatchObject({ handover: { at: t.now(), by: null }, frp_accounts: [], restrictions: { factory_reset: false, debugging: false, modify_accounts: false } });

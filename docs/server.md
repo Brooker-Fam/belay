@@ -75,9 +75,10 @@ home network; see docs/platform-notes.md.)
 | `BELAY_BACKUP_PASSPHRASE_FILE` | none | A file that holds the passphrase instead, like a Docker secret (`/run/secrets/belay_backup`); a final new line is ignored. Set one of the two, not both. |
 
 The family's timezone, the silent threshold, what AI apps may read, how long screen time,
-where the phone was, call records and network activity are kept, which map site "Open in a
-map" goes to, the numbers on the kid's emergency card, notifications and the daily summary are
-set on the Settings page, not here.
+where the phone was, call records, network activity and the activity log are kept (the activity
+log 400 days by default, at least 30), which map site "Open in a map" goes to, the numbers on
+the kid's emergency card, notifications and the daily summary are set on the Settings page, not
+here.
 
 ## Notifications
 
@@ -279,8 +280,9 @@ the epoch, the parent's name or `null` from the CLI, and the rules version that 
 Network logging adds `network_log` (the policy's: `{enabled}`) and `network` (the days the phone
 sent, newest first, at most 31: `[{day, zone, as_of, entries: [{package, domain, lookups}],
 dropped}]`, `as_of` as the phone sent it).
-Hardening (factory reset, debugging, reset protection) can only be turned on on the parent page;
-`handover` lifts it, as the phone page's "Hand this phone over" does.
+Hardening (factory reset, debugging, reset protection, and the accounts Play may use) can only
+be turned on on the parent page; `handover` lifts it, as the phone page's "Hand this phone over"
+does.
 
 For scripts: `agent-add` prints only the APK's SHA-256 (lowercase) on stdout,
 `recovery-key` prints only the key, grouped like `7KD2M-8Q4ZX-1HNP3-RT6VW-B9CF0G`,
@@ -432,7 +434,8 @@ Only a parent changes any of it, there or with the CLI; AI apps can't, and can't
   (the phone's own receiver: private, slower indoors) or Android's combined provider (faster
   and indoors too, but on a Pixel it's Google's location service that answers).
 - **Where the phone is:** the last fix (by the phone's clock, but never more than 5 minutes after
-  the server got it, so a fix dated in the future doesn't stay on top), described by the
+  the server got it, so a fix dated in the future doesn't stay on top; arrivals and departures
+  are shown and ordered the same way), described by the
   family's places ("At School, within 40 m", "1.2 km from Home"), worked out on the server, with
   how old and how accurate it is,
   and **Open in a map**, a plain link to OpenStreetMap (or Google Maps, in Settings) that only
@@ -537,7 +540,8 @@ The end of the rules, for when the kid outgrows Belay: each step is a parent's, 
   location on; recording calls; network logging). The app list and the kid's requests keep coming while Belay is on the phone;
   [privacy.md](privacy.md) has exactly what each stop deletes.
 - **Hand this phone over** (a phone's page, after typing its name): lifts the locks on factory
-  reset, debugging and accounts and clears reset protection, and the phone shows the kid what to
+  reset, debugging and accounts and clears reset protection and the accounts Play may use, and
+  the phone shows the kid what to
   back up and how to reset it from Settings. While it lasts, those can't be locked again; "Take the
   hand-over back" stops the phone showing it (the locks stay lifted). The page says when the phone
   has it.
@@ -550,6 +554,16 @@ The end of the rules, for when the kid outgrows Belay: each step is a parent's, 
 A phone's token stays good until a parent disconnects the phone, so a stolen, sold or rooted
 phone can send anything a phone may. Whatever it sends, the server keeps at most, per phone:
 
+- **Apps** (Phase 1): 5,000 new app changes an hour (installs, updates and removals, the
+  phone's own and those found in its app lists together), and 20,000 in all: past that the ones
+  that arrived first go. At most 5,000 apps on the phone (an app list's own limit), and 2,000 that
+  aren't on it any more, the ones removed last (so a reinstall is still recognized); an app a
+  parent decided on or reviewed always stays, with its decisions and reviews. The record of the
+  newest 1,000 app lists the phone sent. A change past the hour's limit, or one that would make
+  more than 5,000 apps, is answered as accepted (the phone sends its changes in the same queue as
+  the kid's requests, which never wait behind them) and isn't kept: the phone's next app list
+  puts the apps right, as found by snapshot, and an app list past the hour's limit still updates
+  the apps, without keeping its changes as changes.
 - **Requests:** 300 new ones an hour (help requests aside: nothing holds one back), and 100 help
   requests no parent has seen. Of the requests that wait for no one any more (answered,
   withdrawn, asked again, the kid's "I agree"), the newest 1,000: past that the oldest go, the
@@ -566,8 +580,8 @@ phone can send anything a phone may. Whatever it sends, the server keeps at most
   than the family keeps it, at most 5000 entries a day; `POST /network` is limited to 30 calls a
   minute per phone, apart from its other calls.
 
-Past an hour's limit the phone is answered `429` with `Retry-After`, and sends the rest later;
-every device call is limited to 120 a minute per phone too. Disconnecting a phone stops its
+Past an hour's limit the phone is answered `429` with `Retry-After`, and sends the rest later
+(app changes aside, as above); every device call is limited to 120 a minute per phone too. Disconnecting a phone stops its
 token at once, and deleting it deletes everything it sent.
 
 ## Backups
@@ -800,13 +814,14 @@ Put it behind a reverse proxy with HTTPS, as a service of its own user (a system
 Startup, the one-time setup link, "a phone enrolled", notifications that didn't go out, each
 daily backup (its file name and size, or why it failed), urgent notices about the server,
 why the database couldn't be opened, and errors; that a phone sent location items or call
-records its rules didn't ask for, and how many; that a phone sent a call record Belay never
-keeps (an emergency number, 988 or a private number), without the number, the phone or the
-time of the call, since the phone shouldn't; and, likewise, days of network activity sent while
-network logging was off (how many), and network activity naming 988's websites (only that it
-happened). Never tokens, passwords, passphrases, browsers' push addresses, app names, domains,
-phone numbers or request bodies. The
-activity log on the parent page is where parents see who did what.
+records its rules didn't ask for, or more app changes than the server keeps, and how many; that
+a phone sent a call record Belay never keeps (an emergency number, 988 or a private number),
+without the number, the phone or the time of the call, since the phone shouldn't; and,
+likewise, days of network activity sent while network logging was off (how many), and network
+activity naming 988's websites (only that it happened). Never tokens, passwords, passphrases,
+browsers' push addresses, app names, domains, phone numbers or request bodies. The activity log
+on the parent page is where parents see who did what, for as long as the family keeps it (400
+days by default; the hourly clean-up deletes older entries).
 
 ## Development
 

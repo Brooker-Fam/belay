@@ -54,6 +54,20 @@ class HandoverTest {
     }
 
     @Test
+    fun `the hand-over takes Play's accounts back, so Play may use the kid's own account, debug build or not`() {
+        for (debug in listOf(false, true)) {
+            val held = step(hardened.copy(playAccounts = listOf("parent@gmail.com")), Applied(), debugBuild = debug).second
+            assertEquals(listOf("parent@gmail.com"), held.playAccounts)
+            // A server that still sent them (it doesn't): the hand-over wins.
+            val (changes, after) = step(hardened.copy(version = 5, playAccounts = listOf("parent@gmail.com"), handover = handover), held, debugBuild = debug)
+            assertEquals(Setting.Clear, changes.playAccounts)
+            assertNull(after.playAccounts)
+            // And they aren't set again while it lasts.
+            assertNull(step(hardened.copy(version = 6, playAccounts = listOf("parent@gmail.com"), handover = handover), after, debugBuild = debug).first.playAccounts)
+        }
+    }
+
+    @Test
     fun `a release build clears reset protection once per hand-over, even with no record of setting it`() {
         val policy = WirePolicy(version = 5, handover = handover)
         // Belay has no record of a reset protection policy (it never set one, or lost its record).

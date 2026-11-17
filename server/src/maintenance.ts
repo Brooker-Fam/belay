@@ -15,8 +15,9 @@ const DAY = 24 * 3_600_000;
  * arrivals and departures 90, lost-mode fixes until 7 days after lost mode ends, a help request's
  * fix with its request); call records, as the family keeps them (Phase 5: 90 days by default);
  * network days, as the family keeps them (Phase 3's network logging: 30 days by default);
- * and the kid's requests that wait for no one any more a year after they last changed (help
- * requests stay until the phone is deleted). Run hourly; safe to run any time.
+ * the kid's requests that wait for no one any more a year after they last changed (help
+ * requests stay until the phone is deleted); and the activity log's entries older than the family
+ * keeps it (400 days by default). Run hourly; safe to run any time.
  */
 export function cleanUp(db: DB, now: number): void {
   db.transaction(() => {
@@ -35,6 +36,7 @@ export function cleanUp(db: DB, now: number): void {
     pruneRequests(db, now);
     pruneCallRecords(db, now, settings.callDays);
     pruneNetwork(db, now, settings.networkDays);
+    db.prepare("DELETE FROM audit_log WHERE at <= ?").run(now - settings.activityDays * DAY);
   }).immediate();
   db.pragma("optimize");
 }
