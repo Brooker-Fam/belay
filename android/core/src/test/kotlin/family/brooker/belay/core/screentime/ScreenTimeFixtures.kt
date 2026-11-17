@@ -20,6 +20,8 @@ object Fx {
     const val CLOCK = "com.example.clock"
     const val LAUNCHER = "com.example.launcher"
     const val DIALER = "com.example.dialer"
+    const val SMS = "com.example.sms"
+    const val EMERGENCY = "com.example.emergency"
     const val BELAY = "family.brooker.belay"
 
     /** A local time in [zone]; in an overlap, the first of the two. */
