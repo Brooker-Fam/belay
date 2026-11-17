@@ -2,15 +2,85 @@ import type { FC } from "hono/jsx";
 import type { PendingCode } from "../../device/enroll.js";
 import { type App, type Change, type Review, PERMISSION_NAMES, SOURCE_NAMES, playStoreUrl, versionText } from "../../family/apps.js";
 import { type DeviceView, patchAgeDays } from "../../family/devices.js";
+import { type Decision, LIMITS, type Rules } from "../../family/policy.js";
+import type { RequestView } from "../../family/requests.js";
 import { formatAgo, formatDate, formatDuration } from "../../time.js";
 import { Csrf, Layout, Notice, PermissionChips, PostButton, Problems, StatusBadge, Time, type View } from "../ui.js";
+import {
+  HardeningCard,
+  MaintenanceCard,
+  NewAppsCard,
+  PauseCard,
+  ProtectionCard,
+  RequestAnswer,
+  RestrictionsCard,
+  RulesStatus,
+  SupportCard,
+  WebCard,
+  decidedByWords,
+} from "./rules.js";
 import { ChangeLine } from "./timeline.js";
 
 export interface DeviceSummary {
   device: DeviceView;
   userApps: number;
   unreviewed: number;
+  /** The kid's requests waiting for a parent. */
+  requests: number;
+  protectedOn: boolean;
 }
+
+/** One app's rule on the phone, for the app list. */
+export interface AppRule {
+  state: "allowed" | "blocked" | "waiting" | "runs";
+  decision: Decision | null;
+  /** False for the apps Belay never blocks (the phone app, texting, Belay...). */
+  canBlock: boolean;
+}
+
+export interface PhoneRules {
+  rules: Rules;
+  /** User apps on the phone without a decision: what turning protection on allows. */
+  undecidedApps: number;
+  ruleOf: (app: Pick<App, "package" | "system">) => AppRule;
+  /** The kid's requests a parent hasn't settled (waiting, or "let's talk"). */
+  openRequests: RequestView[];
+  /** Of those, the ones for apps the server doesn't know on the phone yet. */
+  requestsForUnknownApps: RequestView[];
+}
+
+const RuleChip: FC<{ rule: AppRule }> = ({ rule }) =>
+  rule.state === "allowed" ? (
+    <span class="chip allowed">Allowed</span>
+  ) : rule.state === "blocked" ? (
+    <span class="chip blocked">Blocked</span>
+  ) : rule.state === "waiting" ? (
+    <span class="chip waiting">Waiting for you</span>
+  ) : null;
+
+/** Allow or block, for the page's "decide" form (forms can't nest in the review form). */
+const DecideButtons: FC<{ app: Pick<App, "package" | "system">; rule: AppRule }> = ({ app, rule }) => (
+  <div class="row decide">
+    {rule.state === "blocked" ? (
+      <button type="submit" form="decide" name="allow" value={app.package} class="quiet">
+        Unblock
+      </button>
+    ) : (
+      <>
+        {rule.state !== "allowed" && !app.system && (
+          <button type="submit" form="decide" name="allow" value={app.package} class="quiet">
+            Allow
+          </button>
+        )}
+        {rule.canBlock && (
+          <button type="submit" form="decide" name="block" value={app.package} class="quiet">
+            Block
+          </button>
+        )}
+      </>
+    )}
+  </div>
+);
 
 const Facts: FC<{ device: DeviceView; view: View }> = ({ device, view }) => {
   const f = device.facts;
@@ -68,7 +138,7 @@ export const DevicesPage: FC<{ view: View; devices: DeviceSummary[]; pending: Pe
       </Notice>
     )}
     <div class="cards">
-      {devices.map(({ device, userApps, unreviewed }) => (
+      {devices.map(({ device, userApps, unreviewed, requests, protectedOn }) => (
         <a class="card" href={`/devices/${device.id}`}>
           <div class="row spread">
             <strong>{device.name}</strong>
@@ -81,6 +151,8 @@ export const DevicesPage: FC<{ view: View; devices: DeviceSummary[]; pending: Pe
           )}
           <p class="small">
             {userApps} apps {unreviewed > 0 && <span class="chip new">{unreviewed} to review</span>}
+            {requests > 0 && <span class="chip waiting">{requests === 1 ? "1 request" : `${requests} requests`} waiting</span>}
+            <span class="chip">{protectedOn ? "Protected" : "Monitoring only"}</span>
           </p>
           <p class="small muted">Last heard from {device.lastSeenAt ? formatAgo(device.lastSeenAt, view.now) : "never"}</p>
           <Problems problems={device.problems.filter((p) => p.code !== "disconnected")} />
@@ -106,7 +178,7 @@ const unreviewedText = (app: App): string | null => {
   return `Now has ${app.unreviewed.gained.map((p) => PERMISSION_NAMES[p] ?? p).join(", ")} since it was reviewed`;
 };
 
-const AppItem: FC<{ app: App; deviceId: string; view: View }> = ({ app, deviceId, view }) => (
+const AppItem: FC<{ app: App; deviceId: string; view: View; rule: AppRule; request?: RequestView }> = ({ app, deviceId, view, rule, request }) => (
   <div class="app">
     <div>{app.unreviewed && <input type="checkbox" name="package" value={app.package} aria-label={`Select ${app.label}`} />}</div>
     <div>
@@ -114,6 +186,7 @@ const AppItem: FC<{ app: App; deviceId: string; view: View }> = ({ app, deviceId
         <a class="name" href={`/devices/${deviceId}/apps/${encodeURIComponent(app.package)}`}>
           {app.label}
         </a>
+        <RuleChip rule={rule} />
         {app.unreviewed && <span class="chip new">new</span>}
         {app.system && <span class="chip">system</span>}
         {!app.enabled && <span class="chip">turned off</span>}
@@ -133,6 +206,23 @@ const AppItem: FC<{ app: App; deviceId: string; view: View }> = ({ app, deviceId
         <PermissionChips permissions={app.permissions} highlight={app.unreviewed?.kind === "permissions" ? app.unreviewed.gained : []} />
         {!app.detailsKnown && <span class="small muted">Details arrive with the phone's next app list.</span>}
       </div>
+      {request ? <RequestAnswer view={view} request={request} /> : <DecideButtons app={app} rule={rule} />}
+    </div>
+  </div>
+);
+
+/** A request for an app the server doesn't know on the phone yet (its app list hasn't caught up). */
+const RequestItem: FC<{ request: RequestView; view: View }> = ({ request, view }) => (
+  <div class="app">
+    <div></div>
+    <div>
+      <div class="row">
+        <span class="name">{request.label}</span>
+        <span class="chip waiting">Waiting for you</span>
+      </div>
+      <div class="pkg">{request.package}</div>
+      <div class="small muted">Not in the phone's app list yet.</div>
+      <RequestAnswer view={view} request={request} />
     </div>
   </div>
 );
@@ -141,10 +231,13 @@ export const DevicePage: FC<{
   view: View;
   device: DeviceView;
   apps: App[];
+  phone: PhoneRules;
   filter: { q: string; system: boolean; permission: string };
   message?: string;
-}> = ({ view, device, apps, filter, message }) => {
+  error?: string;
+}> = ({ view, device, apps, phone, filter, message, error }) => {
   const unreviewed = apps.filter((a) => a.unreviewed).length;
+  const requestFor = new Map(phone.openRequests.map((r) => [r.package, r]));
   return (
     <Layout view={view} title={device.name}>
       <div class="row spread">
@@ -152,9 +245,19 @@ export const DevicePage: FC<{
         <StatusBadge status={device.status} />
       </div>
       {message && <Notice>{message}</Notice>}
+      {error && <Notice kind="error">{error}</Notice>}
       <Problems problems={device.problems} />
 
-      <h2>Apps</h2>
+      <h2 id="rules">Rules</h2>
+      <RulesStatus view={view} device={device} />
+      <ProtectionCard view={view} device={device} rules={phone.rules} undecidedApps={phone.undecidedApps} />
+      <h3 id="pause">Pause</h3>
+      <PauseCard view={view} device={device} rules={phone.rules} />
+      <h3 id="new-apps">New apps</h3>
+      <NewAppsCard view={view} device={device} rules={phone.rules} />
+
+      <h2 id="apps">Apps</h2>
+      <p class="muted small">Waiting apps first. Belay never blocks the phone app, texting, Settings or itself, so 911 and 988 always work.</p>
       <form class="filters" method="get" action={`/devices/${device.id}`}>
         <label class="sr-only" for="q">
           Search apps
@@ -175,12 +278,24 @@ export const DevicePage: FC<{
           Show
         </button>
       </form>
+      {/* The app list sits in the review form, so its allow, block and answer buttons submit these forms instead. */}
+      <form id="decide" method="post" action={`/devices/${device.id}/decide`}>
+        <Csrf view={view} />
+      </form>
+      {phone.openRequests.map((r) => (
+        <form id={`answer-${r.id}`} method="post" action={`/devices/${device.id}/requests/${r.id}/answer`}>
+          <Csrf view={view} />
+        </form>
+      ))}
       <form method="post" action={`/devices/${device.id}/review`}>
         <Csrf view={view} />
         <div class="card applist">
+          {phone.requestsForUnknownApps.map((r) => (
+            <RequestItem request={r} view={view} />
+          ))}
           {apps.length === 0 && <p class="muted">No apps match.</p>}
           {apps.map((app) => (
-            <AppItem app={app} deviceId={device.id} view={view} />
+            <AppItem app={app} deviceId={device.id} view={view} rule={phone.ruleOf(app)} request={requestFor.get(app.package)} />
           ))}
         </div>
         {unreviewed > 0 && (
@@ -193,10 +308,24 @@ export const DevicePage: FC<{
             <p>
               <button type="submit">Mark selected reviewed</button>
             </p>
-            <p class="muted small">Marking an app reviewed only records that you looked at it. It doesn't change anything on the phone.</p>
+            <p class="muted small">Marking an app reviewed only records that you looked at it. It doesn't allow or block anything.</p>
           </div>
         )}
       </form>
+
+      <h2 id="web">Web</h2>
+      <WebCard view={view} device={device} rules={phone.rules} />
+
+      <h2 id="locks">Settings the kid can't change</h2>
+      <RestrictionsCard view={view} device={device} rules={phone.rules} />
+      <h3 id="support">Message on blocked-app screens</h3>
+      <SupportCard view={view} device={device} rules={phone.rules} />
+
+      <h2 id="maintenance">Maintenance mode</h2>
+      <MaintenanceCard view={view} device={device} rules={phone.rules} />
+
+      <h2 id="hardening">Hardening</h2>
+      <HardeningCard view={view} device={device} rules={phone.rules} />
 
       <h2>This phone</h2>
       <div class="card">
@@ -256,15 +385,135 @@ const ReviewLine: FC<{ review: Review; view: View }> = ({ review, view }) => (
   </li>
 );
 
-export const AppPage: FC<{ view: View; device: DeviceView; app: App; reviews: Review[]; changes: Change[] }> = ({ view, device, app, reviews, changes }) => (
+const STATE_WORDS: Record<AppRule["state"], string> = {
+  allowed: "Allowed",
+  blocked: "Blocked: hidden and suspended on the phone",
+  waiting: "Waiting for your approval: suspended on the phone",
+  runs: "Runs: there's no decision, and new apps run without asking",
+};
+
+const ANSWER_WORDS: Record<RequestView["status"], string> = { pending: "Waiting for you", approved: "Approved", declined: "Declined", talk: "Let's talk" };
+
+/** The app's rule, its history, and the kid's requests for it. */
+const AppRuleCard: FC<{ view: View; device: DeviceView; app: App; rule: AppRule; history: Decision[]; requests: RequestView[] }> = ({
+  view,
+  device,
+  app,
+  rule,
+  history,
+  requests,
+}) => {
+  const open = requests.find((r) => r.status === "pending" || r.status === "talk");
+  return (
+    <>
+      <h2>Rule</h2>
+      <div class="card">
+        <p>
+          <strong>{app.system && rule.state === "runs" ? "Runs: it's a system app" : STATE_WORDS[rule.state]}</strong>
+          {rule.decision && (
+            <span class="small muted">
+              {" "}
+              {decidedByWords(rule.decision)}, <Time ms={rule.decision.decidedAt} tz={view.tz} />
+            </span>
+          )}
+        </p>
+        {rule.decision?.note && <blockquote>{rule.decision.note}</blockquote>}
+        {!rule.canBlock && <p class="muted small">Belay never blocks this app, so 911 and 988 always work.</p>}
+        {open && (
+          <>
+            <form id={`answer-${open.id}`} method="post" action={`/devices/${device.id}/requests/${open.id}/answer`}>
+              <Csrf view={view} />
+              <input type="hidden" name="back" value="app" />
+            </form>
+            <RequestAnswer view={view} request={open} />
+          </>
+        )}
+        {!open && (
+          <form class="stack" method="post" action={`/devices/${device.id}/decide`}>
+            <Csrf view={view} />
+            <input type="hidden" name="back" value="app" />
+            <label for="decide-note">Note (optional): why</label>
+            <textarea id="decide-note" name="note" maxlength={LIMITS.decisionNote}></textarea>
+            <div class="row">
+              {rule.state !== "allowed" && (
+                <button type="submit" name="allow" value={app.package}>
+                  {rule.state === "blocked" ? "Unblock" : "Allow"}
+                </button>
+              )}
+              {rule.state !== "blocked" && rule.canBlock && (
+                <button type="submit" name="block" value={app.package} class="quiet">
+                  Block
+                </button>
+              )}
+            </div>
+          </form>
+        )}
+        {history.length > 1 && (
+          <>
+            <h3>Earlier</h3>
+            <ul>
+              {history.slice(1).map((d) => (
+                <li>
+                  <Time ms={d.decidedAt} tz={view.tz} />: {d.state === "undecided" ? "decision cleared" : d.state} {decidedByWords(d)}
+                  {d.note && <blockquote>{d.note}</blockquote>}
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+        {requests.filter((r) => r !== open).length > 0 && (
+          <>
+            <h3>The kid's requests for it</h3>
+            <ul>
+              {requests
+                .filter((r) => r !== open)
+                .map((r) => (
+                  <li>
+                    <Time ms={Math.min(r.askedAt, r.receivedAt)} tz={view.tz} />: {ANSWER_WORDS[r.status]}
+                    {r.answeredBy && ` by ${r.answeredBy}`}
+                    {r.reason && (
+                      <>
+                        <span class="small muted"> In their words:</span>
+                        <blockquote class="kid">{r.reason}</blockquote>
+                      </>
+                    )}
+                    {r.note && (
+                      <>
+                        <span class="small muted"> Your answer:</span>
+                        <blockquote>{r.note}</blockquote>
+                      </>
+                    )}
+                  </li>
+                ))}
+            </ul>
+          </>
+        )}
+      </div>
+    </>
+  );
+};
+
+export const AppPage: FC<{
+  view: View;
+  device: DeviceView;
+  app: App;
+  reviews: Review[];
+  changes: Change[];
+  rule: AppRule;
+  history: Decision[];
+  requests: RequestView[];
+  message?: string;
+}> = ({ view, device, app, reviews, changes, rule, history, requests, message }) => (
   <Layout view={view} title={app.label}>
     <p class="small">
       <a href={`/devices/${device.id}`}>← {device.name}</a>
     </p>
     <h1>{app.label}</h1>
     <p class="pkg">{app.package}</p>
+    {message && <Notice>{message}</Notice>}
     {!app.present && <Notice kind="warn">This app isn't on the phone any more.</Notice>}
     {app.unreviewed && <Notice>{unreviewedText(app)}</Notice>}
+    <AppRuleCard view={view} device={device} app={app} rule={rule} history={history} requests={requests} />
     <div class="card">
       <dl class="facts">
         <dt>Version</dt>

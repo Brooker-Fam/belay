@@ -13,14 +13,18 @@ export interface View {
   now: number;
   path: string;
   assets: { css: string; js: string; icon: string };
+  /** What waits for a parent, for the menu: the kid's requests and AI apps' proposals. */
+  waiting?: { requests: number; proposals: number };
 }
 
 const NAV = [
-  ["/", "Phones"],
-  ["/timeline", "Timeline"],
-  ["/add", "Add a phone"],
-  ["/settings", "Settings"],
-  ["/activity", "Activity"],
+  ["/", "Phones", null],
+  ["/requests", "Requests", "requests"],
+  ["/proposals", "Proposals", "proposals"],
+  ["/timeline", "Timeline", null],
+  ["/add", "Add a phone", null],
+  ["/settings", "Settings", null],
+  ["/activity", "Activity", null],
 ] as const;
 
 function current(path: string, href: string): boolean {
@@ -49,11 +53,19 @@ export const Layout: FC<PropsWithChildren<{ view: View; title: string; narrow?: 
               Belay
             </a>
             <nav aria-label="Main">
-              {NAV.map(([href, label]) => (
-                <a href={href} aria-current={current(view.path, href) ? "page" : undefined}>
-                  {label}
-                </a>
-              ))}
+              {NAV.map(([href, label, count]) => {
+                const n = count ? (view.waiting?.[count] ?? 0) : 0;
+                return (
+                  <a href={href} aria-current={current(view.path, href) ? "page" : undefined}>
+                    {label}
+                    {n > 0 && (
+                      <span class="badge" aria-label={`${n} waiting`}>
+                        {n}
+                      </span>
+                    )}
+                  </a>
+                );
+              })}
             </nav>
             <form method="post" action="/logout">
               <Csrf view={view} />
