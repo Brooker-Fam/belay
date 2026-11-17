@@ -1,5 +1,6 @@
 /** A server with an in-memory database, a clock the test moves, and no network. Made-up data only. */
 import { createApp } from "../src/app.js";
+import { createParent, createSession } from "../src/auth/parents.js";
 import { testConfig, type Config } from "../src/config.js";
 import { openDatabase } from "../src/db.js";
 import { makeDeps, type Deps } from "../src/deps.js";
@@ -160,4 +161,34 @@ export function appState(t: TestServer, deviceId: string, name: string) {
       "SELECT present, version_code, install_seen_at, permissions, source, details_known FROM apps WHERE device_id = ? AND package = ?",
     )
     .get(deviceId, name);
+}
+
+// ── The parent pages ────────────────────────────────────────────────────
+
+export const ORIGIN = "https://belay.example.org";
+export const PASSWORD = "correct horse battery staple";
+
+/** A parent with a signed-in session: the cookie and the session's CSRF token. */
+export async function signIn(t: TestServer, username = "sam", name = "Sam") {
+  const parent = await createParent(t.deps.db, t.now(), { name, username, password: PASSWORD });
+  const session = createSession(t.deps.db, t.now(), parent.id);
+  return { parent, cookie: `__Host-belay=${session.cookie}`, csrf: session.csrf };
+}
+
+export function get(t: TestServer, path: string, cookie?: string) {
+  return t.app.request(path, { headers: cookie ? { cookie } : {} });
+}
+
+export function postForm(
+  t: TestServer,
+  path: string,
+  fields: Record<string, string | string[]>,
+  opts: { cookie?: string; origin?: string | null; headers?: Record<string, string> } = {},
+) {
+  const body = new URLSearchParams();
+  for (const [k, v] of Object.entries(fields)) for (const one of Array.isArray(v) ? v : [v]) body.append(k, one);
+  const headers: Record<string, string> = { "content-type": "application/x-www-form-urlencoded", "x-forwarded-for": "203.0.113.9", ...opts.headers };
+  if (opts.cookie) headers.cookie = opts.cookie;
+  if (opts.origin !== null) headers.origin = opts.origin ?? ORIGIN;
+  return t.app.request(path, { method: "POST", headers, body });
 }

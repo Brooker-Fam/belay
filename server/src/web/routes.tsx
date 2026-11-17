@@ -38,6 +38,7 @@ import { getApp, listApps, listChanges, markReviewed, reviewHistory, appCounts }
 import { deleteDevice, getDevice, listDevices, nameTaken, renameDevice, revokeDevice } from "../family/devices.js";
 import { clientAddress, type Bindings } from "../http.js";
 import { createPersonalToken, getGrant, listGrants, revokeAllGrants, revokeGrant } from "../oauth/store.js";
+import { browserName, listSubscriptions, removeSubscription, saveSubscription, sendNotice, subscriptionProblem, vapidKeys } from "../push.js";
 import { AI_SCOPES, type AiScope, getSettings, updateSettings } from "../settings.js";
 import { isValidTimeZone } from "../time.js";
 import type { Assets } from "./assets.js";
@@ -63,13 +64,19 @@ const SAVED: Record<string, string> = {
   removed: "Removed.",
   renamed: "Renamed.",
   disconnected: "Disconnected. The phone's access stopped.",
+  push_on: "Notifications are on for this browser.",
+  push_off: "Notifications are off for this browser.",
+  push_removed: "Removed. That browser gets no more notices.",
 };
 
-/** Security headers for every page. `formAction` widens form-action for the OAuth consent page. */
+/**
+ * Security headers for every page. `formAction` widens form-action for the OAuth consent page.
+ * Scripts, the service worker (/sw.js) and the web app manifest are all same-origin files.
+ */
 export function pageHeaders(c: Context, formAction = "'self'"): void {
   c.header(
     "Content-Security-Policy",
-    `default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:; form-action ${formAction}; frame-ancestors 'none'; base-uri 'none'`,
+    `default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:; connect-src 'self'; manifest-src 'self'; worker-src 'self'; form-action ${formAction}; frame-ancestors 'none'; base-uri 'none'`,
   );
   c.header("X-Content-Type-Options", "nosniff");
   c.header("X-Frame-Options", "DENY");
@@ -409,6 +416,7 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
         meId={me(c).parent.id}
         grants={listGrants(db)}
         mcpUrl={`${config.publicUrl}/mcp`}
+        push={{ publicKey: vapidKeys(db).publicKey, browsers: listSubscriptions(db, me(c).parent.id) }}
         message={extra.message ?? SAVED[c.req.query("saved") ?? ""]}
         error={extra.error}
       />,
@@ -498,6 +506,46 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
         after="Belay keeps only a hash of it. Revoke it in Settings when you no longer need it."
       />,
     );
+  });
+
+  // ── Notifications (Web Push) ───────────────────────────────────────
+
+  app.post("/settings/push/subscribe", async (c) => {
+    const body = await form(c);
+    const input = { endpoint: first(body, "endpoint"), p256dh: first(body, "p256dh"), auth: first(body, "auth") };
+    const problem = subscriptionProblem(input);
+    if (problem) return settingsPage(c, { error: problem }, 400);
+    const now = deps.now();
+    const parentId = me(c).parent.id;
+    const saved = saveSubscription(db, now, parentId, input, browserName(c.req.header("user-agent"), input.endpoint));
+    audit(db, now, { kind: "parent", parentId }, "push.subscribed", { detail: { browser: saved.name } });
+    return c.redirect("/settings?saved=push_on#notifications");
+  });
+
+  app.post("/settings/push/unsubscribe", async (c) => {
+    const endpoint = first(await form(c), "endpoint");
+    const parentId = me(c).parent.id;
+    const removed = endpoint ? removeSubscription(db, parentId, { endpoint }) : null;
+    if (removed) audit(db, deps.now(), { kind: "parent", parentId }, "push.unsubscribed", { detail: { browser: removed.name } });
+    return c.redirect("/settings?saved=push_off#notifications");
+  });
+
+  app.post("/settings/push/:id/remove", (c) => {
+    const parentId = me(c).parent.id;
+    const removed = removeSubscription(db, parentId, { id: c.req.param("id") });
+    if (removed) audit(db, deps.now(), { kind: "parent", parentId }, "push.unsubscribed", { detail: { browser: removed.name } });
+    return c.redirect("/settings?saved=push_removed#notifications");
+  });
+
+  app.post("/settings/push/test", async (c) => {
+    const result = await sendNotice(deps, { title: "Belay", body: "A test notice from Belay's Settings page.", url: "/settings" }, { parentId: me(c).parent.id });
+    const message =
+      result.sent > 0
+        ? `Sent a test notice to ${result.sent} browser${result.sent === 1 ? "" : "s"}.`
+        : result.removed > 0
+          ? "That browser's push service no longer knows it, so it was removed. Turn notifications on again there."
+          : "The test notice didn't go out. Try again in a minute.";
+    return settingsPage(c, result.sent > 0 ? { message } : { error: message }, result.sent > 0 ? 200 : 502);
   });
 
   app.post("/settings/ai/:id/revoke", (c) => {

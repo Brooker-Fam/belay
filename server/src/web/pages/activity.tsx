@@ -66,6 +66,12 @@ function what(e: AuditEntry): string {
       return `made a personal access token, "${str(d.name)}"`;
     case "token.revoked":
       return `revoked the personal access token "${str(d.name)}"`;
+    case "push.subscribed":
+      return `turned on notifications on ${str(d.browser) || "a browser"}`;
+    case "push.unsubscribed":
+      return `turned off notifications on ${str(d.browser) || "a browser"}`;
+    case "request.made":
+      return `asked for ${str(d.label) || str(d.package) || "an app"}`;
     default:
       if (e.action === "ai.read") return `read ${str(d.what) || "data"}${device}`;
       return e.action;

@@ -12,7 +12,7 @@ export interface View {
   tz: string;
   now: number;
   path: string;
-  assets: { css: string; js: string };
+  assets: { css: string; js: string; icon: string };
 }
 
 const NAV = [
@@ -33,7 +33,11 @@ export const Layout: FC<PropsWithChildren<{ view: View; title: string; narrow?: 
       <meta charset="utf-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1" />
       <meta name="robots" content="noindex" />
+      <meta name="theme-color" content="#1f6f5c" />
+      <meta name="apple-mobile-web-app-title" content="Belay" />
       <title>{`${title} · Belay`}</title>
+      <link rel="manifest" href="/manifest.webmanifest" />
+      <link rel="icon" href={view.assets.icon} type="image/svg+xml" />
       <link rel="stylesheet" href={view.assets.css} />
       <script src={view.assets.js} defer></script>
     </head>

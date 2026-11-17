@@ -8,6 +8,7 @@
  */
 import type { DB } from "../db.js";
 import type { Request } from "../device/schemas.js";
+import { cleanText } from "../text.js";
 import { REQUEST_WINDOW_MS } from "./policy.js";
 
 export type RequestStatus = "pending" | "approved" | "declined" | "talk";
@@ -64,12 +65,6 @@ function toView(r: RequestRow): RequestView {
     answeredBy: r.answered_by_name,
     answeredAt: r.answered_at,
   };
-}
-
-/** Removes control characters (except new lines) and the ones that reorder text. */
-export function cleanText(value: string, max: number): string {
-  // eslint-disable-next-line no-control-regex
-  return value.replace(/[\u{0}-\u{9}\u{b}-\u{1f}\u{7f}-\u{9f}\u{200b}-\u{200f}\u{202a}-\u{202e}\u{2066}-\u{2069}]/gu, "").trim().slice(0, max);
 }
 
 export interface SavedRequests {

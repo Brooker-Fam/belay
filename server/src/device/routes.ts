@@ -7,6 +7,7 @@ import type { Deps } from "../deps.js";
 import { buildPolicy, policyVersion } from "../family/policy.js";
 import { saveRequests } from "../family/requests.js";
 import { bearerToken, clientAddress, readJson, type Bindings } from "../http.js";
+import { notifyParents, requestNotice } from "../push.js";
 import type { Verdict } from "../ratelimit.js";
 import { applyEvents, applyInventory } from "./apps.js";
 import { enroll } from "./enroll.js";
@@ -150,6 +151,7 @@ export function deviceRoutes(deps: Deps): Hono<DeviceEnv> {
     for (const r of saved.created) {
       audit(db, now, { kind: "phone", deviceId: phone.id }, "request.made", { detail: { package: r.package, label: r.label } });
     }
+    if (saved.created.length) notifyParents(deps, requestNotice(phone.name, saved.created.map((r) => r.label)));
     return c.json({ server_time: now, accepted: saved.accepted });
   });
 
