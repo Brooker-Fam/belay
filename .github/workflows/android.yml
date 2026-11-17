@@ -55,6 +55,27 @@ jobs:
           cp android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk apks/
           cp android/fixture/build/outputs/apk/v1/debug/fixture-v1-debug.apk apks/
           cp android/fixture/build/outputs/apk/v2/debug/fixture-v2-debug.apk apks/
+      # Debug-only parts (src/debug) must never reach a release build.
+      - name: The release build has no debug-only parts
+        run: |
+          aapt2="$(find "$ANDROID_HOME/build-tools" -name aapt2 -type f | sort | tail -n 1)"
+          manifest="$("$aapt2" dump xmltree --file AndroidManifest.xml android/app/build/outputs/apk/release/app-release-unsigned.apk)"
+          if grep -qE 'DebugRecoveryReceiver|DEBUG_RECOVER|testOnly' <<<"$manifest"; then
+            echo "::error::The release APK's manifest has debug-only parts."
+            exit 1
+          fi
+      # Phase 6's self-update test: a second debug build of Belay, on this runner (so the same
+      # debug key), with a higher version code, and not test-only: Android never lets an app
+      # install a test-only APK through a PackageInstaller session. The first one is collected
+      # above; this one is built after it.
+      - name: A second debug build of Belay, for the self-update test
+        working-directory: android
+        run: |
+          base="$(jq -r '.elements[0].versionCode' app/build/outputs/apk/debug/output-metadata.json)"
+          code=$((base + 1))
+          ./gradlew --stacktrace :app:assembleDebug -PbelayVersionCode="$code" -PbelayTestOnly=false
+          cp app/build/outputs/apk/debug/app-debug.apk ../apks/app-debug-update.apk
+          echo "$code" > ../apks/app-debug-update.version-code
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: apks
@@ -106,6 +127,8 @@ jobs:
           curl -fsS http://127.0.0.1:8080/healthz
           code="$(node server/dist/cli.js create-code "CI phone" 2>/dev/null)"
           echo "BELAY_E2E_CODE=$code" >> "$GITHUB_ENV"
+      - name: The self-update test's version code
+        run: echo "BELAY_E2E_UPDATE_CODE=$(cat apks/app-debug-update.version-code)" >> "$GITHUB_ENV"
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -119,6 +142,8 @@ jobs:
           BELAY_E2E_STATUS: BELAY_PUBLIC_URL=http://10.0.2.2:8080 BELAY_DATA_DIR=${{ runner.temp }}/belay-data node server/dist/cli.js status --json
           # Phase 2: the server's CLI, for setting rules and answering requests during the test.
           BELAY_E2E_CLI: BELAY_PUBLIC_URL=http://10.0.2.2:8080 BELAY_DATA_DIR=${{ runner.temp }}/belay-data node server/dist/cli.js
+          # Phases 6 and 10: the update Belay installs on itself (BELAY_E2E_UPDATE_CODE is set above).
+          BELAY_E2E_UPDATE_APK: apks/app-debug-update.apk
         with:
           api-level: "37.0"
           target: ${{ matrix.target }}
