@@ -58,8 +58,10 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
      */
     fun run(inventory: Map<String, PackageRecord>, changed: Set<String>, fullScan: Boolean, recheckDns: Boolean): Result {
         val now = System.currentTimeMillis()
-        val policy = DebugTools.policyOverride ?: store.policy()
         val before = store.applied()
+        // With no policy, Belay enforces nothing; if it applied something before (a debug
+        // build's test policy), a policy that enforces nothing takes it back.
+        val policy = DebugTools.policyOverride ?: store.policy() ?: WirePolicy(version = 0).takeIf { before.policyVersion != null }
         val requests = store.requests()
         val dnsRow = store.privateDns()
         if (policy == null) {
