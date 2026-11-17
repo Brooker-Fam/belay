@@ -77,9 +77,9 @@ class EnforcementInstrumentedTest {
             val installedAt = System.currentTimeMillis()
             assertTrue(shell("pm install -r -t $V1").contains("Success"))
             awaitTrue("the new app wasn't suspended on install") { isSuspended(FIXTURE) }
-            awaitTrue("Belay didn't ask for the new app") { store.requestsQueuedFor(FIXTURE).isNotEmpty() }
+            awaitTrue("Belay didn't ask for the new app") { store.requestsQueuedFor(FIXTURE).any { it.createdAt >= installedAt } }
             val asked = Wire.json.decodeFromString(WireRequest.serializer(), store.requestsQueuedFor(FIXTURE).last().payload)
-            assertEquals(null, asked.reason)
+            assertEquals("Belay asks by itself, without a reason", null, asked.reason)
 
             // A parent approves it: it runs.
             DebugTools.policyOverride = asking(base, 2, WireAppState.ALLOWED)

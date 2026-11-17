@@ -20,17 +20,28 @@ class RequestsTest {
 
     private fun policyWith(vararg answers: WireRequestAnswer) = WirePolicy(version = 3, requests = answers.toList())
 
+    /** Every app here was installed just before [T0]. */
+    private val installedBeforeT0: (String) -> Long? = { T0 - 1000 }
+
     @Test
     fun `a waiting app without a request gets one at once, and only once`() {
         val waiting = listOf("com.example.chat", "com.example.game")
-        assertEquals(listOf("com.example.game"), Requests.toMake(waiting, listOf(chat)))
-        assertEquals(emptyList(), Requests.toMake(waiting, listOf(chat, chat.copy(id = "request-2", packageName = "com.example.game"))))
+        assertEquals(listOf("com.example.game"), Requests.toMake(waiting, listOf(chat), installedBeforeT0))
+        assertEquals(
+            emptyList(),
+            Requests.toMake(waiting, listOf(chat, chat.copy(id = "request-2", packageName = "com.example.game")), installedBeforeT0),
+        )
     }
 
     @Test
     fun `an answered request isn't made again by itself`() {
         // Declined, but not blocked: the app still waits, and the kid sees the answer.
-        assertEquals(emptyList(), Requests.toMake(listOf(chat.packageName), listOf(chat)))
+        assertEquals(emptyList(), Requests.toMake(listOf(chat.packageName), listOf(chat), installedBeforeT0))
+    }
+
+    @Test
+    fun `an app removed and installed again is asked for again`() {
+        assertEquals(listOf(chat.packageName), Requests.toMake(listOf(chat.packageName), listOf(chat)) { T0 + HOUR })
     }
 
     @Test

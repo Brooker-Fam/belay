@@ -46,13 +46,20 @@ object Requests {
         answered.firstOrNull { it.request.packageName == packageName && it.open }
 
     /**
-     * The waiting apps that need a request made for them now: any without a request yet, so
-     * the parent sees it even if the kid never opens Belay. One already answered (declined,
-     * say) isn't repeated: the kid sees the answer and can ask again with a reason.
+     * The waiting apps that need a request made for them now: any without a request since it
+     * was installed ([installedAt]: its first-install time), so the parent sees it even if
+     * the kid never opens Belay. One already answered (declined, say) isn't repeated: the kid
+     * sees the answer and can ask again with a reason. An app removed and installed again is
+     * asked for again.
      */
-    fun toMake(waiting: List<String>, requests: List<KidRequest>): List<String> {
-        val asked = requests.mapTo(HashSet()) { it.packageName }
-        return waiting.filter { it !in asked }
+    fun toMake(waiting: List<String>, requests: List<KidRequest>, installedAt: (String) -> Long?): List<String> {
+        val lastAsked = HashMap<String, Long>()
+        requests.forEach { lastAsked.merge(it.packageName, it.askedAt, ::maxOf) }
+        return waiting.filter { name ->
+            val asked = lastAsked[name] ?: return@filter true
+            val installed = installedAt(name) ?: return@filter false
+            asked < installed
+        }
     }
 
     /**

@@ -94,7 +94,7 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
 
         // Belay asks for each new waiting app at once, so the parent sees it even if the kid
         // never opens Belay. The request goes behind the event that reported the install.
-        val made = Requests.toMake(plan.waiting, requests).mapNotNull { name ->
+        val made = Requests.toMake(plan.waiting, requests) { inventory[it]?.firstInstallTime }.mapNotNull { name ->
             inventory[name]?.let { KidRequest(UUID.randomUUID().toString(), name, it.label, null, now) }
         }
         store.commitEnforcement(next, made, now)
