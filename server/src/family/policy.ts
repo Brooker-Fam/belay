@@ -12,6 +12,7 @@
 import { type Actor, audit } from "../audit.js";
 import type { DB } from "../db.js";
 import { Policy } from "../device/schemas.js";
+import { deviceFacts } from "./devices.js";
 
 // ── Names ────────────────────────────────────────────────────────────────
 
@@ -100,22 +101,60 @@ export const SAFE_CHROME: ChromeSettings = {
   url_blocklist: [],
 };
 
+/** Why the phone never blocks an app. */
+type NeverBlockedRole = "belay" | "android" | "calls" | "dialer" | "texting" | "keyboard" | "home" | "emergency" | "system_ui" | "settings";
+
 /**
  * Never blocked, whatever the policy says, so 911 and 988 always work (docs/protocol.md,
- * "Enforcement rules"). The phone ignores a block on these and others it knows (the default
- * dialer and SMS app, the home screen); the server refuses the ones it can name.
+ * "Enforcement rules"). The phone works out its own list (the default dialer and texting app,
+ * the keyboard, the home screen…) and reports it in `enforcement.never_blocked`; the server
+ * refuses to block those, and these well-known ones on any phone, before its first report too.
  */
-export const NEVER_BLOCKED = new Set([
-  "family.brooker.belay",
-  "com.android.phone",
-  "com.android.server.telecom",
-  "com.google.android.dialer",
-  "com.google.android.apps.messaging",
-  "com.android.settings",
-  "com.android.systemui",
-  "com.android.emergency",
-  "com.google.android.apps.nexuslauncher",
+export const NEVER_BLOCKED: ReadonlyMap<string, NeverBlockedRole> = new Map<string, NeverBlockedRole>([
+  ["family.brooker.belay", "belay"],
+  ["android", "android"],
+  ["com.android.phone", "calls"],
+  ["com.android.server.telecom", "calls"],
+  ["com.android.providers.telephony", "calls"],
+  ["com.google.android.ims", "calls"],
+  ["com.shannon.imsservice", "calls"],
+  ["com.google.android.dialer", "dialer"],
+  ["com.android.dialer", "dialer"],
+  ["com.samsung.android.dialer", "dialer"],
+  ["com.android.incallui", "dialer"],
+  ["com.samsung.android.incallui", "dialer"],
+  ["com.google.android.apps.messaging", "texting"],
+  ["com.android.messaging", "texting"],
+  ["com.android.mms", "texting"],
+  ["com.samsung.android.messaging", "texting"],
+  ["com.google.android.inputmethod.latin", "keyboard"],
+  ["com.android.inputmethod.latin", "keyboard"],
+  ["com.samsung.android.honeyboard", "keyboard"],
+  ["com.google.android.apps.nexuslauncher", "home"],
+  ["com.android.launcher3", "home"],
+  ["com.sec.android.app.launcher", "home"],
+  ["com.android.emergency", "emergency"],
+  ["com.google.android.apps.safetyhub", "emergency"],
+  ["com.android.cellbroadcastreceiver", "emergency"],
+  ["com.android.cellbroadcastreceiver.module", "emergency"],
+  ["com.google.android.cellbroadcastreceiver", "emergency"],
+  ["com.android.systemui", "system_ui"],
+  ["com.android.settings", "settings"],
 ]);
+
+const NEVER_BLOCKED_WHY: Record<NeverBlockedRole | "reported", string> = {
+  belay: "Belay never blocks itself.",
+  android: "The phone never blocks Android itself.",
+  calls: "The phone never blocks what places calls and texts: 911 and 988 must always work.",
+  dialer: "The phone never blocks its dialer: 911 and 988 must always work.",
+  texting: "The phone never blocks its texting app: texting 988 must always work.",
+  keyboard: "The phone never blocks its keyboard: texting 988 needs one.",
+  home: "The phone never blocks its home screen: it's the way to calls and texts.",
+  emergency: "The phone never blocks its emergency and safety apps: 911 and 988 must always work.",
+  system_ui: "The phone never blocks System UI: it shows calls and the lock screen.",
+  settings: "The phone never blocks Settings.",
+  reported: "The phone says it never blocks this app: it's one the phone needs, like its dialer, texting app or keyboard, so 911 and 988 always work.",
+};
 
 export const LIMITS = {
   pauseNote: 500,
@@ -360,8 +399,27 @@ export function decisionHistory(db: DB, deviceId: string, pkg: string): Decision
     .map(toDecision);
 }
 
-export function neverBlocked(pkg: string): boolean {
-  return NEVER_BLOCKED.has(pkg);
+/** The packages this phone said, in its latest report, that it never blocks. */
+function reportedNeverBlocked(db: DB, deviceId: string): ReadonlySet<string> {
+  return new Set(deviceFacts(db, deviceId)?.enforcement?.never_blocked ?? []);
+}
+
+/**
+ * For each app, why this phone never blocks it (so the server won't either), in words, or null
+ * when it can be blocked. Reads the phone's report once, for a list of apps.
+ */
+export function neverBlockedOn(db: DB, deviceId: string): (pkg: string) => string | null {
+  const reported = reportedNeverBlocked(db, deviceId);
+  return (pkg) => {
+    const role = NEVER_BLOCKED.get(pkg);
+    if (role) return NEVER_BLOCKED_WHY[role];
+    return reported.has(pkg) ? NEVER_BLOCKED_WHY.reported : null;
+  };
+}
+
+/** Why this phone never blocks the app, in words, or null when it can be blocked. */
+export function neverBlockedReason(db: DB, deviceId: string, pkg: string): string | null {
+  return neverBlockedOn(db, deviceId)(pkg);
 }
 
 /** Whether the phone has ever reported this app (it's in its app list, now or before a removal). */
@@ -628,8 +686,8 @@ export type DecideResult = Changed<{ before: Decision | null; label: string | nu
 
 /**
  * Allows or blocks one app, or clears its decision. An AI app may only block. Allowing an
- * app also approves the kid's open requests for it. Blocking a package the phone never
- * blocks throws: callers check neverBlocked first.
+ * app also approves the kid's open requests for it. Blocking an app the phone never blocks
+ * is refused (RuleRefused), for parents too, with the reason.
  */
 export function decideApp(
   ctx: PolicyContext,
@@ -640,7 +698,8 @@ export function decideApp(
   opts: { note?: string | null; proposalId?: string | null } = {},
 ): DecideResult {
   if (who.kind === "ai" && state !== "blocked") throw new Error("An AI app can only block apps; anything else is a proposal");
-  if (state === "blocked" && neverBlocked(pkg)) throw new Error(`${pkg} is never blocked`);
+  const never = state === "blocked" ? neverBlockedReason(ctx.db, deviceId, pkg) : null;
+  if (never) throw new RuleRefused(never);
   return mutate(ctx, deviceId, who, (_rules, log) => {
     const { db, now } = ctx;
     if (state !== "undecided") checkPreDecisionLimits(db, deviceId, pkg, who);

@@ -19,7 +19,7 @@ import {
   currentDecision,
   decideApp,
   getRules,
-  neverBlocked,
+  neverBlockedReason,
   resumePhone,
   setNewApps,
   setRestrictions,
@@ -142,7 +142,7 @@ export function nothingToLoosen(db: DB, deviceId: string, change: ProposalChange
   const rules = getRules(db, deviceId);
   switch (change.kind) {
     case "allow_app":
-      if (neverBlocked(change.package)) return `${change.package} always runs: Belay never blocks it.`;
+      if (neverBlockedReason(db, deviceId, change.package)) return `${change.package} always runs: Belay never blocks it.`;
       return currentDecision(db, deviceId, change.package)?.state === "allowed" ? "That app is already allowed." : null;
     case "resume":
       return activePause(rules, now) ? null : "The phone isn't paused.";

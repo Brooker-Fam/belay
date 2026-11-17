@@ -278,8 +278,12 @@ server decides whether a change tightens or loosens.
   the phone). Anything that loosens (approve, unblock, resume, lift a restriction) is
   only a proposal until a parent approves it on the parent page.
 - **The phone reports what it never blocks** (`enforcement.never_blocked`), as it resolves
-  the roles on that phone; the server refuses to block those packages, and names a few
-  well-known ones itself before the first report.
+  the roles on that phone. The server refuses to block those packages, for parents and AI
+  clients alike, and also refuses well-known ones on any phone, before its first report too:
+  Belay, `android`, the telephony and telecom services, the common dialers, texting apps,
+  keyboards and home screens (Google's, AOSP's and Samsung's), emergency, safety and
+  emergency-alert apps, System UI and Settings (`NEVER_BLOCKED` in
+  `server/src/family/policy.ts`).
 - **Updates** (Phase 6, `agent_update`): before installing, the phone checks that the
   download's SHA-256 and size match, and that the APK (`getPackageArchiveInfo` with
   signing certificates) is Belay's own package, has exactly the offered version code,

@@ -39,7 +39,8 @@ import {
   dnsFilterName,
   getRules,
   lockedInWords,
-  neverBlocked,
+  neverBlockedOn,
+  neverBlockedReason,
   pausePhone,
   RuleRefused,
   type Changer,
@@ -152,10 +153,16 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
     }
   };
 
-  /** The rule for one app, in words: allowed, blocked, waiting, or runs. */
-  const ruleFor = (app: Pick<App, "package" | "system">, decision: (Decision & { state: AppState }) | undefined, rules: Pick<Rules, "newApps">): string => {
+  /** The rule for one app, in words: allowed, blocked, waiting, or runs. `never` is neverBlockedOn for its phone. */
+  const ruleFor = (
+    app: Pick<App, "package" | "system">,
+    decision: (Decision & { state: AppState }) | undefined,
+    rules: Pick<Rules, "newApps">,
+    never: (pkg: string) => string | null,
+  ): string => {
     if (decision) return decision.state === "allowed" ? "allowed" : `blocked by ${decidedBy(decision)}`;
-    if (app.system || neverBlocked(app.package)) return "runs (system app)";
+    if (app.system) return "runs (system app)";
+    if (never(app.package)) return "runs (the phone never blocks it)";
     return rules.newApps === "ask" ? "waiting for a parent's approval" : "runs (new apps run without asking)";
   };
 
@@ -344,11 +351,12 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
       const apps = listApps(db, row.id, { includeSystem: include_system ?? false, query, permission });
       const decisions = currentDecisions(db, row.id);
       const rules = getRules(db, row.id);
+      const never = neverBlockedOn(db, row.id);
       const limit = 400;
       return result({
         phone: row.name,
         count: apps.length,
-        apps: apps.slice(0, limit).map((app) => appEntry(app, ruleFor(app, decisions.get(app.package), rules))),
+        apps: apps.slice(0, limit).map((app) => appEntry(app, ruleFor(app, decisions.get(app.package), rules, never))),
         ...(apps.length > limit ? { truncated: `Showing ${limit} of ${apps.length}. Narrow it with query or permission.` } : {}),
       });
     },
@@ -420,7 +428,8 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
       const apps = rows.flatMap((r) => {
         const decisions = currentDecisions(db, r.id);
         const rules = getRules(db, r.id);
-        return listApps(db, r.id, { unreviewedOnly: true }).map((app) => ({ phone: r.name, ...appEntry(app, ruleFor(app, decisions.get(app.package), rules)) }));
+        const never = neverBlockedOn(db, r.id);
+        return listApps(db, r.id, { unreviewedOnly: true }).map((app) => ({ phone: r.name, ...appEntry(app, ruleFor(app, decisions.get(app.package), rules, never)) }));
       });
       return result({ count: apps.length, apps });
     },
@@ -501,7 +510,12 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
               ? {}
               : { answer: { by: r.answeredBy ?? "a parent", at: iso(r.answeredAt), ...(r.note ? { untrusted: { note: r.note } } : {}) } }),
             ...(showApps
-              ? { app: { on_the_phone: app?.present ?? false, rule: ruleFor({ package: r.package, system: app?.system ?? false }, decision ?? undefined, getRules(db, r.deviceId)) } }
+              ? {
+                  app: {
+                    on_the_phone: app?.present ?? false,
+                    rule: ruleFor({ package: r.package, system: app?.system ?? false }, decision ?? undefined, getRules(db, r.deviceId), neverBlockedOn(db, r.deviceId)),
+                  },
+                }
               : {}),
           };
         }),
@@ -557,7 +571,8 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
       if (settings.aiScopes.apps) {
         const decisions = currentDecisions(db, row.id);
         const blocked = [...decisions.values()].filter((d) => d.state === "blocked");
-        const waiting = rules.newApps === "ask" ? listApps(db, row.id).filter((a) => !decisions.has(a.package) && !neverBlocked(a.package)) : [];
+        const never = neverBlockedOn(db, row.id);
+        const waiting = rules.newApps === "ask" ? listApps(db, row.id).filter((a) => !decisions.has(a.package) && !never(a.package)) : [];
         apps = {
           blocked: blocked.map((d) => ({ untrusted: { label: getApp(db, row.id, d.package)?.label ?? d.package, package: d.package }, by: decidedBy(d), at: iso(d.decidedAt) })),
           allowed: [...decisions.values()].filter((d) => d.state === "allowed").length,
@@ -601,7 +616,7 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
     {
       title: "Block an app",
       description:
-        "Blocks one app on a phone at once: the phone hides and suspends it within seconds if it's online. Tightening, so it acts directly; use it only when the parent asks. Only a parent can unblock it, on the parent page (you can propose that with propose_change). Belay never blocks the phone app, texting, Settings or itself, so 911 and 988 always work. An app not on the phone yet is blocked if it's installed.",
+        "Blocks one app on a phone at once: the phone hides and suspends it within seconds if it's online. Tightening, so it acts directly; use it only when the parent asks. Only a parent can unblock it, on the parent page (you can propose that with propose_change). It refuses the apps the phone never blocks, so 911 and 988 always work: Belay, the dialer, texting, the keyboard, the home screen, emergency apps, System UI and Settings. An app not on the phone yet is blocked if it's installed; AI apps may block at most 50 of those per phone.",
       inputSchema: {
         device: deviceParam,
         package: packageName.describe("The app's package name, as get_installed_apps shows it"),
@@ -616,7 +631,8 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
       if (isRefusal(row)) return row;
       const gone = connected(row);
       if (gone) return gone;
-      if (neverBlocked(pkg)) return refusal(`Belay never blocks ${pkg}: the phone app, texting, Settings and Belay itself always work, so 911 and 988 do too.`);
+      const never = neverBlockedReason(db, row.id, pkg);
+      if (never) return refusal(`Not blocked. ${never}`);
       const app = getApp(db, row.id, pkg);
       const label = app?.label ?? pkg;
       if (currentDecision(db, row.id, pkg)?.state === "blocked") {

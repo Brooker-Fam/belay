@@ -36,6 +36,8 @@ export interface AppRule {
   decision: Decision | null;
   /** False for the apps Belay never blocks (the phone app, texting, Belay...). */
   canBlock: boolean;
+  /** Why the phone never blocks it, when it doesn't. */
+  neverWhy: string | null;
 }
 
 export interface PhoneRules {
@@ -479,7 +481,7 @@ const AppRuleCard: FC<{ view: View; device: DeviceView; app: App; rule: AppRule;
           )}
         </p>
         {rule.decision?.note && <blockquote>{rule.decision.note}</blockquote>}
-        {!rule.canBlock && <p class="muted small">Belay never blocks this app, so 911 and 988 always work.</p>}
+        {rule.neverWhy !== null && <p class="muted small">{rule.neverWhy}</p>}
         {open && (
           <>
             <form id={`answer-${open.id}`} method="post" action={`/devices/${device.id}/requests/${open.id}/answer`}>

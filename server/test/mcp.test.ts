@@ -332,7 +332,7 @@ describe("rules over MCP", () => {
     expect((await call(client, "block_app", { device: "Sam's phone", package: "com.example.chat" })).json.already_blocked).toBeDefined();
     const belay = await call(client, "block_app", { device: "Sam's phone", package: "family.brooker.belay" });
     expect(belay.isError).toBe(true);
-    expect(belay.text).toContain("911 and 988");
+    expect(belay.text).toBe("Not blocked. Belay never blocks itself.");
     const installed = (await call(client, "get_installed_apps", { device: "Sam's phone", query: "chat" })).json.apps[0];
     expect(installed.rule).toBe("blocked by Claude (Sam's connection)");
   });

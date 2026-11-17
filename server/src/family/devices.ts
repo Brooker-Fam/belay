@@ -100,6 +100,11 @@ function parseFacts(json: string | null): Device | null {
   }
 }
 
+/** What the phone said in its latest check-in or app list (or when it enrolled), or null. */
+export function deviceFacts(db: DB, deviceId: string): Device | null {
+  return parseFacts(db.prepare<[string], { facts: string | null }>("SELECT facts FROM devices WHERE id = ?").get(deviceId)?.facts ?? null);
+}
+
 export function problemsOf(row: DeviceRow, facts: Device | null, settings: Settings, now: number): Problem[] {
   if (row.revoked_at !== null) return [{ code: "disconnected", text: "Disconnected: a parent removed this phone's access" }];
   const problems: Problem[] = [];

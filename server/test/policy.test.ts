@@ -196,7 +196,7 @@ describe("who may change what", () => {
   it("nobody blocks the apps 911 and 988 need, or Belay", async () => {
     const { phone, ctx, sam } = await setup();
     for (const name of ["family.brooker.belay", "com.android.phone", "com.google.android.apps.messaging"]) {
-      expect(() => decideApp(ctx(), phone.deviceId, name, "blocked", sam)).toThrow(/never blocked/);
+      expect(() => decideApp(ctx(), phone.deviceId, name, "blocked", sam)).toThrow(/never blocks/);
     }
   });
 

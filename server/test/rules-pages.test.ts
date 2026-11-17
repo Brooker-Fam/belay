@@ -94,7 +94,7 @@ describe("the phone's Rules section", () => {
     expect(policy().apps.decisions).toEqual([{ package: "com.example.chat", state: "allowed" }]);
     const belay = await send(at("/decide"), { block: "family.brooker.belay" });
     expect(belay.status).toBe(400);
-    expect(await belay.text()).toContain("Belay never blocks that app");
+    expect(await belay.text()).toContain("Belay never blocks itself.");
     expect((await send(at("/decide"), { block: "not a package" })).status).toBe(400);
     expect((await send(at("/decide"), { allow: "com.example.chat", block: "com.example.maps" })).status).toBe(400);
   });

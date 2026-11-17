@@ -25,7 +25,7 @@ import { createEnrollmentCode } from "./device/enroll.js";
 import { packageName } from "./device/schemas.js";
 import { appCounts, listChanges } from "./family/apps.js";
 import { type DeviceRow, findDeviceByName, listDevices, nameTaken } from "./family/devices.js";
-import { LIMITS, RuleRefused, decideApp, neverBlocked, pausePhone, protect, resumePhone, setNewApps, type PolicyContext } from "./family/policy.js";
+import { LIMITS, RuleRefused, decideApp, pausePhone, protect, resumePhone, setNewApps, type PolicyContext } from "./family/policy.js";
 import { recentRequests } from "./family/requests.js";
 import { getSettings } from "./settings.js";
 import { formatAgo, isoInZone } from "./time.js";
@@ -216,7 +216,6 @@ async function run(argv: string[], io: CliIO): Promise<void> {
       if (!packageName.safeParse(pkg).success || (state !== "allow" && state !== "block" && state !== "undecided")) {
         throw new CliError(`Usage: decide "<phone>" <package> allow|block|undecided`);
       }
-      if (state === "block" && neverBlocked(pkg)) throw new CliError(`Belay never blocks ${pkg}: 911 and 988 must always work.`);
       const done = decideApp(ctx, row.id, pkg, state === "allow" ? "allowed" : state === "block" ? "blocked" : "undecided", server);
       const words = state === "allow" ? "allowed" : state === "block" ? "blocked" : "without a decision";
       io.out(`${row.name}: ${pkg} is ${words} (rules version ${done.version}).`);

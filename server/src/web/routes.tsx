@@ -50,7 +50,7 @@ import {
   decideApp,
   decisionHistory,
   getRules,
-  neverBlocked,
+  neverBlockedOn,
   pausePhone,
   preDecisions,
   protect,
@@ -389,12 +389,14 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
   const phoneRules = (deviceId: string): PhoneRules => {
     const rules = getRules(db, deviceId);
     const decisions = currentDecisions(db, deviceId);
+    const never = neverBlockedOn(db, deviceId);
     const ruleOf = (app: Pick<App, "package" | "system">): AppRule => {
       const decision = decisions.get(app.package) ?? null;
-      const canBlock = !neverBlocked(app.package);
-      if (decision) return { state: decision.state, decision, canBlock };
-      if (app.system || !canBlock) return { state: "runs", decision: null, canBlock };
-      return { state: rules.newApps === "ask" ? "waiting" : "runs", decision: null, canBlock };
+      const neverWhy = never(app.package);
+      const canBlock = neverWhy === null;
+      if (decision) return { state: decision.state, decision, canBlock, neverWhy };
+      if (app.system || !canBlock) return { state: "runs", decision: null, canBlock, neverWhy };
+      return { state: rules.newApps === "ask" ? "waiting" : "runs", decision: null, canBlock, neverWhy };
     };
     const present = new Set(
       db
@@ -516,9 +518,6 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
     const pkg = allow || block;
     if (!pkg || (allow && block) || !packageName.safeParse(pkg).success) return showDevice(c, device, { error: "Choose Allow or Block on one app." }, 400);
     const state = allow ? "allowed" : "blocked";
-    if (state === "blocked" && neverBlocked(pkg)) {
-      return showDevice(c, device, { error: "Belay never blocks that app: the phone app, texting, Settings and Belay itself always work, so 911 and 988 do too." }, 400);
-    }
     const note = first(body, "note");
     if (note.length > LIMITS.decisionNote) return showDevice(c, device, { error: `Keep the note under ${LIMITS.decisionNote} characters.` }, 400);
     decideApp(policyContext(), device.id, pkg, state, asParent(c), { note: note || null });
