@@ -13,11 +13,14 @@ import android.provider.AlarmClock
 import android.provider.Settings
 import android.provider.Telephony
 import android.telecom.TelecomManager
+import android.telephony.SubscriptionManager
+import android.telephony.TelephonyManager
 import android.util.Log
 import family.brooker.belay.Agent
 import family.brooker.belay.DeviceOwnerSetup
 import family.brooker.belay.core.PackagePresence
 import family.brooker.belay.core.PhoneRoles
+import family.brooker.belay.core.SimSeen
 import family.brooker.belay.inventory.packageInfoCompat
 import family.brooker.belay.inventory.queryActivitiesCompat
 import family.brooker.belay.inventory.resolveActivityCompat
@@ -65,6 +68,22 @@ object PhoneFacts {
         val dpm = context.getSystemService(DevicePolicyManager::class.java)
         if (dpm.isDeviceOwnerApp(context.packageName)) dpm.getSecondaryUsers(DeviceOwnerSetup.admin(context)).size else 0
     } ?: 0
+
+    /**
+     * The SIM, for noticing a change: its state, the default subscription's id and the
+     * carrier's id, none of which needs a permission (AOSP 17 TelephonyManager,
+     * SubscriptionManager). Null while the state is in between (starting up, PIN-locked) or
+     * the phone can't say.
+     */
+    fun sim(context: Context): SimSeen? = read("SIM") {
+        val telephony = context.getSystemService(TelephonyManager::class.java) ?: return@read null
+        when (telephony.simState) {
+            TelephonyManager.SIM_STATE_ABSENT -> SimSeen(present = false, subscriptionId = -1, carrierId = -1)
+            TelephonyManager.SIM_STATE_READY ->
+                SimSeen(present = true, subscriptionId = SubscriptionManager.getDefaultSubscriptionId(), carrierId = telephony.simCarrierId)
+            else -> null
+        }
+    }
 
     private fun <T> read(what: String, block: () -> T): T? = try {
         block()

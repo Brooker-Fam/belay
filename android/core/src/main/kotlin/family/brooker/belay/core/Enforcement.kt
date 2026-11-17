@@ -216,6 +216,8 @@ data class Applied(
     val browsers: Set<String> = emptySet(),
     /** The plan's problems and what failed, for the enforcement report. */
     val problems: List<String> = emptyList(),
+    /** The SIM Belay saw last, to report a change (core's SimRules). */
+    val sim: SimWatch = SimWatch(),
 )
 
 /** What to change on the phone to get from [Applied] to an [EnforcementPlan]. */
@@ -466,6 +468,7 @@ object Enforcement {
             supportMessage = applied.supportMessage,
             browsers = if (plan.hiddenBrowsers.isEmpty()) emptySet() else plan.hiddenBrowsers.toSet(),
             problems = problems,
+            sim = applied.sim,
         )
     }
 

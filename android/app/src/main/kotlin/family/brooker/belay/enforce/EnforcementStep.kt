@@ -18,6 +18,7 @@ import family.brooker.belay.core.KidRequest
 import family.brooker.belay.core.KidRules
 import family.brooker.belay.core.PackageRecord
 import family.brooker.belay.core.Requests
+import family.brooker.belay.core.SimRules
 import family.brooker.belay.core.WirePolicy
 import family.brooker.belay.store.AgentStore
 import java.util.UUID
@@ -98,9 +99,10 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
             next = next.copy(supportMessage = enforcer.supportMessage(message, applied.supportMessage))
             PrivateDns.want(app, plan.privateDns, dnsRow, now, recheck = recheckDns || recheckAll)
         }
-        PrivateDns.problem(plan.privateDns, dnsRow)?.let {
-            next = next.copy(problems = (next.problems + it).take(Enforcement.MAX_PROBLEMS))
-        }
+        // A swapped SIM card (DISALLOW_SIM_GLOBALLY only stops new eSIMs) is reported for a week.
+        val sim = SimRules.next(next.sim, PhoneFacts.sim(app), now)
+        val extra = listOfNotNull(PrivateDns.problem(plan.privateDns, dnsRow), SimRules.problem(sim, now))
+        next = next.copy(sim = sim, problems = (next.problems + extra).distinct().take(Enforcement.MAX_PROBLEMS))
 
         // Belay asks for each new waiting app at once, so the parent sees it even if the kid
         // never opens Belay. The request goes behind the event that reported the install.

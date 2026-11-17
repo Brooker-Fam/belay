@@ -39,6 +39,8 @@ object DataCategories {
             "The phone's time zone, and its clock, to check that the time is right",
             "Which of your parent's rules Belay is using, how many apps it's holding back, " +
                 "and anything it couldn't do",
+            "Whether the SIM card was changed, and whether there's another user or profile " +
+                "on the phone (not the phone number, and nothing about what's on them)",
         ),
     )
 
