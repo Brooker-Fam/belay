@@ -46,7 +46,7 @@ relying on something new, it goes here first, with a source.
 | M2 | 37.2 adds `…_INCLUDING_REGISTERED_APP_STORES` | Confirmed; exact name differs from the brief | SDK |
 | K5 | Which apps have special access, read without special permissions | Confirmed | AOSP |
 | R5 | CAMERA only while the enrollment screen is open: the grant states, and revoking kills the app | Confirmed | AOSP |
-| N1 | HTTPS only, the system's CAs; plain http only in debug builds, to the emulator's host | Confirmed; CT through OkHttp unproven | Docs; Emulator (Phase 1 CI) |
+| N1 | HTTPS only, the system's CAs; plain http only in debug builds, to the emulator's host | Confirmed; CT through OkHttp unproven | Docs; Emulator (cleartext path) |
 | N2 | Compose's EmojiCompat would ask Play services for a font; Belay turns it off | Confirmed | androidx source |
 | E1 | Enrolling over adb: a receiver only the shell can reach, and its answer | Confirmed | AOSP; Emulator (Phase 1 CI) |
 
@@ -61,7 +61,8 @@ From Phase 1 the same job runs end to end against a real Belay server on the run
 (docs/emulator.md). Run 14 (2026-11-17) on the Google APIs image: `provision.sh --server
 --code` enrolled the phone, the server had its app list with the phone as OK, the 14
 instrumented tests passed, and the server received the fixture app's install, update and
-removal, each "noticed right away". The ATD image's enrollment failed on timing (E1).
+removal, each "noticed right away". The ATD image's enrollment failed on timing (E1);
+with the retry, run 15 passed the same end-to-end path on the ATD image (required).
 
 ---
 
@@ -634,7 +635,8 @@ for anything; the phone's own emoji font still renders.
   ATD image's enrollment 2 s after `provision.sh`'s restart failed with
   `ConnectException: Failed to connect to /10.0.2.2:8080`, while the Google APIs image's,
   2.5 s after boot, worked. `provision.sh` now tries again every 5 s for a minute while the
-  server can't be reached; the code is only used once the server answers.
+  server can't be reached; the code is only used once the server answers. In run 15 the
+  ATD image needed one retry and enrolled about 6 s after boot.
 
 ---
 
