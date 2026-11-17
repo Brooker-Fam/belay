@@ -52,6 +52,7 @@ import {
 import { LIFTABLE, PROPOSAL_KINDS, changeWords, createProposal, listProposals, nothingToLoosen, type ProposalChange } from "../family/proposals.js";
 import { recoveryState, usableKey } from "../family/recovery.js";
 import { pendingRequestCount, recentRequests, type StoredRequestStatus } from "../family/requests.js";
+import { phoneRules } from "../family/screentime/rules.js";
 import { registerOpsTools } from "../ops/mcp.js";
 import { notifyParents, proposalNotice } from "../push.js";
 import { type AiScope, AI_SCOPES, getSettings } from "../settings.js";
@@ -597,7 +598,7 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
     {
       title: "The kid's requests",
       description:
-        "What the kid asked for from Belay's screen on the phone (an app they want to use), with their reason in their own words, and each answer: waiting for a parent, approved, declined, or let's talk. Waiting ones first, then the last 30 days. Only a parent answers them, on the parent page.",
+        "What the kid asked for from Belay's screen on the phone: an app they want to use, more time for a limit today, or their answer to the family agreement (that needs the agreement category too), with their reason in their own words, and each answer: waiting for a parent, approved, declined, or let's talk. Waiting ones first, then the last 30 days. Only a parent answers them, on the parent page; you can summarize them and suggest an answer.",
       inputSchema: {
         device: deviceParam.optional().describe("Only this phone; all phones when left out"),
         status: z.enum(["pending", "approved", "declined", "talk"]).optional().describe("Only requests with this answer; pending means waiting for a parent"),
@@ -615,20 +616,66 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
       }
       logRead("the kid's requests", deviceId);
       const showApps = scopeOn("apps");
-      const requests = recentRequests(db, deps.now(), { deviceId, status, limit: 100 });
+      const showAgreement = scopeOn("agreement");
+      const requests = recentRequests(db, deps.now(), { deviceId, status, limit: 100 }).filter((r) => r.kind !== "agreement" || showAgreement);
+      const limitNames = new Map<string, Map<string, string>>();
+      const limitName = (phoneId: string, id: string): string | null => {
+        if (id === "*") return null;
+        let names = limitNames.get(phoneId);
+        if (!names) {
+          names = new Map(phoneRules(db, phoneId).rules.limits.map((l) => [l.id, l.name]));
+          limitNames.set(phoneId, names);
+        }
+        return names.get(id) ?? null;
+      };
       return result({
         count: requests.length,
         requests: requests.map((r) => {
+          const answer =
+            r.status === "pending" || (r.kind === "agreement" && r.answer === "agree" && r.answeredBy === null)
+              ? {}
+              : {
+                  answer: {
+                    by: r.answeredBy ?? "a parent",
+                    at: iso(r.answeredAt),
+                    ...(r.kind === "more_time" && r.givenMinutes !== null ? { minutes_given: r.givenMinutes } : {}),
+                    ...(r.note ? { untrusted: { note: r.note } } : {}),
+                  },
+                };
+          const common = { phone: r.deviceName, status: REQUEST_WORDS[r.status], asked: iso(Math.min(r.askedAt, r.receivedAt)) };
+          if (r.kind === "more_time") {
+            const name = limitName(r.deviceId, r.limitId);
+            return {
+              ...common,
+              kind: "more time today",
+              minutes_asked: r.minutes,
+              ...(r.limitId === "*" ? { limit: "every limit" } : name === null ? { limit: "a limit that isn't in the phone's rules any more" } : {}),
+              untrusted: {
+                ...(name !== null ? { limit: name } : {}),
+                ...(r.package && showApps ? { app: { label: r.label ?? r.package, package: r.package } } : {}),
+                ...(r.reason ? { reason: r.reason } : {}),
+              },
+              ...answer,
+            };
+          }
+          if (r.kind === "agreement") {
+            return {
+              ...common,
+              status: r.answer === "agree" ? "the kid agreed" : REQUEST_WORDS[r.status],
+              kind: "the family agreement",
+              agreement_version: r.version,
+              kid_says: r.answer === "agree" ? "I agree" : "I want to talk about it",
+              ...withUntrusted(r.reason ? { reason: r.reason } : {}),
+              ...answer,
+            };
+          }
           const decision = showApps ? currentDecision(db, r.deviceId, r.package) : null;
           const app = showApps ? getApp(db, r.deviceId, r.package) : null;
           return {
-            phone: r.deviceName,
-            status: REQUEST_WORDS[r.status],
-            asked: iso(Math.min(r.askedAt, r.receivedAt)),
+            ...common,
+            kind: "an app",
             untrusted: { label: r.label, package: r.package, ...(r.reason ? { reason: r.reason } : {}) },
-            ...(r.status === "pending"
-              ? {}
-              : { answer: { by: r.answeredBy ?? "a parent", at: iso(r.answeredAt), ...(r.note ? { untrusted: { note: r.note } } : {}) } }),
+            ...answer,
             ...(showApps
               ? {
                   app: {
@@ -639,7 +686,8 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
               : {}),
           };
         }),
-        how_they_are_answered: `Only a parent answers, on the parent page (${parentsPage("/requests")}). To suggest allowing an app, use propose_change with kind allow_app: the parent still decides.`,
+        ...(showAgreement ? {} : { note: "Answers to the family agreement are hidden: a parent turned off AI access to the stage and agreement." }),
+        how_they_are_answered: `Only a parent answers, on the parent page (${parentsPage("/requests")}): for more time, 15, 30 or 60 minutes, let's talk, or no. You can summarize them and suggest an answer. To suggest allowing an app, use propose_change with kind allow_app: the parent still decides.`,
       });
     },
   );

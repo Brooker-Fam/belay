@@ -15,26 +15,51 @@ describe("AI scopes after an upgrade", () => {
   it("a family that turned every earlier one off gets the new one off too", () => {
     const t = testServer();
     stored(t, { apps: false, device_status: false });
-    expect(getSettings(t.deps.db)).toMatchObject({ aiScopes: { apps: false, device_status: false, requests: false }, newAiScopes: ["requests"] });
+    expect(getSettings(t.deps.db)).toMatchObject({
+      aiScopes: { apps: false, device_status: false, requests: false, screen_time: false, agreement: false },
+      newAiScopes: ["requests", "screen_time", "agreement"],
+    });
   });
 
   it("so does a family that turned only one off", () => {
     const t = testServer();
     stored(t, { apps: true, device_status: false });
-    expect(getSettings(t.deps.db).aiScopes).toEqual({ apps: true, device_status: false, requests: false });
+    expect(getSettings(t.deps.db).aiScopes).toEqual({ apps: true, device_status: false, requests: false, screen_time: false, agreement: false });
   });
 
   it("a family that left them all on gets the new one on, marked new", () => {
     const t = testServer();
     stored(t, { apps: true, device_status: true });
-    expect(getSettings(t.deps.db)).toMatchObject({ aiScopes: { apps: true, device_status: true, requests: true }, newAiScopes: ["requests"] });
+    expect(getSettings(t.deps.db)).toMatchObject({
+      aiScopes: { apps: true, device_status: true, requests: true, screen_time: true, agreement: true },
+      newAiScopes: ["requests", "screen_time", "agreement"],
+    });
+  });
+
+  it("Phase 3's screen time and agreement start off for a Phase 2 family that turned requests off", () => {
+    const t = testServer();
+    stored(t, { apps: true, device_status: true, requests: false });
+    expect(getSettings(t.deps.db)).toMatchObject({
+      aiScopes: { apps: true, device_status: true, requests: false, screen_time: false, agreement: false },
+      newAiScopes: ["screen_time", "agreement"],
+    });
   });
 
   it("a family that never saved them gets the defaults, with nothing marked new", () => {
     const t = testServer();
-    expect(getSettings(t.deps.db)).toMatchObject({ aiScopes: { apps: true, device_status: true, requests: true }, newAiScopes: [] });
+    expect(getSettings(t.deps.db)).toMatchObject({ aiScopes: { apps: true, device_status: true, requests: true, screen_time: true, agreement: true }, newAiScopes: [] });
     updateSettings(t.deps.db, { aiScopes: { requests: false } });
-    expect(getSettings(t.deps.db)).toMatchObject({ aiScopes: { apps: true, device_status: true, requests: false }, newAiScopes: [] });
+    expect(getSettings(t.deps.db)).toMatchObject({ aiScopes: { apps: true, device_status: true, requests: false, screen_time: true, agreement: true }, newAiScopes: [] });
+  });
+
+  it("keeps 13 months of screen time unless the family chooses 1 to 36", () => {
+    const t = testServer();
+    expect(getSettings(t.deps.db).usageMonths).toBe(13);
+    expect(updateSettings(t.deps.db, { usageMonths: 6 }).usageMonths).toBe(6);
+    expect(() => updateSettings(t.deps.db, { usageMonths: 0 })).toThrow();
+    expect(() => updateSettings(t.deps.db, { usageMonths: 37 })).toThrow();
+    t.deps.db.prepare("UPDATE settings SET value = '\"lots\"' WHERE key = 'usage_months'").run();
+    expect(getSettings(t.deps.db).usageMonths).toBe(13);
   });
 
   it("the Settings page marks the new one until the family saves", async () => {

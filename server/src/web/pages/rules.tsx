@@ -13,7 +13,7 @@ import {
   type Decision,
   type Rules,
 } from "../../family/policy.js";
-import type { RequestView } from "../../family/requests.js";
+import type { AppRequestView as RequestView } from "../../family/requests.js";
 import { formatAgo } from "../../time.js";
 import { Csrf, Layout, Notice, PostButton, Time, type View } from "../ui.js";
 

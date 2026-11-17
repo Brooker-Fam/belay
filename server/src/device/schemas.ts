@@ -6,7 +6,8 @@ import { z } from "zod";
 
 export const LIMITS = {
   enrollBytes: 16 * 1024,
-  checkinBytes: 32 * 1024,
+  /** Phase 3 made check-ins bigger: never_blocked, and screen_time's report. */
+  checkinBytes: 64 * 1024,
   inventoryBytes: 4 * 1024 * 1024,
   eventsBytes: 512 * 1024,
   maxPackages: 5000,
@@ -53,11 +54,13 @@ export const Version = z.strictObject({ name: text().nullish(), code: versionCod
 
 // ── Phase 3 building blocks ─────────────────────────────────────────────
 /** An id the server makes for a rule (limit, schedule, extra time): short, letters, digits, '-' and '_'. */
-const ruleId = z
+export const ruleId = z
   .string()
   .min(1)
   .max(64)
   .regex(/^[A-Za-z0-9_-]+$/, "use letters, digits, '-' and '_'");
+/** A limit's id, or "*" for every limit (extra time, self-serve, "more time"). */
+const limitRef = ruleId.or(z.literal("*"));
 /** "HH:MM", 00:00 to 23:59. */
 const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "not HH:MM");
 /** "YYYY-MM-DD". */
@@ -196,6 +199,7 @@ export const Enforcement = z.strictObject({
       self_serve: z
         .array(
           z.strictObject({
+            /** Always a limit's own id, never "*". */
             limit_id: ruleId,
             package: packageName.nullish(),
             minutes: z.int().min(1).max(240),
@@ -249,22 +253,16 @@ export const EventsRequest = z.strictObject({ events: z.array(Event).max(LIMITS.
 
 // ── Phase 2 ─────────────────────────────────────────────────────────────
 
-/** Something the kid asks a parent for. Sending the same id again updates a pending request's reason. */
-export const Request = z.strictObject({
+/** Let me use this app (a new one waiting, or a blocked one). */
+export const AppRequest = z.strictObject({
   id: clientId,
-  kind: z.enum(["app"]),
+  kind: z.literal("app"),
   package: packageName,
   label: text(LIMITS.maxLabel),
   reason: text(LIMITS.maxReason).nullish(),
   asked_at: time,
 });
-export type Request = z.infer<typeof Request>;
-export const RequestsRequest = z.strictObject({ requests: z.array(Request).min(1).max(LIMITS.maxRequests) });
-
-/**
- * Phase 3's request kinds. `Request` becomes a union on `kind` (app, more_time, agreement) when the
- * server builds Phase 3; until then `POST /requests` accepts only `app`.
- */
+/** Phase 3: more minutes for a limit today, from the app the kid was in. */
 export const MoreTimeRequest = z.strictObject({
   id: clientId,
   kind: z.literal("more_time"),
@@ -274,6 +272,7 @@ export const MoreTimeRequest = z.strictObject({
   reason: text(LIMITS.maxReason).nullish(),
   asked_at: time,
 });
+/** Phase 3: the kid's answer to a version of the family agreement. */
 export const AgreementRequest = z.strictObject({
   id: clientId,
   kind: z.literal("agreement"),
@@ -282,6 +281,16 @@ export const AgreementRequest = z.strictObject({
   reason: text(LIMITS.maxReason).nullish(),
   asked_at: time,
 });
+/**
+ * Something the kid asks a parent for: a union on `kind`. Sending the same id again updates a
+ * pending request's reason.
+ */
+export const Request = z.discriminatedUnion("kind", [AppRequest, MoreTimeRequest, AgreementRequest]);
+export type Request = z.infer<typeof Request>;
+export type AppRequest = z.infer<typeof AppRequest>;
+export type MoreTimeRequest = z.infer<typeof MoreTimeRequest>;
+export type AgreementRequest = z.infer<typeof AgreementRequest>;
+export const RequestsRequest = z.strictObject({ requests: z.array(Request).min(1).max(LIMITS.maxRequests) });
 
 /** Phase 3: one local day of usage. Idempotent by (day, zone): the newest `as_of` wins. */
 export const UsageDay = z.strictObject({
@@ -362,7 +371,7 @@ export const ScreenTime = z.strictObject({
       z.strictObject({
         id: ruleId,
         /** "*": every limit. */
-        limit_id: ruleId.or(z.literal("*")),
+        limit_id: limitRef,
         minutes: z.int().min(1).max(1440),
         day: ymd,
         request_id: clientId.nullable(),
@@ -448,8 +457,8 @@ export const Policy = z.strictObject({
       note: text(1000).nullable(),
       answered_at: time.nullable(),
       answered_by: text(60).nullable(),
-      /** Phase 3: the minutes given, for an approved more_time request. */
-      minutes: z.int().min(1).max(1440).nullable().optional(),
+      /** Phase 3: the minutes given, for an approved more_time request; null otherwise. */
+      minutes: z.int().min(1).max(1440).nullable(),
     }),
   ),
   /** Phase 6: the version of Belay a parent approved for this phone, if any. */
@@ -474,10 +483,13 @@ export const Policy = z.strictObject({
       expires_at: time.nullable(),
     }),
   ),
-  // Phase 3: optional until the server builds them; the phone reads a missing one as off.
-  screen_time: ScreenTime.nullable().optional(),
-  stage: Stage.nullable().optional(),
-  agreement: Agreement.nullable().optional(),
-  network_log: z.strictObject({ enabled: z.boolean() }).optional(),
+  /** Phase 3: null measures nothing and limits nothing (family/screentime). */
+  screen_time: ScreenTime.nullable(),
+  /** Phase 3: the stage the phone is on, for the kid's screen. */
+  stage: Stage.nullable(),
+  /** Phase 3: the family agreement's current version, for the kid's screen. */
+  agreement: Agreement.nullable(),
+  /** Phase 3, later: the phone doesn't log yet, so the server always sends off. */
+  network_log: z.strictObject({ enabled: z.boolean() }),
 });
 export type Policy = z.infer<typeof Policy>;

@@ -341,6 +341,40 @@ export function requestNotice(deviceName: string, labels: string[]): Notice {
   return { title: "Belay", body, url: "/requests" };
 }
 
+/** A request as requestsNotice reads it. */
+export interface NewRequest {
+  kind: "app" | "more_time" | "agreement";
+  label: string | null;
+  limitId?: string;
+  minutes?: number;
+  reason: string | null;
+  answer?: "agree" | "talk";
+}
+
+/**
+ * The notice for the kid's new requests, in the style of requestNotice: one app, more time
+ * (`Sam's phone asks for 15 more minutes for Games: "One more level"`), the agreement, or how
+ * many. The kid's reason goes with "more time" and "let's talk": like everything in a notice it's
+ * end-to-end encrypted to the parent's own browser, and it's cleaned and capped. Limit names are
+ * the family's own words.
+ */
+export function requestsNotice(deviceName: string, requests: NewRequest[], limitName: (id: string) => string | null): Notice {
+  const phone = oneLine(deviceName, 60);
+  const kinds = new Set(requests.map((r) => r.kind));
+  const [first] = requests;
+  if (kinds.size === 1 && first?.kind === "app") return requestNotice(deviceName, requests.map((r) => r.label ?? "an app"));
+  const why = (r: NewRequest) => (r.reason ? `: "${oneLine(r.reason, 80)}"` : "");
+  if (requests.length === 1 && first?.kind === "more_time") {
+    const limit = first.limitId === "*" ? "screen time" : oneLine(limitName(first.limitId ?? "") ?? "a limit", 40);
+    return { title: "Belay", body: `${phone} asks for ${first.minutes ?? 0} more minutes for ${limit}${why(first)}`, url: "/requests" };
+  }
+  if (requests.length === 1 && first?.kind === "agreement") {
+    const body = first.answer === "agree" ? `${phone}: the kid agreed to the family agreement` : `${phone}: the kid wants to talk about the family agreement${why(first)}`;
+    return { title: "Belay", body, url: "/requests" };
+  }
+  return { title: "Belay", body: `${phone}: ${requests.length} requests are waiting for you`, url: "/requests" };
+}
+
 /** `Sam's phone: Belay couldn't update to 0.4.0 (version 4)`. Never the phone's own words: those wait on the phone's page. */
 export function updateFailedNotice(phone: { id: string; name: string }, version: string): Notice {
   return { title: "Belay", body: `${oneLine(phone.name, 60)}: Belay couldn't update to ${oneLine(version, 70)}. The phone's page says why.`, url: `/devices/${phone.id}` };

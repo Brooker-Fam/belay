@@ -45,6 +45,7 @@ import {
   DNS_FILTERS,
   LIMITS,
   LOCK_RESTRICTIONS,
+  MORE_TIME_CHOICES,
   RuleRefused,
   SAFE_RESTRICTIONS,
   answerRequest,
@@ -70,7 +71,8 @@ import {
   type PolicyContext,
 } from "../family/policy.js";
 import { approveProposal, listProposals, outdatedBecause, pendingProposalCount, rejectProposal } from "../family/proposals.js";
-import { listRequests, pendingRequestCount, recentRequests } from "../family/requests.js";
+import { listAppRequests, pendingRequestCount, recentAppRequests, recentRequests } from "../family/requests.js";
+import { phoneRules as screenRules } from "../family/screentime/rules.js";
 import { clientAddress, type Bindings } from "../http.js";
 import { createPersonalToken, getGrant, listGrants, revokeAllGrants, revokeGrant } from "../oauth/store.js";
 import { serverHealth } from "../ops/health.js";
@@ -130,6 +132,10 @@ const SAVED: Record<string, string> = {
   answer_approved: "Approved, and the app is allowed. They'll see your answer on the phone.",
   answer_declined: "Declined. They'll see your answer on the phone.",
   answer_talk: "They'll see on the phone that you want to talk about it.",
+  answer_more_time: "Given. The phone gets the extra time within seconds if it's online, and they'll see your answer there.",
+  answer_other_approved: "Answered. They'll see your answer on the phone.",
+  answer_other_declined: "Declined. They'll see your answer on the phone.",
+  answer_other_talk: "They'll see on the phone that you want to talk about it.",
   proposal_approved: "Approved. The change is on its way to the phone.",
   proposal_rejected: "Rejected. Nothing changed.",
   digest: "Daily summary saved.",
@@ -422,7 +428,7 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
     );
     // The newest open request per app.
     const seen = new Set<string>();
-    const openRequests = recentRequests(db, deps.now(), { deviceId }).filter((r) => {
+    const openRequests = recentAppRequests(db, deps.now(), { deviceId }).filter((r) => {
       if ((r.status !== "pending" && r.status !== "talk") || seen.has(r.package)) return false;
       seen.add(r.package);
       return true;
@@ -476,7 +482,7 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
         changes={changes}
         rule={phoneRules(device.id).ruleOf(app)}
         history={decisionHistory(db, device.id, app.package)}
-        requests={listRequests(db, { deviceId: device.id, package: app.package, limit: 20 })}
+        requests={listAppRequests(db, { deviceId: device.id, package: app.package, limit: 20 })}
         message={SAVED[c.req.query("saved") ?? ""]}
       />,
     );
@@ -716,16 +722,21 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
     const device = deviceOr404(c);
     if (!device) return noPhone(c);
     const body = await form(c);
-    const answer = first(body, "answer");
+    // "More time": the minutes buttons (15, 30, 60) approve with that many.
+    const give = first(body, "give");
+    const answer = give ? "approved" : first(body, "answer");
     const note = first(body, "note");
     if (answer !== "approved" && answer !== "declined" && answer !== "talk") return message(c, "Choose an answer", "Approve, Decline or Let's talk.", 400);
+    if (give && !(MORE_TIME_CHOICES as readonly number[]).includes(Number(give))) return message(c, "Choose how much time", "15, 30 or 60 minutes.", 400);
     if (note.length > LIMITS.answerNote) return message(c, "That note is too long", `Keep it under ${LIMITS.answerNote} characters.`, 400);
-    const done = answerRequest(policyContext(), device.id, c.req.param("requestId"), answer, asParent(c), note || null);
+    const done = answerRequest(policyContext(), device.id, c.req.param("requestId"), answer, asParent(c), note || null, give ? { minutes: Number(give) } : {});
     if (!done.result) return message(c, "No such request", "It may have been deleted with its phone.", 404, { href: "/requests", label: "Back to requests" });
+    const saved = done.result.kind === "app" ? `answer_${answer}` : done.result.kind === "more_time" && answer === "approved" ? "answer_more_time" : `answer_other_${answer}`;
     const back = first(body, "back");
-    if (back === "requests") return c.redirect(`/requests?saved=answer_${answer}`);
-    if (back === "app") return c.redirect(`/devices/${device.id}/apps/${encodeURIComponent(done.result.package)}?saved=answer_${answer}`);
-    return backTo(c, device, `answer_${answer}`, "apps");
+    if (back === "requests") return c.redirect(`/requests?saved=${saved}`);
+    if (back === "app" && done.result.package) return c.redirect(`/devices/${device.id}/apps/${encodeURIComponent(done.result.package)}?saved=${saved}`);
+    if (back === "screen-time") return c.redirect(`/devices/${device.id}/screen-time?saved=${saved}`);
+    return backTo(c, device, saved, "apps");
   });
 
   app.get("/requests", (c) => {
@@ -737,9 +748,26 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
         .all()
         .map((r) => r.key),
     );
+    const limits = new Map<string, Map<string, string>>();
+    const limitName = (deviceId: string, limitId: string): string => {
+      if (limitId === "*") return "every limit";
+      let names = limits.get(deviceId);
+      if (!names) {
+        names = new Map(screenRules(db, deviceId).rules.limits.map((l) => [l.id, l.name]));
+        limits.set(deviceId, names);
+      }
+      return names.get(limitId) ?? "a limit that's gone";
+    };
     return render(
       c,
-      <RequestsPage view={view(c)} requests={recentRequests(db, now, { limit: 200 })} phones={phones} known={known} message={SAVED[c.req.query("saved") ?? ""]} />,
+      <RequestsPage
+        view={view(c)}
+        requests={recentRequests(db, now, { limit: 200 })}
+        phones={phones}
+        known={known}
+        limitName={limitName}
+        message={SAVED[c.req.query("saved") ?? ""]}
+      />,
     );
   });
 

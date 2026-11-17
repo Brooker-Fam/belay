@@ -228,8 +228,16 @@ async function run(argv: string[], io: CliIO): Promise<void> {
             at: iso(c.resultAt),
             problem: c.problem,
           })),
-          /** The kid's requests: waiting ones, and the last 30 days'. */
-          requests: recentRequests(db, now, { deviceId: d.id }).map((r) => ({ package: r.package, status: r.status, reason: r.reason })),
+          /** The kid's requests: waiting ones, and the last 30 days'. Phase 3 adds more_time and agreement ones. */
+          requests: recentRequests(db, now, { deviceId: d.id }).map((r) => ({
+            id: r.id,
+            kind: r.kind,
+            package: r.kind === "agreement" ? null : r.package,
+            status: r.status,
+            reason: r.reason,
+            ...(r.kind === "more_time" ? { limit_id: r.limitId, minutes: r.minutes, given_minutes: r.givenMinutes } : {}),
+            ...(r.kind === "agreement" ? { version: r.version, answer: r.answer } : {}),
+          })),
           recent_changes: listChanges(db, { deviceId: d.id, includeSystem: true, limit: 20 }).map((c) => ({
             kind: c.kind,
             package: c.package,

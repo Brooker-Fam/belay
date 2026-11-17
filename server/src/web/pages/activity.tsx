@@ -83,11 +83,44 @@ function what(e: AuditEntry): string {
     case "push.unsubscribed":
       return `turned off notifications on ${str(d.browser) || "a browser"}`;
     case "request.made":
+      if (d.kind === "more_time") return `asked for ${str(d.minutes)} more minutes for ${str(d.limit) || "a limit"}${d.again === true ? " again" : ""}`;
+      if (d.kind === "agreement") {
+        return d.answer === "agree" ? `agreed to version ${str(d.agreement_version)} of the family agreement` : `wants to talk about version ${str(d.agreement_version)} of the family agreement`;
+      }
       return `asked for ${str(d.label) || str(d.package) || "an app"}${d.again === true ? " again" : ""}`;
     case "request.answered": {
+      const note = str(d.note) ? `, noting: "${str(d.note)}"` : "";
+      if (d.kind === "more_time") {
+        if (d.answer === "approved") return `gave ${str(d.minutes)} more minutes for ${str(d.limit) || "a limit"}, for ${str(d.day) || "today"}${device}${note}`;
+        return `${d.answer === "talk" ? `said "let's talk" about` : "said no to"} more time for ${str(d.limit) || "a limit"}${device}${note}`;
+      }
+      if (d.kind === "agreement") return `answered the kid about version ${str(d.agreement_version)} of the family agreement${d.answer === "talk" ? `: "let's talk"` : ""}${device}${note}`;
       const answer = { approved: "approved", declined: "declined", talk: `said "let's talk" about` }[str(d.answer)] ?? "answered";
-      return `${answer} the request for ${str(d.label) || str(d.package) || "an app"}${device}${str(d.note) ? `, noting: "${str(d.note)}"` : ""}`;
+      return `${answer} the request for ${str(d.label) || str(d.package) || "an app"}${device}${note}`;
     }
+    case "screen_time.changed": {
+      const changes = Array.isArray(d.changes) ? d.changes.map(str).filter(Boolean).join("; ") : "";
+      return `changed screen time${device}${d.proposal ? " (an AI app's proposal)" : ""}${changes ? `: ${changes}` : ""}`;
+    }
+    case "screen_time.measure":
+      return `${d.on === true ? "turned on" : "turned off"} measuring screen time${device}`;
+    case "screen_time.settings":
+      return `changed which time zone the phone's days follow, or when they start${device}`;
+    case "stage.moved":
+      if (!str(d.to)) return `took the phone off its stage${device}`;
+      return `moved the phone to the stage ${str(d.to)}${device}${d.proposal ? " (an AI app's proposal)" : ""}`;
+    case "stage.created":
+      return `added the stage ${str(d.stage)}`;
+    case "stage.changed": {
+      const changes = Array.isArray(d.changes) ? d.changes.map(str).filter(Boolean).join("; ") : "";
+      return `changed the stage ${str(d.stage)}${typeof d.phones_changed === "number" && d.phones_changed > 0 ? ` (${str(d.phones_changed)} phone${d.phones_changed === 1 ? "" : "s"} got it)` : ""}${changes ? `: ${changes}` : ""}`;
+    }
+    case "stage.deleted":
+      return `deleted the stage ${str(d.stage)}`;
+    case "extra.given":
+      return `gave ${str(d.minutes)} more minutes for ${str(d.limit) || "a limit"}, for ${str(d.day) || "today"}${device}`;
+    case "agreement.saved":
+      return `wrote version ${str(d.version)} of the family agreement${device}`;
     case "app.allowed":
     case "app.blocked":
     case "app.undecided": {
@@ -143,13 +176,13 @@ function what(e: AuditEntry): string {
     case "recovery.used":
       return "had its recovery key typed in, opening repair access for 24 hours";
     case "command.issued":
-      return `asked the phone to remove every other user and profile${device}`;
+      return d.kind === "lock_now" ? `locked the phone's screen${device}` : `asked the phone to remove every other user and profile${device}`;
     case "command.done":
-      return "removed every other user and profile, as a parent asked";
+      return d.kind === "lock_now" ? "locked its screen" : "removed every other user and profile, as a parent asked";
     case "command.failed":
-      return "couldn't remove the other users and profiles";
+      return d.kind === "lock_now" ? "couldn't lock its screen" : "couldn't remove the other users and profiles";
     case "command.expired":
-      return "got a parent's request to remove other users too late, so didn't run it";
+      return d.kind === "lock_now" ? "got a request to lock its screen too late, so didn't" : "got a parent's request to remove other users too late, so didn't run it";
     default:
       if (e.action === "ai.read") return `read ${str(d.what) || "data"}${device}`;
       return e.action;
