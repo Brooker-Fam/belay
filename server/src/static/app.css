@@ -181,6 +181,23 @@ details > summary { cursor: pointer; color: var(--accent); margin: 0; padding: 1
 :root { --bar: #168a6a; --gap: #8a948f; }
 @media (prefers-color-scheme: dark) { :root { --bar: #34a385; --gap: #6f7a75; } }
 nav.tabs { display: flex; flex-wrap: wrap; gap: 0 16px; margin: -6px 0 14px; border-bottom: 1px solid var(--line); }
+/* On a phone, the menu and a phone's tabs are each one row that scrolls sideways (app.js starts it at
+   the current page), with a shadow at an edge that has more: wrapped, they took three rows each. */
+:root { --shade: rgba(29, 37, 33, 0.28); }
+@media (prefers-color-scheme: dark) { :root { --shade: rgba(232, 238, 234, 0.22); } }
+@media (max-width: 560px) {
+  header.top nav, nav.tabs {
+    position: relative; flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin;
+    margin-inline: -16px; padding-inline: 16px;
+    background:
+      linear-gradient(to right, var(--strip) 40%, transparent) left / 32px 100% no-repeat local,
+      linear-gradient(to left, var(--strip) 40%, transparent) right / 32px 100% no-repeat local,
+      radial-gradient(farthest-side at 0 50%, var(--shade), transparent) left / 14px 100% no-repeat scroll,
+      radial-gradient(farthest-side at 100% 50%, var(--shade), transparent) right / 14px 100% no-repeat scroll var(--strip);
+  }
+  header.top nav { --strip: var(--card); }
+  nav.tabs { --strip: var(--bg); }
+}
 .bars { display: grid; gap: 8px; margin-bottom: 8px; }
 .barrow { display: grid; grid-template-columns: 9.5rem 1fr 8rem; grid-template-areas: "label bar value"; gap: 4px 12px; align-items: center; }
 .barrow > .label { grid-area: label; overflow-wrap: anywhere; }
