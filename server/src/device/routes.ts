@@ -9,6 +9,7 @@ import type { Deps } from "../deps.js";
 import { offeredFile } from "../family/agent.js";
 import { saveCallRecords, withoutAlwaysAllowed } from "../family/calls/records.js";
 import { markNotified, saveLocations } from "../family/location/fixes.js";
+import { networkCutoff, saveNetworkDays, withoutCrisis } from "../family/network/store.js";
 import { buildPolicy, changePolicy, neverBlockedOn, policyVersion } from "../family/policy.js";
 import { receiveReport } from "../family/reports.js";
 import { saveRequests, type SavedRequests } from "../family/requests.js";
@@ -22,7 +23,20 @@ import { getSettings } from "../settings.js";
 import { formatDateTime, formatTime } from "../time.js";
 import { applyEvents, applyInventory } from "./apps.js";
 import { enroll } from "./enroll.js";
-import { CallsRequest, CheckinRequest, EnrollRequest, EventsRequest, InventoryRequest, LIMITS, LocationsRequest, PolicyQuery, RequestsRequest, UsageRequest, type Device } from "./schemas.js";
+import {
+  CallsRequest,
+  CheckinRequest,
+  EnrollRequest,
+  EventsRequest,
+  InventoryRequest,
+  LIMITS,
+  LocationsRequest,
+  NetworkRequest,
+  PolicyQuery,
+  RequestsRequest,
+  UsageRequest,
+  type Device,
+} from "./schemas.js";
 
 interface PhoneRow {
   id: string;
@@ -55,6 +69,7 @@ function blocked(...verdicts: Verdict[]): number | null {
 const isPolicyPoll = (method: string, path: string) => method === "GET" && path.endsWith("/policy");
 const isDownload = (path: string) => /\/agent\/[^/]*$/.test(path);
 const isCalls = (method: string, path: string) => method === "POST" && path.endsWith("/calls");
+const isNetwork = (method: string, path: string) => method === "POST" && path.endsWith("/network");
 
 export function deviceRoutes(deps: Deps): Hono<DeviceEnv> {
   const { db, limits } = deps;
@@ -112,7 +127,9 @@ export function deviceRoutes(deps: Deps): Hono<DeviceEnv> {
         ? limits.agentPerPhone
         : isCalls(c.req.method, c.req.path)
           ? limits.callsPerPhone
-          : limits.devicePerPhone;
+          : isNetwork(c.req.method, c.req.path)
+            ? limits.networkPerPhone
+            : limits.devicePerPhone;
     const verdict = limiter.hit(phone.id);
     if (!verdict.ok) return fail(429, "rate_limited", "Too many requests", verdict.retryAfterSeconds);
     c.set("phone", phone);
@@ -296,6 +313,34 @@ export function deviceRoutes(deps: Deps): Hono<DeviceEnv> {
     }
     if (saved.dropped > 0) deps.log(`A phone sent ${saved.dropped} call record${saved.dropped === 1 ? "" : "s"} its rules didn't ask for: not kept.`);
     return c.json({ server_time: now, accepted: saved.accepted + taken });
+  });
+
+  /**
+   * Phase 3, network logging: how many times each app looked up each domain, one local day per
+   * entry (family/network/store.ts). Idempotent by day: a day sent again replaces the stored one.
+   * Kept only while the phone's switch is on (a parent's choice); otherwise accepted, dropped and
+   * counted, so the phone stops sending. The never-blocked apps' lookups are never kept, and nor
+   * is an entry naming one of 988's websites: it's taken out before the body is checked, and the
+   * server's log says only that it happened, never the name or the phone. Rate limited per phone
+   * apart from its other calls.
+   */
+  app.post("/network", limit(LIMITS.networkBytes), async (c) => {
+    const raw = await readJsonBody(c);
+    if (!raw.ok) return fail(400, "invalid_request", raw.description);
+    const { body, neverKept } = withoutCrisis(raw.value);
+    const checked = checkJson(NetworkRequest, body);
+    if (!checked.ok) return fail(400, "invalid_request", checked.description);
+    const now = deps.now();
+    const phone = c.var.phone;
+    db.prepare("UPDATE devices SET last_seen_at = ? WHERE id = ?").run(now, phone.id);
+    const never = neverBlockedOn(db, phone.id);
+    const saved = saveNetworkDays(db, phone.id, checked.value.days, now, {
+      keep: (pkg) => never(pkg) === null,
+      oldest: networkCutoff(now, getSettings(db).networkDays),
+    });
+    if (neverKept > 0) deps.log("A phone sent network activity naming 988's websites, which Belay never keeps: not kept. Belay on the phone shouldn't send it.");
+    if (saved.dropped > 0) deps.log(`A phone sent ${saved.dropped} day${saved.dropped === 1 ? "" : "s"} of network activity its rules didn't ask for: not kept.`);
+    return c.json({ server_time: now, accepted: saved.accepted });
   });
 
   /**

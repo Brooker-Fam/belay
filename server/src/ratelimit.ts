@@ -109,6 +109,11 @@ export interface Limiters {
    * backlog of records never holds back its check-ins or requests.
    */
   callsPerPhone: RateLimiter;
+  /**
+   * Phase 3: network days, per phone, counted apart from its other calls, so a phone sending a
+   * backlog of days (or Android's batches coming close together) never holds back its check-ins.
+   */
+  networkPerPhone: RateLimiter;
 }
 
 export function createLimiters(now: () => number): Limiters {
@@ -130,5 +135,6 @@ export function createLimiters(now: () => number): Limiters {
     requestsPerPhone: new RateLimiter(300, 60 * MIN, now),
     locationsPerPhone: new RateLimiter(600, 60 * MIN, now),
     callsPerPhone: new RateLimiter(30, MIN, now),
+    networkPerPhone: new RateLimiter(30, MIN, now),
   };
 }

@@ -6,7 +6,7 @@
  * page), never an AI app, and it's in the activity log with what went.
  *
  * Stopping is a switch where the phone has one: screen time's measuring, location (with lost mode
- * and keeping location on), and recording calls (Phase 5). The phone always sends its app list and app changes while Belay
+ * and keeping location on), recording calls (Phase 5), and network logging (Phase 3's last part). The phone always sends its app list and app changes while Belay
  * is on it (its rules work from them), and the kid can always ask for things ("I need help" must
  * always reach a parent), so for those two what goes is what's kept now. A request the kid's phone
  * still shows keeps a bare record (that it was asked, and the answer, without anyone's words), so
@@ -22,11 +22,13 @@ import { setCalls } from "./calls/changes.js";
 import { callSettings, listContacts, listNumbers } from "./calls/store.js";
 import { setLocation, setLost } from "./location/changes.js";
 import { listPlaces, locationSettings } from "./location/store.js";
+import { setNetworkLog } from "./network/changes.js";
+import { networkSettings } from "./network/store.js";
 import { type Changed, type Person, type PolicyContext, RuleRefused, changePolicy } from "./policy.js";
 import { setPhoneSettings } from "./screentime/changes.js";
 import { phoneRules } from "./screentime/rules.js";
 
-export const COLLECTED = ["apps", "screen_time", "location", "calls", "requests"] as const;
+export const COLLECTED = ["apps", "screen_time", "location", "calls", "network", "requests"] as const;
 export type Collected = (typeof COLLECTED)[number];
 
 /** The tables each category's rows are in (location's checks are the phone's locate_now commands). */
@@ -35,6 +37,7 @@ export const COLLECTED_TABLES: Record<Collected, readonly string[]> = {
   screen_time: ["usage_days", "usage_apps"],
   location: ["fixes", "place_events", "places"],
   calls: ["call_records"],
+  network: ["network_days", "network_lookups"],
   requests: ["requests"],
 };
 
@@ -60,6 +63,8 @@ export const RECORDS: readonly string[] = [
   "contacts",
   "contact_numbers",
   "call_numbers",
+  // Phase 3: the network logging switch.
+  "network_settings",
   "handovers",
   "enrollment_codes",
   "audit_log",
@@ -76,6 +81,7 @@ export const COLLECTED_TITLES: Record<Collected, string> = {
   screen_time: "Screen time",
   location: "Where the phone is",
   calls: "Calls",
+  network: "Websites and services apps look up",
   requests: "Requests",
 };
 
@@ -196,6 +202,21 @@ function callsKept(db: DB, deviceId: string): Omit<Kept, "fingerprint"> {
   };
 }
 
+function networkKept(db: DB, deviceId: string): Omit<Kept, "fingerprint"> {
+  const days = count(db, "network_days WHERE device_id = ?", deviceId);
+  const on = networkSettings(db, deviceId)?.enabled === true;
+  return {
+    category: "network",
+    title: COLLECTED_TITLES.network,
+    goes: days ? [`${plural(days, "day")} of network activity: which websites and online services each app looked up, and how many times`] : [],
+    stopping: on
+      ? "Network logging turns off: the phone stops noting which websites and services its apps look up."
+      : "Network logging is off: the phone doesn't note which websites and services its apps look up.",
+    stays: [],
+    anything: days > 0 || on,
+  };
+}
+
 function requestsKept(db: DB, deviceId: string, now: number): Omit<Kept, "fingerprint"> {
   const recent = now - PHONE_KEEPS_REQUESTS_MS;
   const closed = `requests WHERE device_id = ? AND NOT ${KEPT_REQUEST}`;
@@ -240,7 +261,9 @@ export function keptFor(db: DB, deviceId: string, category: Collected, now: numb
           ? locationKept(db, deviceId)
           : category === "calls"
             ? callsKept(db, deviceId)
-            : requestsKept(db, deviceId, now);
+            : category === "network"
+              ? networkKept(db, deviceId)
+              : requestsKept(db, deviceId, now);
   return { ...kept, fingerprint: fingerprintOf(kept) };
 }
 
@@ -281,6 +304,11 @@ function deleteCalls(db: DB, deviceId: string): Deleted {
   return { call_records: db.prepare("DELETE FROM call_records WHERE device_id = ?").run(deviceId).changes };
 }
 
+function deleteNetwork(db: DB, deviceId: string): Deleted {
+  // network_lookups go with their day.
+  return { network_days: db.prepare("DELETE FROM network_days WHERE device_id = ?").run(deviceId).changes };
+}
+
 function deleteRequests(db: DB, deviceId: string, now: number): Deleted {
   const recent = now - PHONE_KEEPS_REQUESTS_MS;
   const closed = `device_id = ? AND NOT ${KEPT_REQUEST}`;
@@ -317,6 +345,7 @@ export function stopCollecting(ctx: PolicyContext, deviceId: string, category: C
       if (s && (s.mode !== "off" || s.keepOn)) setLocation(ctx, deviceId, { mode: "off", keepOn: false }, who);
     }
     if (category === "calls" && callSettings(db, deviceId)?.log) setCalls(ctx, deviceId, { log: false }, who);
+    if (category === "network" && networkSettings(db, deviceId)?.enabled) setNetworkLog(ctx, deviceId, false, who);
     return changePolicy(ctx, deviceId, who, (log) => {
       const deleted =
         category === "apps"
@@ -327,7 +356,9 @@ export function stopCollecting(ctx: PolicyContext, deviceId: string, category: C
               ? deleteLocation(db, deviceId)
               : category === "calls"
                 ? deleteCalls(db, deviceId)
-                : deleteRequests(db, deviceId, now);
+                : category === "network"
+                  ? deleteNetwork(db, deviceId)
+                  : deleteRequests(db, deviceId, now);
       log("collection.stopped", { category, deleted });
       return { deleted };
     });

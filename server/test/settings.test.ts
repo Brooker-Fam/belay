@@ -17,14 +17,14 @@ describe("AI scopes after an upgrade", () => {
     stored(t, { apps: false, device_status: false });
     expect(getSettings(t.deps.db)).toMatchObject({
       aiScopes: { apps: false, device_status: false, requests: false, screen_time: false, agreement: false },
-      newAiScopes: ["requests", "screen_time", "agreement", "location", "calls"],
+      newAiScopes: ["requests", "screen_time", "agreement", "location", "calls", "network"],
     });
   });
 
   it("so does a family that turned only one off", () => {
     const t = testServer();
     stored(t, { apps: true, device_status: false });
-    expect(getSettings(t.deps.db).aiScopes).toEqual({ apps: true, device_status: false, requests: false, screen_time: false, agreement: false, location: false, calls: false });
+    expect(getSettings(t.deps.db).aiScopes).toEqual({ apps: true, device_status: false, requests: false, screen_time: false, agreement: false, location: false, calls: false, network: false });
   });
 
   it("a family that left them all on gets the new one on, marked new", () => {
@@ -32,7 +32,7 @@ describe("AI scopes after an upgrade", () => {
     stored(t, { apps: true, device_status: true });
     expect(getSettings(t.deps.db)).toMatchObject({
       aiScopes: { apps: true, device_status: true, requests: true, screen_time: true, agreement: true },
-      newAiScopes: ["requests", "screen_time", "agreement", "location", "calls"],
+      newAiScopes: ["requests", "screen_time", "agreement", "location", "calls", "network"],
     });
   });
 
@@ -41,7 +41,7 @@ describe("AI scopes after an upgrade", () => {
     stored(t, { apps: true, device_status: true, requests: false });
     expect(getSettings(t.deps.db)).toMatchObject({
       aiScopes: { apps: true, device_status: true, requests: false, screen_time: false, agreement: false },
-      newAiScopes: ["screen_time", "agreement", "location", "calls"],
+      newAiScopes: ["screen_time", "agreement", "location", "calls", "network"],
     });
   });
 
@@ -49,7 +49,7 @@ describe("AI scopes after an upgrade", () => {
     const t = testServer();
     expect(getSettings(t.deps.db).aiScopes.location).toBe(false);
     stored(t, { apps: true, device_status: true, requests: true, screen_time: true, agreement: true });
-    expect(getSettings(t.deps.db)).toMatchObject({ aiScopes: { apps: true, location: false, calls: false }, newAiScopes: ["location", "calls"] });
+    expect(getSettings(t.deps.db)).toMatchObject({ aiScopes: { apps: true, location: false, calls: false, network: false }, newAiScopes: ["location", "calls", "network"] });
     const sam = await signIn(t);
     const html = await (await get(t, "/settings", sam.cookie)).text();
     expect(html).toContain("It starts off for every family: tick it to let AI apps read it.");

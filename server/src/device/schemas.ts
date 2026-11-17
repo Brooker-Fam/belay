@@ -41,6 +41,12 @@ export const LIMITS = {
   callsBytes: 128 * 1024,
   maxCalls: 500,
   maxContacts: 500,
+  /** Phase 3, network logging: `POST /api/v1/network`. */
+  networkBytes: 512 * 1024,
+  maxNetworkDays: 31,
+  maxNetworkEntries: 5000,
+  /** One entry's lookups in a day, and a day's `dropped`, at most. */
+  maxNetworkCount: 1_000_000,
 } as const;
 
 const time = z.int().min(0);
@@ -62,6 +68,19 @@ const clientId = z
   .regex(/^[A-Za-z0-9_-]+$/, "use letters, digits, '-' and '_'");
 /** Phase 7: a phone number in E.164, like +15555550100. */
 export const e164 = z.string().regex(/^\+[1-9]\d{6,14}$/, "not E.164");
+
+/**
+ * A DNS host name as Belay keeps one (RFC 1123): lowercase letters, digits and hyphens in labels
+ * of 1 to 63, at least two of them, at most 253 characters, and a last label with a letter in it
+ * (so never an IP address). Punycode for anything else: "xn--bcher-kva.example".
+ */
+export function isHostname(host: string): boolean {
+  if (host.length > 253) return false;
+  const labels = host.split(".");
+  return labels.length >= 2 && labels.every((label) => /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(label)) && /[a-z]/.test(labels.at(-1) ?? "");
+}
+/** Phase 3: a domain an app looked up. Its developer chose it: untrusted. */
+export const domainName = z.string().min(3).max(253).refine(isHostname, "not a lowercase hostname");
 
 export const Version = z.strictObject({ name: text().nullish(), code: versionCode });
 
@@ -223,7 +242,7 @@ export const Enforcement = z.strictObject({
         .optional(),
     })
     .nullish(),
-  /** Phase 3 (later): network logging; `paused` when Android paused it. */
+  /** Phase 3: network logging, as Android has it (null while it's off): `paused` while another user or profile is on the phone. */
   network_log: z.strictObject({ enabled: z.boolean(), paused: z.boolean() }).nullish(),
   /** Phase 4: whether Belay can take a fix; null while location is off. */
   location: z
@@ -420,6 +439,23 @@ export const UsageDay = z.strictObject({
 });
 export type UsageDay = z.infer<typeof UsageDay>;
 export const UsageRequest = z.strictObject({ days: z.array(UsageDay).min(1).max(LIMITS.maxUsageDays) });
+
+/**
+ * Phase 3, network logging: one local day of DNS lookups, as the phone reduced them: how many
+ * times each app looked up each domain. Idempotent by `day`: a day sent again replaces the stored
+ * one. `dropped` counts the entries the phone cut to stay under 5000.
+ */
+export const NetworkDay = z.strictObject({
+  day: ymd,
+  zone: text(64),
+  as_of: time,
+  entries: z
+    .array(z.strictObject({ package: packageName, domain: domainName, lookups: z.int().min(1).max(LIMITS.maxNetworkCount) }))
+    .max(LIMITS.maxNetworkEntries),
+  dropped: z.int().min(0).max(LIMITS.maxNetworkCount),
+});
+export type NetworkDay = z.infer<typeof NetworkDay>;
+export const NetworkRequest = z.strictObject({ days: z.array(NetworkDay).min(1).max(LIMITS.maxNetworkDays) });
 
 export const PolicyQuery = z.strictObject({
   /** The version the phone has; the server answers at once if it has a different one. */
@@ -623,7 +659,7 @@ export const Policy = z.strictObject({
   stage: Stage.nullable(),
   /** Phase 3: the family agreement's current version, for the kid's screen. */
   agreement: Agreement.nullable(),
-  /** Phase 3, later: the phone doesn't log yet, so the server always sends off. */
+  /** Phase 3: whether the phone logs which domains its apps look up (family/network): a parent's choice alone, off by default. */
   network_log: z.strictObject({ enabled: z.boolean() }),
   /** Phase 4: null until a parent first sets location on the phone; mode off: no location at all. */
   location: Location.nullable(),

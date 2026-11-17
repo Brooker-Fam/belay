@@ -1,6 +1,7 @@
 import type { DB } from "./db.js";
 import { pruneCallRecords } from "./family/calls/records.js";
 import { pruneLocations } from "./family/location/fixes.js";
+import { pruneNetwork } from "./family/network/store.js";
 import { pruneRequests } from "./family/requests.js";
 import { pruneUsage } from "./family/screentime/usage.js";
 import { getSettings } from "./settings.js";
@@ -13,6 +14,7 @@ const DAY = 24 * 3_600_000;
  * old; and where the phone was, as the family keeps it (Phase 4: periodic fixes 7 days, checks 30,
  * arrivals and departures 90, lost-mode fixes until 7 days after lost mode ends, a help request's
  * fix with its request); call records, as the family keeps them (Phase 5: 90 days by default);
+ * network days, as the family keeps them (Phase 3's network logging: 30 days by default);
  * and the kid's requests that wait for no one any more a year after they last changed (help
  * requests stay until the phone is deleted). Run hourly; safe to run any time.
  */
@@ -32,6 +34,7 @@ export function cleanUp(db: DB, now: number): void {
     pruneLocations(db, now, settings.locationDays);
     pruneRequests(db, now);
     pruneCallRecords(db, now, settings.callDays);
+    pruneNetwork(db, now, settings.networkDays);
   }).immediate();
   db.pragma("optimize");
 }
