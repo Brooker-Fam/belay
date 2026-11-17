@@ -275,9 +275,11 @@ data class WireUsageApp(
 )
 
 /**
- * One local day of usage. Idempotent by ([day], [zone]): the server keeps the one with the newest
- * [asOf]. Decision: [asOf] is the time up to which the day was counted, not the newest event, so
- * a later report always replaces an earlier one even when no new event came (an app left open).
+ * One local day of usage. Idempotent by ([day], [zone]): a day sent again replaces the server's
+ * when its [asOf] is the same or newer. Decision: [asOf] is the time up to which the day was
+ * counted, not the newest event, so a later report always replaces an earlier one even when no
+ * new event came (an app left open); a complete day sent again after a clock change has the same
+ * [asOf] (the day's end), and must replace it too (UsageUploads).
  */
 @Serializable
 data class WireUsageDay(
