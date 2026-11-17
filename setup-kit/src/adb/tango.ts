@@ -15,6 +15,8 @@ export interface Connector {
 }
 
 const CHUNK = 64 * 1024;
+/** How long a restarting phone may take to drop its connection. */
+const GONE_WITHIN_MS = 60_000;
 
 export class TangoPhone implements Phone {
   private adb: Adb | undefined;
@@ -85,10 +87,18 @@ export class TangoPhone implements Phone {
     }
   }
 
+  /**
+   * `adb reboot`, then until the phone has really gone: waiting for it to come back any sooner
+   * could find the old connection still there (the browser lists the old USB device for a
+   * moment). The request itself may end with the connection.
+   */
   async reboot(): Promise<void> {
     const adb = this.connected();
     this.adb = undefined;
-    await adb.power.reboot();
+    await adb.power.reboot().catch(() => undefined);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([adb.disconnected, new Promise((resolve) => (timer = setTimeout(resolve, GONE_WITHIN_MS)))]);
+    clearTimeout(timer);
     await adb.close().catch(() => undefined);
   }
 
