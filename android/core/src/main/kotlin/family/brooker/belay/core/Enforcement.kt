@@ -98,7 +98,8 @@ object NeverBlocked {
      */
     fun of(roles: PhoneRoles, apps: Map<String, PackageRecord>, hiddenByBelay: Set<String>): Map<String, Protection> {
         val out = LinkedHashMap<String, Protection>()
-        fun add(names: Collection<String>, why: Protection) = names.forEach { out.putIfAbsent(it, why) }
+        // Each group in name order, so the same phone always gives the same list (it's reported).
+        fun add(names: Collection<String>, why: Protection) = names.sorted().forEach { out.putIfAbsent(it, why) }
         add(listOf(roles.self), Protection.BELAY)
         FIXED.forEach { (name, why) -> out.putIfAbsent(name, why) }
         add(roles.dialers, Protection.CALLS)
@@ -107,11 +108,17 @@ object NeverBlocked {
         add(roles.home, Protection.HOME)
         add(roles.settings, Protection.SETTINGS)
         add(roles.keyboards, Protection.KEYBOARD)
-        apps.values
-            .filter { it.system && !it.launchable && it.packageName !in hiddenByBelay }
-            .forEach { out.putIfAbsent(it.packageName, Protection.ANDROID) }
+        add(apps.values.filter { it.system && !it.launchable && it.packageName !in hiddenByBelay }.map { it.packageName }, Protection.ANDROID)
         return out
     }
+
+    /**
+     * What the enforcement report lists as never blocked (docs/protocol.md, "Enforcement
+     * rules"): the installed ones from [of], in its order (Belay, the fixed names, the roles,
+     * then Android's own packages), at most [WireLimits.MAX_NEVER_BLOCKED].
+     */
+    fun report(protected: Map<String, Protection>, apps: Map<String, PackageRecord>): List<String> =
+        protected.keys.filter { it in apps }.take(WireLimits.MAX_NEVER_BLOCKED)
 }
 
 /**
@@ -185,10 +192,16 @@ data class EnforcementPlan(
     val pause: WirePause?,
     /** Debugging is lifted until then, for repairs. */
     val maintenanceUntil: Long?,
-    /** When the plan next changes by the clock alone (a pause or maintenance ends). */
+    /** When the plan next changes by the clock alone (a pause, maintenance or the recovery key's repair access ends). */
     val nextChangeAt: Long?,
     /** Belay's own words for what the policy asks and Belay won't or can't do. */
     val problems: List<String>,
+    /** Phase 6: the recovery key opened repair access until then: debugging and factory reset aren't locked. */
+    val recoveryUntil: Long? = null,
+    /** The installed packages Belay never blocks, for the report (NeverBlocked.report). */
+    val neverBlocked: List<String> = emptyList(),
+    /** Phase 6: the update the policy offers. */
+    val agentUpdate: WireAgentUpdate? = null,
 )
 
 /**
@@ -218,6 +231,10 @@ data class Applied(
     val problems: List<String> = emptyList(),
     /** The SIM Belay saw last, to report a change (core's SimRules). */
     val sim: SimWatch = SimWatch(),
+    /** The installed packages Belay never blocks, as the last plan resolved them (reported). */
+    val neverBlocked: List<String> = emptyList(),
+    /** Phase 6: the update the applied policy offers, for the report's agent_update. */
+    val agentUpdate: WireAgentUpdate? = null,
 )
 
 /** What to change on the phone to get from [Applied] to an [EnforcementPlan]. */
@@ -294,6 +311,11 @@ object Enforcement {
          * even with DISALLOW_ADD_USER set.
          */
         val otherUsers: Int = 0,
+        /**
+         * Phase 6: the recovery key opened repair access until then (RecoveryRules.openUntil):
+         * like maintenance, but both debugging and factory reset are lifted.
+         */
+        val recoveryUntil: Long? = null,
     )
 
     /**
@@ -351,7 +373,8 @@ object Enforcement {
         }
 
         val maintenanceUntil = policy.maintenanceUntil?.takeIf { it > now }
-        val locks = locks(policy.restrictions, input.debugBuild, maintenanceUntil != null, input.sdkFull, problems)
+        val recoveryUntil = input.recoveryUntil?.takeIf { it > now }
+        val locks = locks(policy.restrictions, input.debugBuild, maintenanceUntil != null, recoveryUntil != null, input.sdkFull, problems)
 
         val privateDns = policy.web.privateDns?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }?.let { host ->
             if (Hostnames.valid(host)) host else null.also { problems += "Private DNS: \"$host\" isn't a host name." }
@@ -365,6 +388,7 @@ object Enforcement {
         val nextChangeAt = listOfNotNull(
             pause?.until,
             maintenanceUntil?.takeIf { policy.restrictions.debugging && !input.debugBuild },
+            recoveryUntil?.takeIf { (policy.restrictions.debugging || policy.restrictions.factoryReset) && !input.debugBuild },
         ).minOrNull()
 
         val hide = blocked + hiddenBrowsers
@@ -385,6 +409,9 @@ object Enforcement {
             maintenanceUntil = maintenanceUntil,
             nextChangeAt = nextChangeAt,
             problems = problems,
+            recoveryUntil = recoveryUntil,
+            neverBlocked = NeverBlocked.report(protected, apps),
+            agentUpdate = policy.agentUpdate,
         )
     }
 
@@ -392,6 +419,7 @@ object Enforcement {
         r: WireRestrictions,
         debugBuild: Boolean,
         maintenance: Boolean,
+        recovery: Boolean,
         sdkFull: Int,
         problems: MutableList<String>,
     ): Set<Lock> {
@@ -412,6 +440,8 @@ object Enforcement {
             wanted -= setOf(Lock.FACTORY_RESET, Lock.DEBUGGING)
         }
         if (maintenance) wanted -= Lock.DEBUGGING
+        // The recovery key opens both, so a phone whose server is gone can be repaired or reset.
+        if (recovery) wanted -= setOf(Lock.DEBUGGING, Lock.FACTORY_RESET)
         val unavailable = wanted.filter { it.minSdkFull > sdkFull }
         // The registered-stores key only exists to close a gap 37.2 opened: nothing to report before it.
         unavailable.filter { it != Lock.UNKNOWN_SOURCES_REGISTERED_STORES }.forEach {
@@ -469,6 +499,8 @@ object Enforcement {
             browsers = if (plan.hiddenBrowsers.isEmpty()) emptySet() else plan.hiddenBrowsers.toSet(),
             problems = problems,
             sim = applied.sim,
+            neverBlocked = plan.neverBlocked,
+            agentUpdate = plan.agentUpdate,
         )
     }
 
@@ -495,14 +527,27 @@ object Enforcement {
         return next to gone
     }
 
-    /** The enforcement report for the server (protocol, "Enforcement"); null before the first policy. */
-    fun report(applied: Applied): WireEnforcement? {
+    /**
+     * The enforcement report for the server (protocol, "Enforcement"); null before the first
+     * policy. Phase 6 and 10 add what other parts of Belay keep: the update's state
+     * (AgentUpdates.report), the recovery key's last use and the commands' last results.
+     */
+    fun report(
+        applied: Applied,
+        agentUpdate: WireAgentUpdateState? = null,
+        recovery: WireRecoveryUse? = null,
+        commands: List<WireCommandResult> = emptyList(),
+    ): WireEnforcement? {
         val version = applied.policyVersion ?: return null
         return WireEnforcement(
             policyVersion = version,
             appliedAt = applied.appliedAt,
             suspendedCount = (applied.suspended + applied.hidden).size,
             problems = applied.problems.map { it.take(MAX_PROBLEM) }.take(MAX_PROBLEMS),
+            agentUpdate = agentUpdate,
+            recovery = recovery,
+            commands = commands.take(WireLimits.MAX_COMMAND_RESULTS),
+            neverBlocked = applied.neverBlocked.take(WireLimits.MAX_NEVER_BLOCKED),
         )
     }
 }

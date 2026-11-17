@@ -157,6 +157,9 @@ private fun RuleText(rule: Rule, kid: KidView) {
         Rule.REPAIR_MODE ->
             stringResource(R.string.rule_repair, kid.plan?.maintenanceUntil?.let { formatTime(it) }.orEmpty()) to
                 stringResource(R.string.rule_repair_why)
+        Rule.RECOVERY_OPEN ->
+            stringResource(R.string.rule_recovery, kid.plan?.recoveryUntil?.let { formatTime(it) }.orEmpty()) to
+                stringResource(R.string.rule_recovery_why)
         Rule.NO_BROWSERS -> stringResource(R.string.rule_no_browsers) to stringResource(R.string.rule_no_browsers_why)
         else -> return
     }

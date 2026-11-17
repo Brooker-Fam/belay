@@ -30,15 +30,15 @@ back the designs in this folder, and re-check some Phase 2 facts.
 | W4 | In-app browsers (WebView) can be filtered | Confirmed from Chromium's source | Chromium source |
 | W5 | A foreground service keeps network access in Doze (re-check of B6) **(Phase 2)** | Confirmed, for two separate reasons | AOSP |
 | I1 | `DISALLOW_INSTALL_UNKNOWN_SOURCES(_GLOBALLY)` blocks `adb install` **(Phase 2)** | **Contradicted** | AOSP; Docs |
-| I2 | A device owner installs and updates apps with no prompt | Confirmed; the kid sees "Updated by your admin" | AOSP |
-| I3 | Developer verification of the device owner's own installs | No device-owner bypass in AOSP 17; Google's exemption wording doesn't settle Belay's case | AOSP; Docs |
+| I2 | A device owner installs and updates apps with no prompt | Confirmed; the kid sees "Updated by your admin" | AOSP (moved to platform-notes.md) |
+| I3 | Developer verification of the device owner's own installs | No device-owner bypass in AOSP 17; Google's exemption wording doesn't settle Belay's case | AOSP; Docs (moved to platform-notes.md) |
 | I4 | Hard-restricted permissions (`READ_SMS`) for an adb-installed app | Confirmed: adb allowlists them, and the allowlist only grows | AOSP |
 | A4 | Play's `allowed_accounts` managed configuration **(Phase 2)** | Confirmed | Docs |
 | F1 | Factory reset protection policy and its broadcasts **(Phase 2)** | Confirmed; send `FRP_CONFIG_CHANGED` as well | AOSP; Docs |
 | H1 | `DISALLOW_SIM_GLOBALLY` stops SIM swaps **(Phase 2)** | **Contradicted**: it only blocks eSIM downloads | AOSP; Docs |
 | H2 | `DISALLOW_CONFIG_DATE_TIME` covers the time zone | Confirmed | AOSP |
-| V1 | `DISALLOW_ADD_USER` keeps Android's own Parental Controls off the phone **(Phase 2)** | **Contradicted**: Settings creates its profile "even when disallowed" | AOSP; Google blog |
-| V2 | Other users or profiles on a device-owner phone **(Phase 2)** | They break Private DNS changes and network logs; Belay can list and remove them | AOSP; Docs |
+| V1 | `DISALLOW_ADD_USER` keeps Android's own Parental Controls off the phone **(Phase 2)** | **Contradicted**: Settings creates its profile "even when disallowed" | AOSP; Google blog (moved to platform-notes.md) |
+| V2 | Other users or profiles on a device-owner phone **(Phase 2)** | They break Private DNS changes and network logs; Belay can list and remove them | AOSP; Docs (moved to platform-notes.md) |
 | V3 | Belay could hold the supervision role | **Contradicted**: system-only | AOSP |
 | L1 | Belay can grant itself location, background included | Confirmed; Android tells the kid | AOSP |
 | L2 | `setLocationEnabled` and `DISALLOW_CONFIG_LOCATION` | Confirmed | AOSP; Docs |
@@ -285,6 +285,8 @@ unknown-sources restriction; `adb install` only by `debugging`, which maintenanc
 
 ### I2. Silent installs by the device owner
 
+**Moved** to [platform-notes.md](../platform-notes.md#i2-silent-installs-by-the-device-owner) and checked again for Phases 6 and 10 (2026-11-17); this draft stays as it was written.
+
 **Confirmed.** Verified on: AOSP.
 
 - `pm/PackageInstallerSession.computeUserActionRequirement`: "Device owners and affiliated profile
@@ -301,6 +303,8 @@ unknown-sources restriction; `adb install` only by `debugging`, which maintenanc
   was found. Test before deciding whether Belay declares it.
 
 ### I3. Developer verification and the device owner's own installs
+
+**Moved** to [platform-notes.md](../platform-notes.md#i3-developer-verification-and-the-device-owners-own-installs) and checked again for Phases 6 and 10 (2026-11-17); this draft stays as it was written.
 
 **No device-owner bypass in AOSP 17; Google's wording doesn't settle Belay's case.** Verified on:
 AOSP; Docs.
@@ -396,6 +400,8 @@ time and timezone in Settings" (UserManager source); DPM has `setAutoTimeZonePol
 
 ### V1. Android's Parental Controls on a Belay phone (Phase 2)
 
+**Moved** to [platform-notes.md](../platform-notes.md#v1-androids-parental-controls-on-a-belay-phone) and checked again for Phases 6 and 10 (2026-11-17); this draft stays as it was written.
+
 **Contradicted: `DISALLOW_ADD_USER` doesn't keep them off.** Verified on: AOSP; Google's blog.
 
 - Google (blog.google, "New expanded Android parental controls", 2026-06-16): Android Parental
@@ -420,6 +426,8 @@ On the Pixel, untested: whether Settings offers it on a device-owner phone, and 
 hold the supervision roles (`dumpsys role`).
 
 ### V2. Other users or profiles on a device-owner phone (Phase 2)
+
+**Moved** to [platform-notes.md](../platform-notes.md#v2-other-users-or-profiles-on-a-device-owner-phone) and checked again for Phases 6 and 10 (2026-11-17); this draft stays as it was written.
 
 **Confirmed.** Verified on: AOSP; Docs.
 

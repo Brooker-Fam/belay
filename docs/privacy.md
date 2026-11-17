@@ -40,6 +40,21 @@ parent can see" (built from the code that collects them: `inventory/Collectors.k
 - a changed SIM card (opaque ids, never the phone number), and another user or profile on the
   phone, such as Android's own Parental Controls.
 
+**Belay itself (Phases 6 and 10)**, all part of "How Belay and the phone are doing":
+
+- the SHA-256 fingerprint of the key Belay is signed with (the server pins the first one it
+  sees, so it can tell a different Belay);
+- how an update the parent chose is going (downloading, checking, installing, done, or
+  Android's own words when it refused), when the recovery key was last used and until when it
+  opened repair access, and the result of each thing the parent asked Belay to do (like
+  removing another user);
+- which apps the phone never blocks (Belay, the phone and texting apps, the keyboard, the
+  home screen and Android's own parts), so the parent page doesn't offer to block them;
+- how many other users or profiles there are (a count: nothing about what's on them), and the
+  names of phone settings something other than Belay has locked, like `no_factory_reset`.
+
+Nothing new about the kid's own use of the phone: no content, no names, no accounts.
+
 **Not collected in Phase 1:** messages, calls, contacts, photos, files, browsing, searches,
 location, what's on the screen, or how long apps are used. Later phases add some of these
 only as listed in [ROADMAP.md](../ROADMAP.md), each shown to the kid on the phone first,
@@ -108,6 +123,21 @@ sends outside the family's server, and the parent page says so where you choose 
 - While the phone is paused: the parent's note and until when.
 - Which apps are blocked, and "This phone's rules": only the locks Belay actually applied,
   each with why, and that calling or texting 911 and 988 always works.
+
+## What the kid sees (Phases 6 and 10)
+
+- **Updates:** Android's own "Updated by your admin" notice, and Belay's: "Belay was updated
+  to version … by your parent." Under About Belay, how an update the parent chose is going.
+  Belay never asks the kid to confirm one, and installs nothing but Belay itself.
+- **The recovery key:** a "Recovery" screen under About Belay, for the parent: "For your
+  parent, if Belay's server is gone. It opens repair access for 24 hours." It sends nothing
+  and stores nothing typed there: the key is checked on the phone against the check the
+  server sent (never the key itself), and only the count of wrong tries and the last use are
+  kept. While the key's repair access is open, "This phone's rules" say so.
+- **Commands:** before Belay removes another user or profile, the kid sees: "Your parent is
+  removing Android's own Parental Controls from this phone, because Belay does that job."
+  Only a parent can ask for that, or for an update (on the parent page or the server's
+  command line), never an AI app.
 
 ## What the kid sees
 

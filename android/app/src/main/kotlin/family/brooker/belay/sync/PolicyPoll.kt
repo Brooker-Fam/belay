@@ -7,11 +7,13 @@ import android.util.Log
 import family.brooker.belay.Agent
 import family.brooker.belay.core.OutboxPolicy
 import family.brooker.belay.core.PolicyRules
+import family.brooker.belay.core.PolicyTooLarge
 import family.brooker.belay.core.Verdict
 import family.brooker.belay.enforce.PrivateDns
 import family.brooker.belay.settings.ConnectionStore
 import family.brooker.belay.settings.TokenVault
 import family.brooker.belay.store.AgentStore
+import family.brooker.belay.update.AgentUpdater
 import okhttp3.Call
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
@@ -28,6 +30,9 @@ import kotlin.random.Random
  *   loop asks again at once; a 204 (no change) too.
  * - Errors back off like the outbox (core's PolicyRules, at most five minutes; Retry-After
  *   is honored); 401 invalid_token disconnects the phone, like every other call.
+ * - A policy too big to read (over 1 MiB) is reported, the last one read stays in force, and
+ *   the loop waits five minutes to an hour (core's PolicyTooLarge): asking again soon would
+ *   only fetch the same answer.
  * - Idle while not connected to a server or offline; a new network or an enrollment wakes it.
  * - An answer that comes back much sooner than the server may wait, without anything new,
  *   counts as a failure, so a server or proxy that doesn't hold requests can't make a loop.
@@ -95,6 +100,11 @@ object PolicyPoll {
                         failures++
                         idle(PolicyRules.pollRetryMs(failures, null, Random.nextDouble()))
                     }
+                    // Asking again soon would only fetch the same answer: wait longer.
+                    Poll.TooLarge -> {
+                        failures++
+                        idle(PolicyTooLarge.retryMs(failures, Random.nextDouble()))
+                    }
                     is Poll.Wait -> {
                         if (wait.failure) failures++
                         idle(wait.ms(failures))
@@ -115,6 +125,9 @@ object PolicyPoll {
 
         /** A failure: back off. */
         data object Failed : Poll
+
+        /** The server's policy is too big to read: back off longer. */
+        data object TooLarge : Poll
 
         /** Wait: a fixed time, or a backoff ([failure]) at least as long as Retry-After. */
         data class Wait(val failure: Boolean, private val fixedMs: Long? = null, private val retryAfterMs: Long? = null) : Poll {
@@ -140,6 +153,8 @@ object PolicyPoll {
         return when (answer) {
             is DeviceApi.Answer.Ok -> {
                 val body = answer.body
+                // A 204: the server's policy is the one Belay has, so none is too big to read.
+                if (body == null) Sync.readable(app, "long-poll")
                 val new = body != null && Sync.received(app, body.policy, "long-poll", sentAt = answer.sentAt, at = answer.receivedAt)
                 if (new || answer.receivedAt - answer.sentAt >= TOO_QUICK_MS) Poll.Again else Poll.Failed
             }
@@ -155,7 +170,13 @@ object PolicyPoll {
             }
             is DeviceApi.Answer.Failed -> {
                 Log.w(Agent.TAG, "policy long-poll: ${answer.reason} (failure ${failures + 1})")
-                Poll.Failed
+                val tooLarge = answer.tooLarge
+                if (tooLarge != null) {
+                    Sync.policyTooLarge(app, tooLarge.bytes, "long-poll")
+                    Poll.TooLarge
+                } else {
+                    Poll.Failed
+                }
             }
         }
     }
@@ -171,6 +192,7 @@ object PolicyPoll {
             override fun onAvailable(network: Network) {
                 kick()
                 PrivateDns.networkBack(app)
+                AgentUpdater.networkBack(app)
             }
         }
         try {

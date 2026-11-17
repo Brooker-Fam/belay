@@ -10,6 +10,7 @@ import family.brooker.belay.core.EventsResponse
 import family.brooker.belay.core.InventoryResponse
 import family.brooker.belay.core.PolicyResponse
 import family.brooker.belay.core.PolicyRules
+import family.brooker.belay.core.PolicyTooLarge
 import family.brooker.belay.core.RequestsResponse
 import family.brooker.belay.core.Wire
 import family.brooker.belay.core.WireError
@@ -43,10 +44,15 @@ class DeviceApi(private val origin: String, private val client: OkHttpClient = H
 
         /**
          * No usable answer: no connection or a timeout, or, when [answered], something
-         * answered that isn't the device API (a captive portal, the wrong site).
+         * answered that isn't the device API (a captive portal, the wrong site). With
+         * [tooLarge], the server did answer 2xx, so it handled the request, but the answer is
+         * larger than Belay reads (a policy over 1 MiB: core's PolicyTooLarge).
          */
-        data class Failed(val reason: String, val answered: Boolean = false) : Answer<Nothing>
+        data class Failed(val reason: String, val answered: Boolean = false, val tooLarge: TooLarge? = null) : Answer<Nothing>
     }
+
+    /** [bytes]: the answer's Content-Length, when the server sent one. */
+    data class TooLarge(val bytes: Long?)
 
     fun enroll(request: EnrollRequest): Answer<EnrollResponse> =
         post("enroll", null, Wire.json.encodeToString(EnrollRequest.serializer(), request), EnrollResponse.serializer(), ENROLL_TIMEOUT_S)
@@ -111,8 +117,15 @@ class DeviceApi(private val origin: String, private val client: OkHttpClient = H
             call.execute().use { response ->
                 val receivedAt = System.currentTimeMillis()
                 if (noContent && response.code == 204) return Answer.Ok(null, sentAt, receivedAt)
-                val text = response.body.readCapped(maxBytes)
-                    ?: return Answer.Failed("answer too large (HTTP ${response.code})", answered = true)
+                // Too large by its Content-Length: not even read, so trying again costs little.
+                val declared = response.body.contentLength()
+                fun tooLarge(bytes: Long?) = Answer.Failed(
+                    "answer too large (HTTP ${response.code})",
+                    answered = true,
+                    tooLarge = TooLarge(bytes).takeIf { response.isSuccessful },
+                )
+                if (declared > maxBytes) return tooLarge(declared)
+                val text = response.body.readCapped(maxBytes) ?: return tooLarge(null)
                 if (response.isSuccessful) {
                     try {
                         Answer.Ok(Wire.json.decodeFromString(serializer, text), sentAt, receivedAt)
@@ -152,7 +165,7 @@ class DeviceApi(private val origin: String, private val client: OkHttpClient = H
         const val MAX_ANSWER_BYTES = 64L * 1024
 
         /** A policy holds every decision and 30 days of answered requests with the parent's notes. */
-        const val MAX_POLICY_BYTES = 1024L * 1024
+        const val MAX_POLICY_BYTES = PolicyTooLarge.MAX_BYTES
         const val CALL_TIMEOUT_S = 120L
 
         /** Shorter: provision.sh's broadcast has to finish within Android's 60 s. */

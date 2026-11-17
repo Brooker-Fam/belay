@@ -10,10 +10,13 @@ import family.brooker.belay.core.DataCategory
  * Keep one entry per collector class:
  * - [PackageReader] reads the apps, with the sensitive permissions and special access each
  *   holds: [DataCategories.APPS].
- * - [family.brooker.belay.health.HealthReader] reads phone facts and Belay's own health,
- *   [family.brooker.belay.health.DeviceStatus] adds the battery, storage, time zone and
- *   clock, and the enforcement report, and [family.brooker.belay.enforce.PhoneFacts] notices
- *   a changed SIM card and other users or profiles for it: [DataCategories.DEVICE_STATUS].
+ * - [family.brooker.belay.health.HealthReader] reads phone facts and Belay's own health (with
+ *   the count of other users and the restrictions Belay didn't set),
+ *   [family.brooker.belay.health.DeviceStatus] adds the battery, storage, time zone, clock,
+ *   Belay's signing certificate and the enforcement report (with the update's state, the
+ *   recovery key's use, the commands' results and the packages never blocked), and
+ *   [family.brooker.belay.enforce.PhoneFacts] notices a changed SIM card and other users or
+ *   profiles for it: [DataCategories.DEVICE_STATUS].
  * - [family.brooker.belay.enforce.EnforcementStep] asks for each new app that waits for a
  *   parent, and [family.brooker.belay.Agent.ask] sends what the kid writes in "Why I want
  *   it": [DataCategories.REQUESTS].

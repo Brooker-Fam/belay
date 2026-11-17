@@ -1,11 +1,18 @@
 package family.brooker.belay
 
 import android.content.Context
+import android.os.SystemClock
+import android.provider.Settings
 import android.util.Log
 import family.brooker.belay.core.AppChange
 import family.brooker.belay.core.Heartbeat
 import family.brooker.belay.core.PackageRecord
+import family.brooker.belay.core.RecoveryClock
+import family.brooker.belay.core.RecoveryOutcome
+import family.brooker.belay.core.RecoveryRules
+import family.brooker.belay.core.RecoveryState
 import family.brooker.belay.core.Requests
+import family.brooker.belay.core.UpdateRecord
 import family.brooker.belay.core.WireDevice
 import family.brooker.belay.enforce.EnforcementStep
 import family.brooker.belay.enforce.KidView
@@ -20,6 +27,7 @@ import family.brooker.belay.store.StateDump
 import family.brooker.belay.sync.PolicyPoll
 import family.brooker.belay.sync.Sync
 import family.brooker.belay.sync.SyncWork
+import family.brooker.belay.update.AgentUpdater
 import family.brooker.belay.work.WatchdogWorker
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -61,6 +69,15 @@ enum class Trigger(val label: String, val heartbeat: Boolean, val checkin: Boole
 
     /** Phase 2: a user or profile was added or removed (DeviceAdminReceiver.onUserAdded/Removed). */
     USERS_CHANGED("users changed", true),
+
+    /** Phase 6: the update thread recorded a new state for the offered update. */
+    AGENT_UPDATE("update went on", false, setup = false),
+
+    /** Phase 6: the recovery key opened repair access. */
+    RECOVERY("recovery key used", false),
+
+    /** The server's policy answer was too big to read, or readable again. */
+    POLICY_UNREADABLE("policy too big to read", false, setup = false),
 }
 
 /** Everything the main screen shows from the agent's last step. */
@@ -74,6 +91,10 @@ data class AgentView(
     val heartbeats: List<Heartbeat>,
     /** Phase 2: the rules, waiting apps, answers and pause, for the kid. */
     val kid: KidView,
+    /** Phase 6: how the last offered update went, for About Belay. */
+    val update: UpdateRecord? = null,
+    /** Phase 6: the recovery key's tries and last use, for the Recovery screen. */
+    val recovery: RecoveryState = RecoveryState(),
 )
 
 object Agent {
@@ -107,46 +128,91 @@ object Agent {
     ) {
         val app = context.applicationContext
         executor.execute {
-            val started = System.nanoTime()
-            Log.i(TAG, "step: ${trigger.label}" + if (packages.isEmpty()) "" else " $packages")
             try {
-                val store = AgentStore.get(app)
-                val connection = ConnectionStore.read(app)
-                if (trigger.setup) {
-                    if (DeviceOwnerSetup.isDeviceOwner(app)) {
-                        DeviceOwnerSetup.ensure(app)
-                        BelayService.start(app)
-                        WatchdogWorker.schedule(app)
-                    }
-                    if (connection.connected) SyncWork.scheduleCheckins(app)
-                }
-                val health = HealthReader(app).read()
-                var device: WireDevice? = null
-                val readDevice = { DeviceStatus.read(app, health).also { device = it } }
-                // Set by enrollment until a full inventory is queued, so a restart can't lose it.
-                val wanted = if (connection.connected && connection.inventoryWanted) "enrolled" else null
-                val outcome = Reconciler(app, store).run(trigger, packages, wanted, readDevice)
-                if (wanted != null && outcome.snapshotQueued) ConnectionStore.inventoryQueued(app)
-                val enforcement = EnforcementStep(app, store).run(
-                    inventory = outcome.baseline.inventory,
-                    recheckAll = outcome.snapshotQueued || trigger == Trigger.USERS_CHANGED,
-                    recheckDns = trigger == Trigger.PRIVATE_DNS_RETRY,
-                )
-                publish(store, health, device ?: readDevice(), outcome.baseline.inventory, enforcement.view)
-                DebugTools.afterStep(app) { StateDump.json(store, connection) }
-                Sync.request(app, checkin = trigger.checkin)
-                // The parent page shows the policy as applied once the server hears so.
-                if (enforcement.reportChanged) Sync.checkinSoon(app)
-                // A new connection: the long-poll asks the new server at once.
-                if (trigger == Trigger.ENROLLED) PolicyPoll.kick()
-            } catch (t: Throwable) {
-                Log.e(TAG, "agent step failed (${trigger.label})", t)
+                step(app, trigger, packages)
             } finally {
-                Log.i(TAG, "step done: ${trigger.label} in ${(System.nanoTime() - started) / 1_000_000} ms")
                 done?.invoke()
             }
         }
     }
+
+    /** One step, on the agent thread (see [handle]). Never throws. */
+    private fun step(app: Context, trigger: Trigger, packages: Set<String>) {
+        val started = System.nanoTime()
+        Log.i(TAG, "step: ${trigger.label}" + if (packages.isEmpty()) "" else " $packages")
+        try {
+            val store = AgentStore.get(app)
+            val connection = ConnectionStore.read(app)
+            if (trigger.setup) {
+                if (DeviceOwnerSetup.isDeviceOwner(app)) {
+                    DeviceOwnerSetup.ensure(app)
+                    BelayService.start(app)
+                    WatchdogWorker.schedule(app)
+                }
+                if (connection.connected) SyncWork.scheduleCheckins(app)
+            }
+            val health = HealthReader(app).read()
+            var device: WireDevice? = null
+            val readDevice = { DeviceStatus.read(app, health).also { device = it } }
+            // Set by enrollment until a full inventory is queued, so a restart can't lose it.
+            val wanted = if (connection.connected && connection.inventoryWanted) "enrolled" else null
+            val outcome = Reconciler(app, store).run(trigger, packages, wanted, readDevice)
+            if (wanted != null && outcome.snapshotQueued) ConnectionStore.inventoryQueued(app)
+            val enforcement = EnforcementStep(app, store).run(
+                inventory = outcome.baseline.inventory,
+                recheckAll = outcome.snapshotQueued || trigger == Trigger.USERS_CHANGED,
+                recheckDns = trigger == Trigger.PRIVATE_DNS_RETRY,
+            )
+            publish(store, health, device ?: readDevice(), outcome.baseline.inventory, enforcement.view)
+            DebugTools.afterStep(app) { StateDump.json(store, connection) }
+            Sync.request(app, checkin = trigger.checkin)
+            // The parent page shows the policy as applied once the server hears so.
+            if (enforcement.reportChanged) Sync.checkinSoon(app)
+            // A new connection: the long-poll asks the new server at once.
+            if (trigger == Trigger.ENROLLED) PolicyPoll.kick()
+            // Phase 6: the update thread looks at the offer the applied policy carries.
+            AgentUpdater.offered(app, enforcement.view.policy?.agentUpdate)
+        } catch (t: Throwable) {
+            Log.e(TAG, "agent step failed (${trigger.label})", t)
+        } finally {
+            Log.i(TAG, "step done: ${trigger.label} in ${(System.nanoTime() - started) / 1_000_000} ms")
+        }
+    }
+
+    /**
+     * Phase 6: [typed] is tried as the recovery key, offline, against the stored policy's check
+     * (core's RecoveryRules: the waits after wrong tries, and a used version never works again).
+     * On the agent thread, the recovery state's only writer; a right key opens repair access in
+     * the same task (the step lifts the locks) and the phone checks in soon after. [done] gets
+     * the outcome (null if something went wrong) on the agent thread. The key is never logged.
+     */
+    fun recover(context: Context, typed: String, done: (RecoveryOutcome?) -> Unit) {
+        val app = context.applicationContext
+        executor.execute {
+            val outcome = try {
+                val store = AgentStore.get(app)
+                val policy = DebugTools.policyOverride ?: store.policy()
+                val clock = RecoveryClock(System.currentTimeMillis(), bootCount(app), SystemClock.elapsedRealtime())
+                val before = store.recovery()
+                val (state, outcome) = RecoveryRules.attempt(before, policy?.recovery, typed, clock)
+                if (state != before) store.saveRecovery(state, clock.now)
+                Log.i(TAG, "recovery key: ${outcome.javaClass.simpleName.lowercase()}" + if (state.wrongTries > 0) " (wrong tries: ${state.wrongTries})" else "")
+                _view.value?.let { _view.value = it.copy(recovery = state) }
+                outcome
+            } catch (t: Throwable) {
+                Log.e(TAG, "recovery key check failed", t)
+                null
+            }
+            if (outcome is RecoveryOutcome.Opened) {
+                step(app, Trigger.RECOVERY, emptySet())
+                Sync.checkinSoon(app)
+            }
+            done(outcome)
+        }
+    }
+
+    private fun bootCount(app: Context): Int? =
+        Settings.Global.getInt(app.contentResolver, Settings.Global.BOOT_COUNT, -1).takeIf { it >= 0 }
 
     /**
      * The kid asks a parent for [packageName], with [reason] (their own words, or none), from
@@ -188,6 +254,8 @@ object Agent {
             changes = store.recentChanges(SCREEN_CHANGES),
             heartbeats = store.recentHeartbeats(SCREEN_HEARTBEATS),
             kid = kid,
+            update = store.agentUpdate(),
+            recovery = store.recovery(),
         )
     }
 

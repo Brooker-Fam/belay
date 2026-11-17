@@ -539,4 +539,103 @@ class EnforcementTest {
         assertEquals(WireLimits.MAX_PROBLEMS, report.problems.size)
         assertTrue(report.problems.all { it.length <= WireLimits.MAX_PROBLEM })
     }
+
+    // Phase 6: the recovery key.
+
+    private fun recoveryPlan(restrictions: WireRestrictions, recoveryUntil: Long?, debugBuild: Boolean = false, now: Long = T0, maintenanceUntil: Long? = null) =
+        Enforcement.plan(
+            Enforcement.Input(
+                policy(restrictions = restrictions, maintenanceUntil = maintenanceUntil), apps, roles, Applied(), debugBuild,
+                Enforcement.sdkFull(37), now, recoveryUntil = recoveryUntil,
+            ),
+        )
+
+    @Test
+    fun `the recovery key lifts debugging and factory reset until it ends, then they lock again`() {
+        val locked = WireRestrictions(debugging = true, factoryReset = true, safeBoot = true)
+        val until = T0 + 24 * HOUR
+        val during = recoveryPlan(locked, until)
+        assertEquals(setOf(Lock.SAFE_BOOT), during.locks)
+        assertEquals(until, during.recoveryUntil)
+        assertEquals(until, during.nextChangeAt, "a timer puts the locks back when it ends")
+        assertTrue(during.problems.isEmpty())
+        // Applied: Belay takes back exactly those two locks, and nothing else.
+        val before = apply(recoveryPlan(locked, null))
+        assertEquals(setOf(Lock.SAFE_BOOT, Lock.DEBUGGING, Lock.FACTORY_RESET), before.locks)
+        assertEquals(setOf(Lock.DEBUGGING, Lock.FACTORY_RESET), Enforcement.changes(during, before).unlock)
+
+        val after = recoveryPlan(locked, until, now = until)
+        assertEquals(setOf(Lock.SAFE_BOOT, Lock.DEBUGGING, Lock.FACTORY_RESET), after.locks)
+        assertNull(after.recoveryUntil)
+        assertNull(after.nextChangeAt)
+    }
+
+    @Test
+    fun `with maintenance too, the earlier end comes first`() {
+        val locked = WireRestrictions(debugging = true, factoryReset = true)
+        val plan = recoveryPlan(locked, recoveryUntil = T0 + 24 * HOUR, maintenanceUntil = T0 + 2 * HOUR)
+        assertEquals(emptySet(), plan.locks)
+        assertEquals(T0 + 2 * HOUR, plan.nextChangeAt)
+    }
+
+    @Test
+    fun `a debug build never locks them anyway, and the recovery key changes nothing it applies`() {
+        val locked = WireRestrictions(debugging = true, factoryReset = true)
+        val debug = recoveryPlan(locked, T0 + 24 * HOUR, debugBuild = true)
+        assertEquals(emptySet(), debug.locks)
+        assertEquals(T0 + 24 * HOUR, debug.recoveryUntil)
+        assertNull(debug.nextChangeAt)
+        assertTrue(debug.problems.any { "test build" in it })
+    }
+
+    @Test
+    fun `the recovery key opens nothing a policy didn't lock`() {
+        val plan = recoveryPlan(WireRestrictions(safeBoot = true), T0 + 24 * HOUR)
+        assertEquals(setOf(Lock.SAFE_BOOT), plan.locks)
+        assertNull(plan.nextChangeAt)
+    }
+
+    // The packages this phone never blocks, for the report.
+
+    @Test
+    fun `the report lists what this phone never blocks, Belay and the roles first, installed only`() {
+        val plan = plan(policy())
+        assertEquals(
+            listOf(
+                belay, framework, phoneService, systemUi, settings, dialer, safety, messages, launcher, keyboard, webView,
+            ).map { it.packageName },
+            plan.neverBlocked,
+        )
+        assertEquals(neverBlocked.toSet(), plan.neverBlocked.toSet())
+        val applied = apply(plan)
+        assertEquals(plan.neverBlocked, applied.neverBlocked)
+        assertEquals(plan.neverBlocked, Enforcement.report(applied)!!.neverBlocked)
+        // The same phone gives the same list, whatever order the inventory comes in.
+        val reversed = plan(policy(), installed = apps.entries.reversed().associate { it.key to it.value })
+        assertEquals(plan.neverBlocked, reversed.neverBlocked)
+    }
+
+    @Test
+    fun `the never-blocked list is capped, keeping Belay and the roles`() {
+        val many = (1..150).map { app("com.android.service$it", system = true).copy(launchable = false) }
+        val plan = plan(policy(), installed = apps + inventory(*many.toTypedArray()))
+        assertEquals(WireLimits.MAX_NEVER_BLOCKED, plan.neverBlocked.size)
+        assertEquals(belay.packageName, plan.neverBlocked.first())
+        assertTrue(dialer.packageName in plan.neverBlocked && messages.packageName in plan.neverBlocked && keyboard.packageName in plan.neverBlocked)
+    }
+
+    @Test
+    fun `the report carries the update's state, the recovery key's use and the commands' results`() {
+        val offer = WireAgentUpdate(versionCode = 4, sha256 = "ab".repeat(32), size = 10)
+        val applied = apply(plan(policy(version = 7).copy(agentUpdate = offer)))
+        assertEquals(offer, applied.agentUpdate)
+        val update = WireAgentUpdateState(4, WireUpdateState.INSTALLING, null, T0)
+        val use = WireRecoveryUse(1, T0, T0 + 24 * HOUR)
+        val results = (1..25).map { WireCommandResult("command-$it", WireCommandOutcome.DONE, T0 + it) }
+        val report = Enforcement.report(applied, update, use, results)!!
+        assertEquals(update, report.agentUpdate)
+        assertEquals(use, report.recovery)
+        assertEquals(results.take(WireLimits.MAX_COMMAND_RESULTS), report.commands)
+        assertNull(Enforcement.report(Applied(), update, use, results), "nothing before the first policy")
+    }
 }

@@ -92,7 +92,15 @@ In CI it also runs end to end with a real server: the job starts one on the runn
 makes an enrollment code with its CLI, and sets `BELAY_E2E_SERVER`, `BELAY_E2E_CODE` and
 `BELAY_E2E_STATUS`. `provision.sh` then connects the phone, and the test checks that the
 server got the phone's app list, with Belay as device owner, and the fixture app's
-install, update and removal.
+install, update and removal. With `BELAY_E2E_CLI` (the server's CLI) it checks Phase 2's
+rules, and with `BELAY_E2E_UPDATE_APK` and `BELAY_E2E_UPDATE_CODE` Phases 6 and 10: the
+build job makes a second debug APK of Belay on the same runner (the same debug key) with
+the next version code and not test-only (`-PbelayVersionCode=<n> -PbelayTestOnly=false`:
+Android never lets an app install a test-only APK through a session, platform notes I5),
+the server offers it and the phone updates itself; the server's recovery key, typed on the
+phone through a debug-only receiver, opens repair access; and `remove-other-users` is
+reported done. Then the test-only build goes back on (`adb install -d`, allowed for a
+debuggable app), so `unprovision.sh` can still release it.
 
 It refuses to run on anything but an emulator. GitHub Actions runs it on every push that
 touches `android/` or `server/` (`.github/workflows/android.yml`), on two images:

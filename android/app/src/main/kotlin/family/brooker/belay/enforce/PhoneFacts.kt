@@ -62,7 +62,8 @@ object PhoneFacts {
      * (DevicePolicyManager.getSecondaryUsers: every user but the system user and managed
      * profiles). Android 17's own Parental Controls make a hidden supervising profile even
      * with DISALLOW_ADD_USER set; public APIs can't tell its type from another user's, so
-     * Belay reports any of them and removes none. 0 when Belay isn't device owner.
+     * Belay reports any of them, and removes them only when a parent asks (Phase 10's
+     * remove_other_users, CommandRunner). 0 when Belay isn't device owner.
      */
     fun otherUsers(context: Context): Int = read("other users") {
         val dpm = context.getSystemService(DevicePolicyManager::class.java)

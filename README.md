@@ -35,7 +35,15 @@ OK?", with a web page as the fallback.
   offline: new apps wait for a parent, blocked apps are hidden, the phone can be paused, and
   safe mode, new users, sideloading, VPNs, Private DNS, the clock and default apps are locked.
   Calls, texts, 911 and 988 always work. The kid sees every rule, asks for apps with a "Why I
-  want it" box, and sees every answer.
+  want it" box, and sees every answer. **Phase 6 (the phone's side):** it updates itself to
+  the version a parent approved, without adb: downloaded (resuming), checked (Belay's own
+  package, the offered and a newer version, exactly its own signing key) and installed
+  silently as device owner, and the kid is told. Its Recovery screen takes the recovery key,
+  offline, to open repair access (USB debugging and factory reset) for 24 hours if the
+  server is ever gone. **Phase 10 (the phone's side):** it reports other users or profiles
+  (Android's own Parental Controls make one) and restrictions it didn't set, and removes the
+  others when a parent asks, telling the kid first. It reports the apps it never blocks, and
+  a policy too big to read is a reported problem, not a silent one.
 - **`server/`: the family's server.** Node and SQLite in one Docker image. The device API,
   the parent pages (phones and their health, apps with "new" badges and reviews, the
   timeline, adding a phone, settings, the activity log), and OAuth 2.1 plus MCP for Claude.
