@@ -30,6 +30,13 @@ export const LIMITS = {
   usageBytes: 256 * 1024,
   maxUsageDays: 31,
   maxUsageApps: 500,
+  /** Phase 4: `POST /api/v1/locations`. */
+  locationsBytes: 64 * 1024,
+  maxFixes: 200,
+  maxPlaceEvents: 200,
+  maxPlaces: 20,
+  /** Phase 7. */
+  maxParentNumbers: 4,
 } as const;
 
 const time = z.int().min(0);
@@ -212,6 +219,15 @@ export const Enforcement = z.strictObject({
     .nullish(),
   /** Phase 3 (later): network logging; `paused` when Android paused it. */
   network_log: z.strictObject({ enabled: z.boolean(), paused: z.boolean() }).nullish(),
+  /** Phase 4: whether Belay can take a fix; null while location is off. */
+  location: z
+    .strictObject({
+      permission: z.boolean(),
+      location_on: z.boolean(),
+      last_fix_at: time.nullish(),
+      problem: text(LIMITS.maxProblem).nullish(),
+    })
+    .nullish(),
 });
 export type Enforcement = z.infer<typeof Enforcement>;
 
@@ -281,9 +297,53 @@ export const AgreementRequest = z.strictObject({
   reason: text(LIMITS.maxReason).nullish(),
   asked_at: time,
 });
+// ── Phase 4 and 7 (docs/protocol.md): not accepted by the routes yet ────────
+
+/** Phase 4: one fix, 5 decimal places. */
+export const Fix = z.strictObject({
+  id: clientId,
+  at: time,
+  lat: z.number().min(-90).max(90),
+  lng: z.number().min(-180).max(180),
+  accuracy_m: z.int().min(0).max(100_000),
+  provider: z.enum(["gps", "fused"]),
+  reason: z.enum(["on_demand", "periodic", "place", "lost", "help"]),
+  command_id: clientId.nullish(),
+  mock: z.boolean(),
+});
+export type Fix = z.infer<typeof Fix>;
+export const PlaceEvent = z.strictObject({
+  id: clientId,
+  place_id: ruleId,
+  kind: z.enum(["arrived", "left"]),
+  at: time,
+  fix_id: clientId,
+});
+export const LocationsRequest = z.strictObject({
+  fixes: z.array(Fix).max(LIMITS.maxFixes),
+  place_events: z.array(PlaceEvent).max(LIMITS.maxPlaceEvents),
+});
+/** Phase 7: "I need help": urgent; `location` only when the kid chose to share it. */
+export const HelpRequest = z.strictObject({
+  id: clientId,
+  kind: z.literal("help"),
+  reason: text(LIMITS.maxReason).nullish(),
+  location: Fix.nullish(),
+  asked_at: time,
+  withdrawn_at: time.nullish(),
+});
+/** Phase 7: "I'd like to talk about…". */
+export const TalkRequest = z.strictObject({
+  id: clientId,
+  kind: z.literal("talk"),
+  reason: text(LIMITS.maxReason).min(1),
+  asked_at: time,
+  withdrawn_at: time.nullish(),
+});
+
 /**
  * Something the kid asks a parent for: a union on `kind`. Sending the same id again updates a
- * pending request's reason.
+ * pending request's reason. (Phase 7 adds `help`, `talk` and `withdrawn_at` on every kind.)
  */
 export const Request = z.discriminatedUnion("kind", [AppRequest, MoreTimeRequest, AgreementRequest]);
 export type Request = z.infer<typeof Request>;
@@ -389,6 +449,30 @@ export const ScreenTime = z.strictObject({
 });
 export type ScreenTime = z.infer<typeof ScreenTime>;
 
+/** Phase 4: the policy's `location` (docs/protocol.md, "Location rules"). */
+export const Location = z.strictObject({
+  mode: z.enum(["off", "on_demand", "periodic"]),
+  every_minutes: z.int().min(15).max(120).nullable(),
+  hours: z.strictObject({ start: hhmm, end: hhmm }).nullable(),
+  provider: z.enum(["gps", "fused"]),
+  fallback_fused: z.boolean(),
+  places: z
+    .array(
+      z.strictObject({
+        id: ruleId,
+        name: text(40),
+        lat: z.number().min(-90).max(90),
+        lng: z.number().min(-180).max(180),
+        radius_m: z.int().min(50).max(1000),
+        notify: z.array(z.enum(["arrive", "leave"])).max(2),
+      }),
+    )
+    .max(LIMITS.maxPlaces),
+  keep_on: z.boolean(),
+  lost: z.strictObject({ since: time, message: text(120) }).nullable(),
+});
+export type Location = z.infer<typeof Location>;
+
 /** Phase 3: the stage, for the kid's screen. `unlocks` and `how` are the family's words. */
 export const Stage = z.strictObject({
   name: text(60),
@@ -482,7 +566,7 @@ export const Policy = z.strictObject({
   commands: z.array(
     z.strictObject({
       id: clientId,
-      kind: z.enum(["remove_other_users", "lock_now"]),
+      kind: z.enum(["remove_other_users", "lock_now", "locate_now"]),
       issued_at: time,
       expires_at: time.nullable(),
     }),
@@ -495,5 +579,16 @@ export const Policy = z.strictObject({
   agreement: Agreement.nullable(),
   /** Phase 3, later: the phone doesn't log yet, so the server always sends off. */
   network_log: z.strictObject({ enabled: z.boolean() }),
+  // Phase 4 and 7: optional until the server builds them; the phone reads a missing one as off.
+  location: Location.nullable().optional(),
+  ai_reads: z.array(text(40)).max(20).optional(),
+  help_seen: z
+    .array(z.strictObject({ request_id: clientId, at: time, by: text(60).nullable() }))
+    .max(200)
+    .optional(),
+  parent_numbers: z
+    .array(z.strictObject({ name: text(40), number: z.string().regex(/^\+[1-9]\d{6,14}$/, "not E.164") }))
+    .max(LIMITS.maxParentNumbers)
+    .optional(),
 });
 export type Policy = z.infer<typeof Policy>;
