@@ -80,6 +80,24 @@ object OutboxPolicy {
     }
 
     /**
+     * The wait after the [attempts]-th failure in a row: never sooner than the server asked
+     * ([retryAfterMs], from Retry-After), and never sooner than the backoff, so a
+     * "Retry-After: 0" can't turn into a loop.
+     */
+    fun retryWaitMs(attempts: Int, retryAfterMs: Long?, random: Double): Long =
+        maxOf(retryAfterMs ?: 0, backoffMs(attempts, random))
+
+    /**
+     * How long the head of the outbox (and so everything behind it) still waits after a
+     * failure, or null when it may go now. A wait longer than any backoff or Retry-After
+     * means the phone's clock went back: it goes now rather than wait for the clock.
+     */
+    fun waitMs(nextAttemptAt: Long, now: Long): Long? {
+        val wait = nextAttemptAt - now
+        return if (wait <= 0 || wait > MAX_RETRY_AFTER_MS) null else wait
+    }
+
+    /**
      * A Retry-After header in milliseconds from [now]: delay-seconds or an HTTP-date. Null
      * when absent or unreadable; capped at a day.
      */

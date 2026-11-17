@@ -1,18 +1,23 @@
 package family.brooker.belay.settings
 
 import android.content.Context
+import android.util.Log
 import androidx.datastore.core.DataStore
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import family.brooker.belay.Agent
 import kotlinx.coroutines.runBlocking
+import java.io.IOException
 import java.net.URI
 
 /**
@@ -48,7 +53,12 @@ data class Connection(
     val host: String? get() = server?.let { runCatching { URI(it).host }.getOrNull() }
 }
 
-private val Context.settings: DataStore<Preferences> by preferencesDataStore(name = "belay")
+// A damaged file starts over empty: the phone then shows "not connected" and the parent
+// enrolls it again, instead of every read failing (the agent reads this at every step).
+private val Context.settings: DataStore<Preferences> by preferencesDataStore(
+    name = "belay",
+    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
+)
 
 /**
  * Reads and writes [Connection]. The blocking calls are for the agent and sync threads;
@@ -75,7 +85,13 @@ object ConnectionStore {
 
     fun flow(context: Context): Flow<Connection> = context.applicationContext.settings.data.map { it.toConnection() }
 
-    fun read(context: Context): Connection = runBlocking { flow(context).first() }
+    /** Not connected when the file can't be read, so a storage problem never stops the inventory. */
+    fun read(context: Context): Connection = try {
+        runBlocking { flow(context).first() }
+    } catch (e: IOException) {
+        Log.e(Agent.TAG, "connection settings unreadable", e)
+        Connection()
+    }
 
     /** A new enrollment replaces the old one, and wants a full inventory at once. */
     fun enrolled(

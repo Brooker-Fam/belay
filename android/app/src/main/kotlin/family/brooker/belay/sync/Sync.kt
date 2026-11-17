@@ -81,7 +81,7 @@ object Sync {
         executor.execute {
             val outcome = try {
                 Enroller(app).enroll(server, code, replace)
-            } catch (e: RuntimeException) {
+            } catch (e: Exception) {
                 Log.e(Agent.TAG, "enroll failed", e)
                 Enroller.Outcome.Failed(EnrollProblem.PHONE_ERROR, e.javaClass.simpleName)
             }
@@ -91,7 +91,7 @@ object Sync {
 
     private fun runSafely(app: Context, checkin: Boolean): Report = try {
         SyncRun(app).run(checkin)
-    } catch (t: RuntimeException) {
+    } catch (t: Exception) {
         Log.e(Agent.TAG, "sync failed", t)
         Report(connected = true, checkinFailed = checkin)
     }
@@ -157,11 +157,10 @@ private class SyncRun(private val app: Context) {
     private fun drain(api: DeviceApi, token: String): Boolean {
         val queue = store.queue()
         if (queue.isEmpty()) return true
-        val now = System.currentTimeMillis()
-        val head = queue.first()
-        if (head.nextAttemptAt > now) {
+        val wait = OutboxPolicy.waitMs(queue.first().nextAttemptAt, System.currentTimeMillis())
+        if (wait != null) {
             // Still waiting after a failure; everything behind the head waits with it.
-            SyncWork.wake(app, head.nextAttemptAt - now)
+            SyncWork.wake(app, wait)
             return true
         }
         val items = queue.map {
@@ -178,7 +177,7 @@ private class SyncRun(private val app: Context) {
             null -> {}
             is OutboxDrain.Stop.Retry -> {
                 val attempts = store.attempts(stop.ids) + 1
-                val wait = stop.afterMs ?: OutboxPolicy.backoffMs(attempts, Random.nextDouble())
+                val wait = OutboxPolicy.retryWaitMs(attempts, stop.afterMs, Random.nextDouble())
                 store.markFailed(stop.ids, stop.reason, finishedAt + wait)
                 ConnectionStore.failed(app, finishedAt, stop.reason)
                 Log.w(Agent.TAG, "outbox: ${stop.reason}; trying again in ${wait / 1000} s (attempt $attempts)")

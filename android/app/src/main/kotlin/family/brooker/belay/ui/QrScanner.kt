@@ -107,8 +107,8 @@ private class QrAnalyzer(private val onText: (String) -> Unit) : ImageAnalysis.A
             onText(reader.decode(BinaryBitmap(HybridBinarizer(source)), hints).text)
         } catch (e: ReaderException) {
             // No QR code in this frame.
-        } catch (e: IllegalArgumentException) {
-            // A frame of an unexpected shape; the next one may do.
+        } catch (e: RuntimeException) {
+            // A frame of an unexpected shape, or a reader bug: skip it, the next one may do.
         } finally {
             reader.reset()
             image.close()

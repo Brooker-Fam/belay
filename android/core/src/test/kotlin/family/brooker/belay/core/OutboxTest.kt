@@ -86,6 +86,22 @@ class OutboxTest {
     }
 
     @Test
+    fun `a retry waits for Retry-After, and never less than the backoff`() {
+        assertEquals(120_000L, OutboxPolicy.retryWaitMs(attempts = 1, retryAfterMs = 120_000, random = 1.0))
+        assertEquals(30_000L, OutboxPolicy.retryWaitMs(attempts = 1, retryAfterMs = 0, random = 1.0), "Retry-After: 0")
+        assertEquals(60_000L, OutboxPolicy.retryWaitMs(attempts = 2, retryAfterMs = null, random = 1.0))
+    }
+
+    @Test
+    fun `the outbox waits out a backoff, but not a clock that went back`() {
+        assertNull(OutboxPolicy.waitMs(nextAttemptAt = 0, now = T0), "never failed: due")
+        assertNull(OutboxPolicy.waitMs(nextAttemptAt = T0, now = T0))
+        assertEquals(30_000L, OutboxPolicy.waitMs(nextAttemptAt = T0 + 30_000, now = T0))
+        assertEquals(OutboxPolicy.MAX_RETRY_AFTER_MS, OutboxPolicy.waitMs(T0 + OutboxPolicy.MAX_RETRY_AFTER_MS, T0))
+        assertNull(OutboxPolicy.waitMs(nextAttemptAt = T0 + 3 * 24 * HOUR, now = T0), "longer than any wait: the clock moved")
+    }
+
+    @Test
     fun `an unreadable Retry-After is ignored, and a huge one capped`() {
         assertNull(OutboxPolicy.retryAfterMs(null, T0))
         assertNull(OutboxPolicy.retryAfterMs("", T0))
