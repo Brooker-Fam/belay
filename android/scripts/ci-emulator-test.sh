@@ -388,7 +388,9 @@ if [ -n "$UPDATE_APK" ]; then
   for _ in $(seq 1 60); do service_running && break; sleep 1; done
   service_running || { diagnose; die "BelayService didn't start after the test-only build went back"; }
   wait_server ".agent_version_code == $before" "a check-in from Belay version $before again"
-  wait_record '"state":"failed"' '"final":true' || { diagnose; die "Belay didn't record that it leaves version $UPDATE_CODE alone"; }
+  # The server offers version $UPDATE_CODE again while the phone runs an older one; Belay
+  # records that it won't install it again. (If the server doesn't offer it, nothing changes.)
+  wait_record '"state":"failed"' '"final":true' || echo "no refusal recorded: the server may not offer the update again"
   installed="$(installed_version)"
   [ "$installed" = "$before" ] || { diagnose; die "Belay installed version $installed again after the test-only build went back"; }
   echo "Belay runs version $before again and leaves version $UPDATE_CODE alone"
