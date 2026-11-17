@@ -13,6 +13,13 @@
 #    check the outbox got the three events
 # 5. a restart: Belay comes back by itself and its change log survives
 # 6. unprovision.sh releases device owner and uninstalls
+#
+# End to end with a Belay server running on this computer (CI starts one):
+#   BELAY_E2E_SERVER   the server as the emulator sees it, like http://10.0.2.2:8080
+#   BELAY_E2E_CODE     an enrollment code from it (server: node dist/cli.js create-code)
+#   BELAY_E2E_STATUS   a command printing the server's status as JSON (cli.js status --json)
+# Then provision.sh also connects the phone, and the test checks that the server got the
+# phone's app list and, with the fixture APKs, the fixture app's install, update and removal.
 set -euo pipefail
 # shellcheck source-path=SCRIPTDIR source=lib.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -25,6 +32,14 @@ TEST_PKG="$PKG.test"
 if [ -n "$FIXTURE_V1$FIXTURE_V2" ]; then
   [ -f "$FIXTURE_V1" ] && [ -f "$FIXTURE_V2" ] || die "fixture APKs not found: '$FIXTURE_V1' '$FIXTURE_V2'"
 fi
+E2E_SERVER="${BELAY_E2E_SERVER:-}"
+E2E_CODE="${BELAY_E2E_CODE:-}"
+E2E_STATUS="${BELAY_E2E_STATUS:-}"
+FIXTURE_PKG="$PKG.fixture"
+if [ -n "$E2E_SERVER" ]; then
+  [ -n "$E2E_CODE" ] && [ -n "$E2E_STATUS" ] || die "BELAY_E2E_SERVER needs BELAY_E2E_CODE and BELAY_E2E_STATUS too."
+  command -v jq >/dev/null || die "The end-to-end checks need jq."
+fi
 
 find_adb
 pick_device
@@ -34,6 +49,20 @@ fi
 phone_summary
 
 step() { printf '\n=== %s\n' "$*"; }
+# The server's status as JSON (end to end only).
+server_status() { bash -c "$E2E_STATUS"; }
+# Waits until the jq filter $1 holds for the server's view of the phone; $2 says what for.
+wait_server() {
+  local _
+  for _ in $(seq 1 "${3:-60}"); do
+    if server_status 2>/dev/null | jq -e ".phones[0] | $1" >/dev/null 2>&1; then return 0; fi
+    sleep 2
+  done
+  echo "--- the server's view:"
+  server_status || true
+  diagnose
+  die "the server never got $2"
+}
 # Waits until Belay logs a line containing $1 (the log is cleared before each action).
 # grep reads from a process substitution, so its own status is the result.
 wait_log() {
@@ -79,7 +108,10 @@ types="$(account_types)"
 echo "accounts: ${types:-none}"
 
 step "Provision the debug build with provision.sh"
-"$SCRIPTS_DIR/provision.sh" --yes --serial "$SERIAL" "$APK"
+provision=(--yes --serial "$SERIAL")
+[ -z "$E2E_SERVER" ] || provision+=(--server "$E2E_SERVER" --code "$E2E_CODE")
+provision_log="$(mktemp)"
+"$SCRIPTS_DIR/provision.sh" "${provision[@]}" "$APK" 2>&1 | tee "$provision_log"
 
 step "Device owner, service and managed notice"
 is_belay_owner || die "Belay isn't the device owner" "$(owners_text)"
@@ -118,6 +150,14 @@ out="$(adb uninstall "$PKG" 2>&1 || true)"
 printf '%s\n' "$out"
 if grep -q '^Success' <<<"$out"; then die "Belay could be uninstalled"; fi
 
+if [ -n "$E2E_SERVER" ]; then
+  step "The server: the phone enrolled and sent its app list"
+  grep -qF 'enrolled: ' "$provision_log" || die "provision.sh didn't connect the phone to $E2E_SERVER"
+  wait_server '.last_app_list != null and .user_apps >= 0' "the phone's app list"
+  wait_server '[.problems[] | select(test("device owner"))] | length == 0' "a status with Belay as device owner"
+  server_status | jq '.phones[0] | {name, status, problems, user_apps, apps_to_review, last_app_list}'
+fi
+
 # Any layer may catch a change first (broadcast, getChangedPackages, full scan); what
 # matters is that none is missed. The matching log line shows which layer it was.
 step "Install, update and remove are detected"
@@ -138,6 +178,15 @@ fi
 out="$(ash am instrument -w "$TEST_PKG/androidx.test.runner.AndroidJUnitRunner")"
 printf '%s\n' "$out"
 grep -q '^OK (' <<<"$out" || die "instrumented tests failed"
+
+if [ -n "$E2E_SERVER" ] && [ -n "$FIXTURE_V1" ]; then
+  step "The server got the fixture app's install, update and removal"
+  for kind in installed updated removed; do
+    wait_server "[.recent_changes[] | select(.package == \"$FIXTURE_PKG\" and .kind == \"$kind\")] | length > 0" "the fixture app's $kind event"
+    echo "the server has: $kind $FIXTURE_PKG"
+  done
+  server_status | jq -c '.phones[0].recent_changes[]'
+fi
 
 adb logcat -c
 adb uninstall "$TEST_PKG"
