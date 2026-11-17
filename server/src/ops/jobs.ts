@@ -1,12 +1,14 @@
 /**
  * The server's own periodic work, every 5 minutes: the database's size once an hour (to tell
- * when it grows fast), and the daily backup when it's due. Each step is safe to run at any
- * time and never throws, and a slow tick (a large backup being encrypted) is never overlapped
- * by the next one.
+ * when it grows fast), the daily backup when it's due, a push to the parents about an urgent
+ * problem with the server, and the daily summary at the family's hour. Each step is safe to
+ * run at any time and never throws, and a slow tick (a large backup being encrypted) is never
+ * overlapped by the next one.
  */
 import type { Deps } from "../deps.js";
 import { backupPassphrase, runDailyBackup } from "./backups.js";
-import { sampleDatabaseSize } from "./health.js";
+import { healthFacts, sampleDatabaseSize, serverProblems } from "./health.js";
+import { sendDigestIfDue, sendUrgentNotices } from "./notify.js";
 import { opsOptions, setOpsOptions, type OpsOptions } from "./options.js";
 
 export const TICK_MS = 5 * 60_000;
@@ -37,6 +39,11 @@ export async function opsTick(deps: Deps): Promise<void> {
       disk: opts.disk,
     }),
   );
+  await step(deps, "notices to the parents", async () => {
+    const problems = serverProblems(healthFacts(deps));
+    await sendUrgentNotices(deps, problems);
+    await sendDigestIfDue(deps, problems);
+  });
 }
 
 /** Starts the periodic work, soon after the server starts and then every 5 minutes. Returns what stops it. */
