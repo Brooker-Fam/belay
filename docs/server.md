@@ -4,6 +4,9 @@ The server keeps the family's data, talks to the phones, serves the parent pages
 MCP interface. One server is for one family. It's a single Docker image with a SQLite
 database in `/data`.
 
+Setting Belay up for the first time? [guide.md](guide.md) is the whole path for a parent, from
+a used Pixel 8 to the first day and the years after, and links back here for the details.
+
 It needs a **public HTTPS address**:
 
 - the phone reaches it over cellular, not only at home;

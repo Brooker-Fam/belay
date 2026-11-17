@@ -9,7 +9,8 @@ messages as [`provision.sh`](../android/scripts/provision.sh), because both run 
 [`provision-plan.json`](../android/scripts/provision-plan.json).
 
 Already have JDK 21 and the Android SDK? `provision.sh` still works as it always has
-([pixel.md](pixel.md), [emulator.md](emulator.md)).
+([pixel.md](pixel.md), [emulator.md](emulator.md)). New to Belay? [guide.md](guide.md) is the
+whole path for a parent, the server and the first day included.
 
 ## What you need
 
