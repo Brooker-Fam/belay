@@ -1,0 +1,110 @@
+# Phase 3 checklist: screen time on the Pixel 8
+
+CI proves the phone's side on the Android 17 emulator: opening the fixture app shows up in
+Belay's count, a 0-minute limit suspends it and removing it lets it run, a schedule on now
+suspends it but not Belay or the dialer, usage reaches the server, `lock-now` turns the screen
+off and is reported done, and turning usage access off and on is noticed by itself. This
+checklist is for the real Pixel 8 with the **release** build: what only a real phone, a real
+kid's apps and a night of Doze can show. Do [phase2-checklist.md](phase2-checklist.md) first.
+
+Record what you see in the table at the end. Write Android's and Belay's words word for word.
+No screenshots in the repository, and no account names, phone numbers, serial numbers or the
+kid's real apps or times.
+
+## 0. The update, and one restart
+
+1. Update Belay to the Phase 3 version (the parent page's update, or `provision.sh` in
+   maintenance mode), then **restart the phone once**. Android reads Belay's new permission to
+   lock the screen (`force-lock`) only when the phone starts (platform notes S5).
+2. With adb (maintenance mode): `adb shell dumpsys device_policy` lists `force-lock` under
+   Belay's admin, below `policies:`.
+3. Write down whether this Android has the flag that makes the restart unnecessary:
+   `adb shell aflags list | grep lock_now_coexistence` (enabled or disabled, read-only or not).
+   Also `deprecate_old_query_events_api`, `policy_transparency_refactor_enabled` and
+   `enable_supervision_package_usage_apis`, the other open questions from the design.
+
+## 1. Counting
+
+1. On the parent page, turn screen time on for the phone, with measuring on and no limits.
+   On the phone, "What your parent can see" now lists "How long you use apps"; Today says
+   "Your parent hasn't set any time limits or schedules."
+2. Use an app for 5 minutes by a stopwatch, then lock the screen. On the parent page (the
+   phone sends today's usage every 15 minutes or so while it's used), today's minutes for that
+   app, rounded to the minute, match the stopwatch.
+3. Play a video in picture-in-picture over another app for 3 minutes, and two apps in split
+   screen for 3 minutes: each app counts its time; the screen minutes count the 3 minutes once.
+4. Turn the screen off in the middle of a video and on again 2 minutes later: those 2 minutes
+   don't count.
+5. Restart the phone in the middle of using an app: the time it was off is a gap ("the phone
+   was off") on the parent page, not "unused".
+
+## 2. A limit, time's up, and more time
+
+1. Add a 5-minute limit on a game. Play it. Write down the warning notifications' words at 5
+   minutes and at 1 minute left ("… left today for …").
+2. When it runs out: the game closes. Write down Belay's notification word for word ("Time's up
+   for … today. It comes back …") and what Android shows when the kid taps the game (its dialog's
+   title and text, platform notes C2). Does the launcher grey out the icon? Does the game's
+   music stop (it should lose audio focus, S2)?
+3. Tap "Ask for more time" in the notification: Belay opens with the dialog. Ask for 15 minutes
+   with a reason. On the parent page, approve it: within seconds the game opens again, Today
+   says "Your parent gave you 15 minutes more for …", and the limit shows extra time.
+4. With self-serve on (say 10 minutes, twice a day): once the limit is used up again, Today
+   offers "Take 10 minutes more"; take it twice, then it's gone. The parent page lists both.
+
+## 3. Schedules and lock
+
+1. Add a bedtime schedule that starts in 10 minutes, with "lock" on. Five minutes before, the
+   warning ("Bedtime starts in 5 minutes"); at the start, the screen locks, and the bedtime
+   notification says what still works. Write both down.
+2. During bedtime: the phone app, the texting app, Belay and Settings open; other apps show
+   Android's "can't open" screen. An alarm set in the clock app rings. Call and text work.
+3. The parent page's "lock now": the screen locks within seconds, with and without a screen
+   lock (PIN) set on the phone. Write down what happens without one (the screen only turns off).
+
+## 4. Usage access off
+
+1. Settings > Apps > Special app access > Usage access > Belay: turn it off. Within seconds,
+   Belay's notification says it can't count, and apps with a limit are paused (the default).
+   The parent page says usage access is off.
+2. Tap "Turn usage access back on": does it open Belay's own switch, or the list of apps
+   (platform notes U9)? Turn it back on: the apps open again, and the parent page's day shows
+   the gap.
+
+## 5. Stage and agreement
+
+1. With a stage that has a next stage: "Your stage" lists what the next stage changes, in
+   sentences that read well (write down any that don't), and "How to get there" in the
+   family's words.
+2. With an agreement: the sections show in full. Tap "I want to talk about it" with a reason:
+   the parent page shows it.
+
+## 6. A night of Doze
+
+1. Leave the phone idle overnight with a daily limit used up. In the morning, the app opened
+   again at the day's start (the parent page's report says the limit is open), and yesterday's
+   usage is on the parent page as complete.
+2. Check the battery use Android reports for Belay over the day (Settings > Battery): write it
+   down. Belay reads screen time every minute only while the screen is on.
+
+## Results
+
+| Step | Check | Result | Android build |
+|---|---|---|---|
+| 0.2 | `force-lock` under Belay's admin after the restart | pending | |
+| 0.3 | `lock_now_coexistence` and the other flags | pending | |
+| 1.2 | Minutes match a stopwatch | pending | |
+| 1.3 | Picture-in-picture and split screen | pending | |
+| 1.5 | Restart shows as a gap | pending | |
+| 2.1 | Warning words | pending | |
+| 2.2 | Time's up words; Android's dialog; icon greyed?; music stops? | pending | |
+| 2.3 | More time approved: opens within seconds | pending | |
+| 2.4 | Self-serve | pending | |
+| 3.1 | Bedtime warning and notice words; screen locks at the start | pending | |
+| 3.2 | What works during bedtime; the alarm rings | pending | |
+| 3.3 | Lock now, with and without a PIN | pending | |
+| 4.1 | Usage access off: noticed within seconds, limited apps paused | pending | |
+| 4.2 | "Turn usage access back on" opens Belay's switch or the list | pending | |
+| 5.1 | Next stage sentences | pending | |
+| 6.1 | The limit opens at the day's start after a night of Doze | pending | |
+| 6.2 | Belay's battery use for a day | pending | |

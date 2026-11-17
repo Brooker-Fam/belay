@@ -384,7 +384,7 @@ describe("the kid's requests in the policy", () => {
     const answered = answerRequest(ctx(), phone.deviceId, "request-0001", "approved", sam, "OK, on weekends");
     expect(answered).toMatchObject({ version: 2, changed: true });
     expect(decisions()["com.example.game"]).toBe("allowed");
-    expect(policy().requests).toEqual([{ id: "request-0001", status: "approved", note: "OK, on weekends", answered_at: t.now(), answered_by: "Sam" }]);
+    expect(policy().requests).toEqual([{ id: "request-0001", status: "approved", note: "OK, on weekends", answered_at: t.now(), answered_by: "Sam", minutes: null }]);
   });
 
   it("declining or 'let's talk' leaves the app waiting", async () => {

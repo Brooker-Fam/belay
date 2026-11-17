@@ -4,6 +4,7 @@ import family.brooker.belay.core.Fixtures.HOUR
 import family.brooker.belay.core.Fixtures.T0
 import family.brooker.belay.core.Fixtures.app
 import family.brooker.belay.core.Fixtures.inventory
+import family.brooker.belay.core.screentime.WireScreenTime
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -232,6 +233,32 @@ class EnforcementTest {
         val plan = plan(policy(pause = WirePause(until = null)), now = T0 + 1000 * HOUR)
         assertTrue(game.packageName in plan.suspend)
         assertNull(plan.nextChangeAt)
+    }
+
+    @Test
+    fun `a pause leaves alone the apps screen time exempts`() {
+        val exempting = policy(pause = WirePause(T0 + HOUR)).copy(screenTime = WireScreenTime(exempt = listOf(notes.packageName)))
+        val plan = plan(exempting)
+        assertFalse(notes.packageName in plan.suspend, "exempt apps are never paused")
+        assertTrue(game.packageName in plan.suspend)
+    }
+
+    @Test
+    fun `the plan says why it holds each app, and Belay keeps that for what it holds`() {
+        val plan = plan(
+            policy(
+                newApps = WireNewApps.ASK,
+                decisions = mapOf(game to WireAppState.BLOCKED, chat to WireAppState.ALLOWED, browser to WireAppState.ALLOWED),
+                pause = WirePause(T0 + HOUR),
+                web = WireWebPolicy(hideBrowsers = true),
+            ),
+        )
+        assertEquals(listOf(HoldReason.BLOCKED, HoldReason.PAUSED), plan.reasons[game.packageName])
+        assertEquals(listOf(HoldReason.NO_BROWSERS, HoldReason.PAUSED), plan.reasons[browser.packageName])
+        assertEquals(listOf(HoldReason.WAITING, HoldReason.PAUSED), plan.reasons[notes.packageName])
+        assertEquals(listOf(HoldReason.PAUSED), plan.reasons[chat.packageName])
+        assertEquals(plan.suspend, plan.reasons.keys)
+        assertEquals(plan.reasons, apply(plan).reasons)
     }
 
     @Test

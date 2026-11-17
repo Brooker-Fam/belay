@@ -45,6 +45,7 @@ import {
   DNS_FILTERS,
   LIMITS,
   LOCK_RESTRICTIONS,
+  MORE_TIME_CHOICES,
   RuleRefused,
   SAFE_RESTRICTIONS,
   answerRequest,
@@ -69,17 +70,19 @@ import {
   validHostname,
   type PolicyContext,
 } from "../family/policy.js";
-import { approveProposal, listProposals, outdatedBecause, pendingProposalCount, rejectProposal } from "../family/proposals.js";
-import { listRequests, pendingRequestCount, recentRequests } from "../family/requests.js";
+import { approveProposal, listProposals, outdatedBecause, pendingProposalCount, rejectProposal, screenTimeWords } from "../family/proposals.js";
+import { listAppRequests, pendingRequestCount, recentAppRequests, recentRequests } from "../family/requests.js";
+import { phoneLabels, phoneRules as screenRules } from "../family/screentime/rules.js";
 import { clientAddress, type Bindings } from "../http.js";
 import { createPersonalToken, getGrant, listGrants, revokeAllGrants, revokeGrant } from "../oauth/store.js";
 import { serverHealth } from "../ops/health.js";
 import { getDigest } from "../ops/notify.js";
 import { opsWebRoutes } from "../ops/web.js";
 import { browserName, listSubscriptions, removeSubscription, saveSubscription, sendNotice, subscriptionProblem, vapidKeys } from "../push.js";
-import { AI_SCOPES, type AiScope, getSettings, updateSettings } from "../settings.js";
+import { AI_SCOPES, type AiScope, USAGE_MONTHS, getSettings, updateSettings } from "../settings.js";
 import { isValidTimeZone } from "../time.js";
 import type { Assets } from "./assets.js";
+import { screenTimeWebRoutes } from "./screentime.js";
 import { ActivityPage } from "./pages/activity.js";
 import { AddPage, CodePage } from "./pages/add.js";
 import { InvitePage, LoginPage, MessagePage, SetupPage } from "./pages/auth.js";
@@ -130,6 +133,10 @@ const SAVED: Record<string, string> = {
   answer_approved: "Approved, and the app is allowed. They'll see your answer on the phone.",
   answer_declined: "Declined. They'll see your answer on the phone.",
   answer_talk: "They'll see on the phone that you want to talk about it.",
+  answer_more_time: "Given. The phone gets the extra time within seconds if it's online, and they'll see your answer there.",
+  answer_other_approved: "Answered. They'll see your answer on the phone.",
+  answer_other_declined: "Declined. They'll see your answer on the phone.",
+  answer_other_talk: "They'll see on the phone that you want to talk about it.",
   proposal_approved: "Approved. The change is on its way to the phone.",
   proposal_rejected: "Rejected. Nothing changed.",
   digest: "Daily summary saved.",
@@ -191,7 +198,7 @@ export function first(form: Form, name: string): string {
   return typeof one === "string" ? one.trim() : "";
 }
 
-function all(form: Form, name: string): string[] {
+export function all(form: Form, name: string): string[] {
   const value = form[name];
   return (Array.isArray(value) ? value : value === undefined ? [] : [value]).filter((v): v is string => typeof v === "string");
 }
@@ -422,7 +429,7 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
     );
     // The newest open request per app.
     const seen = new Set<string>();
-    const openRequests = recentRequests(db, deps.now(), { deviceId }).filter((r) => {
+    const openRequests = recentAppRequests(db, deps.now(), { deviceId }).filter((r) => {
       if ((r.status !== "pending" && r.status !== "talk") || seen.has(r.package)) return false;
       seen.add(r.package);
       return true;
@@ -476,7 +483,7 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
         changes={changes}
         rule={phoneRules(device.id).ruleOf(app)}
         history={decisionHistory(db, device.id, app.package)}
-        requests={listRequests(db, { deviceId: device.id, package: app.package, limit: 20 })}
+        requests={listAppRequests(db, { deviceId: device.id, package: app.package, limit: 20 })}
         message={SAVED[c.req.query("saved") ?? ""]}
       />,
     );
@@ -716,16 +723,21 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
     const device = deviceOr404(c);
     if (!device) return noPhone(c);
     const body = await form(c);
-    const answer = first(body, "answer");
+    // "More time": the minutes buttons (15, 30, 60) approve with that many.
+    const give = first(body, "give");
+    const answer = give ? "approved" : first(body, "answer");
     const note = first(body, "note");
     if (answer !== "approved" && answer !== "declined" && answer !== "talk") return message(c, "Choose an answer", "Approve, Decline or Let's talk.", 400);
+    if (give && !(MORE_TIME_CHOICES as readonly number[]).includes(Number(give))) return message(c, "Choose how much time", "15, 30 or 60 minutes.", 400);
     if (note.length > LIMITS.answerNote) return message(c, "That note is too long", `Keep it under ${LIMITS.answerNote} characters.`, 400);
-    const done = answerRequest(policyContext(), device.id, c.req.param("requestId"), answer, asParent(c), note || null);
+    const done = answerRequest(policyContext(), device.id, c.req.param("requestId"), answer, asParent(c), note || null, give ? { minutes: Number(give) } : {});
     if (!done.result) return message(c, "No such request", "It may have been deleted with its phone.", 404, { href: "/requests", label: "Back to requests" });
+    const saved = done.result.kind === "app" ? `answer_${answer}` : done.result.kind === "more_time" && answer === "approved" ? "answer_more_time" : `answer_other_${answer}`;
     const back = first(body, "back");
-    if (back === "requests") return c.redirect(`/requests?saved=answer_${answer}`);
-    if (back === "app") return c.redirect(`/devices/${device.id}/apps/${encodeURIComponent(done.result.package)}?saved=answer_${answer}`);
-    return backTo(c, device, `answer_${answer}`, "apps");
+    if (back === "requests") return c.redirect(`/requests?saved=${saved}`);
+    if (back === "app" && done.result.package) return c.redirect(`/devices/${device.id}/apps/${encodeURIComponent(done.result.package)}?saved=${saved}`);
+    if (back === "screen-time") return c.redirect(`/devices/${device.id}/screen-time?saved=${saved}`);
+    return backTo(c, device, saved, "apps");
   });
 
   app.get("/requests", (c) => {
@@ -737,9 +749,26 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
         .all()
         .map((r) => r.key),
     );
+    const limits = new Map<string, Map<string, string>>();
+    const limitName = (deviceId: string, limitId: string): string => {
+      if (limitId === "*") return "every limit";
+      let names = limits.get(deviceId);
+      if (!names) {
+        names = new Map(screenRules(db, deviceId).rules.limits.map((l) => [l.id, l.name]));
+        limits.set(deviceId, names);
+      }
+      return names.get(limitId) ?? "a limit that's gone";
+    };
     return render(
       c,
-      <RequestsPage view={view(c)} requests={recentRequests(db, now, { limit: 200 })} phones={phones} known={known} message={SAVED[c.req.query("saved") ?? ""]} />,
+      <RequestsPage
+        view={view(c)}
+        requests={recentRequests(db, now, { limit: 200 })}
+        phones={phones}
+        known={known}
+        limitName={limitName}
+        message={SAVED[c.req.query("saved") ?? ""]}
+      />,
     );
   });
 
@@ -752,9 +781,13 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
         return why ? [[p.id, why] as const] : [];
       }),
     );
+    // Phase 3: a screen-time proposal's every change, with the apps' names on its phone.
+    const details = new Map(
+      proposals.flatMap((p) => (p.change.kind === "screen_time" && p.status === "pending" ? [[p.id, screenTimeWords(p.change, phoneLabels(db, p.deviceId))] as const] : [])),
+    );
     return render(
       c,
-      <ProposalsPage view={view(c)} proposals={proposals} stale={stale} message={extra.message ?? SAVED[c.req.query("saved") ?? ""]} error={extra.error} />,
+      <ProposalsPage view={view(c)} proposals={proposals} stale={stale} details={details} message={extra.message ?? SAVED[c.req.query("saved") ?? ""]} error={extra.error} />,
       status,
     );
   };
@@ -900,10 +933,16 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
     const silentHours = Number(first(body, "silent_hours"));
     if (!isValidTimeZone(timezone)) return settingsPage(c, { error: "Pick a timezone from the list, like America/New_York." }, 400);
     if (!Number.isInteger(silentHours) || silentHours < 1 || silentHours > 168) return settingsPage(c, { error: "Use 1 to 168 hours for the silent threshold." }, 400);
+    // Phase 3: how long screen time is kept (left out: as it is).
+    const monthsText = first(body, "usage_months");
+    const usageMonths = monthsText === "" ? undefined : Number(monthsText);
+    if (usageMonths !== undefined && (!Number.isInteger(usageMonths) || usageMonths < USAGE_MONTHS.min || usageMonths > USAGE_MONTHS.max)) {
+      return settingsPage(c, { error: `Keep screen time ${USAGE_MONTHS.min} to ${USAGE_MONTHS.max} months.` }, 400);
+    }
     const chosen = new Set(all(body, "ai_scope"));
     const aiScopes = Object.fromEntries(Object.keys(AI_SCOPES).map((k) => [k, chosen.has(k)])) as Record<AiScope, boolean>;
     const before = getSettings(db);
-    const after = updateSettings(db, { timezone, silentHours, aiScopes });
+    const after = updateSettings(db, { timezone, silentHours, aiScopes, ...(usageMonths !== undefined ? { usageMonths } : {}) });
     audit(db, deps.now(), { kind: "parent", parentId: me(c).parent.id }, "settings.changed", { detail: { before, after } });
     return c.redirect("/settings?saved=settings");
   });
@@ -1030,6 +1069,8 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
 
   // Recording a restore drill, and the daily summary's settings (ops/web.ts).
   app.route("/", opsWebRoutes(deps));
+  // Phase 3: screen time, its rules, stages and the family agreement (web/screentime.tsx).
+  app.route("/", screenTimeWebRoutes(deps, { view, message }));
 
   app.get("/activity", (c) => {
     const includeReads = c.req.query("reads") === "1";

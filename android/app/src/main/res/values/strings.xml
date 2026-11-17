@@ -244,6 +244,143 @@
         <item quantity="one">%d hour</item>
         <item quantity="other">%d hours</item>
     </plurals>
+
+    <!-- Phase 3: screen time, for the kid (ui/KidWords.kt fills in core's KidMessage drafts).
+         Plain and respectful, for a 12-year-old, and never more than the code does. A limit's or
+         a schedule's name is the family's own words, shown as it is; app names come from their
+         developers. Durations are like "1 hour 30 minutes", times follow the phone's setting. -->
+    <string name="kid_limit_left">%1$s left today for %2$s</string>
+    <string name="kid_limit_up">Time\'s up for %1$s today. It comes back %2$s.</string>
+    <string name="kid_limit_up_for_now">Time\'s up for %1$s.</string>
+    <string name="kid_total_left">%1$s of screen time left today</string>
+    <string name="kid_total_up">Your screen time for today is used up. It comes back %1$s.</string>
+    <string name="kid_total_up_for_now">Your screen time is used up.</string>
+    <string name="kid_limit_not_counted">Belay can\'t count time for %1$s right now.</string>
+    <string name="kid_school_until">School time until %1$s</string>
+    <string name="kid_bedtime_until">Bedtime until %1$s. Apps are paused. You can still call and text your parents, 911 and 988.</string>
+    <string name="kid_schedule_until">%1$s until %2$s</string>
+    <string name="kid_school_soon">School time starts in %1$s</string>
+    <string name="kid_bedtime_soon">Bedtime starts in %1$s</string>
+    <string name="kid_schedule_soon">%1$s starts in %2$s</string>
+    <string name="kid_paused_until">Your parent paused this phone until %1$s.</string>
+    <string name="kid_paused">Your parent paused this phone.</string>
+    <string name="kid_unmeasured_paused">Belay can\'t count screen time right now, because usage access is turned off. Apps with a time limit are paused until it\'s back on.</string>
+    <string name="kid_unmeasured">Belay can\'t count screen time right now, because usage access is turned off.</string>
+    <plurals name="kid_self_serve_take">
+        <item quantity="one">Take %d more minute.</item>
+        <item quantity="other">Take %d more minutes.</item>
+    </plurals>
+    <plurals name="kid_self_serve_times">
+        <item quantity="one">You can do this %d more time today.</item>
+        <item quantity="other">You can do this %d more times today.</item>
+    </plurals>
+    <!-- What the next stage changes (core's Stages.changes). -->
+    <string name="kid_limit_changes">%1$s: %2$s a day instead of %3$s, %4$s</string>
+    <string name="kid_total_changes">Daily screen time goes from %1$s to %2$s, %3$s</string>
+    <string name="kid_limit_added">New limit: %1$s, %2$s a day, %3$s</string>
+    <string name="kid_total_added">New daily screen time limit: %1$s, %2$s</string>
+    <string name="kid_limit_removed">No more time limit for %1$s</string>
+    <string name="kid_total_removed">No more daily screen time limit</string>
+    <plurals name="kid_limit_apps_added">
+        <item quantity="one">%2$s now counts toward %1$s</item>
+        <item quantity="other">%2$s now count toward %1$s</item>
+    </plurals>
+    <plurals name="kid_limit_apps_removed">
+        <item quantity="one">%2$s no longer counts toward %1$s</item>
+        <item quantity="other">%2$s no longer count toward %1$s</item>
+    </plurals>
+    <string name="kid_schedule_added">New: %1$s from %2$s to %3$s, %4$s</string>
+    <string name="kid_schedule_removed">No more %1$s</string>
+    <string name="kid_schedule_times">%1$s: %4$s to %5$s instead of %2$s to %3$s</string>
+    <string name="kid_schedule_days_added">%1$s also on %2$s</string>
+    <string name="kid_schedule_days_removed">No %1$s on %2$s</string>
+    <plurals name="kid_schedule_allows">
+        <item quantity="one">During %1$s, %2$s stays open</item>
+        <item quantity="other">During %1$s, %2$s stay open</item>
+    </plurals>
+    <plurals name="kid_schedule_no_longer_allows">
+        <item quantity="one">During %1$s, %2$s is paused too</item>
+        <item quantity="other">During %1$s, %2$s are paused too</item>
+    </plurals>
+    <string name="kid_schedule_locks">%1$s locks the screen when it starts</string>
+    <string name="kid_schedule_no_longer_locks">%1$s no longer locks the screen</string>
+    <plurals name="kid_exempt_added">
+        <item quantity="one">%1$s never counts toward a limit</item>
+        <item quantity="other">%1$s never count toward a limit</item>
+    </plurals>
+    <plurals name="kid_exempt_removed">
+        <item quantity="one">%1$s counts toward limits again</item>
+        <item quantity="other">%1$s count toward limits again</item>
+    </plurals>
+    <string name="kid_self_serve_allowed">You can take %1$s more, %2$s a day, without asking</string>
+    <string name="kid_self_serve_removed">No more taking extra minutes without asking</string>
+    <string name="kid_unmeasured_keeps_open">When Belay can\'t count, apps with a limit stay open</string>
+    <string name="kid_unmeasured_pauses">When Belay can\'t count, apps with a limit are paused</string>
+    <string name="kid_warning_changes">A warning %1$s before time\'s up or a schedule starts</string>
+    <string name="kid_warning_none">No warning before time\'s up or a schedule starts</string>
+    <!-- Pieces the sentences above are built from. -->
+    <string name="moment_tomorrow">tomorrow at %1$s</string>
+    <string name="moment_until_later">%1$s at %2$s</string>
+    <string name="moment_back_today">at %1$s</string>
+    <string name="moment_back_later">on %1$s at %2$s</string>
+    <string name="duration_hours_minutes">%1$s %2$s</string>
+    <string name="days_every_day">every day</string>
+    <string name="days_none">no days</string>
+    <string name="days_range">%1$s to %2$s</string>
+    <string name="list_two">%1$s and %2$s</string>
+    <string name="list_separator">", "</string>
+    <plurals name="apps_more">
+        <item quantity="one">%d more app</item>
+        <item quantity="other">%d more apps</item>
+    </plurals>
+    <plurals name="times">
+        <item quantity="one">%d time</item>
+        <item quantity="other">%d times</item>
+    </plurals>
+
+    <!-- Phase 3: the Today card. -->
+    <string name="section_today">Today</string>
+    <string name="today_intro">Your parent set these time rules. Belay counts how long apps are on your screen, on this phone, to keep them.</string>
+    <string name="today_intro_measured">Your parent set these time rules. Belay counts how long apps are on your screen to keep them, and your parent can see the minutes.</string>
+    <string name="today_limits">Time limits</string>
+    <string name="today_schedules">Schedules</string>
+    <string name="today_schedule_line">%1$s: %2$s to %3$s, %4$s</string>
+    <string name="today_schedule_allows">These stay open during it: %1$s</string>
+    <string name="today_no_rules">Your parent hasn\'t set any time limits or schedules.</string>
+    <string name="today_always_open">The phone app, your texting app and Belay always work, and so do 911 and 988.</string>
+    <string name="usage_access_button">Turn usage access back on</string>
+    <string name="ask_more_time">Ask for more time</string>
+    <string name="ask_more_time_title">More time for %1$s</string>
+    <string name="ask_more_time_how_much">How much more?</string>
+    <string name="ask_more_time_why">Why (if you want to say)</string>
+    <string name="ask_more_time_send">Send to your parent</string>
+    <string name="ask_more_time_waiting">Belay will send it as soon as it can reach your parent\'s Belay server.</string>
+    <string name="more_time_asked">You asked for %1$s more for %2$s. Your parent hasn\'t answered yet.</string>
+    <string name="more_time_given">Your parent gave you %1$s more for %2$s.</string>
+    <string name="more_time_yes">Your parent said yes to more time for %1$s.</string>
+    <string name="more_time_no">Your parent said no to more time for %1$s.</string>
+    <string name="more_time_talk">Your parent wants to talk with you about more time for %1$s.</string>
+    <string name="self_serve_button">Take %1$s more</string>
+
+    <!-- Phase 3: the stage and the family agreement. -->
+    <string name="section_stage">Your stage: %1$s</string>
+    <string name="stage_since">Since %1$s</string>
+    <string name="stage_next">What changes at the next stage, %1$s</string>
+    <string name="stage_how">How to get there</string>
+    <string name="section_agreement">Your family agreement</string>
+    <string name="agreement_intro">Your family wrote this together. Read it, then tell your parent what you think.</string>
+    <string name="agreement_agree">I agree</string>
+    <string name="agreement_talk">I want to talk about it</string>
+    <string name="agreement_why">Anything you want to add (if you want)</string>
+    <string name="agreement_said_agree">You said you agree. Your parent will see it.</string>
+    <string name="agreement_said_talk">You said you want to talk about it. Your parent will see it.</string>
+    <string name="agreement_kid_agreed">You agreed on %1$s.</string>
+    <string name="agreement_parents_agreed">Your parents agreed on %1$s.</string>
+
+    <!-- Phase 3: screen time's notifications. -->
+    <string name="screen_time_channel_name">Screen time</string>
+    <string name="screen_time_channel_description">Tells you when time is almost up or up, when a schedule starts, and when Belay can\'t count.</string>
+    <string name="screen_time_notice_title">Screen time</string>
     <string name="phone_battery">Battery</string>
     <string name="phone_battery_value">%1$d%%</string>
     <string name="phone_battery_charging">%1$d%%, charging</string>

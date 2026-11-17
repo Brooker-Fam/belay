@@ -14,12 +14,17 @@ import family.brooker.belay.core.RecoveryState
 import family.brooker.belay.core.Requests
 import family.brooker.belay.core.UpdateRecord
 import family.brooker.belay.core.WireDevice
+import family.brooker.belay.core.WireRequestKind
+import family.brooker.belay.core.screentime.Rules
+import family.brooker.belay.core.screentime.Upkeep
+import family.brooker.belay.core.screentime.WireAgreementAnswer
 import family.brooker.belay.enforce.EnforcementStep
 import family.brooker.belay.enforce.KidView
 import family.brooker.belay.health.DeviceStatus
 import family.brooker.belay.health.Health
 import family.brooker.belay.health.HealthReader
 import family.brooker.belay.inventory.Reconciler
+import family.brooker.belay.screentime.ScreenWatcher
 import family.brooker.belay.service.BelayService
 import family.brooker.belay.settings.ConnectionStore
 import family.brooker.belay.store.AgentStore
@@ -32,6 +37,7 @@ import family.brooker.belay.work.WatchdogWorker
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.time.ZoneId
 import java.util.UUID
 import java.util.concurrent.Executors
 
@@ -57,8 +63,8 @@ enum class Trigger(val label: String, val heartbeat: Boolean, val checkin: Boole
     /** Phase 2: a new policy arrived (long-poll or check-in). */
     POLICY("new policy", false),
 
-    /** Phase 2: a pause or repair time ended. */
-    POLICY_TIMER("pause or repair time ended", false),
+    /** Phase 2: a pause or repair time ended; Phase 3: or screen time's next boundary came. */
+    POLICY_TIMER("a rule's time came", false),
 
     /** Phase 2: the Private DNS thread finished, or its retry is due. */
     PRIVATE_DNS("Private DNS updated", false),
@@ -78,6 +84,23 @@ enum class Trigger(val label: String, val heartbeat: Boolean, val checkin: Boole
 
     /** The server's policy answer was too big to read, or readable again. */
     POLICY_UNREADABLE("policy too big to read", false, setup = false),
+
+    /** Phase 3: the screen came on or went off, or the phone was unlocked (ScreenWatcher). */
+    SCREEN_ON("screen on", false, setup = false),
+    SCREEN_OFF("screen off", false, setup = false),
+    USER_PRESENT("phone unlocked", false, setup = false),
+
+    /** Phase 3: every 60 seconds while the screen is on and the policy has screen time. */
+    SCREEN_TIME_TICK("screen time", false, setup = false),
+
+    /** Phase 3: the clock or the time zone changed. */
+    CLOCK_CHANGED("clock or time zone changed", true),
+
+    /** Phase 3: usage access for Belay was turned off or on. */
+    USAGE_ACCESS_CHANGED("usage access changed", true, setup = false),
+
+    /** Phase 3: the kid took self-serve minutes. */
+    SELF_SERVE("extra minutes taken", false, setup = false),
 }
 
 /** Everything the main screen shows from the agent's last step. */
@@ -172,6 +195,8 @@ object Agent {
             if (trigger == Trigger.ENROLLED) PolicyPoll.kick()
             // Phase 6: the update thread looks at the offer the applied policy carries.
             AgentUpdater.offered(app, enforcement.view.policy?.agentUpdate)
+            // Phase 3: screen time is read every minute the screen is on, while the policy has it.
+            ScreenWatcher.want(app, enforcement.view.policy?.screenTime != null)
         } catch (t: Throwable) {
             Log.e(TAG, "agent step failed (${trigger.label})", t)
         } finally {
@@ -227,22 +252,117 @@ object Agent {
                 val store = AgentStore.get(app)
                 val now = System.currentTimeMillis()
                 val label = store.loadBaseline().inventory[packageName]?.label
-                    ?: store.requests().firstOrNull { it.packageName == packageName }?.label
+                    ?: store.requests().firstOrNull { it.kind == WireRequestKind.APP && it.packageName == packageName }?.label
                     ?: packageName
                 val answered = Requests.answered(store.requests(), DebugTools.policyOverride ?: store.policy())
                 val request = Requests.send(answered, packageName, label, reason, now) { UUID.randomUUID().toString() }
                 store.commitEnforcement(null, listOf(request), now)
                 Log.i(TAG, "asked for $packageName (request ${request.id}, send ${request.revision})")
-                _view.value?.let { view ->
-                    val all = store.requests()
-                    _view.value = view.copy(kid = view.kid.copy(requests = Requests.answered(all, view.kid.policy)))
-                }
+                showRequests(store)
                 Sync.request(app)
             } catch (t: Throwable) {
                 Log.e(TAG, "asking for $packageName failed", t)
             } finally {
                 done?.invoke()
             }
+        }
+    }
+
+    /**
+     * Phase 3: the kid asks a parent for [minutes] more for the limit [limitId] today, from the
+     * app [packageName] (a time's-up notification) or Belay's screen, with [reason] (their own
+     * words, or none). Like [ask]: on the agent thread, queued and sent right away. While the
+     * request for that limit today is open, asking again sends only the new reason.
+     */
+    fun askMoreTime(context: Context, limitId: String, minutes: Int, packageName: String?, reason: String?, done: (() -> Unit)? = null) {
+        val app = context.applicationContext
+        executor.execute {
+            try {
+                val store = AgentStore.get(app)
+                val policy = DebugTools.policyOverride ?: store.policy()
+                val screenTime = policy?.screenTime
+                if (screenTime == null) {
+                    Log.w(TAG, "more time asked for, but the policy has no screen time")
+                    return@execute
+                }
+                val now = System.currentTimeMillis()
+                val days = Rules.dayClock(screenTime, ZoneId.systemDefault())
+                val label = packageName?.let { store.loadBaseline().inventory[it]?.label }
+                val answered = Requests.answered(store.requests(), policy)
+                val request = Requests.moreTime(answered, limitId, minutes, packageName, label, reason, now, days.startOf(days.dayAt(now))) {
+                    UUID.randomUUID().toString()
+                }
+                store.commitEnforcement(null, listOf(request), now)
+                Log.i(TAG, "asked for ${request.minutes} more minutes for $limitId (request ${request.id}, send ${request.revision})")
+                showRequests(store)
+                Sync.request(app)
+            } catch (t: Throwable) {
+                Log.e(TAG, "asking for more time failed", t)
+            } finally {
+                done?.invoke()
+            }
+        }
+    }
+
+    /**
+     * Phase 3: the kid takes self-serve minutes for the limit [limitId] (only for [packageName]
+     * when given), as the policy's self_serve allows. [id] is made once per tap on the screen, so
+     * a double tap takes once. A step follows at once, so the app opens again. [done] gets
+     * whether it was taken, on the agent thread.
+     */
+    fun takeMinutes(context: Context, limitId: String, packageName: String?, id: String, done: ((Boolean) -> Unit)? = null) {
+        val app = context.applicationContext
+        executor.execute {
+            val taken = try {
+                val store = AgentStore.get(app)
+                val policy = (DebugTools.policyOverride ?: store.policy())?.screenTime
+                val state = store.screenTime()?.state
+                val now = System.currentTimeMillis()
+                val result = if (policy == null || state == null) null else Upkeep.take(policy, state, now, ZoneId.systemDefault(), id, limitId, packageName)
+                if (result == null) {
+                    Log.w(TAG, "self-serve minutes for $limitId not taken: the rule doesn't allow it now")
+                    false
+                } else {
+                    Log.i(TAG, "self-serve: ${result.first.minutes} minutes for $limitId taken")
+                    store.saveScreenTimeState(result.second, now)
+                }
+            } catch (t: Throwable) {
+                Log.e(TAG, "taking self-serve minutes failed", t)
+                false
+            }
+            if (taken) step(app, Trigger.SELF_SERVE, emptySet())
+            done?.invoke(taken)
+        }
+    }
+
+    /**
+     * Phase 3: the kid's [answer] to version [version] of the family agreement, with [reason]
+     * (their own words, or none). Like [ask]: queued and sent right away.
+     */
+    fun answerAgreement(context: Context, version: Int, answer: WireAgreementAnswer, reason: String?, done: (() -> Unit)? = null) {
+        val app = context.applicationContext
+        executor.execute {
+            try {
+                val store = AgentStore.get(app)
+                val now = System.currentTimeMillis()
+                val answered = Requests.answered(store.requests(), DebugTools.policyOverride ?: store.policy())
+                val request = Requests.agreement(answered, version, answer, reason, now) { UUID.randomUUID().toString() }
+                store.commitEnforcement(null, listOf(request), now)
+                Log.i(TAG, "answered agreement version $version (request ${request.id}, send ${request.revision})")
+                showRequests(store)
+                Sync.request(app)
+            } catch (t: Throwable) {
+                Log.e(TAG, "answering the agreement failed", t)
+            } finally {
+                done?.invoke()
+            }
+        }
+    }
+
+    /** The kid's screens show a new request at once, without waiting for a step. */
+    private fun showRequests(store: AgentStore) {
+        _view.value?.let { view ->
+            _view.value = view.copy(kid = view.kid.copy(requests = Requests.answered(store.requests(), view.kid.policy)))
         }
     }
 

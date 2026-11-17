@@ -24,13 +24,16 @@ import family.brooker.belay.service.ParentNotice
  * other than the device owner set DISALLOW_REMOVE_USER (removeUser then returns false), and
  * marks it partial at once, so a second getSecondaryUsers no longer lists it
  * (docs/platform-notes.md V2). The kid is told first, and only when there is someone to remove.
+ *
+ * Phase 3, lock_now: [lockNow] locks the screen once per command (ScreenLock), after the step
+ * applied the rest, so a pause sent with it has suspended the apps first. [run] leaves them out.
  */
 class CommandRunner(context: Context) {
     private val app = context.applicationContext
 
-    /** The results, in the order the commands were handled. */
+    /** The results, in the order the commands were handled; lock_now waits for [lockNow]. */
     fun run(plan: CommandPlan, owner: Boolean, now: Long): List<WireCommandResult> {
-        val ran = plan.run.map { command ->
+        val ran = plan.run.filter { it.kind != WireCommand.LOCK_NOW }.map { command ->
             val result = when (command.kind) {
                 WireCommand.REMOVE_OTHER_USERS -> removeOtherUsers(command, owner)
                 // Never: Commands.plan only runs the kinds in RUNS.
@@ -42,6 +45,18 @@ class CommandRunner(context: Context) {
         val reported = CommandLog.notRun(plan, now)
         reported.forEach { Log.i(Agent.TAG, "command ${it.id}: ${it.result}, not run") }
         return ran + reported
+    }
+
+    /** Phase 3: [plan]'s lock_now commands, each locking the screen once (several at once lock once). */
+    fun lockNow(plan: CommandPlan, owner: Boolean): List<WireCommandResult> {
+        val commands = plan.lockNow
+        if (commands.isEmpty()) return emptyList()
+        val problem = ScreenLock.lock(app, owner)
+        val at = System.currentTimeMillis()
+        return commands.map { command ->
+            Log.i(Agent.TAG, "command ${command.id} (${command.kind}): ${if (problem == null) "done" else "failed: $problem"}")
+            if (problem == null) CommandLog.done(command, at) else CommandLog.failed(command, at, problem)
+        }
     }
 
     private fun removeOtherUsers(command: WireCommand, owner: Boolean): WireCommandResult {
@@ -79,7 +94,7 @@ class CommandRunner(context: Context) {
     }
 
     companion object {
-        /** The kinds this build of Belay runs. lock_now comes with Phase 3's app wiring. */
-        val RUNS: Set<String> = setOf(WireCommand.REMOVE_OTHER_USERS)
+        /** The kinds this build of Belay runs. */
+        val RUNS: Set<String> = setOf(WireCommand.REMOVE_OTHER_USERS, WireCommand.LOCK_NOW)
     }
 }

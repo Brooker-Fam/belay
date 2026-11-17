@@ -297,7 +297,7 @@ describe("answering the kid's requests", () => {
     const p = policy();
     expect(p.version).toBe(2);
     expect(p.apps.decisions).toContainEqual({ package: "com.example.game", state: "allowed" });
-    expect(p.requests).toEqual([{ id: "request-0001", status: "approved", note: "OK, on weekends", answered_at: t.now(), answered_by: "Sam" }]);
+    expect(p.requests).toEqual([{ id: "request-0001", status: "approved", note: "OK, on weekends", answered_at: t.now(), answered_by: "Sam", minutes: null }]);
     expect(listAudit(t.deps.db, { limit: 1, includeReads: false })[0]).toMatchObject({ action: "request.answered", detail: { answer: "approved" } });
   });
 

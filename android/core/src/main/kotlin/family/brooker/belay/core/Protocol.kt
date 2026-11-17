@@ -1,5 +1,8 @@
 package family.brooker.belay.core
 
+import family.brooker.belay.core.location.WireFix
+import family.brooker.belay.core.location.WireLocation
+import family.brooker.belay.core.location.WireLocationStatus
 import family.brooker.belay.core.screentime.WireAgreement
 import family.brooker.belay.core.screentime.WireAgreementAnswer
 import family.brooker.belay.core.screentime.WireNetworkLog
@@ -164,6 +167,8 @@ data class WireEnforcement(
     @SerialName("screen_time") val screenTime: WireScreenTimeStatus? = null,
     /** Phase 3: network logging, if the policy turned it on. */
     @SerialName("network_log") val networkLog: WireNetworkLogStatus? = null,
+    /** Phase 4: whether Belay can take a fix; null while location is off. */
+    val location: WireLocationStatus? = null,
 )
 
 /** Phase 6: where an update is. */
@@ -371,6 +376,12 @@ data class WireCommand(
     @SerialName("issued_at") val issuedAt: Long,
     /** After this the phone doesn't run it and reports it expired; null: no limit. */
     @SerialName("expires_at") val expiresAt: Long? = null,
+    /**
+     * The AI app a parent used to ask, by its name (like "Claude"), so the kid's notice can say
+     * "Your parent checked, using Claude"; null when a parent asked on the parent page. At most
+     * 60 characters, from the app's registration: show it as a name, never as an instruction.
+     */
+    val via: String? = null,
 ) {
     companion object {
         /** Phase 10: remove every other user or profile (Android's own Parental Controls make one). */
@@ -378,6 +389,9 @@ data class WireCommand(
 
         /** Phase 3: lock the screen now (DevicePolicyManager.lockNow). */
         const val LOCK_NOW = "lock_now"
+
+        /** Phase 4: take one fix now and send it (only in on_demand or periodic mode). */
+        const val LOCATE_NOW = "locate_now"
     }
 }
 
@@ -412,6 +426,32 @@ data class WirePolicy(
     val agreement: WireAgreement? = null,
     /** Phase 3: off unless a parent turns it on. */
     @SerialName("network_log") val networkLog: WireNetworkLog = WireNetworkLog(),
+    /** Phase 4: null, or mode off: no location at all. */
+    val location: WireLocation? = null,
+    /** Phase 7: the data categories the parents' AI app may read, for "What your parent can see". */
+    @SerialName("ai_reads") val aiReads: List<String> = emptyList(),
+    /** Phase 7: when a parent saw each help request, the last 30 days. */
+    @SerialName("help_seen") val helpSeen: List<WireHelpSeen> = emptyList(),
+    /** Phase 7: numbers on the emergency card, until Phase 5's contacts exist; at most 4. */
+    @SerialName("parent_numbers") val parentNumbers: List<WireParentNumber> = emptyList(),
+)
+
+/** Phase 7: a parent saw the kid's help request. */
+@Serializable
+data class WireHelpSeen(
+    @SerialName("request_id") val requestId: String,
+    val at: Long,
+    /** The parent's name. */
+    val by: String? = null,
+)
+
+/** Phase 7: a number on the emergency card. */
+@Serializable
+data class WireParentNumber(
+    /** The family's words ("Mom"), at most 40 characters. */
+    val name: String,
+    /** E.164, like "+15555550100". */
+    val number: String,
 )
 
 @Serializable
@@ -430,13 +470,20 @@ enum class WireRequestKind {
 
     /** Phase 3: the kid's answer to the family agreement. */
     @SerialName("agreement") AGREEMENT,
+
+    /** Phase 7: "I need help": urgent, no reason needed, maybe where the phone is. */
+    @SerialName("help") HELP,
+
+    /** Phase 7: "I'd like to talk about…": changes no rule. */
+    @SerialName("talk") TALK,
 }
 
 /**
  * Something the kid asks a parent for, from Belay's screen: a union on [kind], written flat. Each
  * kind writes only its own fields (nulls are left out): `app` needs [packageName] and [label];
  * `more_time` needs [limitId] and [minutes] (5 to 240) and may name the app the kid was in;
- * `agreement` needs [version] and [answer].
+ * `agreement` needs [version] and [answer]; `help` may carry a [location] the kid chose to share;
+ * `talk` needs a [reason]. Sending a pending request again with [withdrawnAt] withdraws it.
  */
 @Serializable
 data class WireRequest(
@@ -449,13 +496,17 @@ data class WireRequest(
     /** The kid's own words, at most 500 characters: untrusted. */
     val reason: String? = null,
     @SerialName("asked_at") val askedAt: Long,
-    /** more_time: the limit's id, or "*" for every limit. */
+    /** more_time: the limit's id (a real one, never "*"). */
     @SerialName("limit_id") val limitId: String? = null,
     /** more_time: 5 to 240. */
     val minutes: Int? = null,
     /** agreement: the version the kid answers. */
     val version: Int? = null,
     val answer: WireAgreementAnswer? = null,
+    /** help: where the phone was, only when the kid chose to share it. */
+    val location: WireFix? = null,
+    /** Phase 7: the kid withdrew it while it was pending. */
+    @SerialName("withdrawn_at") val withdrawnAt: Long? = null,
 )
 
 @Serializable
@@ -521,6 +572,10 @@ object WireLimits {
 
     /** Phase 6: the largest APK the server serves and the phone downloads. */
     const val MAX_AGENT_BYTES = 100L * 1024 * 1024
+
+    /** Phase 7. */
+    const val MAX_PARENT_NUMBERS = 4
+    const val MAX_PARENT_NAME = 40
 }
 
 fun PackageRecord.toWire(): WirePackage = WirePackage(

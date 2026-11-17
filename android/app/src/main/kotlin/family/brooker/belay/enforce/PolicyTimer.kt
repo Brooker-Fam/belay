@@ -11,11 +11,14 @@ import family.brooker.belay.Agent
 import family.brooker.belay.Trigger
 
 /**
- * Wakes the agent when the plan changes by the clock alone: a pause or repair time ends.
- * Exact alarms need no permission for an app on the battery allowlist, where provision.sh
- * puts Belay (AOSP 17 `AlarmManagerService.isExemptFromExactAlarmPermissionNoLock`);
- * without it the alarm is inexact and may come late, and the hourly check and every other
- * step catch up.
+ * Wakes the agent when the plan changes by the clock alone: a pause or repair time ends, or
+ * (Phase 3) screen time's next boundary comes (a day starts, a schedule starts or ends, a limit
+ * runs out while its app is in front, a warning is due). Exact alarms need no permission for an
+ * app on the battery allowlist, where provision.sh puts Belay (AOSP 17
+ * `AlarmManagerService.isExemptFromExactAlarmPermissionNoLock`), and Belay also holds
+ * USE_EXACT_ALARM in case that entry is lost (docs/platform-notes.md S6); if neither holds the
+ * alarm is inexact and may come late, and the 60-second screen-time tick, the hourly check
+ * and every other step catch up.
  */
 object PolicyTimer {
     @Volatile

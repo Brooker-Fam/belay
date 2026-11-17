@@ -65,6 +65,13 @@ relying on something new, it goes here first, with a source.
 | U3 | The usage-limit observers aren't open to Belay | Contradicted | AOSP |
 | U4 | The kid can turn usage access off, and back on | Confirmed | AOSP |
 | U5 | How usage events behave at boots, clock changes and query edges | Confirmed in source | AOSP |
+| U6 | Screen on, off and unlocked reach registered receivers only; clock and zone changes reach manifest ones | Confirmed | AOSP; Docs; Emulator pending (Phase 3 CI) |
+| U7 | Watching Belay's own usage access with `startWatchingMode` | Confirmed | AOSP; Emulator pending (Phase 3 CI) |
+| U8 | `queryEvents(UsageEventsQuery)`: its period check, and where keyguard events come from | Confirmed | AOSP; SDK |
+| U9 | Settings opens Belay's own usage access switch for a `package:` address | Confirmed in AOSP Settings; not documented | AOSP |
+| S5 | `lockNow` needs `<force-lock/>` on Android 17's first release; an update gets it at the next boot | Confirmed | AOSP; Emulator pending (Phase 3 CI) |
+| S6 | Exact alarms: the Doze allowlist exempts Belay; `USE_EXACT_ALARM` as the backup | Confirmed | AOSP |
+| S7 | Telling from a shell whether the screen is off or locked | Confirmed | AOSP |
 | I2 | A device owner's PackageInstaller session installs with nobody confirming; no downgrades | Confirmed | AOSP; Docs; Emulator pending (Phase 6 CI) |
 | I3 | Developer verification has no device-owner bypass | Confirmed in AOSP; Google's wording doesn't settle Belay's case | AOSP; Docs (drafts) |
 | I5 | Only the shell can install a test-only APK | Confirmed: `INSTALL_FAILED_TEST_ONLY` for every app | AOSP |
@@ -698,6 +705,144 @@ Belay's consequence: `core/screentime/ScreenTime.kt` counts from these rules, ke
 class, keeps its own ledger instead of trusting the history, and treats a boot's shutdown time as
 a guess. To check on the emulator: open and close a fixture activity, reboot, and change the clock
 by an hour; the ledger's minutes match a stopwatch.
+
+### On the phone (Phase 3's app wiring)
+
+Read in AOSP `android-17.0.0_r1` (and the 37.0 `android.jar`) and on developer.android.com on
+2026-11-17 while wiring `core/screentime` into the app. Paths are in `platform/frameworks/base`
+unless another project is named. The emulator checks are in `ScreenTimeInstrumentedTest` and
+`ci-emulator-test.sh`'s Phase 3 block; the Pixel's in [phase3-checklist.md](phase3-checklist.md).
+
+### U6. What wakes screen time: screen on and off, unlocking, clock and zone changes
+
+**Confirmed.** Verified on: AOSP; Docs; Emulator pending (Phase 3 CI).
+
+- `core/java/android/content/Intent.java`: `ACTION_SCREEN_ON` and `ACTION_SCREEN_OFF` "You cannot
+  receive this through components declared in manifests, only by explicitly registering for it
+  with Context.registerReceiver()". Both, and `ACTION_USER_PRESENT`, are protected broadcasts
+  (`core/res/AndroidManifest.xml`).
+- The implicit broadcast exceptions (developer.android.com/develop/background-work/background-tasks/broadcasts/broadcast-exceptions,
+  no date shown) list `TIME_SET` and `ACTION_TIMEZONE_CHANGED` ("Clock apps might need to receive
+  these broadcasts"); `USER_PRESENT` and the screen broadcasts aren't on it.
+
+Belay's consequence: `screentime/ScreenWatcher.kt` registers for screen on, off and unlocked once
+per process (BelayApp, like PackageWatcher; the DeviceAdminService binding keeps the process,
+B7), and runs a step every 60 s while the screen is on and the policy has screen time. The clock
+and zone changes go to a manifest receiver (`ClockChangedReceiver`).
+
+### U7. Watching Belay's own usage access
+
+**Confirmed.** Verified on: AOSP; Emulator pending (Phase 3 CI, `ScreenTimeInstrumentedTest`).
+
+- `core/java/android/app/AppOpsManager.java` `startWatchingMode(String op, String packageName,
+  OnOpChangedListener)`: "Monitor for changes to the operating mode for the given op in the given
+  app package. You can watch op changes only for your UID." No permission is needed for one's own
+  package.
+- The listener is called from an `IAppOpsCallback.Stub`, so on a binder thread, not the main one.
+- Settings' switch and `appops set` both set the package's mode (U4), which this reports.
+
+Belay's consequence: the watcher runs a step at once (`USAGE_ACCESS_CHANGED`, which posts to the
+agent thread), so "can't count" applies within a second, and the step reads usage access before
+and after its query anyway.
+
+### U8. `queryEvents(UsageEventsQuery)`, and where the keyguard events come from
+
+**Confirmed.** Verified on: AOSP; SDK.
+
+- `core/java/android/app/usage/UsageEventsQuery.java`: `Builder(beginTimeMillis, endTimeMillis)`
+  throws `IllegalArgumentException("Invalid period")` when the end is before the begin;
+  `setEventTypes` throws for a type outside `NONE..MAX_EVENT_TYPE`. Belay's reader skips an empty
+  period and asks only for core's types.
+- `UsageStatsManager.queryEvents(UsageEventsQuery)` is `@Nullable` and returns the empty result
+  when the service gives none; the older `queryEvents(long, long)` is `@Deprecated` behind
+  `FLAG_DEPRECATE_OLD_QUERY_EVENTS_API` (U1). Belay uses the new one from API 35 and the old one
+  below it (its minSdk is 31).
+- `KEYGUARD_SHOWN` and `KEYGUARD_HIDDEN` come from `ActivityManagerService.reportCurKeyguardUsageEvent`,
+  which `ActivityTaskManagerService.setLockScreenShownLocked` posts whenever System UI reports the
+  lock screen shown or gone. So dismissing a swipe lock screen (`wm dismiss-keyguard` in the
+  tests) records `KEYGUARD_HIDDEN`, and the count starts.
+
+### U9. Settings' usage access switch for Belay
+
+**Confirmed in AOSP Settings; not documented.** Verified on: AOSP.
+
+- `Settings.ACTION_USAGE_ACCESS_SETTINGS` documents "Input: Nothing" and "a matching Activity may
+  not exist" (`core/java/android/provider/Settings.java`).
+- `platform/packages/apps/Settings` `AndroidManifest.xml`: `Settings$AppUsageAccessSettingsActivity`
+  takes the same action with `<data android:scheme="package"/>` and opens
+  `applications.UsageAccessDetails`, the one app's switch.
+
+Belay's consequence: "Turn usage access back on" asks for Belay's own page with its `package:`
+address, and falls back to the list where nothing handles that (`screentime/UsageAccess.kt`).
+Check the button on the Pixel.
+
+### S5. `lockNow` and `<force-lock/>`, and what an update changes
+
+**Confirmed; moved from the drafts with the flag's value and the update question.** Verified on:
+AOSP; Emulator pending (Phase 3 CI).
+
+- `services/devicepolicy/.../DevicePolicyManagerService.lockNow`: with the flag
+  `lock_now_coexistence` the check is `mPermissions.enforce({MANAGE_DEVICE_POLICY_LOCK,
+  LOCK_DEVICE}, USES_POLICY_FORCE_LOCK, …)`, and `PermissionChecker` gives a device owner
+  `MANAGE_DEVICE_POLICY_LOCK` (`DEVICE_OWNER_PERMISSIONS`). Without the flag it's
+  `DeviceAdmins.getActiveAdminOrCheckPermissionForCaller(caller, USES_POLICY_FORCE_LOCK, …,
+  LOCK_DEVICE)`, which needs the admin's `usesPolicy(USES_POLICY_FORCE_LOCK)` and otherwise
+  throws "Admin … did not specify uses-policy for: force-lock". Being device owner doesn't skip it
+  (`isActiveAdminWithPolicyForUser`: `allowedToUsePolicy && admin.info.usesPolicy(reqPolicy)`).
+- The flag (`core/java/android/app/admin/flags/flags.aconfig`) isn't set in `platform/build/release`'s
+  `cp1a` (Android 17's first release, which inherits `bp4a` and earlier, none of which set it), so
+  it's off unless switched on at run time (it isn't read-only there). `cp2a` sets it `ENABLED`,
+  read-only; `trunk_staging` too. So the Pixel's Android 17 may need `<force-lock/>`, and the
+  emulator's may.
+- **An update doesn't refresh an admin's policies until the next boot.** On `PACKAGE_ADDED` with
+  `EXTRA_REPLACING`, `handlePackagesChanged` only checks that the admin is still valid
+  (`isActiveAdminPackageValid` parses a new `DeviceAdminInfo` and throws it away); the in-memory
+  `ActiveAdmin.info` stays as it was. When the user's data is loaded again, at the next boot
+  (`loadSettingsLocked` → `DevicePolicyData.load`), the info comes from the package's meta-data,
+  and the stored `<policies>` overwrite it only for an admin that isn't the device or profile
+  owner (`overwritePolicies = !dai.getComponent().equals(ownerComponent)`, b/123415062). So a
+  provisioned Belay picks up `<force-lock/>` after its first restart with the new version: no
+  re-provisioning. Until then (with the flag off) `lockNow` fails, and Belay reports it.
+- `ActiveAdmin.dump` prints each admin's `policies:` (`force-lock` among them) in `adb shell
+  dumpsys device_policy`; CI checks it.
+- DPM reference [2026-09-16]: "If there's no lock type set, this method forces the device to go to
+  sleep but doesn't lock the device." `lockNow` calls `goToSleep` and `IWindowManager.lockNow`.
+
+Belay's consequence: `res/xml/device_admin.xml` declares `<force-lock/>`. A `lock_now` command or
+a schedule with `lock` calls `lockNow` once (core's `Commands.plan`, `Upkeep.locks`); a refusal
+is reported, for "force-lock" in plain words: "Android lets Belay lock the screen only after the
+phone restarts once with this version of Belay." The family's Pixel, provisioned before Phase 3,
+needs one restart after the update. The kid knows their own PIN, so it's a nudge.
+
+### S6. Exact alarms for screen time's boundaries
+
+**Confirmed; moved from the drafts.** Verified on: AOSP.
+
+- `apex/jobscheduler/service/.../alarm/AlarmManagerService.isExemptFromExactAlarmPermissionNoLock`:
+  System UI, core uids, no DeviceIdleController, or an app on the Doze allowlist
+  (`isAppOnWhitelist`). There's no device-owner exemption. Without one of these, `USE_EXACT_ALARM`
+  or `SCHEDULE_EXACT_ALARM`, `setExactAndAllowWhileIdle` throws `SecurityException` ("needs to hold
+  SCHEDULE_EXACT_ALARM or USE_EXACT_ALARM to set exact alarms").
+- An app on the user's power allowlist (`dumpsys deviceidle whitelist +`, B6) gets
+  `FLAG_ALLOW_WHILE_IDLE_UNRESTRICTED`: no Doze limit on how often.
+- `USE_EXACT_ALARM` is `normal` (`core/res/AndroidManifest.xml`, granted at install) and makes
+  `canScheduleExactAlarms()` true by itself (`hasUseExactAlarmInternal`, for targetSdk 33 and up).
+  Its holders "always stay in the WORKING_SET or lower standby bucket", but
+  `AppStandbyController.getAppMinBucket` returns `STANDBY_BUCKET_EXEMPTED` for an active device
+  admin before it looks at exact alarms, so Belay stays exempted (B4; CI checks bucket 5).
+
+Belay's consequence: `PolicyTimer` sets one exact alarm, at the sooner of Phase 2's next change and
+screen time's `Decision.nextAt` (a day starting, a schedule starting or ending, a limit running out
+while its app is in front, a warning); Belay declares `USE_EXACT_ALARM` in case the allowlist
+entry is ever lost. Play's limit on `USE_EXACT_ALARM` doesn't apply: Belay isn't on Play.
+
+### S7. From a shell: is the screen off, or the lock screen up?
+
+**Confirmed.** Verified on: AOSP. For `ci-emulator-test.sh`'s lock-now check.
+
+- `services/core/.../power/PowerManagerService` dumps `  mWakefulness=` with
+  `PowerManagerInternal.wakefulnessToString`: `Asleep`, `Awake`, `Dreaming` or `Dozing`.
+- `services/core/.../wm/KeyguardController` dumps `  mKeyguardShowing=` (in `dumpsys window`).
 
 
 ---

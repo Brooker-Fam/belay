@@ -140,11 +140,19 @@ export function formatAgo(ms: number, now: number): string {
   return `${formatDuration(span)} ago`;
 }
 
-/** Epoch ms for a wall-clock time in the zone (for a time skipped by DST, the moment after). */
+/**
+ * Epoch ms for a wall-clock time in the zone, by java.time's rule (ZonedDateTime.of), which the
+ * phone uses too: a time skipped by DST (2:30 a.m. the night clocks go forward) is later by the
+ * gap (3:30 a.m.); a time that happens twice (1:30 a.m. the night they go back) is the first.
+ */
 export function localToEpoch(tz: string, year: number, month: number, day: number, hour = 0, minute = 0, second = 0): number {
   const asUtc = Date.UTC(year, month - 1, day, hour, minute, second);
-  const first = asUtc - zoned(asUtc, tz).offsetMinutes * MINUTE;
-  return asUtc - zoned(first, tz).offsetMinutes * MINUTE;
+  // The offsets on either side of any change near this time; most days they're the same.
+  const before = zoned(asUtc - DAY, tz).offsetMinutes * MINUTE;
+  const after = zoned(asUtc + DAY, tz).offsetMinutes * MINUTE;
+  const fits = [asUtc - before, asUtc - after].filter((at) => at + zoned(at, tz).offsetMinutes * MINUTE === asUtc).sort((a, b) => a - b);
+  // Skipped: the offset from before the change, which puts it after the gap.
+  return fits[0] ?? asUtc - before;
 }
 
 /** Midnight at the start of `key` ("2026-11-15") in the zone. */

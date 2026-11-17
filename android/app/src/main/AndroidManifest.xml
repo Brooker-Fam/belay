@@ -23,6 +23,12 @@
         android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions" />
 
+    <!-- Phase 3: screen time's boundaries (a schedule starts, a limit runs out) need exact
+         alarms. The battery allowlist provision.sh adds already exempts Belay; this normal
+         permission keeps them exact if that entry is ever lost (docs/platform-notes.md S6).
+         Play's restriction of it to alarm apps doesn't apply: Belay isn't on Play. -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+
     <!-- Fallback when provision.sh couldn't add the battery exemption: the system dialog. -->
     <uses-permission
         android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"
@@ -156,10 +162,22 @@
             </intent-filter>
         </receiver>
 
-        <!-- Phase 2: Belay's own alarm for when a pause or repair time ends. -->
+        <!-- Phase 2: Belay's own alarm for when a pause or repair time ends; Phase 3: or for
+             screen time's next boundary. -->
         <receiver
             android:name=".enforce.PolicyTimerReceiver"
             android:exported="false" />
+
+        <!-- Phase 3: the clock or the time zone changed. Both still reach manifest receivers
+             (the implicit broadcast exceptions); only the system sends them. -->
+        <receiver
+            android:name=".screentime.ClockChangedReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+        </receiver>
 
         <!-- Phase 6: Android's answer to Belay's own update (a PackageInstaller session). Only
              Belay's PendingIntent reaches it. A device owner installs without asking anyone,

@@ -60,7 +60,7 @@ jobs:
         run: |
           aapt2="$(find "$ANDROID_HOME/build-tools" -name aapt2 -type f | sort | tail -n 1)"
           manifest="$("$aapt2" dump xmltree --file AndroidManifest.xml android/app/build/outputs/apk/release/app-release-unsigned.apk)"
-          if grep -qE 'DebugRecoveryReceiver|DEBUG_RECOVER|testOnly' <<<"$manifest"; then
+          if grep -qE 'DebugRecoveryReceiver|DEBUG_RECOVER|DebugUsageReceiver|DEBUG_UPLOAD_USAGE|testOnly' <<<"$manifest"; then
             echo "::error::The release APK's manifest has debug-only parts."
             exit 1
           fi

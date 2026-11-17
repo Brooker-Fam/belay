@@ -75,6 +75,8 @@ object UsageReport {
      * Phase 2's never-blocked packages, whose time the design never counts. Their time on the phone
      * app can show a call to 988 or an emergency number, which Belay keeps out of its records
      * (principle 8, Phase 5); it still counts in the screen minutes, as the design proposes.
+     * At most [ScreenTimeWireLimits.MAX_USAGE_GAPS] gaps, the longest, in time order: the server
+     * refuses a day with more, and usage access turned off and on all day could make them.
      */
     fun wire(day: DayUsage, unlisted: Set<String> = emptySet()): WireUsageDay = WireUsageDay(
         day = day.day.toString(),
@@ -89,7 +91,15 @@ object UsageReport {
             .sortedWith(compareByDescending<Map.Entry<String, AppDay>> { it.value.millis }.thenBy { it.key })
             .take(ScreenTimeWireLimits.MAX_USAGE_APPS)
             .map { (name, app) -> WireUsageApp(name, minutes(app.millis), app.opens) },
-        gaps = day.gaps.map { WireUsageGap(it.from, it.to, it.reason) },
+        gaps = day.gaps
+            .let { gaps ->
+                if (gaps.size <= ScreenTimeWireLimits.MAX_USAGE_GAPS) {
+                    gaps
+                } else {
+                    gaps.sortedByDescending { it.to - it.from }.take(ScreenTimeWireLimits.MAX_USAGE_GAPS).sortedBy { it.from }
+                }
+            }
+            .map { WireUsageGap(it.from, it.to, it.reason) },
     )
 
     /** Well under the server's 256 KB. */

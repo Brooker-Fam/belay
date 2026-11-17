@@ -30,6 +30,11 @@ import family.brooker.belay.core.WirePolicy
 import family.brooker.belay.core.WireRecoveryUse
 import family.brooker.belay.core.WireRequest
 import family.brooker.belay.core.WireUpdateState
+import family.brooker.belay.core.screentime.ScreenTime
+import family.brooker.belay.core.screentime.ScreenTimeState
+import family.brooker.belay.core.screentime.UploadState
+import family.brooker.belay.core.screentime.WireUsageApp
+import family.brooker.belay.core.screentime.WireUsageDay
 import family.brooker.belay.core.toWire
 import family.brooker.belay.store.AgentStore
 import family.brooker.belay.store.BelayDatabase
@@ -290,6 +295,57 @@ class AgentStoreInstrumentedTest {
         store.markSent(store.queue().map { it.id }, T0 + 2)
         assertTrue(store.queue().isEmpty())
         assertEquals(OutboxRow.STATE_SENT, store.requestsQueuedFor(a.packageName).single().state)
+    }
+
+    // Phase 3.
+
+    private fun usageDay(day: String, asOf: Long) = WireUsageDay(
+        day = day, zone = "America/New_York", asOf = asOf, complete = false, screenMinutes = 10, unlocks = 2,
+        byHour = List(24) { 0 }, apps = listOf(WireUsageApp("com.example.a", 10, 2)),
+    )
+
+    @Test
+    fun screenTimesLedgerAndStateSurviveAndGoWhenScreenTimeDoes() {
+        assertEquals(null, store.screenTime())
+        assertFalse(store.hasScreenTime())
+        val ledger = ScreenTime.start(T0)
+        val state = ScreenTimeState(shown = mapOf("up:l-games:2026-11-17:60" to T0), uploads = UploadState(since = T0))
+        store.commitEnforcement(Applied(policyVersion = 1), emptyList(), T0, screenTime = AgentStore.ScreenTimeWrite.Save(ledger, state))
+        assertEquals(AgentStore.ScreenTimeStored(ledger, state), store.screenTime())
+        assertTrue(store.saveScreenTimeState(state.copy(unmeasuredSince = T0), T0 + 1))
+        assertEquals(T0, store.screenTime()?.state?.unmeasuredSince)
+
+        store.commitEnforcement(Applied(policyVersion = 2), emptyList(), T0 + 2, usage = listOf(usageDay("2026-11-17", T0 + 2)))
+        store.commitEnforcement(Applied(policyVersion = 2), emptyList(), T0 + 3, screenTime = AgentStore.ScreenTimeWrite.Clear)
+        assertEquals(null, store.screenTime())
+        assertEquals("unsent usage goes with screen time", 0, store.pendingUsageCount())
+        assertFalse(store.saveScreenTimeState(state, T0 + 4))
+    }
+
+    @Test
+    fun aNewerReportOfADayReplacesAnUnsentOneAndASentDayIsDeleted() {
+        store.commitEnforcement(null, emptyList(), T0, usage = listOf(usageDay("2026-11-16", T0), usageDay("2026-11-17", T0)))
+        store.commitEnforcement(null, emptyList(), T0 + 1, usage = listOf(usageDay("2026-11-17", T0 + 1)))
+        val queue = store.queue()
+        assertEquals(listOf(OutboxRow.TYPE_USAGE, OutboxRow.TYPE_USAGE), queue.map { it.type })
+        val days = store.usagePayloads(queue.map { it.id }).map { lenient.decodeFromString(WireUsageDay.serializer(), it) }
+        assertEquals(listOf("2026-11-16" to T0, "2026-11-17" to T0 + 1), days.map { it.day to it.asOf })
+
+        store.markSent(queue.map { it.id }, T0 + 2)
+        assertEquals("sent usage days are deleted, not kept", 0, store.countsByState().values.sum())
+
+        store.commitEnforcement(null, emptyList(), T0 + 3, usage = listOf(usageDay("2026-11-17", T0 + 3)))
+        store.commitEnforcement(null, emptyList(), T0 + 4, dropUsage = true)
+        assertEquals("the policy stopped measuring", 0, store.pendingUsageCount())
+    }
+
+    @Test
+    fun atMost31UsageDaysWait() {
+        val days = (1..40).map { usageDay("2026-10-${it.toString().padStart(2, '0')}", T0) }
+        days.chunked(10).forEachIndexed { i, chunk -> store.commitEnforcement(null, emptyList(), T0 + i, usage = chunk) }
+        assertEquals(OutboxPolicy.MAX_PENDING_USAGE, store.pendingUsageCount())
+        val kept = store.usagePayloads(store.queue().map { it.id }).map { lenient.decodeFromString(WireUsageDay.serializer(), it).day }
+        assertEquals("the newest are kept", days.takeLast(OutboxPolicy.MAX_PENDING_USAGE).map { it.day }, kept)
     }
 
     private companion object {
