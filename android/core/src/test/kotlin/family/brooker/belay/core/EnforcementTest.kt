@@ -504,6 +504,15 @@ class EnforcementTest {
         assertEquals(setOf(Lock.CONFIG_VPN), next.locks)
     }
 
+    @Test
+    fun `another user or profile is reported in the words the server looks for`() {
+        val plan = Enforcement.plan(Enforcement.Input(policy(), apps, roles, Applied(), false, Enforcement.sdkFull(37), T0, otherUsers = 1))
+        val problem = plan.problems.single()
+        assertTrue("another user or profile" in problem)
+        assertTrue(problem.length <= WireLimits.MAX_PROBLEM)
+        assertTrue(plan(policy()).problems.isEmpty())
+    }
+
     // The enforcement report.
 
     @Test

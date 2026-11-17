@@ -1,5 +1,6 @@
 package family.brooker.belay.enforce
 
+import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -14,6 +15,7 @@ import android.provider.Telephony
 import android.telecom.TelecomManager
 import android.util.Log
 import family.brooker.belay.Agent
+import family.brooker.belay.DeviceOwnerSetup
 import family.brooker.belay.core.PackagePresence
 import family.brooker.belay.core.PhoneRoles
 import family.brooker.belay.inventory.packageInfoCompat
@@ -51,6 +53,18 @@ object PhoneFacts {
             pauseExempt = read("clock") { systemHandlers(pm, Intent(AlarmClock.ACTION_SHOW_ALARMS)) }.orEmpty() + setOfNotNull(keyboard),
         )
     }
+
+    /**
+     * Users and profiles besides the phone's own, as the device owner sees them
+     * (DevicePolicyManager.getSecondaryUsers: every user but the system user and managed
+     * profiles). Android 17's own Parental Controls make a hidden supervising profile even
+     * with DISALLOW_ADD_USER set; public APIs can't tell its type from another user's, so
+     * Belay reports any of them and removes none. 0 when Belay isn't device owner.
+     */
+    fun otherUsers(context: Context): Int = read("other users") {
+        val dpm = context.getSystemService(DevicePolicyManager::class.java)
+        if (dpm.isDeviceOwnerApp(context.packageName)) dpm.getSecondaryUsers(DeviceOwnerSetup.admin(context)).size else 0
+    } ?: 0
 
     private fun <T> read(what: String, block: () -> T): T? = try {
         block()

@@ -51,12 +51,12 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
     data class Result(val view: KidView, val reportChanged: Boolean)
 
     /**
-     * [inventory] is everything installed, hidden apps included; [changed] the packages this
-     * step saw change. After a boot or a full scan ([fullScan]) everything Belay holds is
-     * checked against the phone; otherwise only what changed, so a reinstalled app (which
-     * loses its suspension) is caught at once.
+     * [inventory] is everything installed, hidden apps included. Every step checks that what
+     * Belay holds is still in effect (a reinstall clears a suspension, and Android's own
+     * Parental Controls can lift one), so it is applied again. After a boot, a full scan or
+     * a change of users ([recheckAll]) the restrictions are checked too, and Private DNS.
      */
-    fun run(inventory: Map<String, PackageRecord>, changed: Set<String>, fullScan: Boolean, recheckDns: Boolean): Result {
+    fun run(inventory: Map<String, PackageRecord>, recheckAll: Boolean, recheckDns: Boolean): Result {
         val now = System.currentTimeMillis()
         val before = store.applied()
         // With no policy, Belay enforces nothing; if it applied something before (a debug
@@ -70,15 +70,25 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
 
         val owner = DeviceOwnerSetup.isDeviceOwner(app)
         val enforcer = Enforcer(app)
-        val held = before.suspended + before.hidden
-        val toCheck = (if (fullScan) held else held.intersect(changed)).filter { it in inventory }.toSet()
-        val actual = if (owner) enforcer.actual(toCheck, if (fullScan) before.locks else emptySet()) else ActualState()
+        val actual = if (owner) {
+            enforcer.actual(
+                suspended = before.suspended.filterTo(HashSet()) { it in inventory },
+                hidden = before.hidden.filterTo(HashSet()) { it in inventory },
+                locks = if (recheckAll) before.locks else emptySet(),
+            )
+        } else {
+            ActualState()
+        }
         val (applied, gone) = Enforcement.reconcile(before, inventory.keys, actual)
         if (owner) enforcer.forget(gone)
+        lost(before, applied, gone)
 
         val roles = PhoneFacts.roles(app)
         val plan = Enforcement.plan(
-            Enforcement.Input(policy, inventory, roles, applied, BuildConfig.DEBUG, Enforcer.sdkFull(), now),
+            Enforcement.Input(
+                policy, inventory, roles, applied, BuildConfig.DEBUG, Enforcer.sdkFull(), now,
+                otherUsers = PhoneFacts.otherUsers(app),
+            ),
         )
         val changes = Enforcement.changes(plan, applied)
         val outcome = if (owner) enforcer.apply(changes) else notDeviceOwner(changes)
@@ -86,7 +96,7 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
         if (owner) {
             val message = plan.supportMessage ?: app.getString(R.string.support_message_default)
             next = next.copy(supportMessage = enforcer.supportMessage(message, applied.supportMessage))
-            PrivateDns.want(app, plan.privateDns, dnsRow, now, recheck = recheckDns || fullScan)
+            PrivateDns.want(app, plan.privateDns, dnsRow, now, recheck = recheckDns || recheckAll)
         }
         PrivateDns.problem(plan.privateDns, dnsRow)?.let {
             next = next.copy(problems = (next.problems + it).take(Enforcement.MAX_PROBLEMS))
@@ -118,6 +128,15 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
         frpFailed = changes.frpAccounts != null,
         problems = listOf("Belay isn't the device owner, so it can't apply any rules."),
     )
+
+    /** Logs what something other than Belay undid, which this step applies again. */
+    private fun lost(before: Applied, after: Applied, gone: Set<String>) {
+        val unsuspended = before.suspended - after.suspended - gone
+        val shown = before.hidden - after.hidden - gone
+        val unlocked = before.locks - after.locks
+        if (unsuspended.isEmpty() && shown.isEmpty() && unlocked.isEmpty()) return
+        Log.w(Agent.TAG, "enforce: no longer in effect, applying again: suspended $unsuspended, hidden $shown, locks $unlocked")
+    }
 
     private fun reportChanged(before: Applied, after: Applied): Boolean {
         val a = Enforcement.report(before)

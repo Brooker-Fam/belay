@@ -5,6 +5,7 @@ import android.app.admin.DevicePolicyManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.os.UserHandle
 import android.util.Log
 
 /**
@@ -27,6 +28,21 @@ class AdminReceiver : DeviceAdminReceiver() {
 
     override fun onDisableRequested(context: Context, intent: Intent): CharSequence =
         context.getString(R.string.admin_disable_warning)
+
+    /**
+     * Device owners hear when a user or profile is added or removed (API 28). A Belay phone
+     * has none, but Android 17's own Parental Controls make a hidden profile even when adding
+     * users is locked: the step reports it, and checks again what Belay holds.
+     */
+    override fun onUserAdded(context: Context, intent: Intent, addedUser: UserHandle) {
+        val pending = goAsync()
+        Agent.handle(context, Trigger.USERS_CHANGED) { pending.finish() }
+    }
+
+    override fun onUserRemoved(context: Context, intent: Intent, removedUser: UserHandle) {
+        val pending = goAsync()
+        Agent.handle(context, Trigger.USERS_CHANGED) { pending.finish() }
+    }
 
     override fun onDisabled(context: Context, intent: Intent) {
         Log.w(Agent.TAG, "device admin disabled")

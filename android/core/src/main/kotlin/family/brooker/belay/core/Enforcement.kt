@@ -286,13 +286,28 @@ object Enforcement {
         /** Build.VERSION.SDK_INT_FULL. */
         val sdkFull: Int,
         val now: Long,
+        /**
+         * Users and profiles besides the phone's own (DevicePolicyManager.getSecondaryUsers):
+         * none on a Belay phone, but Android 17's own Parental Controls make a hidden profile
+         * even with DISALLOW_ADD_USER set.
+         */
+        val otherUsers: Int = 0,
     )
+
+    /**
+     * The problem for [Input.otherUsers]. The server looks for the words "another user or
+     * profile" (it flags them as tampering), so they stay exactly so.
+     */
+    const val OTHER_USERS_PROBLEM =
+        "This phone has another user or profile (Android's own Parental Controls make one). " +
+            "It can lift Belay's suspensions, and Private DNS can't be set while it's there."
 
     fun plan(input: Input): EnforcementPlan {
         val policy = input.policy
         val apps = input.apps
         val now = input.now
         val problems = mutableListOf<String>()
+        if (input.otherUsers > 0) problems += OTHER_USERS_PROBLEM
         val protected = NeverBlocked.of(input.roles, apps, input.applied.hidden)
 
         // A parent's decisions; the last one for a package counts.

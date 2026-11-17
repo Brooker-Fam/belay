@@ -29,9 +29,10 @@ import java.util.concurrent.Executors
 
 /**
  * What woke the agent. Every trigger runs the same idempotent steps. [checkin]: the sync
- * that follows checks in with the server even if a check-in isn't due yet.
+ * that follows checks in with the server even if a check-in isn't due yet. [setup]: the step
+ * also applies the device-owner setup again (frequent package triggers skip it).
  */
-enum class Trigger(val label: String, val heartbeat: Boolean, val checkin: Boolean = false) {
+enum class Trigger(val label: String, val heartbeat: Boolean, val checkin: Boolean = false, val setup: Boolean = true) {
     ADMIN_ENABLED("device admin enabled", true),
     OWNER_CHANGED("device owner changed", true),
     PROVISIONED("provisioning finished", true),
@@ -42,7 +43,7 @@ enum class Trigger(val label: String, val heartbeat: Boolean, val checkin: Boole
     WATCHDOG("periodic check", true),
     ENROLLED("enrolled", true, checkin = true),
     CAMERA_DONE("enrollment screen closed", false),
-    PACKAGE_BROADCAST("package broadcast", false),
+    PACKAGE_BROADCAST("package broadcast", false, setup = false),
     APP_OPENED("Belay opened", false),
 
     /** Phase 2: a new policy arrived (long-poll or check-in). */
@@ -54,6 +55,12 @@ enum class Trigger(val label: String, val heartbeat: Boolean, val checkin: Boole
     /** Phase 2: the Private DNS thread finished, or its retry is due. */
     PRIVATE_DNS("Private DNS updated", false),
     PRIVATE_DNS_RETRY("Private DNS retry", false),
+
+    /** Phase 2: apps were unsuspended (maybe not by Belay): what Belay holds is checked again. */
+    SUSPENSION_CHANGED("apps unsuspended", false, setup = false),
+
+    /** Phase 2: a user or profile was added or removed (DeviceAdminReceiver.onUserAdded/Removed). */
+    USERS_CHANGED("users changed", true),
 }
 
 /** Everything the main screen shows from the agent's last step. */
@@ -105,7 +112,7 @@ object Agent {
             try {
                 val store = AgentStore.get(app)
                 val connection = ConnectionStore.read(app)
-                if (trigger != Trigger.PACKAGE_BROADCAST) {
+                if (trigger.setup) {
                     if (DeviceOwnerSetup.isDeviceOwner(app)) {
                         DeviceOwnerSetup.ensure(app)
                         BelayService.start(app)
@@ -122,8 +129,7 @@ object Agent {
                 if (wanted != null && outcome.snapshotQueued) ConnectionStore.inventoryQueued(app)
                 val enforcement = EnforcementStep(app, store).run(
                     inventory = outcome.baseline.inventory,
-                    changed = outcome.changes.mapTo(HashSet()) { it.packageName } + packages,
-                    fullScan = outcome.snapshotQueued,
+                    recheckAll = outcome.snapshotQueued || trigger == Trigger.USERS_CHANGED,
                     recheckDns = trigger == Trigger.PRIVATE_DNS_RETRY,
                 )
                 publish(store, health, device ?: readDevice(), outcome.baseline.inventory, enforcement.view)

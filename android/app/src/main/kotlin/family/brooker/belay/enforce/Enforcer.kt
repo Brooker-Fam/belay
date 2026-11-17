@@ -77,14 +77,22 @@ class Enforcer(context: Context) {
         )
     }
 
-    /** The state the phone has now, for [packages] and [locks]. */
-    fun actual(packages: Set<String>, locks: Set<Lock>): ActualState = ActualState(
-        checkedPackages = packages,
-        suspended = packages.filter(::isSuspended).toSet(),
-        hidden = packages.filter(::isHidden).toSet(),
-        checkedLocks = locks,
-        locks = locks.filter { lock -> keyFor(lock)?.let { um.hasUserRestriction(it) } == true }.toSet(),
-    )
+    /**
+     * The state the phone has now: whether [suspended] are still suspended and [hidden]
+     * still hidden, and which of [locks] hold. One binder call each, so cheap enough for
+     * every step.
+     */
+    fun actual(suspended: Set<String>, hidden: Set<String>, locks: Set<Lock>): ActualState {
+        val packages = suspended + hidden
+        return ActualState(
+            checkedPackages = packages,
+            // A package only Belay's hidden record names is checked for that; same for suspension.
+            suspended = packages.filter { it !in suspended || isSuspended(it) }.toSet(),
+            hidden = packages.filter { it !in hidden || isHidden(it) }.toSet(),
+            checkedLocks = locks,
+            locks = locks.filter { lock -> keyFor(lock)?.let { um.hasUserRestriction(it) } == true }.toSet(),
+        )
+    }
 
     /**
      * Removes what Belay's policies still say about packages that are gone, so the engine
