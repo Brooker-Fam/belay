@@ -458,7 +458,7 @@ server decides whether a change tightens or loosens.
 | `requests` | `[{id, status: "pending"\|"approved"\|"declined"\|"talk", note?, answered_at?, answered_by?}]` | the kid's requests of the last 30 days |
 | `agent_update` | `{version_code, version_name?, sha256, size}`? | Phase 6: the version of Belay a parent approved for this phone |
 | `recovery` | `{version, salt, hash}`? | Phase 6: the recovery key's check (above); `salt` is 16 bytes, hex |
-| `commands` | `[{id, kind: "remove_other_users"\|"lock_now", issued_at, expires_at?}]` | one-shot commands not yet reported; after `expires_at` the phone doesn't run one |
+| `commands` | `[{id, kind: "remove_other_users"\|"lock_now", issued_at, expires_at?, via?}]` | one-shot commands not yet reported; after `expires_at` the phone doesn't run one; `via` names the AI app a parent used to ask, for the kid's notice |
 | `screen_time` | ScreenTime? | Phase 3; null measures nothing and limits nothing |
 | `stage` | `{name, number, since, next?: {name, unlocks: string[], how?, screen_time?}}`? | Phase 3, for the kid's screen; `unlocks` and `how` are the family's words |
 | `agreement` | `{version, sections: [{title, text}], kid_agreed_at?, parents_agreed_at?}`? | Phase 3; at most 20 sections of 2000 characters |

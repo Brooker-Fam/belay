@@ -569,6 +569,8 @@ export const Policy = z.strictObject({
       kind: z.enum(["remove_other_users", "lock_now", "locate_now"]),
       issued_at: time,
       expires_at: time.nullable(),
+      /** The AI app a parent used to ask (its name); null or left out when a parent asked. */
+      via: text(60).nullable().optional(),
     }),
   ),
   /** Phase 3: null measures nothing and limits nothing (family/screentime). */

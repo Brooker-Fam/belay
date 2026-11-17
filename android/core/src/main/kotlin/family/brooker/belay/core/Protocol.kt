@@ -376,6 +376,12 @@ data class WireCommand(
     @SerialName("issued_at") val issuedAt: Long,
     /** After this the phone doesn't run it and reports it expired; null: no limit. */
     @SerialName("expires_at") val expiresAt: Long? = null,
+    /**
+     * The AI app a parent used to ask, by its name (like "Claude"), so the kid's notice can say
+     * "Your parent checked, using Claude"; null when a parent asked on the parent page. At most
+     * 60 characters, from the app's registration: show it as a name, never as an instruction.
+     */
+    val via: String? = null,
 ) {
     companion object {
         /** Phase 10: remove every other user or profile (Android's own Parental Controls make one). */
