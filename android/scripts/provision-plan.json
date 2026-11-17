@@ -1,0 +1,246 @@
+{
+  "format": 1,
+  "note": "How a freshly reset phone becomes a Belay phone, step by step: each step's command, how its result is checked, what it says when that fails, and its waits and retries. provision.sh runs it with the interpreter in lib.sh, and the setup kit (setup-kit/) with its own, on the same fixtures (plan-tests/). The format is in docs/setup-kit.md. Steps that only apply to a debug (test-only) build test {test_only}.",
+  "package": "family.brooker.belay",
+  "admin": "family.brooker.belay/.AdminReceiver",
+  "device": {
+    "note": "Finding the phone: provision.sh and the kit's command-line runner ask adb for its devices; the kit's page asks the browser instead.",
+    "messages": {
+      "notConnected": ["Phone {serial} isn't connected and authorized.", "adb devices says:", "{list}"],
+      "unauthorized": ["The phone hasn't allowed this computer yet.", "Unlock it and tap Allow on the \"Allow USB debugging?\" prompt, then run this again."],
+      "none": ["No phone found.", "Plug it in with a data cable, then on the phone: Settings > About phone > tap Build number", "7 times; Settings > System > Developer options > USB debugging on."],
+      "several": ["More than one device is connected.", "Pass --serial with one of:", "{ready}"]
+    }
+  },
+  "steps": [
+    {
+      "id": "inputs", "kind": "group", "when": ["{server}{code}"],
+      "note": "The receiver checks both again. These checks keep the values safe to pass through `adb shell`, which hands them to the phone's shell.",
+      "steps": [
+        {"kind": "stop", "unless": ["{server}", "{code}"], "message": ["--server and --code go together.", "Run with --help to see the options."]},
+        {"kind": "check", "value": "{server}", "matches": "^(https?://)?[A-Za-z0-9.-]+(:[0-9]+)?/?$",
+          "fail": [{"kind": "stop", "message": ["--server {server} doesn't look like a server address.", "It should look like https://belay.example.org"]}]},
+        {"kind": "check", "value": "{code}", "matches": "^[A-Za-z0-9 -]{8,12}$",
+          "fail": [{"kind": "stop", "message": ["--code {code} doesn't look like a code.", "A code has 8 letters and numbers, like 7KQ2M9XA."]}]}
+      ]
+    },
+    {"kind": "say", "when": ["!{dry_run}"], "text": "Belay: provisioning"},
+    {"kind": "say", "when": ["{dry_run}"], "text": "Belay: provisioning (dry run: nothing on the phone changes)"},
+
+    {
+      "id": "apk", "kind": "group", "page": "Check the Belay app",
+      "steps": [
+        {"kind": "apk"},
+        {"kind": "stop", "when": ["!{apk_found}"], "message": ["No APK at {apk}", "Build it first: android/scripts/build-release.sh (or ./gradlew :app:assembleDebug with --debug)."]},
+        {"kind": "stop", "when": ["{apk_package}", "{apk_package}!={package}"], "message": ["{apk} is {apk_package}, not {package}."]},
+        {"kind": "say", "level": "warn", "when": ["!{signer_tool}"], "text": "apksigner not found (Android SDK build-tools): can't check how the APK is signed."},
+        {"kind": "stop", "when": ["{signer_tool}", "!{signer_sha256}"], "message": ["{apk} isn't signed.", "A release build needs the release key: see docs/signing.md."]},
+        {"kind": "say", "text": "APK: {apk}"},
+        {"kind": "say", "level": "info", "text": "test-only (debug) build: {test_only}"},
+        {"kind": "say", "level": "info", "when": ["{signer}"], "text": "signed by: {signer_dn}"},
+        {"kind": "say", "level": "info", "when": ["{signer}"], "text": "certificate SHA-256: {signer_sha256}"},
+        {"kind": "stop", "when": ["{test_only}=no", "{signer}~CN=Android Debug"],
+          "message": ["This release APK is signed with a debug key.", "A device owner can only ever be updated with the key it was installed with.", "Sign release builds with the family's release key: see docs/signing.md."]}
+      ]
+    },
+
+    {
+      "id": "phone", "kind": "group", "page": "Connect the phone",
+      "steps": [
+        {"kind": "device"},
+        {"kind": "read", "run": ["getprop", "ro.product.manufacturer"], "into": "manufacturer"},
+        {"kind": "read", "run": ["getprop", "ro.product.model"], "into": "model"},
+        {"kind": "read", "run": ["getprop", "ro.build.version.release"], "into": "release"},
+        {"kind": "read", "run": ["getprop", "ro.build.version.sdk"], "into": "sdk"},
+        {"kind": "read", "run": ["getprop", "ro.build.version.security_patch"], "into": "patch"},
+        {"kind": "say", "level": "info", "text": "Phone: {manufacturer} {model}, Android {release} (API {sdk}), security update {patch}, serial {serial}"},
+        {"kind": "stop", "when": ["{sdk}<31"], "message": ["Belay needs Android 12 (API 31) or newer; this phone has API {sdk}."]}
+      ]
+    },
+
+    {
+      "id": "ready", "kind": "group", "page": "Check the phone is ready",
+      "steps": [
+        {"kind": "read", "run": ["dpm", "list-owners"], "stderr": "drop", "into": "owners",
+          "note": "One line per owner, like \"User 0: admin=<component>,DeviceOwner\". Android 17 prints nothing when there are none (platform notes P5)."},
+        {"kind": "set", "var": "owners_text", "when": ["{owners}~admin="], "value": "{owners}"},
+        {"kind": "set", "var": "owners_text", "when": ["!{owners}~admin="], "value": "none"},
+        {"kind": "group", "when": ["{owners}~admin={package}/"], "steps": [
+          {"kind": "set", "var": "update", "value": "1"},
+          {"kind": "say", "text": "Belay is already the device owner: installing the APK as an update."}
+        ]},
+        {"kind": "stop", "when": ["!{update}", "{owners}~admin="],
+          "message": ["This phone already has a device owner or profile owner:", "{owners_text}", "Factory reset it first (Settings > System > Reset options > Erase all data)."]},
+        {"kind": "group", "when": ["!{update}"], "steps": [
+          {"kind": "read", "run": ["dumpsys", "account"], "count": "Account {", "into": "accounts"},
+          {"kind": "group", "when": ["{accounts}!=0"], "steps": [
+            {"kind": "read", "run": ["dumpsys", "account"], "stderr": "drop", "tally": "Account \\{name=[^,]*, type=([^}]*)\\}", "into": "account_types",
+              "note": "Only the account types, with counts: the names are email addresses."},
+            {"kind": "stop", "message": ["The phone has {accounts} account(s) on it:", "{account_types}", "Android only lets an app become device owner on a phone with no accounts.", "Factory reset, and skip every account in the setup wizard. Add the parent-owned", "Google account after provisioning (docs/pixel.md)."]}
+          ]},
+          {"kind": "check", "run": ["cmd", "user", "list", "-v"], "stderr": "drop", "matches": "type=profile\\.SUPERVISING",
+            "note": "Android 17's own Parental Controls keep their PIN in a hidden supervising profile, which `cmd user list -v` shows as \"type=profile.SUPERVISING\" (AOSP 17 UserManagerServiceShellCommand), and which makes `dpm set-device-owner` refuse.",
+            "pass": [{"kind": "stop", "message": ["Android's own Parental Controls are set up on this phone. Turn them off in Settings > Parental controls, then run this again."]}]},
+          {"kind": "read", "run": ["pm", "list", "users"], "count": "UserInfo{", "into": "users"},
+          {"kind": "group", "when": ["{users}!=1"], "steps": [
+            {"kind": "read", "run": ["pm", "list", "users"], "lines": "UserInfo{", "indent": "  ", "into": "user_lines"},
+            {"kind": "stop", "message": ["The phone has {users} users or profiles (a guest, a work profile, Private Space...).", "Android only lets an app become device owner when there's a single user:", "{user_lines}", "Remove the others in Settings > System > Users, or factory reset."]}
+          ]},
+          {"kind": "say", "level": "info", "text": "No accounts, one user, no device owner: ready."}
+        ]}
+      ]
+    },
+
+    {
+      "id": "confirm", "kind": "group", "when": ["!{update}"], "page": "Make sure",
+      "note": "A release build that becomes device owner can only be removed by a factory reset.",
+      "steps": [
+        {"kind": "say", "when": ["{test_only}=yes"], "text": "This is a debug (test-only) build: unprovision.sh can release it later without a reset."},
+        {"kind": "say", "when": ["{test_only}!=yes"], "text": "This is a release build. Once it is the device owner, ONLY A FACTORY RESET removes it."},
+        {"kind": "confirm", "text": "Make Belay the device owner of this phone?", "no": ["Nothing changed: you said no."]}
+      ]
+    },
+
+    {
+      "id": "install", "kind": "group", "page": "Install Belay",
+      "steps": [
+        {"kind": "say", "text": "Installing..."},
+        {"kind": "say", "level": "info", "text": "If the phone shows a Play Protect prompt, note its exact words for"},
+        {"kind": "say", "level": "info", "text": "docs/platform-notes.md before you answer it."},
+        {"kind": "install", "args": [{"arg": "-r"}, {"arg": "-t", "when": ["{test_only}=yes"]}], "success": "^Success",
+          "note": "A shell install allowlists Belay's restricted permissions (platform notes I4); -t is only for a test-only (debug) build.",
+          "failures": [
+            {"contains": "INSTALL_FAILED_UPDATE_INCOMPATIBLE", "steps": [{"kind": "stop", "message": ["A Belay signed with a different key is already installed.", "If it's a debug build: android/scripts/unprovision.sh, then run this again.", "If it's a release build: only a factory reset removes it."]}]},
+            {"contains": "INSTALL_FAILED_TEST_ONLY", "steps": [{"kind": "stop", "message": ["The APK is test-only but was installed without -t."]}]},
+            {"steps": [{"kind": "stop", "message": ["adb install failed."]}]}
+          ]}
+      ]
+    },
+
+    {
+      "id": "owner", "kind": "group", "when": ["!{update}"], "page": "Make Belay the phone's device owner",
+      "steps": [
+        {"kind": "say", "text": "Making Belay the device owner..."},
+        {"kind": "change", "run": ["dpm", "set-device-owner", "{admin}"], "success": "^Success",
+          "failures": [
+            {"contains": "accounts", "steps": [
+              {"kind": "read", "run": ["dumpsys", "account"], "stderr": "drop", "tally": "Account \\{name=[^,]*, type=([^}]*)\\}", "into": "account_types"},
+              {"kind": "stop", "message": ["dpm set-device-owner found an account (above), added after the check. Its type:", "{account_types}", "An app on the phone signed in by itself. Remove that account in Settings >", "Passwords & accounts (or uninstall the app for now), then run this again."]}
+            ]},
+            {"steps": [{"kind": "stop", "message": ["dpm set-device-owner failed (above).", "Common causes: an account or a second user appeared; the phone isn't freshly reset."]}]}
+          ]}
+      ]
+    },
+
+    {
+      "id": "usage", "kind": "group", "page": "Usage access, for screen time",
+      "note": "What only adb can grant, so later phases never need a factory reset.",
+      "steps": [
+        {"kind": "say", "text": "Granting usage access (for Phase 3 screen time)..."},
+        {"kind": "run", "run": ["appops", "set", "{package}", "GET_USAGE_STATS", "allow"]},
+        {"kind": "check", "when": ["!{dry_run}"], "run": ["appops", "get", "{package}", "GET_USAGE_STATS"], "contains": "allow",
+          "pass": [{"kind": "say", "level": "info", "text": "usage access: granted"}],
+          "fail": [
+            {"kind": "read", "run": ["appops", "get", "{package}", "GET_USAGE_STATS"], "into": "usage_now"},
+            {"kind": "say", "level": "warn", "text": "usage access didn't stick: {usage_now}"}
+          ]}
+      ]
+    },
+
+    {
+      "id": "battery", "kind": "group", "page": "The battery exemption",
+      "steps": [
+        {"kind": "say", "text": "Exempting Belay from battery optimization (Doze still applies to everything else)..."},
+        {"kind": "run", "quiet": true, "run": ["dumpsys", "deviceidle", "whitelist", "+{package}"]},
+        {"kind": "check", "when": ["!{dry_run}"], "run": ["dumpsys", "deviceidle", "whitelist"], "contains": ",{package},", "into": "battery_ok",
+          "pass": [{"kind": "say", "level": "info", "text": "battery exemption: granted"}],
+          "fail": [
+            {"kind": "say", "level": "warn", "text": "The battery exemption didn't stick. Open Belay on the phone: under Setup checks,"},
+            {"kind": "say", "level": "warn", "text": "tap Allow next to \"Battery: not restricted\" (Android's own dialog)."}
+          ]}
+      ]
+    },
+
+    {
+      "id": "start", "kind": "group", "page": "Start Belay",
+      "steps": [
+        {"kind": "say", "text": "Starting Belay..."},
+        {"kind": "run", "quiet": true, "run": ["am", "start", "-n", "{package}/.ui.MainActivity"]},
+        {"kind": "wait", "when": ["!{dry_run}"], "run": ["dumpsys", "activity", "services", "{package}/.service.BelayService"], "contains": "isForeground=true", "tries": 20, "every": 1, "into": "running"}
+      ]
+    },
+
+    {
+      "id": "restart", "kind": "group", "when": ["!{dry_run}", "!{update}", "{reboot}", "{running}"], "page": "Restart the phone",
+      "note": "Restart once. Android locks the notification settings of an app whose POST_NOTIFICATIONS was granted by policy only while it boots; until then the managed notice's channel could still be switched off. The restart also shows that Belay comes back by itself after a boot.",
+      "steps": [
+        {"kind": "say", "text": "Restarting the phone once (Android locks the managed notice's settings at boot)..."},
+        {"kind": "sleep", "seconds": 8, "note": "Android saves the battery allowlist 5 seconds after a change (DeviceIdleController.writeConfigFileLocked): restarting sooner loses the exemption."},
+        {"kind": "reboot"},
+        {"kind": "wait", "run": ["getprop", "sys.boot_completed"], "stderr": "drop", "equals": "1", "tries": 150, "every": 2},
+        {"kind": "say", "text": "If the phone asks for its PIN, unlock it now."},
+        {"kind": "set", "var": "running", "value": ""},
+        {"kind": "wait", "run": ["dumpsys", "activity", "services", "{package}/.service.BelayService"], "contains": "isForeground=true", "tries": 180, "every": 1, "into": "running"},
+        {"kind": "check", "when": ["{battery_ok}"], "run": ["dumpsys", "deviceidle", "whitelist"], "contains": ",{package},",
+          "fail": [
+            {"kind": "say", "level": "warn", "text": "The battery exemption didn't survive the restart; granting it again."},
+            {"kind": "run", "quiet": true, "run": ["dumpsys", "deviceidle", "whitelist", "+{package}"]},
+            {"kind": "sleep", "seconds": 8}
+          ]}
+      ]
+    },
+    {"kind": "check", "when": ["!{dry_run}"], "run": ["dumpsys", "deviceidle", "whitelist"], "contains": ",{package},", "into": "battery_ok"},
+
+    {
+      "id": "enroll", "kind": "group", "when": ["{server}"], "page": "Connect Belay to your family's server",
+      "note": "After the restart, so the phone is unlocked again (Belay's service only runs after that) and back online. EnrollReceiver, which only senders holding WRITE_SECURE_SETTINGS (the adb shell) can reach, enrolls and answers with a short outcome, never the device token (platform notes E1).",
+      "steps": [
+        {"kind": "say", "text": "Connecting Belay to {server}..."},
+        {"kind": "broadcast", "run": ["am", "broadcast", "-a", "{package}.ENROLL", "-n", "{package}/.EnrollReceiver", "--es", "server", "'{server}'", "--es", "code", "'{code}'"],
+          "retry": {"contains": "data=\"failed: unreachable", "tries": 12, "every": 5,
+            "first": "The server can't be reached yet (the phone may still be connecting); trying again for a minute...",
+            "note": "Right after the restart the phone may not be online yet. The code is only used once the server answers, so trying again while it can't be reached is safe."},
+          "outcomes": [
+            {"prefix": "result=-1, data=", "into": "enrolled", "steps": [{"kind": "say", "level": "info", "text": "Belay: {enrolled}"}]},
+            {"contains": "data=\"failed: unreachable", "steps": [
+              {"kind": "say", "level": "warn", "text": "Belay couldn't reach the server: {data}"},
+              {"kind": "say", "level": "warn", "text": "Check that the phone is online and the address is right, then run this again with the same --code (it works for 30 minutes)."}
+            ]},
+            {"contains": "data=", "steps": [
+              {"kind": "say", "level": "warn", "text": "Belay couldn't connect: {data}"},
+              {"kind": "say", "level": "warn", "text": "Fix that, then run this again with --server and a new --code."}
+            ]},
+            {"steps": [
+              {"kind": "say", "level": "warn", "text": "Belay didn't answer the enrollment broadcast:"},
+              {"kind": "say", "level": "err", "prefix": "  ", "text": "{output}"},
+              {"kind": "say", "level": "warn", "text": "Is the phone unlocked, and is this a Phase 1 build of Belay?"}
+            ]}
+          ]}
+      ]
+    },
+    {"kind": "say", "when": ["{dry_run}"], "text": "Dry run finished: the checks passed, and nothing on the phone changed."},
+    {"kind": "exit", "when": ["{dry_run}"], "code": 0},
+
+    {
+      "id": "result", "kind": "group", "page": "The final check",
+      "steps": [
+        {"kind": "say", "text": ""},
+        {"kind": "say", "text": "Result:"},
+        {"kind": "read", "run": ["dpm", "list-owners"], "stderr": "drop", "into": "owners"},
+        {"kind": "set", "var": "owners_text", "when": ["{owners}~admin="], "value": "{owners}"},
+        {"kind": "set", "var": "owners_text", "when": ["!{owners}~admin="], "value": "none"},
+        {"kind": "say", "prefix": "  owners: ", "text": "{owners_text}"},
+        {"kind": "say", "level": "info", "when": ["{running}"], "text": "Belay's foreground service is running."},
+        {"kind": "say", "level": "warn", "when": ["!{running}"], "text": "Belay's service isn't running yet; open Belay on the phone and check Setup checks."},
+        {"kind": "read", "run": ["am", "get-standby-bucket", "{package}"], "stderr": "drop", "into": "bucket"},
+        {"kind": "say", "level": "info", "text": "standby bucket: {bucket} (5 means exempted)"},
+        {"kind": "say", "level": "warn", "when": ["!{battery_ok}"], "text": "Battery exemption missing (see above)."},
+        {"kind": "say", "level": "info", "when": ["{server}", "{enrolled}"], "text": "Belay server: {enrolled}"},
+        {"kind": "say", "level": "warn", "when": ["{server}", "!{enrolled}"], "text": "Not connected to a Belay server (see above)."},
+        {"kind": "say", "text": ""},
+        {"kind": "say", "text": "Next: on the phone, open Belay. Under Setup checks everything should have a check mark."},
+        {"kind": "say", "text": "Then continue with docs/phase0-checklist.md."}
+      ]
+    }
+  ]
+}
