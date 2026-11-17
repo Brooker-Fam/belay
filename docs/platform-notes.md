@@ -60,14 +60,14 @@ relying on something new, it goes here first, with a source.
 | C9 | Network in Doze for a foreground-service process; exact alarms | Confirmed | AOSP |
 | C10 | Reading the phone, SMS, emergency, browser and keyboard apps without permissions | Confirmed | AOSP |
 | C11 | Android's own Parental Controls profile: detectable, not identifiable | Confirmed | AOSP |
-| I2 | A device owner's PackageInstaller session installs with nobody confirming; no downgrades | Confirmed | AOSP; Emulator pending (Phase 6 CI) |
+| I2 | A device owner's PackageInstaller session installs with nobody confirming; no downgrades | Confirmed | AOSP; Docs; Emulator pending (Phase 6 CI) |
 | I3 | Developer verification has no device-owner bypass | Confirmed in AOSP; Google's wording doesn't settle Belay's case | AOSP; Docs (drafts) |
 | I5 | Only the shell can install a test-only APK | Confirmed: `INSTALL_FAILED_TEST_ONLY` for every app | AOSP |
 | I6 | An APK's package, version code and signing certificates, read before installing | Confirmed | AOSP |
 | I7 | Updating itself kills Belay; `MY_PACKAGE_REPLACED` starts the new one | Confirmed | AOSP; Emulator pending (Phase 6 CI) |
 | V1 | Android's own Parental Controls profile shows as `type=profile.SUPERVISING` | Confirmed (the shell's format) | AOSP |
-| V2 | A device owner can list and remove other users and profiles | Confirmed, with one exception | AOSP; Emulator pending (Phase 10 CI) |
-| V4 | Telling the restrictions Belay set from everyone else's | Confirmed | AOSP |
+| V2 | A device owner can list and remove other users and profiles | Confirmed, with one exception | AOSP; Docs; Emulator pending (Phase 10 CI) |
+| V4 | Telling the restrictions Belay set from everyone else's | Confirmed | AOSP; Docs |
 | E2 | `pm create-user` on the CI emulators | Confirmed: up to 4 users on both images | AOSP (goldfish) |
 
 "Emulator" entries were seen in CI: `ci-emulator-test.sh` passed end to end on the API 37.0
@@ -793,7 +793,7 @@ new entries. The emulator checks run in CI (`SelfUpdateInstrumentedTest`,
 
 ### I2. Silent installs by the device owner
 
-**Confirmed.** Verified on: AOSP; Emulator pending (Phase 6 CI).
+**Confirmed.** Verified on: AOSP; Docs; Emulator pending (Phase 6 CI).
 
 - `services/core/.../pm/PackageInstallerSession.computeUserActionRequirement`: "Device owners and
   affiliated profile owners are allowed to silently install packages": when
@@ -813,9 +813,10 @@ new entries. The emulator checks run in CI (`SelfUpdateInstrumentedTest`,
   For a device owner's success it posts "Updated by your admin.\nGo to settings to view granted
   permissions" (`core/res` `package_updated_device_owner`).
 - Belay's session: `MODE_FULL_INSTALL`, `setRequireUserAction(USER_ACTION_NOT_REQUIRED)`,
-  `setInstallReason(INSTALL_REASON_POLICY)`, `setAppPackageName`, `setSize`. On a
-  `STATUS_PENDING_USER_ACTION` (never for a device owner) Belay abandons the session rather than
-  ask the kid.
+  `setInstallReason(INSTALL_REASON_POLICY)`, `setAppPackageName`, `setSize`, as the
+  PackageInstaller.SessionParams reference [2026-08-03] describes them (the same words as the
+  AOSP 17 javadoc). On a `STATUS_PENDING_USER_ACTION` (never for a device owner) Belay abandons
+  the session rather than ask the kid.
 
 ### I3. Developer verification and the device owner's own installs
 
@@ -907,8 +908,12 @@ name on the Pixel is to check ([phase6-checklist.md](phase6-checklist.md) §5).
 
 ### V2. Other users or profiles on a device-owner phone
 
-**Confirmed, with one exception.** Verified on: AOSP; Emulator pending (Phase 10 CI).
+**Confirmed, with one exception.** Verified on: AOSP; Docs; Emulator pending (Phase 10 CI).
 
+- DevicePolicyManager reference [2026-09-16]: `getSecondaryUsers` "Called by a device owner to
+  list all secondary users on the device. Managed profiles are not considered as secondary
+  users"; `removeUser` "Called by a device owner to remove a user/profile and all associated
+  data", returning "true if the user was removed, false otherwise".
 - `services/devicepolicy/.../DevicePolicyManagerService.getSecondaryUsers` (device owner only):
   every alive user but the system user and managed profiles, so a supervising profile, a guest,
   a clone or a private profile is listed.
@@ -927,8 +932,12 @@ may stop users from being removed").
 
 ### V4. Telling the restrictions Belay set from everyone else's
 
-**Confirmed.** Verified on: AOSP.
+**Confirmed.** Verified on: AOSP; Docs.
 
+- DevicePolicyManager reference [2026-09-16], `getUserRestrictions(admin)`: "Called by an admin
+  to get user restrictions set by themselves … The target user may have more restrictions set by
+  the system or other admin. To get all the user restrictions currently set, use
+  UserManager.getUserRestrictions()."
 - `UserManager.getUserRestrictions()` (`UserManagerService.getEffectiveUserRestrictions`): the
   base restrictions merged with every admin's global and local ones, system entities such as
   Android's supervision included.
