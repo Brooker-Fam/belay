@@ -82,6 +82,7 @@ describe("the MCP server", () => {
       "get_device_status",
       "get_installed_apps",
       "get_policy",
+      "get_server_health",
       "list_devices",
       "list_requests",
       "list_unreviewed_apps",

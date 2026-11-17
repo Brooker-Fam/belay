@@ -4,7 +4,10 @@
  *   setup-link                                    a one-time link to create the first parent
  *   create-code <phone name>                      an enrollment code for a phone
  *   reset-password <username>                     a new password, read from the terminal
- *   backup <file>                                 a consistent copy of the database, while it runs
+ *   backup <file> [--encrypt]                     a consistent copy of the database, while it runs (ops/cli.ts)
+ *   verify-backup <file>                          proves a backup restores: checks a private copy, counts what's in it
+ *   restore [--drill] <file>                      a checked backup into a data dir without a database (cli.ts runs it)
+ *   restore-drill                                 the steps of a restore drill, for the newest backup
  *   status [--json]                               each phone's status, apps, rules, requests and latest changes
  *   protect "<phone>"                             turns protection on, as the parent page does
  *   policy "<phone>" --new-apps ask|allow         whether new apps wait for a parent
@@ -16,7 +19,6 @@
  * them within a second or two and passes them to the phone's long-poll. Hardening (factory
  * reset, debugging, reset protection) is only on the parent page.
  */
-import { existsSync } from "node:fs";
 import { endAllSessions, newSetupToken, parentCount, passwordProblem, setPassword } from "./auth/parents.js";
 import { audit } from "./audit.js";
 import type { Config } from "./config.js";
@@ -27,6 +29,7 @@ import { appCounts, listChanges } from "./family/apps.js";
 import { type DeviceRow, findDeviceByName, listDevices, nameTaken } from "./family/devices.js";
 import { LIMITS, decideApp, neverBlocked, pausePhone, protect, resumePhone, setNewApps, type PolicyContext } from "./family/policy.js";
 import { recentRequests } from "./family/requests.js";
+import { runOpsCommand } from "./ops/cli.js";
 import { getSettings } from "./settings.js";
 import { formatAgo, isoInZone } from "./time.js";
 
@@ -48,7 +51,10 @@ const USAGE = `Commands:
   setup-link
   create-code <phone name>
   reset-password <username>
-  backup <file>
+  backup <file> [--encrypt]
+  verify-backup <file>
+  restore [--drill] <file>
+  restore-drill
   status [--json]
   protect "<phone>"
   policy "<phone>" --new-apps ask|allow
@@ -78,6 +84,9 @@ function parseArgs(args: string[]): { positional: string[]; flags: Map<string, s
 }
 
 export async function runCommand(argv: string[], io: CliIO): Promise<number> {
+  // backup, verify-backup and restore-drill (ops/cli.ts).
+  const ops = await runOpsCommand(argv, io);
+  if (ops !== null) return ops;
   try {
     await run(argv, io);
     return 0;
@@ -137,14 +146,6 @@ async function run(argv: string[], io: CliIO): Promise<void> {
       endAllSessions(db, row.id);
       audit(db, now, server, "parent.password_reset", { detail: { username } });
       io.out("Password changed. That parent was signed out everywhere.");
-      return;
-    }
-    case "backup": {
-      const file = args[0];
-      if (!file) throw new CliError("Usage: backup <file>, for example backup /data/belay-backup.db");
-      if (existsSync(file)) throw new CliError(`${file} already exists. Pick a new name.`);
-      await db.backup(file);
-      io.out(`Backed up to ${file}. It holds the family's data: keep it as private as the server.`);
       return;
     }
     case "status": {

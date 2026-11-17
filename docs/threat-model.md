@@ -39,7 +39,7 @@ Factory reset and debugging locks are a separate step a parent takes when ready.
 | Whoever gets a phone's token (a stolen or sold phone) | Sending fake data. | The parent disconnects the phone on its page: the token stops at once. Tokens are stored only as hashes. |
 | An app developer | Prompt injection through app names, versions or store text. | Untrusted fields, capped lengths, strict package-name format, and instructions that say it's data. |
 | The AI provider | Seeing family data. | Only what the tools return, only the categories the parents allow, every read in the activity log. The server itself never calls an AI. |
-| Someone with the server's disk or a backup | Everything in it. | Tokens, session ids and codes are hashed and passwords are argon2id, but app data is readable. Keep the server and backups private ([server.md](server.md)). |
+| Someone with the server's disk or a backup | Everything in it. | Tokens, session ids and codes are hashed and passwords are argon2id, but app data is readable in the database and in unencrypted backups. With a backup passphrase (Phase 6), the daily backups are encrypted (AES-256-GCM, a key from the passphrase with scrypt): a copy taken off the machine is useless without the passphrase, and one changed or cut short is refused on restore. The server's own disk still holds the live database, and the passphrase if it's in a file there: keep the server private, and the passphrase in a password manager too ([server.md](server.md#backups)). |
 
 ## Out of scope
 

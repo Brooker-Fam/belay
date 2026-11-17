@@ -66,7 +66,11 @@ allows it, and only while that screen is open. Camera frames are never stored or
 - **On the family's server:** one SQLite database in `/data`, on a machine the family
   controls ([server.md](server.md)). Nothing goes to Belay's authors or anyone else. There
   are no analytics, telemetry, ads or crash-reporting SDKs, in the agent or the server.
-- **In backups** the family makes ([server.md](server.md#backups)).
+- **In backups:** the server's own daily backups in `/data/backups` (the newest 14), and any
+  copies the family makes ([server.md](server.md#backups)). A backup holds everything in the
+  database. With a backup passphrase the family sets, they're encrypted (AES-256-GCM, a key
+  made from the passphrase): a copy kept off the machine can't be read without it, so it's
+  safe on its own. Unencrypted ones are as private as the server.
 
 The phone only talks to the family's server. The server never sends family data in readable
 form to anyone, and makes only two kinds of outbound request:
@@ -76,6 +80,9 @@ form to anyone, and makes only two kinds of outbound request:
 - from Phase 2, push notifications to a parent's own browser, if that parent turned them
   on. They're end-to-end encrypted (Web Push): the browser's push service (Google, Apple or
   Mozilla) carries them but can't read them. It only sees that a notification was sent.
+  Notices about the server itself, and the daily summary a parent can turn on, carry only
+  counts and kinds of problems ("2 things need you: a phone has been silent 14 hours, the
+  last backup failed"): no phone's or app's name, and nothing the kid wrote.
 
 From Phase 2, when a parent turns protection on, the phone uses a filtering DNS service so
 adult sites don't load: CleanBrowsing Family by default (AdGuard Family, a host of your
@@ -88,7 +95,8 @@ sends outside the family's server, and the parent page says so where you choose 
 - **Parents,** on the parent page, with their own accounts.
 - **AI apps a parent connects** (like Claude), through MCP, and only the categories the
   parents allow in Settings: apps, device status, and (from Phase 2) requests, the kid's own
-  words, all on by default. What an AI app reads goes to its provider under that
+  words, all on by default. The server's own health (its backups, disk and clock) is open
+  to them too; it holds no family data. What an AI app reads goes to its provider under that
   provider's terms. [mcp.md](mcp.md#what-reaches-the-ai-provider) lists exactly what that
   is. Every read is in the activity log.
 
@@ -112,8 +120,10 @@ sends outside the family's server, and the parent page says so where you choose 
 ## How long it's kept
 
 Until a parent deletes it. Deleting a disconnected phone on its page deletes everything
-recorded about it: its apps, changes and reviews. Expired sessions, codes and tokens are
-deleted automatically. The activity log is kept so parents can see what happened.
+recorded about it: its apps, changes and reviews. The server's daily backups still hold it
+until they age out, 14 days later, as do any copies the family made. Expired sessions,
+codes and tokens are deleted automatically. The activity log is kept so parents can see what
+happened.
 
 ## Respecting the kid
 

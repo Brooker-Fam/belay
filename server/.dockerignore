@@ -6,5 +6,7 @@ test
 *.db
 *.db-wal
 *.db-shm
+*.db.enc
+backup-passphrase*
 .env
 .env.*
