@@ -61,72 +61,7 @@ back the designs in this folder, and re-check some Phase 2 facts.
 
 ## Screen time
 
-### U1. Reading foreground time: `queryEvents`
-
-**Confirmed.** Android 17 (API 37.0). Verified on: AOSP; Docs.
-
-- UsageStatsManager reference [2026-08-28]: `queryEvents(long, long)` (API 21): "Events are only
-  kept by the system for a few days"; `queryEvents(UsageEventsQuery)` (API 35) filters by event
-  type and package. Both need usage access, and return nothing while the user is locked.
-- In AOSP 17 the older `queryEvents(long, long)` is `@Deprecated` behind the flag
-  `deprecate_old_query_events_api`: "Future Android versions may no longer support this API due to
-  performance and memory concerns" (`core/java/android/app/usage/UsageStatsManager.java`). The
-  reference page doesn't show the deprecation yet.
-- Fresh: `services/usage/.../UserUsageStatsService.queryStats` reads older intervals from disk and
-  appends the in-memory current interval, so an event is visible as soon as the system has
-  recorded it. The 20-minute flush to disk (`UsageStatsService.FLUSH_INTERVAL`) doesn't delay it.
-- Kept: `UsageStatsDatabase.prune` deletes daily files older than 10 days (weekly: 4 weeks,
-  monthly: 6 months, yearly: 2 years).
-- Without usage access, `UsageStatsService.hasQueryPermission` fails and the service returns
-  null; the client turns that into an empty result. No exception (U4).
-
-Belay's consequence: poll `queryEvents(UsageEventsQuery)` with a stored cursor, compute time in
-`:core`, keep its own copy of recent intervals, and never read an empty result as "no use"
-without checking usage access. To check on the emulator: a fixture app's `ACTIVITY_RESUMED`
-appears within a second of `am start`.
-
-### U2. Daily buckets aren't local days
-
-**Contradicted.** Verified on: AOSP.
-
-- `UserUsageStatsService.updateRolloverDeadline` schedules the next daily rollover 24 hours after
-  the current daily bucket began (`UnixCalendar.addDays(1)`), not at local midnight.
-- The reference [2026-08-28] warns that for `queryUsageStats` "the begin and end times of the time
-  range may be expanded to the nearest whole interval period".
-
-Belay's consequence: never use `INTERVAL_DAILY` buckets for "today". Compute days from events, in
-the zone the policy names.
-
-### U3. Usage observers aren't available to Belay
-
-**Contradicted** for an app like Belay. Verified on: AOSP.
-
-- `registerAppUsageObserver` and `registerUsageSessionObserver` are `@SystemApi` and `@hide`. The
-  service would accept an active device owner (`UsageStatsService.hasObserverPermission`, with
-  "TODO(b/169395065) Figure out if this flow makes sense in Device Owner mode"), but the client
-  methods aren't in the SDK. Reaching them means reflection on non-SDK interfaces, which Belay
-  doesn't do (developer.android.com/guide/app-compatibility/restrictions-non-sdk-interfaces
-  [2026-10-28]).
-- `registerAppUsageLimitObserver` needs `SUSPEND_APPS` (`signature|role|verifier`) and
-  `OBSERVE_APP_USAGE` (`signature|privileged|role`), or the caller must be the active supervision
-  app (`SupervisionManagerInternal.isActiveSupervisionApp`), a system-only role (V3).
-
-Belay's consequence: Belay polls `queryEvents` and enforces its own limits.
-
-### U4. The kid can turn usage access off, and back on
-
-**Confirmed.** Verified on: AOSP.
-
-- Settings (`packages/apps/Settings`, `applications/UsageAccessDetails.java`) enables the switch
-  for any app that declares `PACKAGE_USAGE_STATS`. It only warns for a profile owner and has no
-  device-owner check. The switch sets the app-op to IGNORED or ALLOWED, so the kid can also turn it
-  back on there (Android 17's restricted-settings check can grey out turning it *on* for some
-  installs: `checkEcmRestrictionAndSetDisabled`).
-- R1 still holds: a device owner can't set the app-op itself; `appops set` over adb works.
-- Queries then return nothing (U1).
-
-Belay's consequence: watch it (`AppOpsManager.startWatchingMode`), report it, apply the family's
-rule for "can't count", and show the kid how to turn it back on.
+U1 to U4 moved to [docs/platform-notes.md](../platform-notes.md#screen-time-phase-3), with U5.
 
 ## Suspension and control
 
