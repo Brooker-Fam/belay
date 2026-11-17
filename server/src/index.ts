@@ -6,6 +6,7 @@ import { ConfigError, loadConfig } from "./config.js";
 import { openDatabase } from "./db.js";
 import { makeDeps } from "./deps.js";
 import { cleanUp } from "./maintenance.js";
+import { startOps } from "./ops/jobs.js";
 
 function main(): void {
   let config;
@@ -35,12 +36,15 @@ function main(): void {
     cleanUp(db, Date.now());
   }, 3_600_000);
   timer.unref();
+  // Daily backups, the server's own health, and telling the parents about it (ops/jobs.ts).
+  const stopOps = startOps(deps);
 
   const server = serve({ fetch: app.fetch, hostname: config.host, port: config.port }, (info) => {
     console.log(`Belay is listening on ${info.address}:${info.port} for ${config.publicUrl}`);
   });
   const stop = () => {
     clearInterval(timer);
+    stopOps();
     // Phones holding a long-poll are answered now; they ask again when the server is back.
     deps.waiters.close();
     server.close(() => {
