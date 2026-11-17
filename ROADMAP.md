@@ -59,7 +59,13 @@ example. One family per server.
 
 **Docs:** server, MCP, privacy, threat model; emulator and Pixel docs updated.
 
-## Phase 2: safe to hand over
+## Phase 2: safe to hand over (being built)
+
+The contract is in [docs/protocol.md](docs/protocol.md) (Policy, long-poll, requests,
+enforcement rules); the Pixel checklist is [docs/phase2-checklist.md](docs/phase2-checklist.md).
+Factory reset, debugging and reset-protection locks are built off by default: only a parent
+turns them on, on the parent page, and debug builds never apply them. Parents hear about
+requests through end-to-end encrypted Web Push.
 
 - **Apps:** each new app is suspended the moment it installs ("Waiting for your parent"),
   and the kid can say why they want it. The parent is notified (Web Push or ntfy), can ask
@@ -98,50 +104,78 @@ example. One family per server.
 - **MCP writes:** `block_app` and `pause_phone` act directly; `propose_change` only creates
   a proposal for the parent page. Every write is logged with the client's name.
 
-## Phase 3: screen time and schedules
+## Later phases
 
-- Per-app usage (usage access was granted at provisioning; report it if revoked: a device
-  owner can't pin it).
-- Daily limits, school and bedtime schedules (suspend), lock now, "ask for more time".
-- AI summaries.
-- **Stages and a family agreement:** named levels bundle the rules, so loosening is a
-  visible step the kid can work toward, and the phone shows what unlocks next. An MCP
-  prompt, `family_check_in`, helps parent and kid go over the agreement each month.
-- Opt-in network logging (`setNetworkLoggingEnabled`); the kid sees Android's notice; AI
-  can't read it unless allowed.
+Designed, not built: each has a design in [docs/design/](docs/design/README.md) with what
+Android 17 allows (checked against AOSP and the docs), the protocol, privacy, threat model
+changes, tests and the family's decisions. Build order: Phase 2; then Phase 10's detection
+and Phase 6's self-update and recovery key; then Phase 3 with Phase 7's core; Phase 4;
+Phase 5 (calls, then texts); Phases 8, 9 and 11 when they're needed.
 
-## Phase 4: location
+### Phase 3: screen time, schedules and stages ([design](docs/design/phase3-screen-time.md))
 
-- The device owner grants itself location (adb-provisioned device owners can grant sensor
-  permissions); `setLocationEnabled` and `DISALLOW_CONFIG_LOCATION`.
-- On demand and periodic, with places (arrived at school, left school). The kid sees
-  Android's notice. AI access off by default.
+- Per-app time counted on the phone from usage events (the system's usage-limit observers are
+  closed to Belay); daily limits and school, bedtime and custom schedules as a pure function in
+  `:core`, enforced by suspension; "lock now"; the kid asks for more time.
+- If usage access is turned off, apps with a limit pause, and the parent page says why.
+- **Stages and a family agreement:** named levels bundle the rules, the phone shows what the next
+  stage changes, and an MCP prompt, `family_check_in`, supports a monthly talk.
+- Opt-in network logging, reduced on the phone to domains per app per day; AI can't read it
+  unless allowed.
 
-## Phase 5: calls and texts
+### Phase 4: location ([design](docs/design/phase4-location.md))
 
-- **Calls:** Belay as the default dialer (`setDefaultDialerApplication`, API 34), so only
-  approved contacts ring through; withheld numbers handled by the dialer, since call
-  screening never sees them.
-- **Texts, decided after testing:** keep Google Messages (RCS, on-device sensitive-content
-  warnings) and monitor with `READ_SMS` (adb installs allowlist that hard-restricted
-  permission), or make Belay the default SMS app with a contact allowlist (SMS/MMS only).
-  Either way: alerts, not transcripts, filtered in tiers: on the phone first, flagged
-  snippets to the server, the parent's AI only if allowed.
-- 911 and 988 always work.
+- Off by default; on demand, or periodic with places (arrived at school, left school) computed on
+  the phone, and a lost-phone mode. Belay grants itself location only while the family has it on.
+- The kid sees every check, from the phone's own record. AI access is off by default; the server
+  never calls a map or geocoding service.
 
-## Later
+### Phase 5: calls and texts ([design](docs/design/phase5-calls-texts.md))
 
-- Provisioning from the parent page in desktop Chrome over WebUSB (an adb implementation
-  such as Tango/ya-webadb), so other families don't need the Android SDK.
-- Agent self-update from the server (PackageInstaller, pinned signature, parent-approved).
-  Note: updates a device owner installs go through developer verification, and the
-  exemption for device-owner phones is reported to end in September 2027. Register first.
-- Developer Console registration before 2027 (the free limited-distribution account only
-  registers package names never seen on Android: see docs/signing.md).
-- **Other families:** each needs its own application id and release key (the key never
-  leaves a family, and a limited-distribution account covers 20 to 50 phones). The build
-  would need a configurable application id for them; `family.brooker.belay` itself never
-  changes.
-- Check how Android 17's built-in parental controls, and its new supervision role, coexist
-  with a device owner.
-- Hosting for more than one family.
+- **Calls:** Belay as the default dialer, so the family decides who rings, including withheld
+  numbers. 911 always goes to the phone's own dialer; 988 is allowed in Belay's code; neither is
+  ever recorded.
+- **Texts:** keep Google Messages and use its RCS archival hook for fully managed phones (to be
+  tested on the Pixel), so Belay reads SMS, MMS and RCS on the phone and sends alerts, not
+  transcripts, in tiers the family picks. Being the default SMS app (SMS/MMS only) remains the
+  option for approved-contacts-only texting.
+
+### Phase 6: reliability and operations ([design](docs/design/phase6-reliability.md))
+
+- Self-update from the family's server: the parent uploads an APK signed on their own computer and
+  approves it; the phone checks the hash, version and its own signing certificate before a silent
+  install. (Developer verification in 2027 may still apply: register first.)
+- A recovery key kept offline lifts the debugging and factory-reset locks for 24 hours if the
+  server is ever lost.
+- Daily backups with a verify command and restore drills; health monitoring of phones and server.
+
+### Phase 7: the kid's side ([design](docs/design/phase7-kid-side.md))
+
+- Belay as the kid's own app: requests and answers, their stage and agreement, what the parents
+  can see and what Belay told them, an "I need help" button and an emergency card that work even
+  while the phone is paused, and "talk to my parent".
+
+### Phase 8: setup without the Android SDK ([design](docs/design/phase8-setup-without-sdk.md))
+
+- A setup kit on the parent's computer that makes the key, builds and signs the APK, and provisions
+  the phone from a local page in desktop Chrome over WebUSB (Tango, MIT). One provisioning plan
+  drives both the page and `provision.sh`. The key never touches the family's server.
+
+### Phase 9: more families ([design](docs/design/phase9-more-families.md))
+
+- A configurable application id per family, each signed by its own family's key and registered by
+  its own developer account; `family.brooker.belay` itself never changes. Later, an optional
+  server for a few families who trust its operator, every query scoped to one family.
+
+### Phase 10: living with Android's own parental controls ([design](docs/design/phase10-android-parental-controls.md))
+
+- Android 17's built-in Parental Controls create a hidden supervising profile even when adding
+  users is blocked; while it exists, Belay can't change Private DNS or read network logs, and its
+  app rules can lift Belay's suspensions. Belay detects other users, re-applies its rules, and lets
+  a parent remove the profile.
+
+### Phase 11: off belay ([design](docs/design/phase11-off-belay.md))
+
+- The last stage, visible from the start: blocking stops, then collection stops, then the parent
+  hands the phone over: restrictions and reset protection lifted, data backed up to the kid's own
+  account, a reset from Settings, and the server's data deleted.
