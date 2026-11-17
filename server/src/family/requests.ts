@@ -15,7 +15,7 @@
 import type { DB } from "../db.js";
 import type { Request } from "../device/schemas.js";
 import { cleanText } from "../text.js";
-import { type FixView, FIX_COLUMNS, type FixRow, insertFix, toFix } from "./location/store.js";
+import { type FixView, FIX_COLUMNS, FIX_TIME, type FixRow, insertFix, toFix } from "./location/store.js";
 import { REQUEST_WINDOW_MS } from "./policy.js";
 
 export type RequestStatus = "pending" | "approved" | "declined" | "talk";
@@ -124,7 +124,7 @@ function toView(db: DB, r: RequestRow): RequestView {
 /** The fix the kid shared with a help request, if they did. */
 function helpFix(db: DB, deviceId: string, requestId: string): FixView | null {
   const row = db
-    .prepare<[string, string], FixRow>(`SELECT ${FIX_COLUMNS} FROM fixes WHERE device_id = ? AND request_id = ? ORDER BY at DESC, rowid DESC LIMIT 1`)
+    .prepare<[string, string], FixRow>(`SELECT ${FIX_COLUMNS} FROM fixes WHERE device_id = ? AND request_id = ? ORDER BY ${FIX_TIME} DESC, rowid DESC LIMIT 1`)
     .get(deviceId, requestId);
   return row ? toFix(row) : null;
 }

@@ -11,6 +11,7 @@ import { createParent } from "../src/auth/parents.js";
 import { listAudit } from "../src/audit.js";
 import { Policy } from "../src/device/schemas.js";
 import { savePlace, setLocation } from "../src/family/location/changes.js";
+import { latestFix, listFixes } from "../src/family/location/fixes.js";
 import { buildPolicy, type PolicyContext } from "../src/family/policy.js";
 import { createPersonalToken } from "../src/oauth/store.js";
 import { updateSettings } from "../src/settings.js";
@@ -102,6 +103,24 @@ describe("location over MCP", () => {
       },
     });
     expect(listAudit(t.deps.db, { limit: 1, includeReads: true })[0]).toMatchObject({ actor: "ai", action: "ai.read", detail: { what: "where the phone is" } });
+  });
+
+  it("get_location: a fix dated in the future isn't the latest for long, nor shown as from then; a clock a little ahead is fine", async () => {
+    const { t, phone, ctx, sam, call, locations } = await family();
+    updateSettings(t.deps.db, { aiScopes: { location: true } });
+    setLocation(ctx(), phone.deviceId, { mode: "periodic" }, sam);
+    // Made up with the phone's token: a help fix "from" 2099, somewhere else, kept as the kid's own report.
+    const fake = fix({ reason: "help", at: Date.UTC(2099, 0, 1), lat: 12.34567, lng: 76.54321 });
+    await locations([fake]);
+    const first = await call("get_location", { device: "Alex's phone" });
+    expect(first.json.latest).toMatchObject({ at: "2026-11-16T10:05:00-05:00", coordinates: { lat: 12.34567, lng: 76.54321 } });
+    // A real fix taken after that, by a phone whose clock is 2 minutes ahead, takes its place, at its own time.
+    t.advance(10 * 60_000);
+    const real = fix({ at: t.now() + 2 * 60_000 });
+    await locations([real]);
+    expect((await call("get_location", { device: "Alex's phone" })).json.latest).toMatchObject({ at: "2026-11-16T10:12:00-05:00", coordinates: { lat: 40.1, lng: -73.2 } });
+    expect(listFixes(t.deps.db, phone.deviceId).map((f) => f.id)).toEqual([real.id, fake.id]);
+    expect(latestFix(t.deps.db, phone.deviceId, { real: true })?.id).toBe(real.id);
   });
 
   it("locate_now: only on demand or periodic; the check names the AI app for the kid's notice, waits for the fix, and returns it", async () => {

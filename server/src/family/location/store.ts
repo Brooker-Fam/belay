@@ -218,9 +218,18 @@ export function locationFor(db: DB, deviceId: string): Policy["location"] {
 
 // ── Fixes ────────────────────────────────────────────────────────────
 
+/**
+ * How far a fix's own time may be after the server got it: a little, for a phone's clock that's a
+ * bit ahead. Past that, the fix counts as made then (FIX_TIME), so a phone whose clock is wrong,
+ * or one that lies, can't make a fix "the latest" for longer than it is.
+ */
+export const FIX_SKEW_MS = 5 * 60_000;
+/** In SQL: a fix's time as the server uses it, to show, order and pick "the latest fix" by. */
+export const FIX_TIME = `MIN(at, received_at + ${FIX_SKEW_MS})`;
+
 export interface FixView {
   id: string;
-  /** The fix's own time (the phone's clock). */
+  /** The fix's own time (the phone's clock), but never more than FIX_SKEW_MS after it arrived. */
   at: number;
   lat: number;
   lng: number;
@@ -251,7 +260,7 @@ export const FIX_COLUMNS = "id, at, lat, lng, accuracy_m, provider, reason, comm
 
 export const toFix = (r: FixRow): FixView => ({
   id: r.id,
-  at: r.at,
+  at: Math.min(r.at, r.received_at + FIX_SKEW_MS),
   lat: r.lat,
   lng: r.lng,
   accuracyM: r.accuracy_m,

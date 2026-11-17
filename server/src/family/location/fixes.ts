@@ -14,7 +14,7 @@ import { isValidTimeZone, zoned } from "../../time.js";
 import { type Command, listCommands } from "../commands.js";
 import { deviceFacts } from "../devices.js";
 import { clockMinutes } from "../screentime/days.js";
-import { FIX_COLUMNS, type FixReason, type FixRow, type FixView, type LocationSettings, type Notify, insertFix, listPlaces, locationSettings, toFix } from "./store.js";
+import { FIX_COLUMNS, FIX_SKEW_MS, FIX_TIME, type FixReason, type FixRow, type FixView, type LocationSettings, type Notify, insertFix, listPlaces, locationSettings, toFix } from "./store.js";
 
 const DAY = 86_400_000;
 /** Periodic fixes a little outside the hours still count: the phone's alarms aren't to the second. */
@@ -160,21 +160,28 @@ export function markNotified(db: DB, deviceId: string, eventId: string, now: num
 
 // ── Reading ──────────────────────────────────────────────────────────
 
-/** The phone's fixes, newest first (by the fix's own time). */
+/**
+ * The phone's fixes, newest first, by the fix's own time, but never later than a few minutes after
+ * it arrived (FIX_TIME): a fix dated in the future doesn't stay on top.
+ */
 export function listFixes(db: DB, deviceId: string, opts: { limit?: number; reasons?: FixReason[]; since?: number } = {}): FixView[] {
   const reasons = opts.reasons ?? ["on_demand", "periodic", "place", "lost", "help"];
   return db
     .prepare<(string | number)[], FixRow>(
-      `SELECT ${FIX_COLUMNS} FROM fixes WHERE device_id = ? AND reason IN (${reasons.map(() => "?").join(", ")}) AND at >= ? ORDER BY at DESC, rowid DESC LIMIT ?`,
+      `SELECT ${FIX_COLUMNS} FROM fixes WHERE device_id = ? AND reason IN (${reasons.map(() => "?").join(", ")}) AND ${FIX_TIME} >= ? ORDER BY ${FIX_TIME} DESC, rowid DESC LIMIT ?`,
     )
     .all(deviceId, ...reasons, opts.since ?? 0, opts.limit ?? 50)
     .map(toFix);
 }
 
-/** The newest fix the phone sent, of any kind; with `real`, one Android didn't mark as made up by an app. */
+/**
+ * The newest fix the phone sent, of any kind, as listFixes orders them; with `real`, one Android
+ * didn't mark as made up by an app. A phone's clock ahead of the server's (or a phone that lies
+ * about it) can't keep one on top.
+ */
 export function latestFix(db: DB, deviceId: string, opts: { real?: boolean } = {}): FixView | null {
   if (!opts.real) return listFixes(db, deviceId, { limit: 1 })[0] ?? null;
-  const row = db.prepare<[string], FixRow>(`SELECT ${FIX_COLUMNS} FROM fixes WHERE device_id = ? AND mock = 0 ORDER BY at DESC, rowid DESC LIMIT 1`).get(deviceId);
+  const row = db.prepare<[string], FixRow>(`SELECT ${FIX_COLUMNS} FROM fixes WHERE device_id = ? AND mock = 0 ORDER BY ${FIX_TIME} DESC, rowid DESC LIMIT 1`).get(deviceId);
   return row ? toFix(row) : null;
 }
 
@@ -190,7 +197,7 @@ export function checkAnswer(db: DB, deviceId: string, commandId: string): FixVie
         .join(", ")} FROM fixes f JOIN commands c ON c.device_id = f.device_id AND c.id = f.command_id
        WHERE f.device_id = ? AND f.reason = 'on_demand' AND c.kind = 'locate_now'
          AND c.issued_at >= (SELECT issued_at FROM commands WHERE device_id = ? AND id = ?)
-       ORDER BY f.at DESC, f.rowid DESC LIMIT 1`,
+       ORDER BY MIN(f.at, f.received_at + ${FIX_SKEW_MS}) DESC, f.rowid DESC LIMIT 1`,
     )
     .get(deviceId, deviceId, commandId);
   return row ? toFix(row) : null;
@@ -205,7 +212,7 @@ export interface Check {
 /** The checks of the last 30 days (or since `since`), newest first: the same list the kid sees on the phone. */
 export function listChecks(db: DB, deviceId: string, now: number, opts: { since?: number; limit?: number } = {}): Check[] {
   const since = opts.since ?? now - 30 * DAY;
-  const fixFor = db.prepare<[string, string], FixRow>(`SELECT ${FIX_COLUMNS} FROM fixes WHERE device_id = ? AND command_id = ? ORDER BY at DESC LIMIT 1`);
+  const fixFor = db.prepare<[string, string], FixRow>(`SELECT ${FIX_COLUMNS} FROM fixes WHERE device_id = ? AND command_id = ? ORDER BY ${FIX_TIME} DESC LIMIT 1`);
   return listCommands(db, deviceId, now, { kind: "locate_now", limit: opts.limit ?? 100 })
     .filter((c) => c.issuedAt >= since)
     .map((command) => {
