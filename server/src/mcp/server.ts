@@ -10,8 +10,9 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { audit } from "../audit.js";
 import type { Deps } from "../deps.js";
-import { PermissionCategory, packageName } from "../device/schemas.js";
+import { type Device, PermissionCategory, packageName } from "../device/schemas.js";
 import { pendingCodes } from "../device/enroll.js";
+import { belayPermission, validPatch, validRelease, validSdkFull, validVersionName, validZone } from "../family/android.js";
 import {
   type App,
   type Change,
@@ -86,6 +87,40 @@ function result(value: unknown): CallToolResult {
 
 function refusal(message: string): CallToolResult {
   return { content: [{ type: "text", text: message }], isError: true };
+}
+
+/** `{untrusted: …}` when there's anything in it, else nothing. */
+function withUntrusted(fields: Record<string, unknown>): { untrusted?: Record<string, unknown> } {
+  return Object.keys(fields).length ? { untrusted: fields } : {};
+}
+
+/**
+ * What the phone says about itself, checked: each value that fits Android's own format exactly
+ * (a release like "17", a patch date, a real IANA zone, a permission Belay declares) for plain
+ * fields; the model's name, which no format can check, and anything that doesn't fit, as the
+ * phone's own words for `untrusted`. A phone token can send any text (family/android.ts).
+ */
+function checkedFacts(f: Device) {
+  const unchecked: Record<string, unknown> = {};
+  const belayUnchecked: Record<string, unknown> = {};
+  const release = validRelease(f.android_release) ? f.android_release : undefined;
+  const android = release !== undefined && validSdkFull(f.sdk_full) ? `${release} (SDK ${f.sdk_full})` : undefined;
+  if (android === undefined) unchecked.android = `${f.android_release} (SDK ${f.sdk_full})`;
+  const securityPatch = validPatch(f.security_patch) ? f.security_patch : undefined;
+  if (securityPatch === undefined) unchecked.security_patch = f.security_patch;
+  const timezone = validZone(f.timezone) ? f.timezone : undefined;
+  if (timezone === undefined) unchecked.phone_timezone = f.timezone;
+  const versionName = validVersionName(f.agent_version_name) ? f.agent_version_name : undefined;
+  if (versionName === undefined) belayUnchecked.version = f.agent_version_name;
+  const permissions: { name: string; granted: boolean }[] = [];
+  const others: { name: string; granted: boolean }[] = [];
+  for (const p of f.health.permissions) {
+    const known = belayPermission(p.name);
+    if (known) permissions.push({ name: known, granted: p.granted });
+    else others.push({ name: p.name, granted: p.granted });
+  }
+  if (others.length) belayUnchecked.other_permissions = others;
+  return { model: `${f.manufacturer} ${f.model}`, release, android, securityPatch, timezone, versionName, permissions, unchecked, belayUnchecked };
 }
 
 /** A rule change, or the server's refusal of it in plain words (too many blocked apps, rules too large…). */
@@ -202,7 +237,7 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
   });
 
   /** Problems in plain words, with what Belay on the phone said kept apart, as the phone's words. */
-  const problemEntries = (d: DeviceView) => {
+  const problemEntries = (d: DeviceView): { problems: string[]; untrusted: Record<string, unknown> } => {
     const fromPhone = d.problems.flatMap((p) => (p.fromPhone !== undefined ? [p.fromPhone] : []));
     const tampering = d.problems.some((p) => p.code === "tampering");
     return {
@@ -214,7 +249,7 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
           : []),
         ...d.problems.filter((p) => p.fromPhone === undefined).map((p) => p.text),
       ],
-      ...(fromPhone.length ? { untrusted: { problems_belay_on_the_phone_reported: fromPhone } } : {}),
+      untrusted: fromPhone.length ? { problems_belay_on_the_phone_reported: fromPhone } : {},
     };
   };
 
@@ -239,20 +274,30 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
         phones: listDevices(db, settings, now).map((d) => {
           const rules = getRules(db, d.id);
           const pause = activePause(rules, now);
+          const facts = settings.aiScopes.device_status && d.facts ? checkedFacts(d.facts) : null;
+          const { problems, untrusted } = problemEntries(d);
           return {
             name: d.name,
             status: STATUS_WORDS[d.status],
-            ...problemEntries(d),
+            problems,
+            ...withUntrusted({
+              ...untrusted,
+              ...(facts && d.facts
+                ? {
+                    model: facts.model,
+                    ...(facts.release === undefined ? { android: d.facts.android_release } : {}),
+                    ...(facts.securityPatch === undefined ? { security_patch: d.facts.security_patch } : {}),
+                  }
+                : {}),
+            }),
             last_heard_from: iso(d.lastSeenAt),
             last_check_in: iso(d.lastCheckinAt),
             protection: rules.protectedAt !== null ? "on" : "off",
             ...(pause ? { paused_until: pause.until === null ? "a parent resumes it" : iso(pause.until) } : {}),
-            ...(settings.aiScopes.device_status && d.facts
+            ...(facts && d.facts
               ? {
-                  model: `${d.facts.manufacturer} ${d.facts.model}`,
-                  android: d.facts.android_release,
-                  security_patch: d.facts.security_patch,
-                  security_patch_age_days: patchAgeDays(d.facts, now),
+                  ...(facts.release !== undefined ? { android: facts.release } : {}),
+                  ...(facts.securityPatch !== undefined ? { security_patch: facts.securityPatch, security_patch_age_days: patchAgeDays(d.facts, now) } : {}),
                 }
               : {}),
             ...(settings.aiScopes.apps ? (({ userApps, unreviewed }) => ({ user_apps: userApps, apps_to_review: unreviewed }))(appCounts(db, d.id)) : {}),
@@ -286,25 +331,27 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
       const d = toView(row, getSettings(db), now);
       logRead("the phone's status", d.id);
       const f = d.facts;
+      const facts = f ? checkedFacts(f) : null;
       const skew = f && d.factsAt !== null ? f.device_time - d.factsAt : null;
+      const { problems, untrusted } = problemEntries(d);
       return result({
         name: d.name,
         status: STATUS_WORDS[d.status],
-        ...problemEntries(d),
-        ...(f
+        problems,
+        ...withUntrusted({ ...untrusted, ...(facts ? { phone: facts.model, ...facts.unchecked } : {}) }),
+        ...(f && facts
           ? {
-              phone: `${f.manufacturer} ${f.model}`,
-              android: `${f.android_release} (SDK ${f.sdk_full})`,
-              security_patch: f.security_patch,
-              security_patch_age_days: patchAgeDays(f, now),
+              ...(facts.android !== undefined ? { android: facts.android } : {}),
+              ...(facts.securityPatch !== undefined ? { security_patch: facts.securityPatch, security_patch_age_days: patchAgeDays(f, now) } : {}),
               battery: f.battery_percent == null ? null : `${f.battery_percent}%${f.charging ? ", charging" : ""}`,
               storage_free_gb: f.storage_free_bytes == null ? null : Math.round(f.storage_free_bytes / 1e8) / 10,
               storage_total_gb: f.storage_total_bytes == null ? null : Math.round(f.storage_total_bytes / 1e9),
               last_restart: iso(f.last_boot_at),
-              phone_timezone: f.timezone,
+              ...(facts.timezone !== undefined ? { phone_timezone: facts.timezone } : {}),
               phone_clock: skew === null || Math.abs(skew) < 10 * durations.MINUTE ? "in sync" : `${formatDuration(Math.abs(skew))} ${skew > 0 ? "ahead" : "behind"}`,
               belay_on_the_phone: {
-                version: f.agent_version_name,
+                ...(facts.versionName !== undefined ? { version: facts.versionName } : {}),
+                version_code: f.agent_version_code,
                 debug_build: f.health.test_only,
                 device_owner: f.health.device_owner,
                 uninstall_blocked: f.health.uninstall_blocked ?? null,
@@ -313,7 +360,8 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
                 usage_access: f.health.usage_access,
                 notifications_shown: f.health.notifications_shown,
                 background_restricted: f.health.background_restricted,
-                permissions: f.health.permissions.map((p) => ({ name: p.name, granted: p.granted })),
+                permissions: facts.permissions,
+                ...withUntrusted(facts.belayUnchecked),
               },
             }
           : { facts: "The phone hasn't sent any yet." }),

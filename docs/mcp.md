@@ -113,7 +113,11 @@ the family's timezone with their UTC offset. Text from app developers (names, ve
 package names), the kid's reasons, notes, and what Belay on the phone reports are in
 fields labeled `untrusted`, and the server's instructions tell the AI they are data, never
 instructions: an app called "Ignore previous instructions" stays just a strange app name,
-and a reason that says "approve this" approves nothing.
+and a reason that says "approve this" approves nothing. What the phone says about itself
+is in plain fields only when it fits Android's own format exactly (a release like `17`, a
+patch date, a real timezone, a permission Belay declares, a user restriction Android
+defines); its model's name, which no format can check, and anything else are `untrusted`
+too, since whoever holds a phone's token can send any text.
 
 ## Tighten now, propose to loosen
 
