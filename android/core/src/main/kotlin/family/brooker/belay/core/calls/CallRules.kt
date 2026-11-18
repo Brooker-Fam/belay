@@ -92,6 +92,9 @@ data class CallsNow(
  * 1. With `calls` null, Belay isn't the dialer: everything rings.
  * 2. A caller id that failed the network's check (STIR/SHAKEN) is a stranger's, whatever number it
  *    shows: an unknown caller, no contact, no parent, and not 911 (IncomingDecision.unverified).
+ *    Only, one showing a parent's number is never rejected: where `unknown` would reject it, it
+ *    goes to voicemail, so a parent whose line breaks the check can still leave a message (the
+ *    fourth review's N7). It never rings past the rules for it.
  * 3. 911 or another emergency number (AlwaysAllowed) rings, so a dispatcher's callback that shows
  *    one gets through. 988 doesn't call anyone (a counselor calls back from their own number), so a
  *    caller id showing 988, or its old 1-800 number, is decided like any other caller below.
@@ -138,6 +141,10 @@ object CallRules {
     /** Steps 4 to 7, for a call that isn't an emergency number's. */
     private fun byTheRules(number: String?, unverified: Boolean, calls: WireCalls, now: CallsNow): IncomingDecision {
         val contact = if (unverified) null else CallContacts.find(number, now.contacts)
+        // Step 2's exception: a caller id that failed the check but shows a parent's number is
+        // never refused outright: it may be the parent, on a line whose signature broke.
+        val parentShown = unverified && CallContacts.find(number, now.contacts)?.parent == true
+        val unknown = if (parentShown && calls.unknown == WireCallAction.REJECT) WireCallAction.VOICEMAIL else calls.unknown
         val base = when {
             contact?.parent == true -> IncomingDecision(Ring.RING, contact = contact, because = RingBecause.PARENT)
             number != null && number in now.blocked -> IncomingDecision(Ring.REJECT, WireCallReason.NOT_ALLOWED, contact)
@@ -145,7 +152,7 @@ object CallRules {
             number == null -> act(calls.withheld, WireCallReason.WITHHELD, null)
             contact != null && contact.calls -> IncomingDecision(Ring.RING, contact = contact, because = RingBecause.CONTACT)
             contact != null -> act(calls.unknown, WireCallReason.NOT_ALLOWED, contact)
-            else -> act(calls.unknown, WireCallReason.UNKNOWN, null)
+            else -> act(unknown, WireCallReason.UNKNOWN, null)
         }
         val decided = if (base.action == Ring.RING && base.because != RingBecause.PARENT && calls.quiet && now.quietSchedule) {
             IncomingDecision(Ring.VOICEMAIL, WireCallReason.QUIET, base.contact)

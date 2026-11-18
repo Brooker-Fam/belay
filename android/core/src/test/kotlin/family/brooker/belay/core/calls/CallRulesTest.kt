@@ -27,6 +27,8 @@ class CallRulesTest {
         val parent: Boolean = false,
         val contact: WireContact? = null,
         val blocked: Boolean = false,
+        /** Its caller id failed the network's check, and shows a parent's number (the fourth review's N7). */
+        val parentShown: Boolean = false,
     )
 
     private fun number(n: String, verification: Verification = Verification.NOT_VERIFIED) = IncomingCall(n, Presentation.NUMBER, verification)
@@ -49,8 +51,10 @@ class CallRulesTest {
         Caller("a blocked stranger", number("+15555550177"), blocked = true),
         Caller("a withheld caller", IncomingCall(null, Presentation.WITHHELD)),
         Caller("a payphone with a number shown anyway", IncomingCall("+15555550123", Presentation.WITHHELD)),
-        // A number that failed the network's check counts as unknown, even a contact's, a parent's or 911.
-        Caller("mom's number, spoofed", number("+15555550100", Verification.FAILED)),
+        // A number that failed the network's check counts as unknown, even a contact's, a parent's or 911;
+        // a parent's goes to voicemail rather than being rejected.
+        Caller("mom's number, spoofed", number("+15555550100", Verification.FAILED), parentShown = true),
+        Caller("dad's number, spoofed", number("+15555550101", Verification.FAILED), parentShown = true),
         Caller("sam's number, spoofed", number("+15555550123", Verification.FAILED)),
         Caller("911, spoofed", number("911", Verification.FAILED)),
         Caller("988, spoofed", number("988", Verification.FAILED)),
@@ -84,6 +88,7 @@ class CallRulesTest {
             withheld -> Ring.RING.of(calls.withheld) to WireCallReason.WITHHELD
             c.contact != null && c.contact.calls -> Ring.RING to null
             c.contact != null -> Ring.RING.of(calls.unknown) to WireCallReason.NOT_ALLOWED
+            c.parentShown && calls.unknown == WireCallAction.REJECT -> Ring.VOICEMAIL to WireCallReason.UNKNOWN
             else -> Ring.RING.of(calls.unknown) to WireCallReason.UNKNOWN
         }
         if (action == Ring.RING) return if (calls.quiet && quietNow) Ring.VOICEMAIL to WireCallReason.QUIET else Ring.RING to null
@@ -224,13 +229,17 @@ class CallRulesTest {
         val strict = WireCalls(WireCallMode.CONTACTS, WireCallAction.REJECT, WireCallAction.REJECT, quiet = true)
         fun decide(caller: IncomingCall, last: Long?) =
             CallRules.incoming(caller, CallsNow(strict, contacts, blocked, quietSchedule = true, lastEmergencyContactAt = last, now = T0), android)
-        val strangers = listOf(number("+15555550199"), IncomingCall(null, Presentation.WITHHELD), number("+15555550177"), number("+15555550100", Verification.FAILED))
+        val strangers = listOf(number("+15555550199"), IncomingCall(null, Presentation.WITHHELD), number("+15555550177"), number("+15555550123", Verification.FAILED))
         for (caller in strangers) {
             assertEquals(RingBecause.EMERGENCY_CALLBACK, decide(caller, T0 - 1).because, "$caller just after")
             assertEquals(RingBecause.EMERGENCY_CALLBACK, decide(caller, T0 - 2 * HOUR + 1).because, "$caller at the end")
             assertEquals(Ring.REJECT, decide(caller, T0 - 2 * HOUR).action, "$caller once it's over")
             assertEquals(Ring.REJECT, decide(caller, null).action, "$caller without one")
         }
+        // A parent's number whose check failed rings in the window too, and goes to voicemail after it.
+        val momSpoofed = number("+15555550100", Verification.FAILED)
+        assertEquals(RingBecause.EMERGENCY_CALLBACK, decide(momSpoofed, T0 - 1).because)
+        assertEquals(Ring.VOICEMAIL, decide(momSpoofed, T0 - 2 * HOUR).action)
         // Telecom's own time of the last emergency call opens it too.
         val withExtra = number("+15555550199").copy(lastEmergencyCallAt = T0 - 30 * 60_000)
         assertEquals(RingBecause.EMERGENCY_CALLBACK, decide(withExtra, null).because)
@@ -298,5 +307,31 @@ class CallRulesTest {
         for (n in listOf("*679115", "**67911", "*6", "*67", "#31#", "*6791", "*67#911", "*272911", "*671911", "*679112")) {
             assertFalse(CallRules.outgoing(n, contactsOnly, android).allowed, n)
         }
+    }
+
+    @Test
+    fun `a parent's number whose caller-id check failed goes to voicemail, never rejected, and never rings past the rules`() {
+        val strict = WireCalls(mode = WireCallMode.CONTACTS, unknown = WireCallAction.REJECT, withheld = WireCallAction.REJECT, quiet = true)
+        val failed = number("+15555550100", Verification.FAILED)
+        val decision = CallRules.incoming(failed, now(strict), android)
+        assertEquals(Ring.VOICEMAIL, decision.action, "the parent can still leave a message")
+        assertEquals(WireCallReason.UNKNOWN, decision.reason)
+        assertNull(decision.contact, "never taken for the parent")
+        assertTrue(decision.unverified)
+        // As the rules say otherwise: voicemail when unknown callers go there, ringing when they ring
+        // (then quiet time sends it to voicemail like any caller's), and ringing in open mode.
+        assertEquals(Ring.VOICEMAIL, CallRules.incoming(failed, now(strict.copy(unknown = WireCallAction.VOICEMAIL)), android).action)
+        assertEquals(Ring.RING, CallRules.incoming(failed, now(strict.copy(unknown = WireCallAction.RING)), android).action)
+        assertEquals(WireCallReason.QUIET, CallRules.incoming(failed, now(strict.copy(unknown = WireCallAction.RING), quietNow = true), android).reason)
+        assertEquals(RingBecause.OPEN, CallRules.incoming(failed, now(strict.copy(mode = WireCallMode.OPEN)), android).because)
+        // Only a parent's: another contact's number that failed is refused like a stranger's.
+        assertEquals(Ring.REJECT, CallRules.incoming(number("+15555550123", Verification.FAILED), now(strict), android).action)
+        assertEquals(Ring.REJECT, CallRules.incoming(number("+15555550199", Verification.FAILED), now(strict), android).action)
+        // Kept as a stranger's call, and sent with the number it showed, never the parent's contact.
+        val entry = CallRecords.entry("call-1", T0, WireCallDirection.IN, "+15555550100", decision.contact, 0, WireCallOutcome.VOICEMAIL, decision.reason, emptySet(), android, unverified = true)
+        val wire = CallRecords.toWire(checkNotNull(entry), emptySet(), android)
+        assertEquals("+15555550100", wire?.number)
+        assertNull(wire?.contactId)
+        assertEquals(WireCallOutcome.VOICEMAIL, wire?.outcome)
     }
 }

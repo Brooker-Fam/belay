@@ -421,7 +421,8 @@ phone's other calls (30 a minute).
   988 line can call back from any number. So does a call Telecom marks as part of an emergency
   (emergency callback mode, or an emergency call the network identified).
 - **Incoming:** a caller id that failed the network's check (STIR/SHAKEN) is a stranger's,
-  whatever number it shows: never a contact, a parent or 911. `mode: open` lets everyone ring.
+  whatever number it shows: never a contact, a parent or 911; one showing a parent's number
+  goes to voicemail where `unknown` would reject it. `mode: open` lets everyone ring.
   `mode: contacts` lets contacts with `calls` ring; other callers follow `unknown`, callers with
   no caller id follow `withheld` (`reject`, `voicemail` or `ring`). A caller id showing 988 or
   its full number is decided like any other: 988 doesn't call people, and a counselor's own

@@ -387,7 +387,10 @@ private fun BelayRecent(entry: CallEntry, calls: CallsView, actions: DialerActio
     var removing by rememberSaveable(entry.id) { mutableStateOf(false) }
     val contact = calls.contacts.firstOrNull { it.id == entry.contactId }
     val name = contact?.name ?: actions.display(entry.number) ?: stringResource(R.string.calls_number_hidden)
-    val what = stringResource(recentWords(entry))
+    // A caller id that failed the network's check but showed a contact's number (a parent's goes to
+    // voicemail): "not in your contacts" wouldn't be true, and the line below says why it didn't ring.
+    val shownContact = entry.unverified && calls.contacts.any { entry.number != null && entry.number in it.numbers }
+    val what = stringResource(if (shownContact) R.string.calls_recent_missed else recentWords(entry))
     val callBack = contact?.numbers?.firstOrNull() ?: entry.number
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.weight(1f)) {
