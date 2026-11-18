@@ -9,6 +9,7 @@
  * Made-up apps and names only.
  */
 import { describe, expect, it } from "vitest";
+import { runCommand } from "../src/admin.js";
 import { listAudit } from "../src/audit.js";
 import { LIMITS, Policy } from "../src/device/schemas.js";
 import { keptFor, stopCollecting } from "../src/family/collection.js";
@@ -17,7 +18,7 @@ import { registrable, typedWebsite } from "../src/family/network/domains.js";
 import { isPrivateWebsite, listPrivateWebsites, networkDays, neverKept, privateDomainsOf } from "../src/family/network/store.js";
 import { buildPolicy, RuleRefused, type PolicyContext } from "../src/family/policy.js";
 import { updateSettings } from "../src/settings.js";
-import { deviceCall, enrollPhone, get, postForm, signIn, testServer, T0 } from "./helpers.js";
+import { deviceCall, enrollPhone, get, postForm, signIn, testServer, T0, type TestServer } from "./helpers.js";
 
 const TODAY = "2026-11-16";
 
@@ -334,5 +335,55 @@ describe("the private websites on the parent page", () => {
     ({ html } = await page(base));
     expect(html).toContain('<strong class="pkg">example.org</strong>');
     expect(html).not.toContain(`action="${base}/network/private/remove"`);
+  });
+});
+
+describe("the CLI's private-website command", () => {
+  async function cli(t: TestServer, ...argv: string[]) {
+    const out: string[] = [];
+    const err: string[] = [];
+    const code = await runCommand(argv, {
+      db: t.deps.db,
+      config: t.deps.config,
+      now: t.now(),
+      out: (line) => out.push(line),
+      err: (line) => err.push(line),
+      readSecret: () => Promise.resolve(""),
+      interactive: false,
+    });
+    return { code, out: out.join("\n"), err: err.join("\n") };
+  }
+
+  it('private-website "<phone>" <website> and --remove: a person\'s choice, in the activity log with a count, the policy following', async () => {
+    const { t, network, kept, policy } = await family({ on: true });
+    await network([day([entry("com.example.chat", "example.org", 4), entry("com.example.chat", "example.com", 1)])]);
+    const added = await cli(t, "private-website", "Alex's phone", "https://www.example.org/help");
+    expect(added).toMatchObject({ code: 0, err: "" });
+    expect(added.out).toBe("Alex's phone: network logging never notes example.org, or any name under it (rules version 2). What the server kept of it is deleted.");
+    expect(kept()).toEqual([`${TODAY} com.example.chat example.com 1`]);
+    expect(policy().network_log.private_domains).toEqual(["example.org"]);
+    expect((await cli(t, "private-website", "Alex's phone", "example.org")).out).toBe("Alex's phone: example.org was private already.");
+    const status = JSON.parse((await cli(t, "status", "--json")).out) as { phones: { network_log: unknown }[] };
+    expect(status.phones[0]?.network_log).toEqual({ enabled: true, private_domains: ["example.org"] });
+    expect((await cli(t, "status")).out).toContain("  network logging: on; 1 day of network activity kept; 1 private website, never noted");
+    const removed = await cli(t, "private-website", "Alex's phone", "--remove", "example.org");
+    expect(removed.out).toBe("Alex's phone: example.org isn't a private website any more (rules version 3).");
+    expect((await cli(t, "private-website", "Alex's phone", "--remove", "example.org")).out).toBe("Alex's phone: example.org wasn't a private website.");
+    expect(listAudit(t.deps.db, { limit: 2, includeReads: false }).map((e) => [e.actor, e.action, e.detail])).toEqual([
+      ["server", "network.private_removed", { count: 1, version: 3 }],
+      ["server", "network.private_added", { count: 1, version: 2 }],
+    ]);
+  });
+
+  it("says why it refused, and how to use it", async () => {
+    const { t } = await family();
+    const refused = await cli(t, "private-website", "Alex's phone", "988lifeline.org");
+    expect(refused).toMatchObject({ code: 1, err: "Belay never notes 988's websites anyway, so there's no need to add one." });
+    for (const bad of [["private-website", "Alex's phone"], ["private-website", "Alex's phone", "--remove"], ["private-website", "Alex's phone", "example.org", "--extra"], ["private-website", "Alex's phone", "example.org", "example.net"]]) {
+      const res = await cli(t, ...bad);
+      expect(res.code, bad.join(" ")).toBe(1);
+      expect(res.err).toContain('private-website "<phone>" <website>, or private-website "<phone>" --remove <website>');
+    }
+    expect((await cli(t, "private-website", "Nobody's phone", "example.org")).code).toBe(1);
   });
 });
