@@ -33,6 +33,7 @@ import family.brooker.belay.core.RecoveryRules
 import family.brooker.belay.core.Requests
 import family.brooker.belay.core.ScreenLocks
 import family.brooker.belay.core.SimRules
+import family.brooker.belay.core.StepCause
 import family.brooker.belay.core.WireCommand
 import family.brooker.belay.core.WireEnforcement
 import family.brooker.belay.core.WirePolicy
@@ -118,9 +119,10 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
      * [inventory] is everything installed, hidden apps included. Every step checks that what
      * Belay holds is still in effect (a reinstall clears a suspension, and Android's own
      * Parental Controls can lift one), so it is applied again. After a boot, a full scan or
-     * a change of users ([recheckAll]) the restrictions are checked too, and Private DNS.
+     * a change of users ([recheckAll]) the restrictions are checked too, and Private DNS. [cause]:
+     * what brought the step (the agent's Trigger), for what only some steps read (core's StepCause).
      */
-    fun run(inventory: Map<String, PackageRecord>, recheckAll: Boolean, recheckDns: Boolean): Result {
+    fun run(inventory: Map<String, PackageRecord>, recheckAll: Boolean, recheckDns: Boolean, cause: StepCause = StepCause.OTHER): Result {
         val now = System.currentTimeMillis()
         val before = store.applied()
         val reportBefore = lastReport ?: EnforcementReport.of(store, before)
@@ -254,7 +256,7 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
         // Phase 13: the Wi-Fi-only apps, as Android keeps them off mobile data, and mobile data use
         // while the policy measures it. If it fails, the rest is still recorded.
         val mobileData = try {
-            MobileDataStep(app, store).run(policy, owner, inventory, next.hidden, NeverBlocked.of(roles, inventory, next.hidden), now)
+            MobileDataStep(app, store).run(policy, owner, inventory, next.hidden, NeverBlocked.of(roles, inventory, next.hidden), now, cause = cause)
         } catch (e: RuntimeException) {
             Log.e(Agent.TAG, "mobile data's part of the step failed", e)
             null

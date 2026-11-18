@@ -1,6 +1,7 @@
 package family.brooker.belay.core.mobiledata
 
 import family.brooker.belay.core.PolicyResponse
+import family.brooker.belay.core.StepCause
 import family.brooker.belay.core.Wire
 import family.brooker.belay.core.WireEnforcement
 import family.brooker.belay.core.mobiledata.DataUse.Owner
@@ -93,28 +94,61 @@ class DataUseTest {
     }
 
     @Test
-    fun `today goes about hourly`() {
+    fun `today so far goes at noon and at 6 PM, once each, counted up to them whenever it's read`() {
         val since = start + HOUR
-        val sent = DataUseUploads.State(since = since, lastAt = start + 2 * HOUR)
-        assertEquals(emptyList(), DataUseUploads.plan(true, sent, zone, start + 2 * HOUR + 59 * MINUTE).read, "not yet")
-        val due = DataUseUploads.plan(true, sent, zone, start + 3 * HOUR)
-        assertEquals(listOf(DataUse.Range("2026-11-16", zone.id, since, start + 3 * HOUR, complete = false)), due.read)
-        assertEquals(start + 3 * HOUR, due.state.lastAt)
-        // A debug build's hook reads today now.
-        assertEquals(1, DataUseUploads.plan(true, sent, zone, start + 2 * HOUR + 5 * MINUTE, force = true).read.size)
-        // The clock went back past the last report: due again.
-        assertEquals(1, DataUseUploads.plan(true, sent, zone, start + 90 * MINUTE).read.size)
+        val sent = DataUseUploads.State(since = since, lastAt = since)
+        assertEquals(emptyList(), DataUseUploads.plan(true, sent, zone, start + 11 * HOUR + 59 * MINUTE).read, "not before noon")
+        val noon = start + 12 * HOUR
+        for (at in listOf(noon, noon + 7 * MINUTE, noon + 5 * HOUR + 59 * MINUTE)) {
+            assertEquals(listOf(DataUse.Range("2026-11-16", zone.id, since, noon, complete = false)), DataUseUploads.plan(true, sent, zone, at).read, "at $at")
+        }
+        val atNoon = DataUseUploads.plan(true, sent, zone, noon + 7 * MINUTE)
+        assertEquals(noon, atNoon.state.lastAt)
+        assertEquals(emptyList(), DataUseUploads.plan(true, atNoon.state, zone, noon + 5 * HOUR).read, "once")
+        val six = start + 18 * HOUR
+        val atSix = DataUseUploads.plan(true, atNoon.state, zone, six + 40 * MINUTE)
+        assertEquals(listOf(DataUse.Range("2026-11-16", zone.id, since, six, complete = false)), atSix.read)
+        assertEquals(emptyList(), DataUseUploads.plan(true, atSix.state, zone, end - MINUTE).read, "not again that day")
+        // Missed noon (off, or offline): 6 PM's only.
+        assertEquals(listOf(six), DataUseUploads.plan(true, sent, zone, six + HOUR).read.map { it.to })
+        // A debug build's hook reads today up to now.
+        assertEquals(listOf(noon + 20 * MINUTE), DataUseUploads.plan(true, atNoon.state, zone, noon + 20 * MINUTE, force = true).read.map { it.to })
+        // The clock went back past the last report: the last of noon and 6 PM before now, again.
+        assertEquals(listOf(noon), DataUseUploads.plan(true, atSix.state, zone, noon + HOUR).read.map { it.to })
+        // Measuring that began after noon starts at 6 PM.
+        val afternoon = DataUseUploads.State(since = noon + 2 * HOUR, lastAt = noon + 2 * HOUR)
+        assertEquals(emptyList(), DataUseUploads.plan(true, afternoon, zone, noon + 3 * HOUR).read)
+        assertEquals(listOf(DataUse.Range("2026-11-16", zone.id, noon + 2 * HOUR, six, complete = false)), DataUseUploads.plan(true, afternoon, zone, six).read)
+    }
+
+    @Test
+    fun `only a step neither a time passing nor a call brought reads, and the others remember nothing`() {
+        val since = start + HOUR
+        val sent = DataUseUploads.State(since = since, lastAt = since)
+        val noon = start + 12 * HOUR + MINUTE
+        for (cause in listOf(StepCause.TIME, StepCause.CALL)) {
+            assertEquals(DataUseUploads.Plan(emptyList(), sent), DataUseUploads.plan(true, sent, zone, noon, cause), "$cause")
+            // Nor the day once it's complete, nor measuring's start.
+            assertEquals(emptyList(), DataUseUploads.plan(true, sent, zone, end + 3 * HOUR, cause).read, "$cause")
+            assertEquals(DataUseUploads.Plan(emptyList(), DataUseUploads.State()), DataUseUploads.plan(true, DataUseUploads.State(), zone, noon, cause))
+            // A debug build's hook reads anyway.
+            assertEquals(1, DataUseUploads.plan(true, sent, zone, noon, cause, force = true).read.size)
+        }
+        assertEquals(1, DataUseUploads.plan(true, sent, zone, noon, StepCause.OTHER).read.size)
+        // Measuring off forgets everything, whatever brought the step.
+        assertEquals(DataUseUploads.State(), DataUseUploads.plan(false, sent, zone, noon, StepCause.TIME).state)
     }
 
     @Test
     fun `a day goes once more when it's complete, 2_5 hours after its end, and only once`() {
         val since = start + HOUR
-        val state = DataUseUploads.State(since = since, lastAt = end - 10 * MINUTE)
-        // Just after midnight: yesterday isn't complete yet; it goes again with today, hourly.
+        val state = DataUseUploads.State(since = since, lastAt = start + 18 * HOUR)
+        // Just after midnight: yesterday isn't complete yet, and today has no noon yet.
         val early = DataUseUploads.plan(true, state, zone, end + 2 * HOUR)
-        assertEquals(listOf(false, false), early.read.map { it.complete })
-        assertEquals(listOf("2026-11-16", "2026-11-17"), early.read.map { it.day })
-        assertEquals(end, early.read.first().to, "counted to the day's end")
+        assertEquals(emptyList(), early.read)
+        // A phone that missed yesterday's 6 PM sends yesterday up to it now.
+        val missed = DataUseUploads.plan(true, DataUseUploads.State(since = since, lastAt = start + 12 * HOUR), zone, end + 2 * HOUR)
+        assertEquals(listOf(DataUse.Range("2026-11-16", zone.id, since, start + 18 * HOUR, complete = false)), missed.read)
         // 2.5 hours after: complete, counted to its end.
         val done = DataUseUploads.plan(true, early.state, zone, end + 150 * MINUTE)
         assertEquals(DataUse.Range("2026-11-16", zone.id, since, end, complete = true), done.read.single())

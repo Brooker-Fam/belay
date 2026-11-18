@@ -324,7 +324,8 @@ object OutboxDrain {
 /**
  * What brought an agent step, as far as the sync after it goes (the app's Trigger says which, for
  * each trigger). Only an [OTHER] step sends a check-in merely because one is due
- * ([SyncPolicy.checkinNow]; the sixth review's G3).
+ * ([SyncPolicy.checkinNow]; the sixth review's G3), or reads mobile data use that's due
+ * ([dueReads]; the seventh review's M2).
  */
 enum class StepCause {
     /**
@@ -343,6 +344,13 @@ enum class StepCause {
 
     /** Whether the sync after the step checks in when one is due. */
     val dueCheckin: Boolean get() = this == OTHER
+
+    /**
+     * Whether the step reads the mobile data use that's due (mobiledata.DataUseUploads): a read the
+     * policy timer's minute brought would go out within a minute of when it came due, all through
+     * a call that a lock waits for, where the hourly check sends it at its own minute.
+     */
+    val dueReads: Boolean get() = this == OTHER
 }
 
 object SyncPolicy {

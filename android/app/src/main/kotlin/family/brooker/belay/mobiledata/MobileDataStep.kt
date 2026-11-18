@@ -8,6 +8,7 @@ import family.brooker.belay.Agent
 import family.brooker.belay.DeviceOwnerSetup
 import family.brooker.belay.core.PackageRecord
 import family.brooker.belay.core.Protection
+import family.brooker.belay.core.StepCause
 import family.brooker.belay.core.WirePolicy
 import family.brooker.belay.core.mobiledata.DataUse
 import family.brooker.belay.core.mobiledata.DataUseUploads
@@ -31,7 +32,8 @@ import java.time.ZoneId
  *   again (a new uid); a package Android refused isn't asked for again until something changes.
  *   The report (`enforcement.mobile_data`) is what Android keeps off mobile data for Belay now.
  * - Mobile data use, only while `measure` is on and Belay is device owner: the days core's
- *   DataUseUploads says are due (today about hourly, a day once more when it's complete), read
+ *   DataUseUploads says are due (today so far at noon and 6 PM, a day once more when it's complete,
+ *   only at a step neither a time passing nor a call brought), read
  *   from Android's own accounting (DataUseReader) and folded by core's DataUse, never naming the
  *   apps Belay never blocks, queued for `POST /mobile-data`. With `measure` off, Belay's record of
  *   it and every unsent day go: collecting is a parent's decision.
@@ -48,7 +50,9 @@ class MobileDataStep(context: Context, private val store: AgentStore) {
 
     /**
      * [inventory] is everything installed (hidden apps too), [hidden] what Belay hid, [protected]
-     * NeverBlocked.of's map. [force]: read today's use now (a debug build's test hook).
+     * NeverBlocked.of's map. [cause]: what brought the step; only a time passing or a call reads
+     * nothing (core's StepCause.dueReads, the seventh review's M2). [force]: read today's use now
+     * (a debug build's test hook).
      */
     fun run(
         policy: WirePolicy,
@@ -57,6 +61,7 @@ class MobileDataStep(context: Context, private val store: AgentStore) {
         hidden: Set<String>,
         protected: Map<String, Protection>,
         now: Long,
+        cause: StepCause = StepCause.OTHER,
         force: Boolean = false,
     ): Done {
         val stored = store.mobileDataState()
@@ -90,7 +95,7 @@ class MobileDataStep(context: Context, private val store: AgentStore) {
         if (!measure) {
             uploads = DataUseUploads.State()
         } else if (owner) {
-            val due = DataUseUploads.plan(true, uploads, ZoneId.systemDefault(), now, force)
+            val due = DataUseUploads.plan(true, uploads, ZoneId.systemDefault(), now, cause = cause, force = force)
             try {
                 val reader = DataUseReader(app)
                 for (range in due.read) {

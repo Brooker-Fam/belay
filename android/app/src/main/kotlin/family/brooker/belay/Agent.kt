@@ -67,7 +67,8 @@ import java.util.concurrent.Executors
  * a time passing ([StepCause.TIME]) or a call ([StepCause.CALL]): the sync after it sends what
  * waits and a changed report, but no check-in merely because one is due (the sixth review's G3:
  * the policy timer's minute while a lock waits for a call put a check-in 110 minutes after the
- * last, to the minute, all through the call); the workers' own schedule sends those.
+ * last, to the minute, all through the call); the workers' own schedule sends those. Nor does the
+ * step read mobile data use that's due (the seventh review's M2, the same oracle).
  */
 enum class Trigger(
     val label: String,
@@ -268,6 +269,8 @@ object Agent {
                 inventory = outcome.baseline.inventory,
                 recheckAll = outcome.snapshotQueued || trigger == Trigger.USERS_CHANGED,
                 recheckDns = trigger == Trigger.PRIVATE_DNS_RETRY,
+                // A time passing or a call reads no mobile data use that's due (core's StepCause.dueReads: the seventh review's M2).
+                cause = trigger.cause,
             )
             publish(app, store, health, device ?: readDevice(), outcome.baseline.inventory, enforcement.view)
             DebugTools.afterStep(app) { StateDump.json(app, store, connection) }
