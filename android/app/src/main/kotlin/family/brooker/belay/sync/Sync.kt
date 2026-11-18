@@ -249,10 +249,11 @@ private class SyncRun(private val app: Context) {
     /**
      * Sends what waits, strictly in order (OutboxDrain): the server applies events and
      * inventories as they arrive. Usage days (Phase 3) go in a lane of their own after it,
-     * fixes and place events (Phase 4) in a third, call records (Phase 5) in a fourth, and network
-     * days (Phase 3's network logging) in a fifth, so a server without `POST /usage`,
-     * `POST /locations`, `POST /calls` or `POST /network` yet (it answers 404, which waits and tries
-     * again) holds back nothing else. Returns false if the server disconnected the phone.
+     * fixes and place events (Phase 4) in a third, call records (Phase 5) in a fourth, network
+     * days (Phase 3's network logging) in a fifth, and mobile data days (Phase 13) in a sixth, so a
+     * server without `POST /usage`, `POST /locations`, `POST /calls`, `POST /network` or
+     * `POST /mobile-data` yet (it answers 404, which waits and tries again) holds back nothing
+     * else. Returns false if the server disconnected the phone.
      */
     private fun drain(api: DeviceApi, token: String): Boolean {
         val queue = store.queue()
@@ -299,6 +300,7 @@ private class SyncRun(private val app: Context) {
             OutboxType.FIX, OutboxType.PLACE_EVENT -> "fixes and place events"
             OutboxType.CALL -> "call records"
             OutboxType.NETWORK -> "network days"
+            OutboxType.MOBILE_DATA -> "mobile data days"
             else -> "items"
         }
         if (result.sent.isNotEmpty()) Log.i(Agent.TAG, "sent ${result.sent.size} $what in ${result.requests} requests")
@@ -332,6 +334,7 @@ private class SyncRun(private val app: Context) {
         OutboxRow.TYPE_PLACE_EVENT -> OutboxType.PLACE_EVENT
         OutboxRow.TYPE_CALL -> OutboxType.CALL
         OutboxRow.TYPE_NETWORK -> OutboxType.NETWORK
+        OutboxRow.TYPE_MOBILE_DATA -> OutboxType.MOBILE_DATA
         else -> OutboxType.EVENT
     }
 
@@ -380,6 +383,12 @@ private class SyncRun(private val app: Context) {
                 val payloads = store.networkPayloads(ids).map { NetworkDigest.sendable(it, private) }
                 if (payloads.isEmpty()) return Verdict.Sent
                 api.network(token, payloads)
+            }
+            OutboxType.MOBILE_DATA -> {
+                // Phase 13. Gone when a newer report of the same day replaced it, or measuring went off, meanwhile.
+                val payloads = store.mobileDataPayloads(ids)
+                if (payloads.isEmpty()) return Verdict.Sent
+                api.mobileData(token, payloads)
             }
         }
         return when (answer) {

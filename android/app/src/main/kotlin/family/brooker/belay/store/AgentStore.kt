@@ -33,6 +33,8 @@ import family.brooker.belay.core.location.LocationState
 import family.brooker.belay.core.location.ToldEntry
 import family.brooker.belay.core.location.WireFix
 import family.brooker.belay.core.location.WirePlaceEvent
+import family.brooker.belay.core.mobiledata.MobileDataState
+import family.brooker.belay.core.mobiledata.WireMobileDataDay
 import family.brooker.belay.core.network.NetworkDay
 import family.brooker.belay.core.network.NetworkKey
 import family.brooker.belay.core.network.NetworkLogState
@@ -90,6 +92,17 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
         val dropDays: Boolean = false,
         val cleared: List<NetworkDay> = emptyList(),
         val resend: List<WireNetworkDay> = emptyList(),
+    )
+
+    /**
+     * Phase 13: what an enforcement step does with mobile data's row. [state] null: the row goes
+     * (nothing Wi-Fi only, nothing measured). [days]: queued for `POST /mobile-data`, each in place
+     * of an unsent report of the same day. [dropUnsent]: measuring is off, so unsent days go.
+     */
+    data class MobileDataWrite(
+        val state: MobileDataState?,
+        val days: List<WireMobileDataDay> = emptyList(),
+        val dropUnsent: Boolean = false,
     )
 
     /** Phase 5: what an enforcement step does with calls' row and Belay's own call records. */
@@ -242,6 +255,9 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
     /** Phase 3, network logging: the network days' JSON (WireNetworkDays), in [ids] order. */
     fun networkPayloads(ids: List<Long>): List<String> = payloads(ids, OutboxRow.TYPE_NETWORK)
 
+    /** Phase 13: the mobile data days' JSON (WireMobileDataDays), in [ids] order. */
+    fun mobileDataPayloads(ids: List<Long>): List<String> = payloads(ids, OutboxRow.TYPE_MOBILE_DATA)
+
     private fun payloads(ids: List<Long>, type: String): List<String> =
         ids.chunked(CHUNK).flatMap { outbox.payloads(it, type) }.sortedBy { it.id }.map { it.payload }
 
@@ -293,6 +309,9 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
 
     /** Phase 3, network logging: network days waiting to be sent. */
     fun pendingNetworkCount(): Int = outbox.pendingNetworkCount()
+
+    /** Phase 13: mobile data days waiting to be sent. */
+    fun pendingMobileDataCount(): Int = outbox.pendingMobileDataCount()
 
     val pendingCountFlow: Flow<Int> get() = outbox.pendingCountFlow()
 
@@ -354,11 +373,13 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
         location: LocationWrite? = null,
         calls: CallsWrite? = null,
         network: NetworkWrite? = null,
+        mobileData: MobileDataWrite? = null,
     ) {
         db.runInTransaction {
             if (location != null) writeLocation(location, at)
             if (calls != null) writeCalls(calls, at)
             if (network != null) writeNetwork(network, at)
+            if (mobileData != null) writeMobileData(mobileData, at)
             if (applied != null) {
                 enforcement.setEnforcement(EnforcementRow(applied = json.encodeToString(Applied.serializer(), applied), updatedAt = at))
             }
@@ -507,6 +528,38 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
             writeNetworkDays(write.cleared, write.resend, at)
         }
     }
+
+    /** Phase 13, inside commitEnforcement's transaction. */
+    private fun writeMobileData(write: MobileDataWrite, at: Long) {
+        val state = write.state
+        if (state == null) {
+            enforcement.clearMobileData()
+        } else {
+            enforcement.setMobileData(MobileDataRow(state = json.encodeToString(MobileDataState.serializer(), state), updatedAt = at))
+        }
+        if (write.dropUnsent) {
+            val dropped = outbox.deleteAllPendingMobileData()
+            if (dropped > 0) Log.i(Agent.TAG, "mobile data: $dropped unsent days dropped (the policy doesn't measure)")
+        }
+        if (write.days.isNotEmpty()) {
+            write.days.forEach { outbox.deletePendingMobileData(mobileDataPrefix(it.day)) }
+            outbox.insert(
+                write.days.map {
+                    OutboxRow(
+                        type = OutboxRow.TYPE_MOBILE_DATA,
+                        itemId = mobileDataPrefix(it.day) + at,
+                        packageName = null,
+                        payload = Wire.json.encodeToString(WireMobileDataDay.serializer(), it),
+                        createdAt = at,
+                    )
+                },
+            )
+            outbox.capPendingMobileData(OutboxPolicy.MAX_PENDING_MOBILE_DATA)
+        }
+    }
+
+    /** Phase 13: mobile data's state; null while nothing is Wi-Fi only or measured (no row). */
+    fun mobileDataState(): MobileDataState? = enforcement.mobileData()?.let { decode(it.state, MobileDataState.serializer()) }
 
     // Phase 3: network logging.
 
@@ -739,6 +792,9 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
 
         /** Phase 3: the start of a network day's outbox item id: the day, so a newer report replaces it (the server keeps one per day). */
         fun networkPrefix(day: String): String = "network:$day:"
+
+        /** Phase 13: the start of a mobile data day's outbox item id: the day, so a newer report replaces it (the server keeps one per day). */
+        fun mobileDataPrefix(day: String): String = "mobile_data:$day:"
 
         /** Well under SQLite's limit on bound parameters. */
         private const val CHUNK = 500
