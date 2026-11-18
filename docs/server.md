@@ -337,7 +337,9 @@ doesn't need a computer and maintenance mode for each new version.
    version given. It doesn't parse the APK beyond checking that it starts like a zip file. The
    page reads its upload as it arrives, with a limit of its own (100 MB and 64 KB) where the
    other parent pages take 64 KB, so a proxy in front must let a request that large through
-   (Caddy does).
+   (Caddy does). The server keeps the 10 versions added last, and any version offered to a
+   phone however old: adding an eleventh deletes the oldest of the rest, file and all, so the
+   versions never take more than about a gigabyte.
 3. Offer it to a phone: the button after adding it, the phone's page (Updating Belay), or
    `agent-offer`. The policy then carries `agent_update`, while the phone runs an older version
    code; the page warns when the phone already runs that version or a newer one, which Android

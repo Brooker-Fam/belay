@@ -164,6 +164,39 @@ describe("agent-offer", () => {
   });
 });
 
+describe("the versions the server keeps", () => {
+  it("are the ten added last and any offered to a phone: older files and rows go", async () => {
+    const { t, files, agentsDir } = await family();
+    const added: string[] = [];
+    for (let i = 0; i < 13; i++) {
+      const apk = fakeApk(files, `belay-${i}.apk`, 2_000);
+      expect((await cli(t, ["agent-add", apk.path, "--version-code", String(10 + i)])).code).toBe(0);
+      added.push(apk.sha256);
+      t.advance(60_000);
+      // The oldest stays while it's offered to the phone.
+      if (i === 0) expect((await cli(t, ["agent-offer", "CI phone", apk.sha256])).code).toBe(0);
+    }
+    const kept = t.deps.db.prepare<[], { sha256: string }>("SELECT sha256 FROM agent_files").all().map((r) => r.sha256);
+    expect(new Set(kept)).toEqual(new Set([added[0], ...added.slice(3)]));
+    expect(readdirSync(agentsDir).filter((f) => f.endsWith(".apk")).sort()).toEqual(kept.map((sha) => `${sha}.apk`).sort());
+    for (const gone of added.slice(1, 3)) expect(existsSync(join(agentsDir, `${gone}.apk`))).toBe(false);
+  });
+
+  it("keep a file added again, even one first added long ago", async () => {
+    const { t, files } = await family();
+    const first = fakeApk(files, "first.apk", 2_000);
+    await cli(t, ["agent-add", first.path, "--version-code", "5"]);
+    for (let i = 0; i < 10; i++) {
+      t.advance(60_000);
+      await cli(t, ["agent-add", fakeApk(files, `later-${i}.apk`, 2_000).path, "--version-code", String(6 + i)]);
+    }
+    // Pruned by now: the eleventh oldest. Added again, it's back, and stays.
+    t.advance(60_000);
+    expect((await cli(t, ["agent-add", first.path, "--version-code", "5"])).code).toBe(0);
+    expect(t.deps.db.prepare("SELECT 1 FROM agent_files WHERE sha256 = ?").get(first.sha256)).toBeTruthy();
+  });
+});
+
 describe("GET /api/v1/agent/<sha256>.apk", () => {
   async function offered() {
     const f = await family();

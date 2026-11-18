@@ -115,7 +115,35 @@ export async function addAgentFile(
   ).run(sha256, size, version.code, version.name, now, by.parentId);
   const file = getAgentFile(db, sha256);
   if (!file) throw new Error("agent file vanished");
+  // The file just added stays, even one first added long ago and added again now.
+  await pruneAgentFiles(db, dir, KEEP_AGENT_FILES, sha256);
   return { file, existed: known !== null };
+}
+
+/** How many versions of Belay the server keeps, besides any offered to a phone. */
+export const KEEP_AGENT_FILES = 10;
+
+/**
+ * Keeps the store to the KEEP_AGENT_FILES versions added last, and every version offered to a
+ * phone, whatever its age: at most about a gigabyte, however many a parent (or someone with a
+ * parent's password) adds. The older ones' files and rows go; the phones already installed them,
+ * or never will.
+ */
+export async function pruneAgentFiles(db: DB, dir: string, keep: number = KEEP_AGENT_FILES, except: string | null = null): Promise<string[]> {
+  // Newest first, with `except` (the file just added) first of all: it's one of the ones kept.
+  const old = db
+    .prepare<[string, number], { sha256: string }>(
+      `SELECT sha256 FROM agent_files f
+       WHERE NOT EXISTS (SELECT 1 FROM agent_offers o WHERE o.sha256 = f.sha256)
+       ORDER BY f.sha256 = ? DESC, added_at DESC, version_code DESC LIMIT -1 OFFSET ?`,
+    )
+    .all(except ?? "", keep)
+    .map((r) => r.sha256);
+  for (const sha256 of old) {
+    db.prepare("DELETE FROM agent_files WHERE sha256 = ? AND NOT EXISTS (SELECT 1 FROM agent_offers o WHERE o.sha256 = ?)").run(sha256, sha256);
+    await rm(agentPath(dir, sha256), { force: true });
+  }
+  return old;
 }
 
 export function getAgentFile(db: DB, sha256: string): AgentFile | null {
