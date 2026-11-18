@@ -1,0 +1,36 @@
+name: Docs
+
+# Every relative link and #anchor in the repository's Markdown resolves (server/test/docs-links.test.ts).
+# The server workflow runs the same test, but only when server/ changes; this one runs it when docs do.
+on:
+  push:
+    paths: ["**/*.md", "server/test/docs-links.test.ts", ".github/workflows/docs.yml"]
+  pull_request:
+    paths: ["**/*.md", "server/test/docs-links.test.ts", ".github/workflows/docs.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  links:
+    name: Every link in the docs resolves
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.22.1
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      # No install scripts: the native modules ship prebuilt binaries.
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npx vitest run test/docs-links.test.ts

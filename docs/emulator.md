@@ -219,3 +219,7 @@ interpreter on the plan's fixtures; and, informational for now, the ATD emulator
 the kit's command-line runner against a real server (`ci-kit-emulator-test.sh`), which checks the
 end state `provision.sh` leaves, then unprovisions
 ([setup-kit.md](setup-kit.md#what-ci-checks-and-what-it-doesnt)).
+
+**`.github/workflows/docs.yml`** (pushes touching any Markdown file): every relative link and
+`#anchor` in the repository's Markdown resolves (`server/test/docs-links.test.ts`, which the
+server workflow runs too, but only when `server/` changes).

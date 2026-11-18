@@ -192,7 +192,9 @@ wait_applied() {
   local version
   version="$(server_status | jq -r '.phones[0].policy_version')"
   [[ "$version" =~ ^[0-9]+$ ]] || die "the server's status has no policy_version" "$(server_status | jq -c '.phones[0]')"
-  wait_server ".enforcement.policy_version == $version" "the phone's report that it applied policy $version"
+  # At least that version: each holds everything before it, and the phone can move on before a
+  # poll sees it (a lock now it reports done leaves the policy at once, a version later).
+  wait_server ".enforcement.policy_version >= $version" "the phone's report that it applied policy $version"
   echo "the phone applied policy $version"
 }
 # Waits until Belay logs a line containing $1 (the log is cleared before each action).
