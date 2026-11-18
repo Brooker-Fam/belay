@@ -23,7 +23,10 @@ category in Settings.
 
 1. In Claude, open Settings → Connectors and add a custom connector with the URL
    `https://belay.example.org/mcp` (your server's name).
-2. Claude opens Belay's sign-in page. Sign in with your parent account.
+2. Claude opens Belay's sign-in page. Sign in with your parent account. Like every sign-in, it
+   sends every parent a notice at once ("… signed in on Chrome on a Mac to connect an AI app"),
+   so a connection made with your password by someone else shows up
+   ([server.md](server.md#notifications)).
 3. The consent screen names the app (Claude, at claude.ai) and what it may read. Choose
    Connect.
 
