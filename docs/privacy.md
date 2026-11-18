@@ -115,9 +115,9 @@ under them, like 988's: a helpline's or a counselor's site the kid might use pri
 100, under the switch on the phone's page; or the server's CLI). Belay notes a website by its
 main name, so a parent's `www.example.org/help` makes all of `example.org` private. The phone
 drops their lookups before it counts anything (checked against the whole name), and takes what
-it counted of one before it was private out of the days it keeps; Belay's own log counts those
-lookups with 988's under one word, "private", and never names one, and nothing the phone sends
-counts them. The server drops any that arrive anyway, says nothing about it in its log (an
+it counted of one before it was private out of the days it keeps; Belay's own log says only how
+many lookups it didn't keep, for every reason together, never why or which, and nothing the
+phone sends counts them. The server drops any that arrive anyway, says nothing about it in its log (an
 older Belay sends them, and the log's time would say when one was used), and adding one deletes
 what it kept of it (the daily backups hold it until they age out, as for anything deleted). Only
 a parent sees which websites they are: the kid's "What your parent can

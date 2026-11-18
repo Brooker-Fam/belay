@@ -377,8 +377,8 @@ device owner only; docs/platform-notes.md W1, W6 to W9):
   name before it's reduced; IP addresses, reverse lookups (`in-addr.arpa`,
   `ip6.arpa`, and the `null` Android logs for one that found nothing) and names that never leave
   the phone or the home network (`local`, `localhost`, `internal`, `invalid`, `arpa`). Belay's own
-  log counts the lookups of 988's websites and the private ones together, as `private`, and never
-  names one; nothing it sends counts them (a day's `dropped` doesn't).
+  log says only how many lookups it didn't keep, for every reason together, never why or which;
+  nothing it sends counts them (a day's `dropped` doesn't).
 - It keeps today and the two days before (at most 10,000 entries a day), sends each day that a
   batch changed (it waits in an outbox lane of its own, a newer report of a day replacing an
   unsent one), and deletes all of it when `network_log` goes off. When `private_domains` changes,
