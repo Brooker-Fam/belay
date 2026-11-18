@@ -160,6 +160,10 @@ sends, for each local day:
 - Never: which websites or online services, which Wi-Fi networks (asking per network would need
   location, and Belay never does), when in the day, or anything inside the traffic. Android
   doesn't count those, and Belay never asks.
+- Today so far only counted up to noon and up to 6 PM (the phone's own time), once each, and
+  then the whole day once it's over: never by the hour, whenever the phone reads and sends it.
+  Sent about hourly, today's numbers told whoever read them every hour which hours the kid was
+  off every Wi-Fi the phone knows (the seventh security review's M3).
 - Nothing from before measuring turned on: Android keeps 90 days of history, and Belay sends none
   of it from before the kid's screen said so.
 
@@ -168,12 +172,15 @@ data), not data, so they're on the kid's This phone's rules, not under "What you
 see". The phone reports which apps Android keeps off mobile data, which the parent set anyway.
 
 On the server: a day sent while measuring is off isn't kept, and a never-blocked app's own line
-isn't kept even if a phone sends one (its bytes go with Android's). AI apps read it with
-Settings' "Mobile data" category, which starts on, like screen time: it's the same kind of data
-(how much each app is used) with less in it (no hours of the day, no opens, no unlocks), far
-less than network activity (which names the services the kid uses, so it starts off), and its
-point is the AI app's job here: finding the apps that use the family's data plan, and suggesting
-Wi-Fi only. A family that turned any category off before gets it off, marked new in Settings.
+isn't kept even if a phone sends one (its bytes go with Android's). The parent page shows today
+so far as the phone sent it. AI apps read it with Settings' "Mobile data" category, only each day
+once it's over, never today so far, which would tell an AI app asking often which part of the
+kid's day was off Wi-Fi (that's the Location category's to tell). The category starts on, like
+screen time: it's the same kind of data (how much each app is used) with less in it (whole days
+only, no hours of the day, no opens, no unlocks), far less than network activity (which names
+the services the kid uses, so it starts off), and its point is the AI app's job here: finding the
+apps that use the family's data plan, and suggesting Wi-Fi only. A family that turned any
+category off before gets it off, marked new in Settings.
 
 **Where this phone is (Phase 4), only while a parent has location on.** Off by default: with
 location off, Belay doesn't even hold the location permission (it's denied by policy, so Settings
@@ -277,10 +284,12 @@ use, off for every phone until a parent measures it.
 - Phase 3, network logging: each day's list as soon as Android hands Belay a batch of lookups
   (every 90 minutes at most, sooner on a busy phone). When a parent turns it off, the phone drops
   the days it hasn't sent yet. Days the server gets while it's off are dropped, and only counted.
-- Phase 13, while measuring mobile data: today about every hour (Android's own numbers move every
-  30 minutes), and each day once more 2.5 hours after it ends; at most a week back after a phone
-  was off. When a parent turns it off, the phone drops the days it hasn't sent yet. Days the
-  server gets while it's off are dropped, and only counted.
+- Phase 13, while measuring mobile data: today so far after noon and after 6 PM, counted up to
+  those times, and each day once more 2.5 hours after it ends; at most a week back after a phone
+  was off. Only at a step something on the phone or the hourly check brought, never one a time
+  passing or a call brought (so when a day goes says nothing of a call: the seventh review's M2).
+  When a parent turns it off, the phone drops the days it hasn't sent yet. Days the server gets
+  while it's off are dropped, and only counted.
 
 The camera is used only to scan the enrollment QR code, only if the person scanning
 allows it, and only while that screen is open. Camera frames are never stored or sent.
@@ -384,15 +393,20 @@ sends outside the family's server, and the parent page says so where you choose 
   lookups were dropped (though one that read the network activity before a website was made
   private can see its entries go: above). **Mobile data use** (Phase 13) is on for AI apps by
   default, like screen time (above for why): each day's mobile data and Wi-Fi totals and each
-  app's bytes, the apps' own names only with the Apps category too. Which apps are Wi-Fi only is
-  a rule, shown with the phone's rules (by name only with Apps).
+  app's bytes, only once the day is over (never today so far: the seventh review's M3), the apps'
+  own names only with the Apps category too. Which apps are Wi-Fi only is a rule, shown with the
+  phone's rules (by name only with Apps); making one Wi-Fi only needs the Apps category, as
+  blocking one does, since its answers name which apps the phone has (the seventh review's M1).
 - **Caregivers a parent adds** (Phase 12: a grandparent for a weekend, a babysitter, a coach on
   a trip), on their own pages, only while their access lasts (at most 30 days, until a parent
   renews it), and only for the phones and the things a parent chose for each: whether a phone is
   online, when it was last heard from, its battery, whether it's paused and the schedule on now;
-  the kid's "I need help" requests since their access began (the kid's words, where the phone was
-  if the kid shared it, whether a parent has seen it, and the kid's number for "Call" if a parent
-  set one), as a notice to their own browsers too; and, if a parent allows it, where the phone is
+  the kid's "I need help" requests that the kid asked once their help on that phone began (the
+  later of the phone being added to their access and help being turned on for them, when the
+  kid's Help screen started naming them: never one from before, however late it arrives; the
+  seventh review's H1), with the kid's words, where the phone was if the kid shared it, whether a
+  parent has seen it, and the kid's number for "Call" if a parent set one (the kid's card for
+  that caregiver says so), as a notice to their own browsers too; and, if a parent allows it, where the phone is
   at the moment they check, one fix per check. Nothing is collected for them: they see a small
   part of what the server already keeps, live. Never the apps, screen time, calls, network
   activity, earlier fixes or the places, lost mode, the activity log, settings, stages, the
@@ -458,13 +472,18 @@ sends outside the family's server, and the parent page says so where you choose 
 
 - **What your parent can see** gains "How much mobile data apps use" the moment a parent turns
   measuring on ("How much mobile data each app uses each day, like 120 MB"; the day's Wi-Fi total,
-  all apps together; that the phone app, texting and Android's own parts are counted together,
-  not one by one, with what devices use through the phone's hotspot; and "Not which websites or
-  Wi-Fi networks, and nothing you send or get"), and loses it when it's off.
+  all apps together; "Today's so far at noon and at 6 PM, then the whole day once it's over, never
+  hour by hour"; that the phone app, texting and Android's own parts are counted together, not
+  one by one, with what devices use through the phone's hotspot; and "Not which websites or
+  Wi-Fi networks, and nothing you send or get"), and loses it when it's off. With the Mobile data
+  category on for AI apps, it says the parent's AI app reads it only each day once it's over,
+  never today's so far.
 - **This phone's rules** gains "Some apps work only on Wi-Fi" while Android keeps an app off
   mobile data for Belay, naming them, with what it means: they act offline on mobile data, may
-  not work on some Wi-Fi like another phone's hotspot, and this never stops calls or texts; 911
-  and 988 always work. A Wi-Fi only card lists each app, "Wi-Fi only: your parent chose this".
+  not work on some Wi-Fi like another phone's hotspot, and this never stops calls or texts: calls
+  and texts to 911 and 988 always work (a Wi-Fi-only browser stops 988's web chat on mobile data,
+  so the words say calls and texts: the seventh review's J4). A Wi-Fi only card lists each app,
+  "Wi-Fi only: your parent chose this".
   Only what Android restricts now: an app the policy lists that isn't installed, or that Belay
   can't restrict, isn't listed. Off belay's "Belay blocks nothing now" waits until no app is
   Wi-Fi only.
@@ -563,18 +582,23 @@ their access ends, by the phone's own clock:
   what they can see and do ("Can see whether this phone is online and when it last connected, its
   battery, and whether it's paused or on a schedule", "Can pause this phone, or pause it and lock
   the screen, for up to 4 hours at a time. Only your parent can end a pause early.", "Gets your "I
-  need help" requests, with what you write, and where this phone is if you share it", "Can check
-  where this phone is right now. You get a notification every time."), and what they can't: your
-  apps, your screen time, your calls, the websites apps look up, where this phone has been, more
-  time or letting an app through.
+  need help" requests, with what you write, and where this phone is if you share it", with "and
+  your phone number, to call you back" when a parent set the kid's number (the seventh review's
+  J1), "Can check where this phone is right now. You get a notification every time."), and what
+  they can't: your apps, your screen time, your calls, the websites apps look up, where this phone
+  has been, more time or letting an app through. Each name as the parent wrote it, without
+  control or format characters (the seventh review's J5).
 - **Home:** "Your parent gave Grandma some access to this phone until Sunday at 6:00 PM.", one line
   each, with a button to that card.
 - **Help:** "Grandma gets your help requests too, with what you write, and where this phone is if
-  you share it."
+  you share it." They get only what the kid asks from then on (the seventh review's H1).
 - **A caregiver's pause** reads "Paused by Grandma until 5:30 PM" on Home, the pause banner (which
   adds "Only your parent can end it early.") and the pause notice, and in the words for paused
-  apps. **A caregiver's check** reads "Grandma checked where this phone is (8:15 PM)." in its notice
-  and in "What Belay told your parent".
+  apps. **A caregiver's lock** posts "Grandma locked the screen (8:15 PM).", or during a call
+  that it locks about 2 minutes after the call ends, whoever's pause it came with: under a
+  parent's longer pause, which stays the parent's, it's what names them (the seventh review's
+  H2). **A caregiver's check** reads "Grandma checked where this phone is (8:15 PM)." in its
+  notice and in "What Belay told your parent".
 
 ## What the kid sees
 
