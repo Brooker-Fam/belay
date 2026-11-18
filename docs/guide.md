@@ -683,9 +683,10 @@ you turn them on ([server.md](server.md#mobile-data-phase-13)).
   make Google Play Wi-Fi only too, or set Play's own download preference. Claude can add an app
   when you ask; letting one use mobile data again is a proposal you approve.
 - **Measure mobile data:** the phone sends how much mobile data each app used each day, with the
-  day's Wi-Fi total: never which websites or networks. Only a parent turns it on or off. Claude
-  reads it with its Mobile data category, which starts on, like screen time. Kept 90 days by
-  default.
+  day's Wi-Fi total: never which websites or networks. Today's so far comes at noon and at 6 PM,
+  never hour by hour. Only a parent turns it on or off, and Claude needs the Apps category to make
+  an app Wi-Fi only. Claude reads it with its Mobile data category, which starts on, like screen
+  time, and gets each day only once it's over. Kept 90 days by default.
 
 Decisions for your family, with what we'd suggest:
 
@@ -735,7 +736,9 @@ each your choice (the recommended ones are ticked):
   already on. Only a parent ends a pause early.
 - **Get the kid's "I need help"** (ticked): a notification at once, and on their page, with the
   kid's words, where the phone was if the kid shared it, and **Call** with the kid's number if you
-  added it. They can't mark it seen: it stays at the top of your Requests page until you do.
+  added it (your kid's phone then says they have it). Only what your kid asks from when you give
+  them this for a phone, never earlier help requests. They can't mark it seen: it stays at the
+  top of your Requests page until you do.
 - **Check where the phone is now** (not ticked): only while the phone's location is on, and the
   kid gets a notification naming them each time. Tick it for a trip.
 
@@ -743,7 +746,7 @@ Nothing a caregiver does loosens a rule: no resuming early, no more time, no app
 the apps, screen time, calls, websites, where the phone has been, your places, the activity log,
 settings, stages, the agreement or other caregivers, and Claude can't see, add or change
 caregivers. Your kid's phone lists each one with what they can see and do and until when (on
-What your parent can see, with a line on Home), and names them on each pause and check.
+What your parent can see, with a line on Home), and names them on each pause, lock and check.
 Everything they do is on **Activity**, under their name. **End access now** signs them out and
 stops their notifications at once; at its end, access stops by itself. On an iPhone, a caregiver
 gets notifications only once they add their page to the Home Screen and open it from there.

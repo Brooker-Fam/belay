@@ -2,8 +2,9 @@
  * Phase 7, the kid's side, as the policy carries it (docs/protocol.md, "The kid's side"): which
  * data categories the parents' AI app may read (`ai_reads`), when a parent saw each help request
  * (`help_seen`), and the numbers on the phone's emergency card (`parent_numbers`). Also the kid's
- * own number, which only the parent page uses ("Call" beside a help request) and the phone never
- * gets. Reads only: the changes, with who may make them, are in kidside-changes.ts.
+ * own number, which the parent page and a caregiver with help use ("Call" beside a help request)
+ * and the phone never gets: only whether a caregiver gets it (the policy's caregivers[].kid_number,
+ * the seventh review's J1). Reads only: the changes, with who may make them, are in kidside-changes.ts.
  */
 import type { DB } from "../db.js";
 import type { Policy } from "../device/schemas.js";

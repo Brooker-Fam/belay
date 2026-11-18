@@ -710,8 +710,10 @@ server's); AI apps can't see, add or change caregivers, not even as a proposal.
   ones): see each phone's status (online, or when it was last heard from; battery; whether it's
   paused; the schedule on now) [ticked]; pause it for 15 minutes to 4 hours, or pause it and lock
   the screen now, only ever longer than a pause in force and with no note of their own [ticked];
-  get the kid's "I need help" by Web Push and on their page, from when their access began, at
-  most 7 days back [ticked]; check where the phone is now, only while its location is on demand
+  get the kid's "I need help" by Web Push and on their page, only what the kid asked once their
+  help on that phone began (the later of the phone being added to their access and help being
+  turned on for them), at most 7 days back, with the kid's number beside each if you set it, which
+  the kid's card for them says [ticked]; check where the phone is now, only while its location is on demand
   or periodic, one fix per check, shown for 15 minutes [not ticked]. At most 6 pauses and locks,
   and 6 checks, an hour per caregiver and phone. Never anything that loosens (resuming, more
   time, apps, answering or marking requests), and never the app list, screen time, calls,
