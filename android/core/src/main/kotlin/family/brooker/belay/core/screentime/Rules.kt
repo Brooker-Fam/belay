@@ -2,6 +2,7 @@ package family.brooker.belay.core.screentime
 
 import family.brooker.belay.core.WireLimits
 import family.brooker.belay.core.WirePause
+import family.brooker.belay.core.kid.Caregivers
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalTime
@@ -50,7 +51,11 @@ sealed interface Reason {
     }
 
     /** A parent paused the phone (Phase 2's pause; "lock now" too), until [until] or until resumed. */
-    data class Paused(val until: Long?) : Reason {
+    data class Paused(
+        val until: Long?,
+        /** Phase 12: the caregiver who paused it (kid.Caregivers.who), or null: a parent, their AI app or the CLI. */
+        val by: String? = null,
+    ) : Reason {
         override val code: ReasonCode get() = ReasonCode.PAUSED
     }
 
@@ -358,7 +363,7 @@ private class Evaluation(private val input: Rules.Input) {
         fun add(name: String, reason: Reason) {
             reasons.getOrPut(name) { LinkedHashSet() } += reason
         }
-        pause?.let { p -> blanket.forEach { add(it, Reason.Paused(p.until)) } }
+        pause?.let { p -> Reason.Paused(p.until, Caregivers.who(p.caregiver)).let { paused -> blanket.forEach { add(it, paused) } } }
         for (o in active) {
             val reason = Reason.Schedule(o.rule.id, o.rule.wire.kind, o.rule.wire.name, o.end)
             (blanket - o.rule.allow).forEach { add(it, reason) }
@@ -538,10 +543,22 @@ private class Evaluation(private val input: Rules.Input) {
     private fun moment(at: Long) = KidArg.Moment.of(at, now, zone)
 
     private fun suspensionText(reason: Reason, opensAt: Long?): KidText = when (reason) {
-        is Reason.Paused -> reason.until?.let { kid(KidMessage.PAUSED_UNTIL, moment(it)) } ?: kid(KidMessage.PAUSED)
+        is Reason.Paused -> pausedText(reason)
         is Reason.Schedule -> scheduleText(reason.kind, reason.name, reason.until)
         is Reason.Limit -> limitUpText(reason.kind, reason.name, opensAt)
         Reason.Unmeasured -> kid(KidMessage.UNMEASURED_PAUSED)
+    }
+
+    /** "Your parent paused this phone until 5:30 PM.", or (Phase 12) "Grandma paused this phone until 5:30 PM." */
+    private fun pausedText(reason: Reason.Paused): KidText {
+        val by = reason.by
+        val until = reason.until
+        return when {
+            by != null && until != null -> kid(KidMessage.PAUSED_BY_UNTIL, KidArg.Words(by), moment(until))
+            by != null -> kid(KidMessage.PAUSED_BY, KidArg.Words(by))
+            until != null -> kid(KidMessage.PAUSED_UNTIL, moment(until))
+            else -> kid(KidMessage.PAUSED)
+        }
     }
 
     private fun scheduleText(schedule: WireSchedule, until: Long) = scheduleText(schedule.kind, schedule.name, until)

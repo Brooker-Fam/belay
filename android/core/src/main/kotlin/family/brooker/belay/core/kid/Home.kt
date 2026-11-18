@@ -41,7 +41,7 @@ data class HomeState(val line: KidText, val worksNow: List<KidText>) {
 
 /**
  * Phase 7: Home's one line ("Everything's normal", "Bedtime until 7:00 AM", "Paused by your parent
- * until 5:30 PM") and what works now, for every combination of lost mode, a pause, schedules and
+ * until 5:30 PM", or Phase 12's "Paused by Grandma until 5:30 PM") and what works now, for every combination of lost mode, a pause, schedules and
  * used-up limits. Lost mode comes first (the phone may be in someone else's hands), then a pause, a
  * schedule (the one that lasts longest), the day's screen time, single limits, and Belay not being
  * able to count. 911 and 988 always work, and the last line says so. Pure.
@@ -53,8 +53,7 @@ object Home {
         val up = input.limits.filter { it.state == WireLimitState.USED_UP && it.kind != LimitKind.TOTAL }
         val line = when {
             input.lost -> KidText(KidMessage.HOME_LOST)
-            input.pause != null -> input.pause.until?.let { KidText(KidMessage.HOME_PAUSED_UNTIL, listOf(moment(it, input))) }
-                ?: KidText(KidMessage.HOME_PAUSED)
+            input.pause != null -> pauseLine(input.pause, input)
             schedule != null -> scheduleLine(schedule, input)
             totalUp -> KidText(KidMessage.HOME_TOTAL_UP)
             up.size == 1 -> KidText(KidMessage.HOME_LIMIT_UP, listOf(KidArg.Words(up.single().name)))
@@ -78,6 +77,18 @@ object Home {
         }
         works += KidText(KidMessage.WORKS_EMERGENCY)
         return HomeState(line, works)
+    }
+
+    /** "Paused by your parent until 5:30 PM", or (Phase 12) "Paused by Grandma until 5:30 PM" for a caregiver's pause. */
+    private fun pauseLine(pause: WirePause, input: HomeInput): KidText {
+        val until = pause.until?.let { moment(it, input) }
+        val by = Caregivers.who(pause.caregiver)?.let { KidArg.Words(it) }
+        return when {
+            by != null && until != null -> KidText(KidMessage.HOME_PAUSED_BY_UNTIL, listOf(by, until))
+            by != null -> KidText(KidMessage.HOME_PAUSED_BY, listOf(by))
+            until != null -> KidText(KidMessage.HOME_PAUSED_UNTIL, listOf(until))
+            else -> KidText(KidMessage.HOME_PAUSED)
+        }
     }
 
     private fun scheduleLine(schedule: ScheduleStatus, input: HomeInput): KidText {

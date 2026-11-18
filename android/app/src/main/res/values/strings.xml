@@ -570,6 +570,15 @@
     <string name="pause_notice_title">Paused by your parent</string>
     <string name="pause_notice_until">Your parent paused this phone until %1$s. Calls and texts still work, and so do 911 and 988.</string>
     <string name="pause_notice">Your parent paused this phone. Calls and texts still work, and so do 911 and 988.</string>
+
+    <!-- Phase 12: caregivers, someone a parent gave some access to this phone for a while (core's
+         kid.Caregivers; what each can see and do is in core's DataCategory.kt). A caregiver's name
+         (%1$s) is a parent's words, shown as text. Plain and respectful, for a 12-year-old; never
+         more than the code does. -->
+    <string name="kid_paused_by_until">%1$s paused this phone until %2$s.</string>
+    <string name="kid_paused_by">%1$s paused this phone.</string>
+    <string name="kid_home_paused_by_until">Paused by %1$s until %2$s</string>
+    <string name="kid_home_paused_by">Paused by %1$s</string>
     <string name="phone_battery">Battery</string>
     <string name="phone_battery_value">%1$d%%</string>
     <string name="phone_battery_charging">%1$d%%, charging</string>

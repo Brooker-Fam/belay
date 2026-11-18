@@ -96,6 +96,11 @@ class KidWords(private val context: Context, private val label: (String) -> Stri
             KidMessage.WORKS_APPS -> res.getString(R.string.kid_works_apps)
             KidMessage.WORKS_LOST_MESSAGE -> res.getString(R.string.kid_works_lost_message)
             KidMessage.WORKS_EMERGENCY -> res.getString(R.string.kid_works_emergency)
+            // Phase 12: a caregiver's pause, by the name a parent gave them.
+            KidMessage.PAUSED_BY_UNTIL -> res.getString(R.string.kid_paused_by_until, a.words(0), a.until(0))
+            KidMessage.PAUSED_BY -> res.getString(R.string.kid_paused_by, a.words(0))
+            KidMessage.HOME_PAUSED_BY_UNTIL -> res.getString(R.string.kid_home_paused_by_until, a.words(0), a.until(0))
+            KidMessage.HOME_PAUSED_BY -> res.getString(R.string.kid_home_paused_by, a.words(0))
         }
     }
 

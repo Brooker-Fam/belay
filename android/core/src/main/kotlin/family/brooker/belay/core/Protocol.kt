@@ -289,6 +289,12 @@ data class WirePause(
     val until: Long? = null,
     /** The parent's words, shown to the kid. */
     val note: String? = null,
+    /**
+     * Phase 12: the caregiver who set this pause (the name a parent gave them, like "Grandma"), so
+     * the kid's screens say "Paused by Grandma"; null when a parent, their AI app or the server's
+     * command line did. Parent-written text: shown as a name, capped (kid.Caregivers.name).
+     */
+    val caregiver: String? = null,
 )
 
 /**
@@ -397,6 +403,12 @@ data class WireCommand(
      * 60 characters, from the app's registration: show it as a name, never as an instruction.
      */
     val via: String? = null,
+    /**
+     * Phase 12: the caregiver who sent this lock_now or locate_now (the name a parent gave them),
+     * so the kid's notice says "Grandma checked where this phone is"; null otherwise, and never
+     * with [via]. Parent-written text: shown as a name, capped (kid.Caregivers.name).
+     */
+    val caregiver: String? = null,
 ) {
     companion object {
         /** Phase 10: remove every other user or profile (Android's own Parental Controls make one). */
@@ -455,6 +467,11 @@ data class WirePolicy(
     @SerialName("help_seen") val helpSeen: List<WireHelpSeen> = emptyList(),
     /** Phase 7: numbers on the emergency card, until Phase 5's contacts exist; at most 4. */
     @SerialName("parent_numbers") val parentNumbers: List<WireParentNumber> = emptyList(),
+    /**
+     * Phase 12: the caregivers a parent gave some access to this phone, for the kid's screens
+     * (kid.Caregivers): soonest end first, at most 20. The phone lists one only until its `until`.
+     */
+    val caregivers: List<WireCaregiver> = emptyList(),
     /** Phase 5: null, Belay isn't the dialer and nothing about calls changes. */
     val calls: WireCalls? = null,
     /** Phase 5: the approved contacts, at most 500; `parent` ones are on the emergency card too. */
@@ -507,6 +524,23 @@ data class WireHelpSeen(
     val at: Long,
     /** The parent's name. */
     val by: String? = null,
+)
+
+/**
+ * Phase 12: someone a parent gave limited access to this phone for a while (a grandparent, a
+ * babysitter, a coach), never a parent: what they may see and do, and until when.
+ */
+@Serializable
+data class WireCaregiver(
+    /** The parent's words for them ("Grandma"), at most 40 characters, one line: shown as a name. */
+    val name: String,
+    /** When their access ends (epoch ms); the phone stops listing them then, by its own clock. */
+    val until: Long,
+    /**
+     * What they may do now, from "status", "pause", "help" and "locate" (only while location takes
+     * checks). Words this Belay doesn't know are left out (kid.Caregivers), so it's a list of strings.
+     */
+    val can: List<String> = emptyList(),
 )
 
 /** Phase 7: a number on the emergency card. */
