@@ -224,6 +224,7 @@ docker compose exec belay node dist/cli.js schedule "Sam's phone" --remove <id>
 docker compose exec belay node dist/cli.js lock-now "Sam's phone"                    # locks the screen once, if the phone gets it within 10 minutes (--minutes)
 docker compose exec belay node dist/cli.js screen-time "Sam's phone" --measure on    # or off: whether the phone sends how long apps are used
 docker compose exec belay node dist/cli.js network "Sam's phone" --on                # or --off: whether the phone notes which websites and services its apps look up
+docker compose exec belay node dist/cli.js private-website "Sam's phone" example.org   # never noted, with the names under it; --remove <website> to undo
 docker compose exec belay node dist/cli.js answer "Sam's phone" <request id> approve --minutes 15   # or decline, or talk; --note "…"
 ```
 
@@ -299,7 +300,7 @@ and `contact` entries in `requests` with `contact_name`, `contact_number` and `c
 contact an approval added, or the one that had the number; `null` until approved). Phase 11
 adds `handover` (`{at, by, version}` or `null`: when, as the policy has it in milliseconds since
 the epoch, the parent's name or `null` from the CLI, and the rules version that carried it).
-Network logging adds `network_log` (the policy's: `{enabled}`) and `network` (the days the phone
+Network logging adds `network_log` (the policy's: `{enabled, private_domains}`) and `network` (the days the phone
 sent, newest first, at most 31: `[{day, zone, as_of, entries: [{package, domain, lookups}],
 dropped}]`, `as_of` as the phone sent it).
 Hardening (factory reset, debugging, reset protection, and the accounts Play may use) can only
@@ -437,12 +438,13 @@ limit).
 ### Network logging (Phase 3)
 
 Off for every phone until a parent turns it on, on the phone's page under Web (or with `network
-"<phone>" --on`): until then the policy's `network_log` is `{enabled: false}`, and the phone
+"<phone>" --on`): until then the policy's `network_log` is `{enabled: false, private_domains: []}`, and the phone
 notes nothing. Turned on, Android logs the phone's DNS lookups for Belay, and the phone sends,
 each time Android hands it a batch (every 90 minutes at most), how many times each app looked up
 each website or online service that day, by name (`example.com`: the registrable part of the
 name, never the page). Never the lookups of the apps the phone never blocks (the phone app,
-texting, Belay…), and never 988's websites: the phone drops them, and so does the server. Android
+texting, Belay…), never 988's websites, and never the phone's private websites: the phone drops
+them, and so does the server. Android
 shows the kid its own notice that the phone "may monitor network traffic", and Belay's list of
 what the parent can see explains it.
 
@@ -450,16 +452,35 @@ what the parent can see explains it.
   it, and whether Android paused it: Android stops logging while another user or profile is on the
   phone (Android's own Parental Controls make one), and the phone's page and the daily summary say
   "Network logging is paused".
+- **Private websites** (under the switch, at most 100 a phone; or `private-website "<phone>"
+  <website>`): websites Belay never notes, with the names under them, like 988's, such as a
+  helpline's or a counselor's site the kid might use privately. Type a name or paste a link:
+  Belay notes a website by its main name, so it keeps the registrable domain (`www.example.org/help`
+  makes all of `example.org` private), and refuses 988's websites (never noted anyway) and
+  addresses. The phone drops their lookups before counting, and takes what it counted of them
+  earlier out of the days it keeps; the server drops any that arrive anyway (without a word in its
+  log: an older Belay sends them, and the log's time would say when one was used), and adding
+  one deletes what it kept of it. Only a parent chooses them and sees which they are: the
+  activity log says "made a website private" and never which; the kid's "What your parent can
+  see" says other websites your parent made private are never noted, without naming them (tell
+  the kid yourself if they should know); AI apps can't see them, or whether there are any.
+  They're per phone, like private numbers, and stay when network logging is off, so a parent can
+  set them up before turning it on.
 - **Network** (a phone's tab, while logging is on): each day, newest first, each app most looked
   up first, with the names it looked up and how many times, and how many pairs the phone left out
   (it sends at most 5000 a day, the most looked up).
 
-Only a parent turns it on or off: AI apps can't, and can't propose it, in either direction. With
+Only a parent turns it on or off, or chooses the private websites: AI apps can't, and can't
+propose it, in either direction. With
 Settings' "Network" category on (it starts off for every family), an AI app reads it with
 `get_network_activity` ([mcp.md](mcp.md)), names as untrusted text. **Kept** (Settings, "Keep
 network activity"): 30 days by default (1 to 90), then deleted by the hourly clean-up; turning it
-off keeps what's there until then, and Off belay's Stop collecting deletes it now. Days sent while
-it's off aren't kept, and are counted.
+off keeps what's there until then, and Off belay's Stop collecting deletes it now (the private
+websites stay: they're the phone's rules). Days sent while it's off aren't kept, and are counted.
+
+Whether Belay should also carry a built-in list of child-safety helplines' websites, never noted
+like 988's, is an open family decision: [threat-model.md](threat-model.md#the-kid-and-network-logging-phase-3)
+has the recommendation.
 
 ## Location and the kid's side (Phases 4 and 7)
 

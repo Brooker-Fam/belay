@@ -340,6 +340,9 @@ The endpoint is rate limited per phone apart from the phone's other calls (30 a 
 
 Phase 3, network logging. How many times each app looked up each domain, one local day per
 entry, only while the policy's `network_log` is on (a parent's choice alone, off by default).
+Its `private_domains` are the family's private websites, a parent's alone too (never an AI
+client's, not even as a proposal, and never shown to one): the server keeps what a parent types
+as the registrable domain the phone keeps, so `www.example.org/help` is `example.org`.
 
 ```json
 { "days": [ { "day": "2026-11-17", "zone": "America/Los_Angeles", "as_of": 1794867161711,

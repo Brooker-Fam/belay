@@ -103,7 +103,11 @@ kid's real apps or times.
    names a browser looked up in a few minutes.
 3. Call and text from the phone app and the texting app, and open 988lifeline.org in the
    browser: none of the phone app's or the texting app's lookups, and no 988 name, shows on the
-   Network tab.
+   Network tab. Then, under the switch, add a website the browser looked up in step 2 to Private
+   websites (`example.org` works, once the browser has opened it): what the tab showed of it goes
+   at once. Open it again in the browser: it never shows again, and "What your parent can see"
+   says other websites your parent made private are never noted, without naming it. Remove it
+   afterwards.
 4. Leave it on for a day: write down how many pairs the busiest day had, whether any were left out
    (the tab says "And … more"), and Belay's battery use (Settings > Battery) against step 6.2.
 5. Turn network logging off: within seconds Android's notification goes, the phone's list drops
@@ -134,6 +138,6 @@ kid's real apps or times.
 | 6.2 | Belay's battery use for a day | pending | |
 | 7.1 | Android's network logging notice and Quick Settings' words | pending | |
 | 7.2 | An app's names on the Network tab; time to the first batch | pending | |
-| 7.3 | No phone app, texting or 988 names | pending | |
+| 7.3 | No phone app, texting or 988 names; a private website never shows, nor is named on the phone | pending | |
 | 7.4 | A day's pairs, left out, battery | pending | |
 | 7.5 | Off: Android's notice goes, dpm refuses | pending | |

@@ -69,7 +69,8 @@ checked on a real Pixel yet. Phase 9 (more families) isn't built either.
   Only while a parent has network logging on, Android logs the phone's DNS lookups for Belay,
   which takes each batch at once and keeps only how many times each app looked up each website
   or service that day, by name (`example.com`, never a page), never what the phone app or
-  texting look up and never 988's websites, and sends that; it reports when Android pauses
+  texting look up and never 988's websites or the family's private ones (dropped on the phone,
+  never sent, and never named on its screens), and sends that; it reports when Android pauses
   logging (another user or profile on the phone), and deletes everything when it goes off.
   **Phase 4 (the phone's side):** location is off by default, and Belay holds the location
   permission only while a parent has it on (granted and denied by policy, never by the kid). On
@@ -114,8 +115,9 @@ checked on a real Pixel yet. Phase 9 (more families) isn't built either.
   phone (pauses and locks at most 6 times an hour per connection) and tightens the rules; the
   server decides whether a change only tightens, and anything else, a schedule that locks the
   screen, or a move to another stage, is a proposal. Network logging is off until a parent
-  turns it on, under Web on the phone's page (never an AI app, not even a proposal); while
-  it's on, the phone's Network tab lists each
+  turns it on, under Web on the phone's page (never an AI app, not even a proposal), where a
+  parent also lists private websites it never notes, like a helpline's (no AI app sees them,
+  or whether there are any); while it's on, the phone's Network tab lists each
   day's apps and the names they looked up, kept 30 days by default, and an AI client reads it
   only if a parent turns that on too (it starts off for every family).
 - **Phases 4 and 7 on the server: location, and the kid's side.** Location is off until a

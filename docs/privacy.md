@@ -101,14 +101,32 @@ keeps, on the phone, only this:
   which Belay never reads; the time of each lookup (only the day); what the apps Belay never
   blocks look up (the phone app, texting, the keyboard, the home screen, Belay, Android's own
   packages), and lookups Android can't tie to one app (a shared user id: Android's own
-  processes, Play services); and 988's websites (the 988 Lifeline's sites, its chat included,
+  processes, Play services); 988's websites (the 988 Lifeline's sites, its chat included,
   Canada's 9-8-8 and the Veterans Crisis Line), which Belay never keeps, like a call to 988, and
-  the server drops if one arrives anyway. IP addresses, reverse lookups and the home network's own
-  names aren't kept either.
+  the server drops if one arrives anyway; and the family's private websites, the same way (below).
+  IP addresses, reverse lookups and the home network's own names aren't kept either.
 - It's a record, not a guard: an app with its own way of looking names up (its own DNS over
   HTTPS, a DNS library, a fixed address) isn't noted, and Android doesn't log UDP. While another
   user or profile is on the phone, Android pauses logging and hands Belay nothing; the parent
   page says so.
+
+**Private websites.** A parent can list websites Belay never notes on a phone, with any name
+under them, like 988's: a helpline's or a counselor's site the kid might use privately (at most
+100, under the switch on the phone's page; or the server's CLI). Belay notes a website by its
+main name, so a parent's `www.example.org/help` makes all of `example.org` private. The phone
+drops their lookups before it counts anything (checked against the whole name), and takes what
+it counted of one before it was private out of the days it keeps; Belay's own log counts those
+lookups with 988's under one word, "private", and never names one, and nothing the phone sends
+counts them. The server drops any that arrive anyway, says nothing about it in its log (an
+older Belay sends them, and the log's time would say when one was used), and adding one deletes
+what it kept of it. Only a parent sees which websites they are: the kid's "What your parent can
+see" says other websites your parent made private are never noted, without naming them, since a
+parent or anyone holding the phone may see that screen (the parent page suggests telling the kid
+which); the activity log says a website was made private, never which; and AI apps never see
+them, or whether there are any. They're the phone's rules, not collected data: they stay until a
+parent removes them, and Stop collecting keeps them. Whether Belay should carry a built-in list
+of child-safety helplines' websites too is an open family decision, with a recommendation, in
+[threat-model.md](threat-model.md#the-kid-and-network-logging-phase-3).
 
 On the server: a day sent while network logging is off isn't kept, and the lookups of the apps the
 phone never blocks aren't kept even if a phone sends them. AI apps read it only with Settings'
@@ -282,6 +300,8 @@ sends outside the family's server, and the parent page says so where you choose 
   services apps look up says much about a kid. With it on, an AI app reads each day's apps and the
   names they looked up (as untrusted text), never more than the server keeps; the apps' own names
   only with the Apps category on too (without it, their package names, as the phone sent them).
+  Which websites are private is never shown to an AI app, nor whether there are any, nor how many
+  lookups were dropped.
 
 ## What the kid sees (Phase 2)
 
@@ -331,8 +351,10 @@ sends outside the family's server, and the parent page says so where you choose 
 - **What your parent can see** gains "Which websites and services apps look up, per day" the
   moment a parent turns network logging on ("The names of the websites and online services each
   app looks up, like example.com, and how many times a day. Not the pages, messages, searches or
-  anything you type." and that the always-on apps and 988's websites are never noted), and loses
-  it when it's off. Android shows its own notice too, at most twice ("Your organization manages
+  anything you type." and that the always-on apps and 988's websites are never noted; while the
+  family has private websites, also "Never the other websites your parent made private. Belay
+  doesn't name them here, so no one who sees this screen can tell which they are. Ask your parent
+  if you want to know."), and loses it when it's off. Android shows its own notice too, at most twice ("Your organization manages
   this device and may monitor network traffic"), and Belay's list explains that "your
   organization" means the parent, through Belay.
 
@@ -469,8 +491,8 @@ The AI scope "calls" is off by default for every family.
 
 Network activity (Phase 3) is kept 30 days by default (the family chooses 1 to 90 in Settings),
 then deleted by the hourly clean-up. Turning network logging off stops new days; the ones kept
-stay until they age out (the phone page says how many). The AI scope "network" is off by default
-for every family.
+stay until they age out (the phone page says how many). The private websites stay until a parent
+removes them, or deletes the phone. The AI scope "network" is off by default for every family.
 
 **Stopping collecting (Phase 11).** A parent can stop one kind of data for a phone, on its page,
 at any time, and the server deletes what it keeps of it at once, after a confirmation that lists
@@ -487,7 +509,8 @@ again). It's in the activity log, with what went. Only a parent does it, never a
   when, for how long, and what happened). Calls stay on with their rules if they were, and the
   contacts and the private and blocked numbers stay: they're the phone's rules.
 - **Websites and services apps look up (Phase 3):** network logging turns off (the phone turns
-  Android's off and deletes what it counted), and every day of network activity goes.
+  Android's off and deletes what it counted), and every day of network activity goes. The private
+  websites stay: they're the phone's rules.
 - **Apps:** every app change, every review and its notes, the apps that aren't on the phone any
   more (but one a parent blocked or allowed, which its decision names), and the record of the app
   lists the phone sent. The phone keeps sending its app list and changes while Belay is on it (its
