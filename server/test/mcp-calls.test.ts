@@ -309,7 +309,8 @@ describe("with the Calls category off (its default), nothing says anything about
     // One line in the activity log, however often it tries, naming no number or contact.
     expect(refused()).toHaveLength(1);
     expect(refused()[0]).toMatchObject({ actor: "ai", clientName: "Claude", deviceName: "Alex's phone", detail: { tool: "change_calls", why: "numbers" } });
-    expect(JSON.stringify(refused())).not.toMatch(/555|Lee|Jo|Jordan/);
+    // What the entry says (its ids are random, and hex can spell 555): no number, no contact.
+    expect(JSON.stringify(refused().map(({ action, detail }) => ({ action, detail })))).not.toMatch(/555|Lee|Jo|Jordan/);
     // Without a number it works as before: the rules, and a contact by id.
     const done = await call("change_calls", { device: "Alex's phone", change: { quiet: true, change_contacts: [{ id: coach.id, calls: false }] }, reason: "The parent asked" });
     expect(done.json.status).toBe("done: it only tightens, so it applies at once");
