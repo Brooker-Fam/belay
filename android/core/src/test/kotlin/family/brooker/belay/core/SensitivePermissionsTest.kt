@@ -35,6 +35,14 @@ class SensitivePermissionsTest {
     }
 
     @Test
+    fun `changing the call log is call history, as reading it is`() {
+        // An app holding WRITE_CALL_LOG alone can add a made-up call to 988 that Belay's read after a
+        // restart takes for a real one (the fifth review's plausible P2): a parent deciding on it sees it.
+        assertEquals(listOf("call_log"), SensitivePermissions.held(listOf("android.permission.WRITE_CALL_LOG")))
+        assertEquals(listOf("call_log"), SensitivePermissions.held(listOf("android.permission.READ_CALL_LOG", "android.permission.WRITE_CALL_LOG")))
+    }
+
+    @Test
     fun `ordinary permissions are not sensitive`() {
         assertTrue(SensitivePermissions.held(listOf("android.permission.INTERNET", "android.permission.VIBRATE")).isEmpty())
     }

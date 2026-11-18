@@ -8,7 +8,10 @@ import kotlin.math.abs
  * POST /api/v1/calls. Never a call with an emergency number, 988 or a private number: those are
  * never made into a CallEntry at all (CallRecords.entry), so nothing can store or send them. The
  * one exception is a caller id that failed the network's check ([unverified]), a stranger's call
- * whatever number it shows: it's kept like any unknown caller's.
+ * whatever number it shows: it's kept like any unknown caller's. And one way of dialing isn't
+ * known as 988's: its old number after an international prefix ("011 1 800 273 8255", the
+ * fifth review's I1), kept here with the number it reached and, like every such number, never
+ * sent (CallRecords.toWire).
  */
 @Serializable
 data class CallEntry(

@@ -109,8 +109,11 @@ provider's terms. Settings → "What AI apps may read" turns each category off:
   never 988's websites or the phone's private websites: Belay doesn't keep those. Which websites
   are private, and whether a phone has any, an AI app never sees, with this category or without:
   no tool reads, counts or changes them, and what it reads of a phone is the same whether its
-  private websites' lookups were dropped or never made. The apps' names need the Apps category
-  too: without it, each app is the package name the phone sent.
+  private websites' lookups were dropped or never made. Only an AI app that read the phone's
+  activity before a website was made private can tell, by its entries gone from the days it read
+  (the fifth security review's F4: deleting them shows); `get_policy`'s version moves with any
+  change to the phone's rules, this one too (F5, kept: threat-model.md). The apps' names need the
+  Apps category too: without it, each app is the package name the phone sent.
 
 Each category but Location, Calls and Network is on by default. One that a new version of Belay
 adds starts off for a family that had turned any category off, and Settings marks it "new" until

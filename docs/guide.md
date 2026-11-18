@@ -642,7 +642,9 @@ them, like 988's: a helpline's or a counselor's site your kid might use privatel
 or paste a link (Belay keeps the main name, so `www.example.org/help` makes all of `example.org`
 private); adding one also deletes what the server kept of it. Your kid's phone says some
 websites are never noted, without naming them, so tell your kid which ones yourself if they
-should know. Claude can't see them, or whether there are any, and can't change them. Whether
+should know. Claude can't see them, or whether there are any, and can't change them; but if
+Claude read the phone's network activity before you add one, it could see that website go from
+what it read, so add them before you turn on logging, or Claude's Network category. Whether
 Belay should also carry a built-in list of child-safety helplines' websites is an open
 decision for your family ([threat-model.md](threat-model.md#the-kid-and-network-logging-phase-3)).
 

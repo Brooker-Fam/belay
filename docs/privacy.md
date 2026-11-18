@@ -131,8 +131,11 @@ a parent sees which websites they are: the kid's "What your parent can
 see" says other websites your parent made private are never noted, without naming them, since a
 parent or anyone holding the phone may see that screen (the parent page suggests telling the kid
 which); the activity log says a website was made private, never which; and AI apps never see
-them, or whether there are any. They're the phone's rules, not collected data: they stay until a
-parent removes them, and Stop collecting keeps them. Whether Belay should carry a built-in list
+them, or whether there are any. One thing can't be hidden: an AI app that read the phone's
+network activity before a website was made private can see that website's entries gone at its
+next read, since making it private deletes them (the fifth security review's F4), so the parent
+page says to add private websites before turning logging or the Network category on. They're
+the phone's rules, not collected data: they stay until a parent removes them, and Stop collecting keeps them. Whether Belay should carry a built-in list
 of child-safety helplines' websites too is an open family decision, with a recommendation, in
 [threat-model.md](threat-model.md#the-kid-and-network-logging-phase-3).
 
@@ -330,7 +333,8 @@ sends outside the family's server, and the parent page says so where you choose 
   names they looked up (as untrusted text), never more than the server keeps; the apps' own names
   only with the Apps category on too (without it, their package names, as the phone sent them).
   Which websites are private is never shown to an AI app, nor whether there are any, nor how many
-  lookups were dropped.
+  lookups were dropped (though one that read the network activity before a website was made
+  private can see its entries go: above).
 
 ## What the kid sees (Phase 2)
 

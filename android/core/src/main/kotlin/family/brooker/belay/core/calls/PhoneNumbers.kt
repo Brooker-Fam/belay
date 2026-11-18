@@ -72,9 +72,12 @@ object PhoneNumbers {
 
     /**
      * What [raw] reaches once the caller-id codes dialed before it are taken off, one or more of
-     * them ("*67 911" and "*67 #31# 911" reach 911); null when it starts with none, or nothing
+     * them ("*67 911" and "#31# *67 911" reach 911); null when it starts with none, or nothing
      * follows them. One reading only: `*67` or `*82` stays when what follows makes the string
-     * another code (then Android reads that code, not a call), and so does every code after it.
+     * another code (then Android reads that code, not a call), and so does every code after it:
+     * "*67 #31# 911" is null, since Android reads "*67#" as call forwarding's code and places no
+     * call (platform notes T17). `*70` (North America's cancel call waiting) isn't one of these:
+     * Android passes it to the network as dialed, and no network says "*70911" reaches 911.
      * Belay looks at this only to tell whether a call reaches a number that always works or a
      * private one (then it goes through, or isn't recorded: AlwaysAllowed.dialed,
      * CallRecords.isPrivate), never to let a call through to a contact.

@@ -465,7 +465,9 @@ what the parent can see explains it.
   one deletes what it kept of it. Only a parent chooses them and sees which they are: the
   activity log says "made a website private" and never which; the kid's "What your parent can
   see" says other websites your parent made private are never noted, without naming them (tell
-  the kid yourself if they should know); AI apps can't see them, or whether there are any.
+  the kid yourself if they should know); AI apps can't see them, or whether there are any (one
+  that read the network activity before a website was made private can see its entries go:
+  threat-model.md, F4).
   They're per phone, like private numbers, and stay when network logging is off, so a parent can
   set them up before turning it on.
 - **Network** (a phone's tab, while logging is on): each day, newest first, each app most looked

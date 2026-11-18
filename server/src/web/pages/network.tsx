@@ -41,7 +41,9 @@ const WhatItIs: FC = () => (
 /**
  * The phone's private websites, under network logging's switch: never noted, like 988's, with the
  * names under them. Only a parent sees which they are: the kid's phone says some websites are never
- * noted without naming them, and AI apps don't see them, or whether there are any.
+ * noted without naming them, and AI apps don't see them, or whether there are any. One that read the
+ * phone's network activity before can see a website's entries go when it's made private (the fifth
+ * review's F4: deleting them shows), so the card says to add them first.
  */
 const PrivateWebsitesCard: FC<{ view: View; device: DeviceView; websites: PrivateWebsite[] }> = ({ view, device, websites }) => (
   <div class="card" id="private-websites">
@@ -49,7 +51,8 @@ const PrivateWebsitesCard: FC<{ view: View; device: DeviceView; websites: Privat
       Belay never notes these websites, or any name under them, like 988's: a helpline's or a counselor's site the kid might use privately. The phone
       drops their lookups, the server drops any that arrive anyway, and adding one deletes what the server kept of it. Only you see which they are: while
       there are any, the kid's phone says some websites are never noted, without naming them (tell the kid yourself if they should know), and AI apps
-      don't see them, or whether there are any.
+      don't see them, or whether there are any. An AI app that read this phone's network activity before you add one can see that website go from what
+      it read, so add them before you turn logging, or AI apps' Network category, on.
     </p>
     <p class="small muted">Belay notes a website by its main name, so www.example.org/help makes all of example.org private.</p>
     {websites.length === 0 && <p class="muted">None.</p>}

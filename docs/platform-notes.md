@@ -2327,6 +2327,14 @@ with 911.
   three-digit service code, up to four `*` parts, then `#`) reads any dial string that starts so
   as a supplementary service request, not a number: "*67#911" is call forwarding on busy's code
   (service code 67) to a GSM network, then "911".
+- `*70`, North America's vertical service code to cancel call waiting for one call (read
+  2026-11-18 for the fifth review's I7): `convertCdmaMmiCodesTo3gppMmiCodes` converts only `67`
+  and `82`, and GSM's call waiting is service code 43 (`GsmMmiCode.SC_WAIT`, `*43#` and `#43#`),
+  so "*70911" isn't an emergency number to Android (above), matches no MMI code, and goes to the
+  network as a normal call to "*70911". Verizon's call waiting FAQ (verizon.com, read
+  2026-11-18) documents `*70` only before a 10-digit number ("enter *70 + the 10-digit number you
+  are calling + Send"), and no carrier's page we found says "*70911" reaches 911. Not tried:
+  it would mean calling 911.
 
 Belay's consequence: Belay takes only the codes that hide or show the caller's number off a number
 itself, `*67`, `*82`, `#31#` and `*31#`, one or more of them in front (core's
@@ -2335,7 +2343,12 @@ never to match a contact: a call the kid dials so to 911 or 988 always goes thro
 2-hour window and is never recorded, and whatever the network does with it is the network's. No
 other code comes off, a three-digit one or one followed by what makes the string a supplementary
 service code (`*67#`, `*67*31#`), so "*67 1911", "*27 2911" and "*67 9112" are ordinary numbers,
-never 911 or 112 (the fourth review's N8). A caller ID showing 911 is Belay's to refuse only in
+never 911 or 112 (the fourth review's N8). Nor does `*70`: Android doesn't read it, and nothing
+says a network takes "*70911" for 911, so with only contacts Belay ends it like any number that
+isn't a contact's (the fifth review's I7: it would come off only once a network is known to
+connect it to 911). Caller-ID codes outside North America (the UK's `141`, Australia's `1831`)
+never came off either, so with only contacts "141 999" is ended too; the kid dials 999 or 000
+as it is. A caller ID showing 911 is Belay's to refuse only in
 screening, so one that failed the network's check (spoofed) is refused there or not at all: with
 another screening app chosen (T4), or when screening takes too long, it rings in the preloaded
 dialer.
