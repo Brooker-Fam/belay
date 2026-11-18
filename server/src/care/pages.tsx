@@ -115,7 +115,7 @@ export const CareJoinPage: FC<{ view: CareView; token: string; caregiver: Caregi
   <CareLayout view={view} title="Join as a caregiver">
     <h1>Hello, {caregiver.name}</h1>
     <p>
-      A parent gave you some access to {phones.join(", ") || "a phone"} in their family's Belay, until{" "}
+      {caregiver.createdBy ?? "A parent"} gave you some access to {phones.join(", ") || "a phone"} in their family's Belay, until{" "}
       <Time ms={caregiver.endsAt} tz={view.tz} />. You'll be able to:
     </p>
     <CanList caregiver={caregiver} />
@@ -351,7 +351,7 @@ export const CareHomePage: FC<{
       </div>
     )}
     <p>
-      Until <Time ms={caregiver.endsAt} tz={view.tz} />, a parent lets you:
+      Until <Time ms={caregiver.endsAt} tz={view.tz} />, {caregiver.createdBy ?? "a parent"} in this family lets you:
     </p>
     <CanList caregiver={caregiver} />
     {phones.length === 0 && <p class="muted">No phone yet: a parent chooses which phones you look after.</p>}
