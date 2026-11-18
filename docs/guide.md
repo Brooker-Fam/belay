@@ -688,7 +688,9 @@ you turn them on ([server.md](server.md#mobile-data-phase-13)).
 
 - **Wi-Fi only:** pick apps that may not use mobile data, like video and game apps. Android on
   the phone keeps them off mobile data, and off any other Wi-Fi it counts as metered, like
-  another phone's hotspot; on your home Wi-Fi they work as usual. Your kid sees which apps and
+  another phone's hotspot (Bluetooth tethering too); on your home Wi-Fi, or a wired adapter,
+  they work as usual. Their notifications can still arrive on mobile data, through Google's one
+  shared connection for every app's notifications; what the app then loads waits for Wi-Fi. Your kid sees which apps and
   why, under This phone's rules. Belay never does this to the phone app, texting, the keyboard,
   the home screen or Android's own parts, so calls, texts, 911 and 988 always work. It doesn't
   cover a download an app hands to Android's download manager, or app updates through Play:

@@ -139,13 +139,13 @@ relying on something new, it goes here first, with a source.
 | O1 | Handing over: clearing reset protection, and what a reset from Settings does on a fully managed phone | Confirmed in AOSP; Pixel pending (Phase 11 checklist) | AOSP |
 | Q1 | A device owner keeps apps off metered networks with `setMeteredDataDisabledPackages`; it refuses admins and apps not installed or hidden | Confirmed | AOSP; Docs; Emulator (Phase 13 CI) |
 | Q2 | Android enforces it per uid on every metered network; being in front, Data Saver's exemption and the app's switches don't lift it | Confirmed: uids resolved at each call and at boot | AOSP |
-| Q3 | Metered: mobile data, Wi-Fi marked metered, another Android phone's hotspot; "Treat as unmetered" wins | Confirmed; an iPhone's hotspot unknown | AOSP; Pixel pending (Phase 13 checklist) |
+| Q3 | Metered: mobile data, Wi-Fi marked metered, another Android phone's hotspot, Bluetooth tethering; "Treat as unmetered" wins; a wired link is unmetered | Confirmed; an iPhone's hotspot unknown | AOSP; Pixel pending (Phase 13 checklist) |
 | Q4 | The app sees no network; Settings shows its data switches "Disabled by admin" | Confirmed | AOSP; Pixel pending |
 | Q5 | Resetting network settings or app preferences, Data Saver and Background data don't undo it | Confirmed | AOSP |
 | Q6 | A device owner reads every app's mobile data from `NetworkStatsManager`, without usage access | Confirmed | AOSP; Docs; Emulator (Phase 13 CI) |
 | Q7 | Per-app stats in 2-hour buckets, kept 90 days, polled every 30 minutes; a query polls first, rate-limited | Confirmed | AOSP |
 | Q8 | Removed apps, the phone's hotspot, Android's own and shared uids, the SDK sandbox | Confirmed | AOSP |
-| Q9 | Downloads through Android's download manager, and Play's updates, aren't the app's traffic | Partly: to check on the Pixel | AOSP |
+| Q9 | Downloads through Android's download manager, Play's updates and pushes through FCM's shared connection aren't the app's traffic | Partly: to check on the Pixel | AOSP; Docs |
 
 "Emulator" entries were seen in CI: `ci-emulator-test.sh` passed end to end on the API 37.0
 Automated Test Device image (`aosp_atd`, required) from run 8, and on the API 37.0 Google
@@ -2920,9 +2920,14 @@ another app could get.
 - Android's own hotspot always offers `ANDROID_METERED`: Tethering's `IpServer` builds its DHCP
   server with `setMetered(true)`. Whether an iPhone's hotspot sends it is outside AOSP: the Pixel
   checklist checks.
+- A wired link is unmetered: `packages/modules/Connectivity`'s `EthernetTracker.DEFAULT_CAPABILITIES`
+  adds `NET_CAPABILITY_NOT_METERED` (a USB-C Ethernet adapter or a dock). Bluetooth tethering from
+  another phone (`packages/modules/Bluetooth`'s `BluetoothTetheringNetworkFactory`, reverse
+  tethering over PAN) adds `NOT_ROAMING` and others, never `NOT_METERED`, so it's metered. Read for
+  the second bypass audit's B6, 2026-11-18.
 
 Belay's consequence: Wi-Fi-only apps are kept off mobile data, another Android phone's hotspot,
-and any Wi-Fi marked metered. The kid can mark a Wi-Fi network unmetered in its settings, and then
+Bluetooth tethering, and any Wi-Fi marked metered; they work over a wired link, as on home Wi-Fi. The kid can mark a Wi-Fi network unmetered in its settings, and then
 they aren't (threat model). The kid's words say "on some Wi-Fi, like another phone's hotspot, they
 may not work either", not more.
 
@@ -3021,7 +3026,7 @@ sandbox's bytes with its app; `WifiOnly` never restricts a package with a shared
 
 ### Q9. What Wi-Fi only doesn't cover
 
-**Partly: to check on the Pixel.** Verified on: AOSP.
+**Partly: to check on the Pixel.** Verified on: AOSP; Docs.
 
 - `DownloadProvider`'s `Helpers.scheduleJob` runs each download as the download manager's own
   job (user-initiated, or a foreground job, while its notification shows), and `DownloadThread`
@@ -3029,9 +3034,16 @@ sandbox's bytes with its app; `WifiOnly` never restricts a package with a shared
   app's, so a Wi-Fi-only app's download handed to it may use mobile data. It's still accounted to
   the app (Q8).
 - App updates are Play's (`com.android.vending`) downloads, under Play's uid.
+- Push messages: developer.android.com's [Doze and App Standby](https://developer.android.com/training/monitoring-device-state/doze-standby)
+  page (read 2026-11-18): "FCM provides a single, persistent connection to the cloud. All apps
+  needing real-time messaging can share this connection." That connection isn't the app's: it's
+  Google Play services', one of Android's own parts, which Belay never restricts. So a Wi-Fi-only
+  app's pushes, and the notifications they carry, can still arrive on mobile data; whatever the
+  app then loads itself waits for Wi-Fi (the second bypass audit's B6).
 
-Belay's consequence: the parent page says both, flags a Wi-Fi-only app that used mobile data on a
-day after it was added, and suggests making Play Wi-Fi only too, or Play's own download setting.
+Belay's consequence: the parent page says the first two, flags a Wi-Fi-only app that used mobile
+data on a day after it was added, and suggests making Play Wi-Fi only too, or Play's own download
+setting. The threat model says the third: Wi-Fi only quiets an app's own traffic, not its pushes.
 
 ---
 

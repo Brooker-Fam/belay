@@ -126,7 +126,9 @@ the home Wi-Fi's password ready.
    Google app uses SafeSearch.
 10. **The captive portal** (optional, at a café or hotel with a sign-in page): write down the
     sign-in app (Settings > Apps > show system apps: "Captive Portal Login" and its package
-    name), and whether the page opens in Chrome or in its own window.
+    name), and whether the page opens in Chrome or in its own window. Then pause the phone on
+    the parent page, forget that Wi-Fi and join it again: write down whether the sign-in page
+    still opens while the phone is paused (the threat model's captive-portal row).
 
 ## Results
 
@@ -153,4 +155,4 @@ the home Wi-Fi's password ready.
 | 7 | A pinned app and picture-in-picture close when the phone pauses | pending | |
 | 7 | The assistant during a pause: does it answer, which app, what "open YouTube" does | pending | |
 | 7 | No guest; in-app browser and Google app filtered, SafeSearch on | pending | |
-| 7 | The captive portal's app and window (optional) | pending | |
+| 7 | The captive portal's app and window, and whether it opens while paused (optional) | pending | |
