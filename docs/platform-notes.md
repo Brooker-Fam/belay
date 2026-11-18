@@ -539,6 +539,13 @@ docs [2026-10-28] only say owners "are exempt from entering the restricted bucke
 - A process with a running foreground service keeps network access during Doze
   (`NetworkPolicyManagerService`, `FOREGROUND_THRESHOLD_STATE`); alarms and jobs are still
   deferred. Phase 2's long-poll relies on this.
+- But not the jobs of an app on that allowlist (read on 2026-11-18 for the sixth review's G3):
+  `apex/jobscheduler/.../controllers/DeviceIdleJobsController` ("When device is dozing, set
+  constraint for all jobs, except whitelisted apps, as not satisfied") satisfies the not-dozing
+  constraint for a job whose app is in `getPowerSaveWhitelistUserAppIds`. So WorkManager runs
+  Belay's check-in worker every 2 hours and its hourly check overnight too, and the steps the clock
+  or a call brings (the policy timer, every minute while a lock waits for a call) leave due
+  check-ins to them.
 
 ### B7. `DeviceAdminService`
 
@@ -896,6 +903,16 @@ AOSP; Emulator pending (Phase 3 CI).
   re-provisioning. Until then (with the flag off) `lockNow` fails, and Belay reports it.
 - `ActiveAdmin.dump` prints each admin's `policies:` (`force-lock` among them) in `adb shell
   dumpsys device_policy`; CI checks it.
+- **Belay can ask beforehand** (read on 2026-11-18 for the sixth review's G2):
+  `DevicePolicyManager.hasGrantedPolicy(admin, USES_POLICY_FORCE_LOCK)` ("whether the
+  administrator was activated under an earlier set of policies, but requires additional policies
+  after an upgrade"; it throws only for an admin that isn't active) returns
+  `administrator.info.usesPolicy(policyId)` for `DeviceAdmins.getActiveAdminUnchecked`'s admin,
+  the same in-memory `ActiveAdmin` whose `info` lockNow's check reads without the flag
+  (`getActiveAdminWithPolicyForUid` → `isActiveAdminWithPolicyForUser`). So it's false exactly
+  while that lockNow throws for force-lock. With the flag on, `PermissionChecker.enforce`
+  passes a device owner on `MANAGE_DEVICE_POLICY_LOCK` whatever the admin's policies, so lockNow
+  would work while `hasGrantedPolicy` still says no.
 - DPM reference [2026-09-16]: "If there's no lock type set, this method forces the device to go to
   sleep but doesn't lock the device." `lockNow` calls `goToSleep` and `IWindowManager.lockNow`.
 
@@ -903,7 +920,14 @@ Belay's consequence: `res/xml/device_admin.xml` declares `<force-lock/>`. A `loc
 a schedule with `lock` calls `lockNow` once (core's `Commands.plan`, `Upkeep.locks`); a refusal
 is reported, for "force-lock" in plain words: "Android lets Belay lock the screen only after the
 phone restarts once with this version of Belay." The family's Pixel, provisioned before Phase 3,
-needs one restart after the update. The kid knows their own PIN, so it's a nudge.
+needs one restart after the update. The kid knows their own PIN, so it's a nudge. Every step asks
+`hasGrantedPolicy` first (`enforce/ScreenLock.cannotLock`, and Belay also remembers a force-lock
+refusal until it restarts), so while the answer is no, no lock waits for a call, every
+`lock_now` is failed in those words without a try, call or not, a schedule's or lost mode's lock
+is recorded as it comes, and the phone reports the same words among its problems the whole time
+(the sixth review's G2: a lock that waited for a call used to be reported done, and never
+locked). With the flag on, Belay goes by `hasGrantedPolicy` all the same, so it doesn't lock
+until the restart, though Android would let it.
 
 ### S6. Exact alarms for screen time's boundaries
 
@@ -2421,12 +2445,22 @@ only); Pixel pending (Phase 5 checklist, with a test number).
   (emergency routing only "if service cannot support normal routing"). Otherwise Android treats it
   like 911: Telecom gives it to the preloaded dialer, `NEW_OUTGOING_CALL` carries it, and a call
   from it is an emergency call (T17).
+- What only Belay keeps of those calls (read again on 2026-11-18 for the sixth review's G1): the
+  lock screen's `EmergencyDialer.placeCall` (`packages/services/Telephony`) calls only a number
+  `TelephonyManager.isEmergencyNumber` (or one of its shortcuts) accepts, and shows
+  `BAD_EMERGENCY_NUMBER_DIALOG` for any other, so before the unlock the kid can call 911 (or
+  another emergency number) but not 988; and Telecom's `CallLogManager.okayToLogCall` logs an
+  emergency call only when the carrier sets `KEY_ALLOW_EMERGENCY_NUMBERS_IN_CALL_LOG_BOOL`, which
+  `CarrierConfigManager` defaults to `false`. So the call log usually has no trace of them.
 
 Belay's consequence: `OutgoingCallReceiver` is Belay's only direct-boot-aware component. A call to
 911 from the lock screen before the first unlock reaches it, and Belay keeps only the time, in
-device-protected storage (`calls/LockedCalls.kt`); its watchers wait for the unlock. Once the phone
-is unlocked, CallsGate and the calls step read the time into the 2-hour window, and the step
-deletes it once the window is over or calls goes off. Before that unlock Belay's in-call and
+device-protected storage (`calls/LockedCalls.kt`): every such call's, at most 20 (the sixth
+review's G1: a dispatcher's callback to the first of two 911 calls hours apart is decided by the
+first one's window, so keeping only the newest sent it with its number). Its watchers wait for the
+unlock. Once the phone is unlocked, the calls step reads them all into the restart's reads of the
+call log (T22), and CallsGate the newest into the 2-hour window; once that step is stored, each
+goes when its window is over, and all of them when calls goes off. Before that unlock Belay's in-call and
 screening services can't run, so Telecom gives every call to the preloaded dialer, unfiltered
 (calls fail open; the Pixel checklist looks): Telecom's `InCallController.getDefaultDialerComponent`
 finds no in-call service of Belay's, and `bindToServices` makes an
@@ -2486,13 +2520,22 @@ schedule's lock wait for a managed call Telecom has (`isInManagedCall`, or a cal
 screen), as long as it lasts, and never for an app's self-managed call, which an app can hold
 open all night, paused or not (the fifth review's F3: Belay asked `isInCall` before, which counts
 them). A call through a calling account the kid turned on in Settings rings on Belay's own
-screen, by the family's rules, so it's a call Belay decided. While Belay isn't the dialer,
+screen, by the family's rules, but it isn't a call an app can't make up (read on 2026-11-18 for
+the sixth review's I8): that account's app says which number its call shows (a contact's, so
+the rules let it ring) and keeps it on as long as it likes, since Telecom's
+`CallAnomalyWatchdog` times out only a call stuck in a transitory or intermediate state
+(`CallState.isTransitoryState`: NEW, CONNECTING, DISCONNECTING, ANSWERED;
+`isIntermediateState`: DIALING, RINGING), never an ACTIVE one. So while the kid leaves such an
+account on (a parent approved its app), the app can hold a lock off; Belay records the call, and
+the apps still pause. While Belay isn't the dialer,
 Telecom won't answer it, so they wait only while the audio mode is `MODE_IN_CALL` (a carrier
 call), for at most 30 minutes from the step the wait began; then the screen locks, and the call
 goes on. Lost mode's one lock waits only for a managed call Telecom has. No other audio mode
-holds a lock off. A lock still due happens at the first step after the
-call (core's `ScreenLocks`): Belay takes a step when the audio mode changes, and looks again
-every minute. A `lock_now` is reported `done` at the step that first has it, a call on or not,
+holds a lock off. A lock still due waits 2 minutes more from the first step with no call on, then
+happens at the next step (core's `ScreenLocks.waits`, the sixth review's I1: a call to 988 that
+dropped can be made again before the lock screen asks for the PIN, H9); a call in those 2 minutes
+holds it off again. Belay takes a step when the audio mode goes into a call's or leaves it, and
+looks again every minute. A `lock_now` is reported `done` at the step that first has it, a call on or not,
 and its lock stays due until a step with no call on, however long the call lasts (a restart drops
 it): so its result never says a call was on, or when one ended (the fifth review's F2).
 

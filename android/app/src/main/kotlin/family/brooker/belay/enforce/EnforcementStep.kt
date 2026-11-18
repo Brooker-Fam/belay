@@ -15,6 +15,7 @@ import family.brooker.belay.core.ActualState
 import family.brooker.belay.core.AnsweredRequest
 import family.brooker.belay.core.Applied
 import family.brooker.belay.core.ApplyOutcome
+import family.brooker.belay.core.Boots
 import family.brooker.belay.core.CategoryPermissions
 import family.brooker.belay.core.Commands
 import family.brooker.belay.core.DataCategories
@@ -199,16 +200,27 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
         // a call Telecom has, or one only the audio mode shows for at most 30 minutes; lost mode's
         // only for a call Telecom has. A lock_now is reported when the phone has it, a call on or
         // not, and its lock stays due until a step with no call on (core's ScreenLocks.lockNow).
-        val lockWaitsForCall by lazy { InCall.lockWaits(app, now) }
-        val telecomCall by lazy { InCall.now(app).telecom }
-        val locking = runner.lockNow(commandPlan, owner, log.lockDue, bootCount(), bootAt = now - SystemClock.elapsedRealtime()) { lockWaitsForCall }
+        // Each lock a call held off waits 2 minutes more once none is on (core's
+        // ScreenLocks.waits: the sixth review's I1, so a 988 call that dropped can be made again).
+        // Whether Belay can lock at all comes first, from what a call doesn't change (the sixth
+        // review's G2): when it can't, no lock waits for a call, a lock_now is failed and a
+        // schedule's lock problem is recorded as it comes, call or not, and the phone reports it
+        // all the while (below), so neither a result nor a problem says when a call was on.
+        val cannotLock = ScreenLock.cannotLock(app, owner)
+        val bootCount = bootCount()
+        val bootAt = now - SystemClock.elapsedRealtime()
+        val lockNowDue = log.lockDue?.takeIf { Boots.same(it.bootCount, it.bootAt, bootCount, bootAt) } != null
+        val callWaits by lazy { InCall.waits(app, now, heldOff = lockNowDue) }
+        val lockWaitsForCall by lazy { cannotLock == null && callWaits.lock }
+        val lostLockWaits by lazy { cannotLock == null && callWaits.lost }
+        val locking = runner.lockNow(commandPlan, owner, log.lockDue, bootCount, bootAt, cannotLock) { lockWaitsForCall }
         val lockResults = locking.results
         val lockNowWaits = locking.due != null
         // Phase 4: location's part: the fixes the collector took, locate_now, the periodic and lost
         // mode fixes due, keep_on and lost mode. If it fails, the rest is still recorded.
         val locationStep = LocationStep(app, store)
         val located = try {
-            locationStep.run(policy, commandPlan.run.filter { it.kind == WireCommand.LOCATE_NOW }, owner, requests, now) { telecomCall }
+            locationStep.run(policy, commandPlan.run.filter { it.kind == WireCommand.LOCATE_NOW }, owner, requests, now) { lostLockWaits }
         } catch (e: RuntimeException) {
             Log.e(Agent.TAG, "location's part of the step failed", e)
             null
@@ -254,6 +266,8 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
             }
         }
         var screenTimeState: ScreenTimeState? = done?.state
+        // Belay can lock again (the phone restarted): a schedule's lock problem that was S5's is over.
+        if (cannotLock == null && screenTimeState?.lockProblem == ScreenLock.NEEDS_RESTART) screenTimeState = screenTimeState.copy(lockProblem = null)
         if (done != null && done.locks.isNotEmpty()) {
             Log.i(Agent.TAG, "screen time: locking the screen as ${done.locks.joinToString { it.scheduleId }} starts")
             screenTimeState = screenTimeState?.copy(lockProblem = ScreenLock.lock(app, owner))
@@ -265,6 +279,8 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
             PrivateDns.problem(plan.privateDns, dnsRow),
             SimRules.problem(sim, now),
             tooLarge?.let { PolicyTooLarge.problem(it.tooLargeBytes) },
+            // The device owner that can't lock the screen until the phone restarts (platform notes S5).
+            cannotLock.takeIf { owner },
             screenTimeState?.lockProblem,
             screenTimeProblem,
         ) + calling?.problems.orEmpty() + networking?.problems.orEmpty() + mobileData?.problems.orEmpty() +

@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.AtomicFile
 import android.util.Log
 import family.brooker.belay.Agent
+import family.brooker.belay.core.calls.CallsPlan
 import java.io.File
 import java.io.IOException
 
@@ -11,10 +12,13 @@ import java.io.IOException
  * The one thing Belay keeps before the phone's first unlock after a restart: when the kid called
  * 911, an emergency number or 988 then (from the lock screen's emergency dialer: OutgoingCallReceiver),
  * in device-protected storage, which Android opens at boot (docs/platform-notes.md T19). Belay's own
- * store is in credential-protected storage, which opens only at the first unlock. Once it has
- * opened, CallsGate and the agent step read this time into the 2-hour callback window, and the step
- * deletes it once the window is over (or calls goes off). Only the time: no number, never sent,
- * never in the debug state.
+ * store is in credential-protected storage, which opens only at the first unlock. Every such time,
+ * at most 20 (core's CallsPlan.lockedRecord; the sixth review's G1: each call that rang in the
+ * phone's own app then is decided by the window of the call before it, the first of two 911 calls
+ * hours apart included). Once the store has opened, the agent step reads them all into the
+ * restart's reads of Android's call log, and into the 2-hour callback window with CallsGate (the
+ * newest), and drops each once its window is over (all of them, if calls goes off). Only the
+ * times, one per line: no number, never sent, never in the debug state.
  */
 object LockedCalls {
     private const val FILE = "calls-before-unlock"
@@ -25,7 +29,24 @@ object LockedCalls {
     @Synchronized
     fun record(context: Context, at: Long) {
         val file = file(context)
-        if ((read(file) ?: Long.MIN_VALUE) >= at) return
+        val kept = read(file)
+        val next = CallsPlan.lockedRecord(kept, at)
+        if (next != kept) write(file, next)
+    }
+
+    /** Only those whose 2-hour window is still open at [now] stay (core's CallsPlan.lockedOpen); none: the file goes. */
+    @Synchronized
+    fun keepOpen(context: Context, now: Long) {
+        val file = file(context)
+        val kept = read(file)
+        val open = CallsPlan.lockedOpen(kept, now)
+        when {
+            open.isEmpty() -> file.delete()
+            open != kept -> write(file, open)
+        }
+    }
+
+    private fun write(file: AtomicFile, times: List<Long>) {
         val out = try {
             file.startWrite()
         } catch (e: IOException) {
@@ -33,7 +54,7 @@ object LockedCalls {
             return
         }
         try {
-            out.write(at.toString().encodeToByteArray())
+            out.write(times.joinToString("\n").encodeToByteArray())
             file.finishWrite(out)
         } catch (e: IOException) {
             file.failWrite(out)
@@ -47,16 +68,20 @@ object LockedCalls {
      */
     private fun failed(e: IOException) = Log.w(Agent.TAG, "calls: calls' state couldn't be saved: ${e.javaClass.simpleName}")
 
-    /** The time [record] kept, or null. */
-    fun emergencyContactAt(context: Context): Long? = read(file(context))
+    /** Every time [record] kept, oldest first; none: empty. For the restart's reads. */
+    fun emergencyContactsAt(context: Context): List<Long> = read(file(context))
+
+    /** The newest time [record] kept, or null: for the callback window now (CallsGate). */
+    fun emergencyContactAt(context: Context): Long? = emergencyContactsAt(context).maxOrNull()
 
     @Synchronized
     fun forget(context: Context) = file(context).delete()
 
-    private fun read(file: AtomicFile): Long? = try {
-        file.readFully().decodeToString().trim().toLongOrNull()
+    /** One time per line; an older Belay's file has one. */
+    private fun read(file: AtomicFile): List<Long> = try {
+        file.readFully().decodeToString().lines().mapNotNull { it.trim().toLongOrNull() }.distinct().sorted()
     } catch (e: IOException) {
         // Not there (FileNotFoundException): nothing kept.
-        null
+        emptyList()
     }
 }

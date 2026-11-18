@@ -252,13 +252,13 @@ describe("screen time over MCP", () => {
       untrusted: { why_belay_on_the_phone_says: "Android lets Belay lock the screen only after the phone restarts once with this version of Belay." },
     });
     expect(policy().commands).toEqual([]);
-    // Done: the phone has it, and locks at once or once a call ends; no time comes with it.
+    // Done: the phone has it, and locks at once or about 2 minutes after a call ends; no time comes with it.
     await call("lock_phone", { device: "Alex's phone", minutes: 15 });
     const done = policy().commands[0]?.id ?? "";
     await deviceCall(t, phone.token, "checkin", { status: device({ enforcement: { policy_version: policy().version, commands: [{ id: done, result: "done", at: t.now() }] } }) });
     expect((await call("get_rules", { device: "Alex's phone" })).json.last_lock).toEqual({
       sent: "2026-11-16T10:00:00-05:00",
-      state: "done: the phone has it, and locks its screen at once, or as soon as a call ends",
+      state: "done: the phone has it, and locks its screen at once, or about 2 minutes after a call ends",
     });
     // Expired: the phone got it too late, in the same words for every one.
     await call("lock_phone", { device: "Alex's phone", minutes: 15 });

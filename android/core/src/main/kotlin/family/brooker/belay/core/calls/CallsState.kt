@@ -199,26 +199,55 @@ object CallsPlan {
         else -> spell.again && !callElsewhere()
     }
 
-    /** At most this many emergency times are kept for a spell's reads (a few calls to 911 or 988, at most). */
+    /**
+     * At most this many emergency times from the spell itself are kept for its reads (a few calls to
+     * 911 from the lock screen, at most), and the newest one from the 2 hours before the restart.
+     */
     const val MAX_SPELL_EMERGENCIES = 20
 
     /**
      * [spell] with the emergency times its reads decide callbacks by (the fifth review's F1):
-     * [known] (Belay's record of the kid's last emergency contact, the time kept before the unlock,
+     * [known] (Belay's record of the kid's last emergency contact, every time kept before the unlock,
      * or the calls to 911, an emergency number or 988 a read found in the log) added to those kept,
      * at every step while a read is due, and only those whose 2-hour window can reach into the
      * spell: from 2 hours before the restart to the unlock. The steps between two reads forget
      * Belay's own record once its 2 hours are over, so without these a call that rang in the
      * phone's own app only because of the window, still on at the unlock, would be sent with its
-     * number at the second read. Once no read is due, none are kept: like Belay's own record,
-     * they're only for the window.
+     * number at the second read. Of the times before the restart only the newest is kept: every
+     * call in the spell comes after it, so its window reaches as far into the spell as any older
+     * one's. Each time from the spell may be the only one whose window covers a callback (two calls
+     * to 911 from the lock screen hours apart: the sixth review's G1), so the newest
+     * [MAX_SPELL_EMERGENCIES] of those are. Once no read is due, none are kept: like Belay's own
+     * record, they're only for the window.
      */
     fun keepEmergencies(spell: AfterRestart, known: Collection<Long>): AfterRestart {
         val due = spell.callsOn && (!spell.read || spell.again)
         val reach = spell.bootAt - CallsWireLimits.EMERGENCY_CALLBACK_MS..spell.unlockedAt
-        val kept = if (due) (spell.emergencyAt + known).filter { it in reach }.distinct().sorted().takeLast(MAX_SPELL_EMERGENCIES) else emptyList()
+        val inReach = if (due) (spell.emergencyAt + known).filter { it in reach }.distinct().sorted() else emptyList()
+        val kept = inReach.filter { it < spell.bootAt }.takeLast(1) + inReach.filter { it >= spell.bootAt }.takeLast(MAX_SPELL_EMERGENCIES)
         return if (kept == spell.emergencyAt) spell else spell.copy(emergencyAt = kept)
     }
+
+    /** At most this many times are kept before the first unlock after a restart (LockedCalls): a few calls to 911, at most. */
+    const val MAX_LOCKED_EMERGENCIES = 20
+
+    /**
+     * The times kept before the first unlock after a restart (calls/LockedCalls.kt), with the kid's
+     * call to 911 from the lock screen at [at] added: every one, not only the newest (the sixth
+     * review's G1), since each call that rang in the phone's own app then is decided after the unlock
+     * by the window of the call before it, and a dispatcher's callback to the first of two 911 calls
+     * hours apart is a callback too. The newest [MAX_LOCKED_EMERGENCIES]. None goes for its window
+     * here: no agent step runs before the unlock, and the first one after it needs them all for the
+     * restart's reads ([keepEmergencies]); then [lockedOpen] keeps only those whose window is open.
+     */
+    fun lockedRecord(kept: List<Long>, at: Long): List<Long> = (kept + at).distinct().sorted().takeLast(MAX_LOCKED_EMERGENCIES)
+
+    /**
+     * The times kept before the unlock that stay once an agent step has them ([keepEmergencies]
+     * keeps them with the restart for its reads): those whose 2-hour window is still open at [now],
+     * for the window itself. None: nothing is kept there any more.
+     */
+    fun lockedOpen(kept: List<Long>, now: Long): List<Long> = kept.filter { CallRules.callbackWindow(it, null, now) }
 
     /**
      * [spell] once Android's call log was read for it ([taken]): read, once more only after the

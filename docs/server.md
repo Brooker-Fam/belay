@@ -287,7 +287,8 @@ as it sent it, or `null`), `requests` (`[{id, kind, package, status, reason}]`, 
 agreement), `agent_version_code` and `agent_signing_sha256` (as the phone reported them),
 `agent_update` (the offer, and what the phone said about it), `recovery` (`{version,
 last_used}`: the key version the policy carries, or `null`), `commands` (the latest, with
-their results), `screen_time` (the policy's screen-time rules, or `null` while the phone has
+their results and the phone's time for each, which for a lock now is when the phone had it,
+a call on or not), `screen_time` (the policy's screen-time rules, or `null` while the phone has
 none) and `usage` (the days the phone sent, newest first, at most 31: `[{day, zone, as_of,
 screen_minutes, apps: [{package, minutes, opens}]}]`). Phase 4 adds `location` (the policy's,
 `null` until a parent first sets it), `fixes` (newest first, at most 50: `[{id, at, lat, lng,
@@ -416,7 +417,7 @@ itself, offline too; the server keeps the rules and what the phone reports.
 - **Screen time** (a phone's Screen time tab): a day by the hour and the last seven days,
   with the apps that took the time and the times Belay couldn't count, each chart with a table
   of the same numbers; **Lock now**, a pause of 15 minutes to 4 hours and the screen locked
-  once if the phone gets it within 10 minutes (during a call, once it ends; how the last one
+  once if the phone gets it within 10 minutes (during a call, about 2 minutes after it ends; how the last one
   went says whether the phone got it in time, never whether a call was on); and the kid's
   requests for more time,
   answered with 15, 30 or 60 minutes, "Let's talk" or "No". Approving gives the minutes for

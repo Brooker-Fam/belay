@@ -77,7 +77,12 @@ Enrollment attempts are rate-limited per client address.
 
 ## `POST /api/v1/checkin`
 
-Every 2 hours, and when the agent starts.
+Every 2 hours, and when the agent starts, and soon after what the phone reports changes. The
+2-hourly ones come from the phone's background work (its check-in worker, and its hourly check
+when one is due): a step that only a time passing or a call brought (the policy timer, which
+looks every minute while a screen lock waits for a call, screen time's minute, a call's end)
+never checks in just because one is due, so their times don't follow a call (the sixth security
+review's G3).
 
 ```json
 { "status": { …Device… } }
@@ -637,8 +642,8 @@ proposal), and the phone shows each step before it happens.
   notice, and Belay's screen lists them from the phone's own record.
 - **`keep_on`:** Belay keeps location on and sets `DISALLOW_CONFIG_LOCATION`.
 - **Lost mode** (`lost`, any mode): the parent's message on the lock screen, location kept
-  on, a fix every 5 minutes, and one screen lock (during a call Telecom has, once the call
-  ends; the audio mode alone never holds it off); everything goes back when it ends.
+  on, a fix every 5 minutes, and one screen lock (during a call Telecom has, about 2 minutes
+  after the call ends; the audio mode alone never holds it off); everything goes back when it ends.
 - **Only a parent** turns location on or off, changes places, `keep_on` or lost mode.
   An AI client may read fixes only with the `location` scope on (off by default), and may
   ask for `locate_now` only in `on_demand` or `periodic` mode; the kid's notice names it.
@@ -751,8 +756,8 @@ server decides whether a change tightens or loosens.
   Used up: its apps are suspended until the next day starts, or until extra time.
 - **Schedules:** from `start` to `end` on `days` (an `end` at or before `start` ends the
   next day), every app is suspended except the never-blocked ones, the `exempt` ones and
-  the schedule's `allow`; `lock` also locks the screen when it starts (during a call, once
-  the call ends, if the schedule is still on, as for `lock_now` below); `skip` names days it
+  the schedule's `allow`; `lock` also locks the screen when it starts (during a call, about 2
+  minutes after the call ends, if the schedule is still on, as for `lock_now` below); `skip` names days it
   doesn't start.
 - **Always open:** the never-blocked apps and `exempt`. Schedules and daily totals also
   leave the clock and the keyboard alone, as a pause does; a limit that names the clock
@@ -773,19 +778,37 @@ server decides whether a change tightens or loosens.
   calls, and calls through a calling account the user turned on, never an app's self-managed
   call); otherwise for a carrier call by the audio mode (`MODE_IN_CALL`, which no app can set),
   for at most 30 minutes. No other audio mode counts, so an app holding `MODE_IN_COMMUNICATION`
-  holds no lock off. The result doesn't wait (the fifth security review's F2): the phone
-  reports it at the step that first has it, `done` whether the screen locks then or, during a
-  call, once the call ends, however long that takes (a restart before then drops it: the
-  restart locked the screen), so no result says whether a call was on, or when one ended.
+  holds no lock off. A lock a call held off waits 2 minutes more once no call is on, counted on
+  the phone only (the sixth security review's I1: a kid whose 988 call dropped can call again
+  before the lock screen, whose emergency dialer takes only emergency numbers, asks for the PIN),
+  and a call in those 2 minutes holds it off again. The result doesn't wait (the fifth security
+  review's F2): the phone reports it at the step that first has it, `done` whether the screen
+  locks then or, during a call, about 2 minutes after the call ends, however long that takes (a
+  restart before then drops it: the restart locked the screen; a phone without Android's boot
+  count, `BOOT_COUNT`, platform notes K2, takes a clock moved 10 minutes or more for a restart
+  too, and drops it unlocked: the sixth review's I3), so no result says whether a call
+  was on, or when one ended. Once reported, the lock has nothing to do with the pause it came
+  with (I2): it still happens after that pause ended, or after a parent resumed the phone. The
+  build before that fix sent `waited_for_call` with an expired one; the server refuses that field
+  now, so a phone on that build had its check-ins refused until it updated (only CI's phones ran
+  it: the sixth review's I5).
   `expired` means only that the phone got it after `expires_at`, and `failed` that the lock
-  failed when the phone had it; a lock that waited and fails later is only in the phone's own
-  log. A phone updated to a Belay that can lock reads that permission at its next
-  restart (platform notes S5): until then the result is `failed`, "Android lets Belay lock the
-  screen only after the phone restarts once with this version of Belay." The server sends it
+  failed when the phone had it; a lock that waited and fails later (rare: Android refusing it
+  for another reason) is only in the phone's own log. Whether the phone can lock at all is
+  decided first, from what a call doesn't change (the sixth security review's G2): while Belay
+  isn't the device owner, or before a phone updated to a Belay that can lock reads that
+  permission at its next restart (platform notes S5: Android's record of Belay's policies,
+  `DevicePolicyManager.hasGrantedPolicy`, has no force-lock until then), every `lock_now` is
+  `failed` at once, call or not, nothing waits, and the phone doesn't try; for the restart,
+  "Android lets Belay lock the screen only after the phone restarts once with this version of
+  Belay.", which the phone also reports in `enforcement.problems` the whole time. The server sends it
   with `expires_at` 10 minutes on, and with a pause of 5 to 240 minutes when a parent or an AI
   client locks the phone (the command line's `lock-now` sends the lock alone, expiring after
   its `--minutes`); a new one replaces one still waiting. The parent sees a failed one's
-  `problem` word for word; the server shows no time of the phone's beside a lock's result.
+  `problem` word for word; the parent page, MCP and the activity log show no time of the phone's
+  beside a lock's result. Only the server's command line (`status --json`, for whoever runs the
+  server) prints each result's `at` as the phone sent it, which for a lock now is when the phone
+  had it, a call on or not (the sixth review's I6).
 - **The report:** `enforcement.screen_time` changes every minute the phone is used, but the
   phone checks in early only when something other than the minutes changed (a limit used up,
   a schedule starting, usage access, a self-serve take); the 2-hourly check-in carries the

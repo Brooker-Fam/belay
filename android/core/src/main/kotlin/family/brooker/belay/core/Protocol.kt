@@ -220,7 +220,8 @@ data class WireRecoveryUse(
 enum class WireCommandOutcome {
     /**
      * It ran. A lock_now is done when the phone has it, whether it locks the screen then or, during
-     * a call, once the call ends (core's ScreenLocks.lockNow), so its result never tells of a call.
+     * a call, about 2 minutes after the call ends (core's ScreenLocks.lockNow and waits), so its
+     * result never tells of a call; a phone that can't lock fails every one, call or not.
      */
     @SerialName("done") DONE,
     @SerialName("failed") FAILED,

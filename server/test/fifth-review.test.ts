@@ -92,7 +92,7 @@ describe("F2: no lock now's result tells of a call", () => {
     expect((await result(policy().commands[0]?.id ?? "", "done")).status).toBe(200);
     expect((await call("get_rules", { device: "Alex's phone" })).json.last_lock).toEqual({
       sent,
-      state: "done: the phone has it, and locks its screen at once, or as soon as a call ends",
+      state: "done: the phone has it, and locks its screen at once, or about 2 minutes after a call ends",
     });
     // A phone that got it too late: expired, in the one set of words, whatever it was doing.
     await call("lock_phone", { device: "Alex's phone", minutes: 5 });

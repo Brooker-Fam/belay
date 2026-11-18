@@ -13,6 +13,7 @@ import family.brooker.belay.core.RecoveryOutcome
 import family.brooker.belay.core.RecoveryRules
 import family.brooker.belay.core.RecoveryState
 import family.brooker.belay.core.Requests
+import family.brooker.belay.core.StepCause
 import family.brooker.belay.core.UpdateRecord
 import family.brooker.belay.core.WireDevice
 import family.brooker.belay.core.WireRequestKind
@@ -62,9 +63,19 @@ import java.util.concurrent.Executors
 /**
  * What woke the agent. Every trigger runs the same idempotent steps. [checkin]: the sync
  * that follows checks in with the server even if a check-in isn't due yet. [setup]: the step
- * also applies the device-owner setup again (frequent package triggers skip it).
+ * also applies the device-owner setup again (frequent package triggers skip it). [cause]: only
+ * a time passing ([StepCause.TIME]) or a call ([StepCause.CALL]): the sync after it sends what
+ * waits and a changed report, but no check-in merely because one is due (the sixth review's G3:
+ * the policy timer's minute while a lock waits for a call put a check-in 110 minutes after the
+ * last, to the minute, all through the call); the workers' own schedule sends those.
  */
-enum class Trigger(val label: String, val heartbeat: Boolean, val checkin: Boolean = false, val setup: Boolean = true) {
+enum class Trigger(
+    val label: String,
+    val heartbeat: Boolean,
+    val checkin: Boolean = false,
+    val setup: Boolean = true,
+    val cause: StepCause = StepCause.OTHER,
+) {
     ADMIN_ENABLED("device admin enabled", true),
     OWNER_CHANGED("device owner changed", true),
     PROVISIONED("provisioning finished", true),
@@ -81,12 +92,15 @@ enum class Trigger(val label: String, val heartbeat: Boolean, val checkin: Boole
     /** Phase 2: a new policy arrived (long-poll or check-in). */
     POLICY("new policy", false),
 
-    /** Phase 2: a pause or repair time ended; Phase 3: or screen time's next boundary came. */
-    POLICY_TIMER("a rule's time came", false),
+    /**
+     * Phase 2: a pause or repair time ended; Phase 3: or screen time's next boundary came; and
+     * every minute while a lock waits for a call (core's ScreenLocks.recheckAt).
+     */
+    POLICY_TIMER("a rule's time came", false, cause = StepCause.TIME),
 
     /** Phase 2: the Private DNS thread finished, or its retry is due. */
     PRIVATE_DNS("Private DNS updated", false),
-    PRIVATE_DNS_RETRY("Private DNS retry", false),
+    PRIVATE_DNS_RETRY("Private DNS retry", false, cause = StepCause.TIME),
 
     /** Phase 2: apps were unsuspended (maybe not by Belay): what Belay holds is checked again. */
     SUSPENSION_CHANGED("apps unsuspended", false, setup = false),
@@ -109,7 +123,7 @@ enum class Trigger(val label: String, val heartbeat: Boolean, val checkin: Boole
     USER_PRESENT("phone unlocked", false, setup = false),
 
     /** Phase 3: every 60 seconds while the screen is on and the policy has screen time. */
-    SCREEN_TIME_TICK("screen time", false, setup = false),
+    SCREEN_TIME_TICK("screen time", false, setup = false, cause = StepCause.TIME),
 
     /** Phase 3: the clock or the time zone changed. */
     CLOCK_CHANGED("clock or time zone changed", true),
@@ -124,7 +138,7 @@ enum class Trigger(val label: String, val heartbeat: Boolean, val checkin: Boole
     LOCATION_FIX("a location fix came", false, setup = false),
 
     /** Phase 4: a periodic or lost-mode fix is due (LocationTimer). */
-    LOCATION_DUE("a location check is due", false, setup = false),
+    LOCATION_DUE("a location check is due", false, setup = false, cause = StepCause.TIME),
 
     /** Phase 7: the kid asked for help, or chose to share where the phone is with it. */
     HELP("help asked for", false, setup = false),
@@ -132,8 +146,11 @@ enum class Trigger(val label: String, val heartbeat: Boolean, val checkin: Boole
     /** Phase 7: Belay's screens closed while a help fix's grant waited for that. */
     SCREENS_CLOSED("Belay's screens closed", false, setup = false),
 
-    /** Phase 5: a call was decided, or ended (calls/CallFlow.kt). */
-    CALL("a call came or ended", false, setup = false),
+    /**
+     * Phase 5: a call was decided, or ended (calls/CallFlow.kt), the kid called 911 or 988, or
+     * Android's audio mode left a call's while a lock waits for one (calls/InCall.kt).
+     */
+    CALL("a call came or ended", false, setup = false, cause = StepCause.CALL),
 
     /** Phase 5: the phone's default dialer changed (calls/DialerWatcher.kt). */
     DIALER_CHANGED("the phone's calling app changed", false),
@@ -254,7 +271,7 @@ object Agent {
             )
             publish(app, store, health, device ?: readDevice(), outcome.baseline.inventory, enforcement.view)
             DebugTools.afterStep(app) { StateDump.json(app, store, connection) }
-            Sync.request(app, checkin = trigger.checkin)
+            Sync.request(app, checkin = trigger.checkin, dueToo = trigger.cause.dueCheckin)
             // The parent page shows the policy as applied once the server hears so.
             if (enforcement.reportChanged) Sync.checkinSoon(app)
             // A new connection: the long-poll asks the new server at once.
@@ -586,7 +603,8 @@ object Agent {
                 // The same words for every call: whether it was kept would say it was with 911, 988 or a private number.
                 Log.i(TAG, "calls: a call ended")
                 showRecents(store)
-                if (record != null) Sync.request(app)
+                // The record goes; a check-in that's merely due waits for the workers (core's StepCause.CALL).
+                if (record != null) Sync.request(app, dueToo = false)
             } catch (t: Throwable) {
                 Log.e(TAG, "recording a call failed", t)
             }

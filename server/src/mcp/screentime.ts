@@ -64,12 +64,13 @@ const weekday = z.enum(WEEKDAYS as [string, ...string[]]) as z.ZodType<Schedule[
 const STATE_WORDS = { open: "time left", used_up: "used up", extra: "used up, running on extra time" } as const;
 /**
  * How a lock now went, the same words whatever the kid was doing: the phone reports one when it has
- * it, during a call too (its lock waits for the call to end), and no time comes with the words, so
- * nothing here says whether a call was on, or when one ended (the fifth review's F2).
+ * it, during a call too (its lock waits for the call to end, and 2 minutes more: the sixth review's
+ * I1), and no time comes with the words, so nothing here says whether a call was on, or when one
+ * ended (the fifth review's F2; a phone that can't lock fails every one, call or not: the sixth's G2).
  */
 const LOCK_STATE_WORDS: Record<CommandState, string> = {
   waiting: "sent, waiting for the phone",
-  done: "done: the phone has it, and locks its screen at once, or as soon as a call ends",
+  done: "done: the phone has it, and locks its screen at once, or about 2 minutes after a call ends",
   failed: "the phone couldn't lock its screen",
   expired: "not done: the phone got it too late, so it didn't lock",
   not_done: "not done: the phone didn't get it in time",
@@ -564,7 +565,7 @@ export function registerScreenTimeTools(server: McpServer, deps: Deps, caller: C
     "lock_phone",
     {
       title: "Lock the phone now",
-      description: `Pauses a phone at once for ${LOCK_MINUTES.min} to ${LOCK_MINUTES.max} minutes, as pause_phone does, and locks its screen if the phone gets this within ${LOCK_NOW_MS / 60_000} minutes (during a call, once the call ends); calls, texts, 911 and 988 still work. Use it only when the parent asks. A pause already running for longer stays as it is. The kid's phone says so in Belay's own words, never yours. Only a parent can resume early, on the parent page (you can propose that with propose_change). At most ${AI_PER_HOUR.locks} locks and pauses (pause_phone) an hour per phone through this connection, each lock counted: past that it says when to try again.`,
+      description: `Pauses a phone at once for ${LOCK_MINUTES.min} to ${LOCK_MINUTES.max} minutes, as pause_phone does, and locks its screen if the phone gets this within ${LOCK_NOW_MS / 60_000} minutes (during a call, about 2 minutes after the call ends); calls, texts, 911 and 988 still work. Use it only when the parent asks. A pause already running for longer stays as it is. The kid's phone says so in Belay's own words, never yours. Only a parent can resume early, on the parent page (you can propose that with propose_change). At most ${AI_PER_HOUR.locks} locks and pauses (pause_phone) an hour per phone through this connection, each lock counted: past that it says when to try again.`,
       inputSchema: {
         device: deviceParam,
         minutes: z.int().min(LOCK_MINUTES.min).max(LOCK_MINUTES.max).describe("How long the phone stays paused"),
@@ -583,7 +584,7 @@ export function registerScreenTimeTools(server: McpServer, deps: Deps, caller: C
         phone: row.name,
         paused_until: done.result.until === null ? "a parent resumes it" : iso(done.result.until),
         ...(done.result.kept ? { note: "It was already paused at least that long, and that stays as it was." } : {}),
-        locks: `The phone locks its screen when it gets this, within seconds if it's online, if that's within ${LOCK_NOW_MS / 60_000} minutes; during a call, as soon as the call ends. get_rules' last_lock says whether the phone got it in time.`,
+        locks: `The phone locks its screen when it gets this, within seconds if it's online, if that's within ${LOCK_NOW_MS / 60_000} minutes; during a call, about 2 minutes after the call ends. get_rules' last_lock says whether the phone got it in time.`,
         version: done.version,
         still_works: "The phone app and texting, so 911 and 988 always work.",
         reminder: "Only a parent can resume it early, on the parent page. To suggest that, use propose_change with kind resume.",

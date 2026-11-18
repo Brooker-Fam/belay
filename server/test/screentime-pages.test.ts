@@ -178,7 +178,7 @@ describe("the Screen time tab", () => {
     };
     // Done when the phone has it, during a call too: the words say both, and no time follows them.
     expect((await send("done")).status).toBe(200);
-    expect((await page(base)).html).toContain("the phone has it: its screen locks at once, or as soon as a call ends.</p>");
+    expect((await page(base)).html).toContain("the phone has it: its screen locks at once, or about 2 minutes after a call ends.</p>");
     // The device API has no word for a lock that waited for a call: a phone that sends one is refused whole.
     expect((await send("expired", { waited_for_call: true })).status).toBe(400);
     // Expired only when it reached the phone too late.
@@ -188,7 +188,7 @@ describe("the Screen time tab", () => {
     expect(expired).not.toContain("a call was on");
     // The activity log says the same, and keeps nothing about a call.
     const log = (await page("/activity")).html;
-    expect(log).toContain("got a request to lock its screen: it locks at once, or as soon as a call ends");
+    expect(log).toContain("got a request to lock its screen: it locks at once, or about 2 minutes after a call ends");
     expect(log).toContain("got a request to lock its screen too late");
     expect(log).not.toContain("a call was on");
   });

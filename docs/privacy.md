@@ -56,8 +56,10 @@ parent can see" (built from the code that collects them: `inventory/Collectors.k
   removing another user);
 - (Phase 3) whether the phone got a screen lock a parent or an AI app sent in time, and whether
   it could lock. The phone reports one when it gets it, during a call too: the screen then locks
-  once the call ends, and nothing says when, so a lock's result never says whether the kid was
-  on a call, or when one ended (fifth security review, F2);
+  about 2 minutes after the call ends, and nothing says when, so a lock's result never says whether the kid was
+  on a call, or when one ended (fifth security review, F2). A phone that can't lock (until it
+  restarts after an update, say) fails every one in the same words, call or not, and says so in
+  its status the whole time (sixth review, G2);
 - which apps the phone never blocks (Belay, the phone and texting apps, the keyboard, the
   home screen and Android's own parts), so the parent page doesn't offer to block them;
 - how many other users or profiles there are (a count: nothing about what's on them), and the
@@ -253,7 +255,10 @@ use, off for every phone until a parent measures it.
 
 - An app change: as soon as Belay notices it (it waits in an outbox while the phone is
   offline, and goes out in order when it's back).
-- A check-in with the phone's status: every 2 hours.
+- A check-in with the phone's status: every 2 hours, from the phone's background work (a step
+  that only a call or the clock brought never sends one just because one is due, so when the
+  phone last checked in doesn't show a call: sixth security review, G3); sooner when what it
+  reports changes.
 - The whole app list: once a day, after every restart, and right after the phone connects
   to the server.
 - Changes Belay noticed before the phone was connected to a server are sent when it
@@ -300,12 +305,18 @@ allows it, and only while that screen is open. Camera frames are never stored or
   kid can remove any of them (only the phone's copy: a record sent, or waiting to be, stays the
   parents'). When the kid last called 911 or 988 (or tapped a button to text them) is kept only
   for the 2 hours every caller rings, and never sent (after a restart, until Belay has read
-  Android's call log for the calls from before the unlock: at most until a call still on then
-  ends); a call to 911 from the lock screen before the
-  phone's first unlock after a restart keeps only that time, in the part of the phone's storage
-  Android opens at boot, until Belay's own storage opens. Belay's log on the phone (readable only
+  Android's call log for the calls from before the unlock: at the first step after the unlock,
+  or, when a call that rang before it was still on then, at the first step after that call ends,
+  which nothing brings at once for a call in the phone's own app (the hourly check does); if
+  Android won't let Belay read its call log, until calls goes off or the phone restarts again:
+  the sixth review's I9); a call to 911 from the lock screen before the
+  phone's first unlock after a restart keeps only its time (each such call's, at most 20), in the
+  part of the phone's storage Android opens at boot, until Belay's own storage opens and the
+  call's 2 hours are over. Belay's log on the phone (readable only
   with USB debugging) says what it did with each call, never why: nothing in it tells a call or
-  text with 911, 988 or a private number from any other. Network logging (Phase 3) keeps the
+  text with 911, 988 or a private number from any other. It does say when a screen lock began to
+  wait for a call, its steps every minute while it waits, and when the screen locked, so it shows
+  how long a call lasted, though not which call it was (the sixth review's I7). Network logging (Phase 3) keeps the
   counts of today and the two days before (which app looked up which name, how many times), and
   where Android's batches stand; all of it goes, with the days not sent yet, when a parent turns
   it off. Mobile data use (Phase 13) keeps only which days it sent; Android keeps its own
@@ -491,7 +502,11 @@ sends outside the family's server, and the parent page says so where you choose 
   still waiting can be changed or taken back.
 - **What your parent can see:** each kind of data, where it goes ("your parent's Belay server at …,
   and nowhere else"), and for each one the parents' AI app may read, "Your parent's AI app can read
-  this." (the policy's `ai_reads`, which follows Settings' "What AI apps may read").
+  this." (the policy's `ai_reads`, which follows Settings' "What AI apps may read"). Then what the
+  AI app can always read, with every category off too: the phone's name, how it's doing, its
+  problems and last check-in, the rules, and how the last screen lock went ([mcp.md](mcp.md)'s
+  "Always included", in plain words; the sixth security review's G4), and "Your parent hasn't let
+  their AI app read anything else here." when no category is on.
 - **What Belay told your parent:** every check of the last 30 days, each lost mode, and each fix
   the kid shared, from the phone's own record, so none is left out.
 

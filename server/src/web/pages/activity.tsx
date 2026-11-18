@@ -276,7 +276,7 @@ function what(e: AuditEntry, tz: string): string {
     case "command.done":
       if (d.kind === "locate_now") return "sent where it is, for a check";
       // The phone says so when it has it, during a call too: its time says nothing of a call (the fifth review's F2).
-      return d.kind === "lock_now" ? "got a request to lock its screen: it locks at once, or as soon as a call ends" : "removed every other user and profile, as a parent asked";
+      return d.kind === "lock_now" ? "got a request to lock its screen: it locks at once, or about 2 minutes after a call ends" : "removed every other user and profile, as a parent asked";
     case "command.failed":
       if (d.kind === "locate_now") return "couldn't find where it is, for a check";
       return d.kind === "lock_now" ? "couldn't lock its screen" : "couldn't remove the other users and profiles";

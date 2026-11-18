@@ -60,7 +60,7 @@ const CHECK_SHOWN_MS = 15 * 60_000;
 
 const SAVED: Record<string, string> = {
   paused: "Paused. The phone gets it within seconds if it's online, and shows your name.",
-  locked: "Paused, and the screen locks. The phone gets it within seconds if it's online, and shows your name.",
+  locked: "Paused, and the screen locks (during a call, about 2 minutes after the call ends). The phone gets it within seconds if it's online, and shows your name.",
   kept: "The phone was paused at least that long already, so nothing changed.",
   push_on: "Notifications are on for this browser.",
   push_off: "Notifications are off for this browser.",
