@@ -13,6 +13,7 @@ import family.brooker.belay.core.UpdateRecord
 import family.brooker.belay.core.WireCommandResult
 import family.brooker.belay.core.WireRecoveryUse
 import family.brooker.belay.core.calls.WireCallsStatus
+import family.brooker.belay.core.kid.Caregivers
 import family.brooker.belay.core.location.WireLocationStatus
 import family.brooker.belay.core.mobiledata.WireMobileDataStatus
 import family.brooker.belay.core.screentime.WireNetworkLogStatus
@@ -39,7 +40,8 @@ import kotlinx.serialization.json.putJsonObject
  * still holds any of the hand-over's locks, and (Phase 3) network logging's switch, batches and
  * days, and how many private websites the policy lists, as counts, never a name, and (Phase 13)
  * the Wi-Fi-only apps, as the policy lists them, as Belay last asked Android and as Android has
- * them (getMeteredDataDisabledPackages), and mobile data use's uploads, never how much an app used.
+ * them (getMeteredDataDisabledPackages), and mobile data use's uploads, never how much an app used,
+ * and (Phase 12) the caregivers the kid's screens list, and who set the pause, as they name them.
  * Debug builds write it after every step (DebugTools.afterStep), for android/scripts/ci-emulator-test.sh.
  */
 object StateDump {
@@ -204,6 +206,32 @@ object StateDump {
             put("days_sent_complete", JsonArray(mobileData?.uploads?.complete.orEmpty().map(::JsonPrimitive)))
             put("unsent", store.pendingMobileDataCount())
         }
+        // Phase 12: the caregivers the kid's screens list now (core's kid.Caregivers, by this phone's own
+        // clock): each name as the kid reads it, until when, and what they may see and do.
+        put(
+            "caregivers",
+            JsonArray(
+                Caregivers.current(store.policy(), System.currentTimeMillis()).map { caregiver ->
+                    buildJsonObject {
+                        put("name", caregiver.name)
+                        put("until", caregiver.until)
+                        put("can", JsonArray(caregiver.can.map { JsonPrimitive(it.wire) }))
+                    }
+                },
+            ),
+        )
+        // Phase 7's pause as the policy has it, and (Phase 12) who set it, as Home, the pause banner and its
+        // notice name them (kid.Caregivers.who): a caregiver's name, or null for a parent's, their AI app's
+        // or the server's command line's. Never the parent's note.
+        put(
+            "pause",
+            store.policy()?.pause?.let { pause ->
+                buildJsonObject {
+                    put("until", pause.until)
+                    put("by", Caregivers.who(pause.caregiver))
+                }
+            } ?: JsonNull,
+        )
     }.toString()
 
     private fun callsDump(out: JsonObjectBuilder, store: AgentStore, context: Context) {

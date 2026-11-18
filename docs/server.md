@@ -282,6 +282,23 @@ Numbers are E.164 (`+`, the country code, the number). `block-number` refuses 91
 every emergency number, a contact's number, one on the emergency card and a private one, with
 why.
 
+And for caregivers (Phase 12), as the Caregivers page adds, renews and ends them:
+
+```bash
+docker compose exec belay node dist/cli.js caregiver-add "Sam's phone" --name Grandma --until 2026-11-21T18:00   # prints only the one-time link; --can status,pause,help,locate
+docker compose exec belay node dist/cli.js caregivers                                  # each one: until when, their phones, what they may do, whether they joined (--json for scripts)
+docker compose exec belay node dist/cli.js caregiver-renew Grandma --until 2026-11-28T18:00   # a new end; for one whose access ended, access again from now
+docker compose exec belay node dist/cli.js caregiver-end Grandma                       # End access now
+```
+
+`caregiver-add` takes one or more phones, each in quotes. `--until` is a date and time in the
+family's timezone (or one with its offset, like `2026-11-21T23:00Z`), at most 30 days ahead;
+`--can` is any of `status`, `pause`, `help` and `locate`, comma separated (the page's recommended
+`status,pause,help` if left out). They refuse what the page refuses, in its words. `caregivers
+--json` gives `[{name, access: "current"|"ended", until, ended_at, phones, can, joined,
+joined_at, last_signed_in_at}]`, times in the family's timezone. Changing a caregiver, a new link
+and removing one are on the parent page only.
+
 They're logged as the server's ("The server" on the Activity page), and a running server
 passes them to the phone within a second or two. `status --json` gives each phone's
 `policy_version` (the server's), `enforcement` (what the phone last said it applied, exactly
@@ -321,8 +338,9 @@ does.
 For scripts: `agent-add` prints only the APK's SHA-256 (lowercase) on stdout,
 `recovery-key` prints only the key, grouped like `7KD2M-8Q4ZX-1HNP3-RT6VW-B9CF0G`,
 `limit`, `schedule`, `lock-now`, `place`, `locate-now` and `contact` print only the id of the
-limit, schedule, place, command or contact, and `handover` prints one sentence; everything else
-goes to stderr. They exit 1 with a reason on stderr when they can't.
+limit, schedule, place, command or contact, `caregiver-add` prints only the one-time link, and
+`handover` prints one sentence; everything else goes to stderr. They exit 1 with a reason on
+stderr when they can't.
 
 Outside Docker, use `npm run cli -- <command>` from `server/`.
 
@@ -670,7 +688,8 @@ The end of the rules, for when the kid outgrows Belay: each step is a parent's, 
 Someone who looks after the kid for a while (a grandparent for a weekend, a babysitter, a coach on
 a trip, the kid's other household) gets their own sign-in, never a parent's
 ([design](design/phase12-caregivers.md)). Each step about a caregiver is a parent's, on the parent
-page; AI apps can't see, add or change caregivers, not even as a proposal.
+page (adding, renewing and ending one also with the [admin commands](#admin-commands), as the
+server's); AI apps can't see, add or change caregivers, not even as a proposal.
 
 - **Caregivers** (in the menu): add one with a name (1 to 40 characters, one line: the kid sees
   it), the phones it covers, what they may do (below), and when access ends: a date and time in

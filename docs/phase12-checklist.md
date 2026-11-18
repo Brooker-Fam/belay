@@ -6,8 +6,19 @@ or from another site), a walk of every other route with a caregiver's session, a
 its time and at once, the activity log, push to caregivers only, and the policy's `caregivers`,
 `pause.caregiver` and `commands[].caregiver` ([design](design/phase12-caregivers.md)). The
 phone's words come from `:core` (`kid/Caregivers.kt`, `DataCategories.caregiver`), tested on the
-JVM. This checklist is for what only a real phone and real browsers show: the kid's screens with
-a caregiver, a caregiver acting from another phone, and help notices on Android and iOS.
+JVM. CI's emulator job (`ci-emulator-test.sh`) runs one caregiver end to end on the Android 17
+emulator: the server's command line adds them with status, pause and help, and the phone's debug
+state lists them with exactly that and their end, by its own clock; they join with the one-time
+link and pause the phone from their page over HTTP (curl, with their cookie, the form's CSRF token
+and a browser's Origin; one from another site is refused); the phone has the pause as theirs and
+holds the fixture app for it; ending their access takes them off the phone's list and signs them
+out, and a parent resumes their pause.
+
+This checklist is for what only a real phone and real browsers show: the kid's screens with a
+caregiver (the emulator checks what the phone lists, not the words on its screens, the largest
+font or the pause notice), a caregiver acting from another phone's browser (pausing, locking the
+screen, checking where the phone is), help notices on Android and iOS, and access ending at its
+time by the phone's own clock.
 
 Use made-up names ("Grandma", "Coach Lee"), a made-up kid and test phones. Record what you see in
 the table at the end: no screenshots in the repository, and no names, numbers or serial numbers.

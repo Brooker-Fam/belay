@@ -140,8 +140,8 @@ phase's Pixel checklist is in `docs/`.
 - **Phase 10:** another user or profile is reported, and removed when a parent asks.
 - **Phase 11:** off belay: the last stage, stopping collection with deletion, the hand-over.
 - **Phase 12:** caregivers: limited, time-boxed access a parent gives a grandparent, a babysitter
-  or a coach, which the kid's phone always lists (the phone's side tested on the JVM, not yet on
-  the emulator).
+  or a coach, which the kid's phone always lists (on the emulator: a caregiver added from the
+  CLI, listed by the phone, pausing it over HTTP, then ended).
 - **Phase 13:** mobile data: Wi-Fi-only apps the phone keeps off every metered network, and
   opt-in mobile data use per app per day, never which websites or networks.
 - **Across phases:**
@@ -311,8 +311,11 @@ one app, totals per billing cycle, a tethering lock).
 Built: the server's side (the Caregivers page, the caregiver's own pages under `/care`, a test that
 walks every other route with a caregiver's session, access that ends by itself, help notices to
 caregivers) and the kid's side (each caregiver on What your parent can see, Home and Help, and a
-caregiver's pause and check named), with the policy's `caregivers`; the phone's words are tested on
-the JVM, not yet in the emulator job. **Still open:**
+caregiver's pause and check named), with the policy's `caregivers`, and the server's command line
+(`caregiver-add`, `caregivers`, `caregiver-renew`, `caregiver-end`). The phone's words are tested on
+the JVM; CI's emulator job adds a caregiver from the command line, sees the phone list them with
+what they may do and until when, joins with the link and pauses the phone from their page over
+HTTP, sees the pause as theirs on the phone, and ends their access. **Still open:**
 [docs/phase12-checklist.md](docs/phase12-checklist.md) on the Pixel, with a caregiver on another
 phone and an iPhone; the design's open questions (a caregiver marking help seen, access that
 starts later, naming caregivers in Android's managed notice).
