@@ -435,7 +435,7 @@ data class WirePolicy(
     val stage: WireStage? = null,
     /** Phase 3: the family agreement, for the kid's screen. */
     val agreement: WireAgreement? = null,
-    /** Phase 3: off unless a parent turns it on. */
+    /** Phase 3: off unless a parent turns it on; with the family's private websites, never noted, sent either way. */
     @SerialName("network_log") val networkLog: WireNetworkLog = WireNetworkLog(),
     /** Phase 4: null, or mode off: no location at all. */
     val location: WireLocation? = null,
