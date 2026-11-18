@@ -98,7 +98,7 @@ export const CanList: FC<{ caregiver: Caregiver }> = ({ caregiver }) => (
   <ul>
     {CAREGIVER_CAN.filter((k) => caregiver.can[k]).map((k) => (
       <li>
-        <strong>{CAN_WORDS[k].title}</strong>: {CAN_WORDS[k].detail}
+        <strong>{CAN_WORDS[k].title}</strong>: {CAN_WORDS[k].yours}
       </li>
     ))}
   </ul>

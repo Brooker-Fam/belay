@@ -137,6 +137,10 @@ describe("joining and signing in", () => {
     expect(page).toContain("Hello, Grandma");
     // Whose family it is: the parent who added them, and the phones.
     expect(page).toContain("Sam gave you some access to Alex&#39;s phone");
+    // What they may do, in words for them; the parent's form has the parent's.
+    expect(page).toContain("with the kid&#39;s number if a parent added it. From when your access began.");
+    expect(page).not.toContain("if you added it");
+    expect(await (await get(f.t, "/caregivers", f.sam.cookie)).text()).toContain("with the kid&#39;s number if you added it");
     expect(page).not.toContain("Check where the phone is now");
     // Before joining there's nothing to sign in with: no username, no password.
     expect((await postForm(f.t, "/care/login", { username: "grandma", password: PASSWORD })).status).toBe(401);

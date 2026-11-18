@@ -17,24 +17,32 @@ export type CaregiverCan = (typeof CAREGIVER_CAN)[number];
 /** The recommended choices: the phone's status, pausing and locking it, and the kid's "I need help"; not where it is. */
 export const DEFAULT_CAN: Readonly<Record<CaregiverCan, boolean>> = { status: true, pause: true, help: true, locate: false };
 
-/** Each choice in plain words, for the parent's form and the caregiver's own pages. */
-export const CAN_WORDS: Readonly<Record<CaregiverCan, { title: string; detail: string }>> = {
+/**
+ * Each choice in plain words: `detail` for the parent's form, `yours` for the caregiver's own pages
+ * (the join page and their page), which speak to them.
+ */
+export const CAN_WORDS: Readonly<Record<CaregiverCan, { title: string; detail: string; yours: string }>> = {
   status: {
     title: "See whether the phone is on",
     detail: "Whether it's online or when it was last heard from, its battery, whether it's paused, and the schedule on now (like Bedtime).",
+    yours: "Whether it's online or when it was last heard from, its battery, whether it's paused, and the schedule on now (like Bedtime).",
   },
   pause: {
     title: "Pause it, or lock it now",
     detail: "For 15 minutes to 4 hours, only ever longer than a pause already on. Calls, texts, 911 and 988 still work. Only a parent can end a pause early.",
+    yours: "For 15 minutes to 4 hours, only ever longer than a pause already on. Calls, texts, 911 and 988 still work. Only a parent can end a pause early.",
   },
   help: {
     title: "Get the kid's \"I need help\"",
     detail:
       "A notification at once, and on their page: what the kid wrote, where the phone was if the kid shared it, and Call, with the kid's number if you added it. From when their access starts.",
+    yours:
+      "On your caregiver page, and as a notification at once if you turn them on there: what the kid wrote, where the phone was if the kid shared it, and Call, with the kid's number if a parent added it. From when your access began.",
   },
   locate: {
     title: "Check where the phone is now",
     detail: "Only while this phone's location is on. One check at a time, never where it has been, or your places' list. The kid gets a notification naming them each time.",
+    yours: "Only while the phone's location is on: where it is at that moment, never where it has been. The kid gets a notification naming you each time.",
   },
 };
 
