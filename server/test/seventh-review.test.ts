@@ -5,21 +5,31 @@
  *   (the later of the phone being added to their access and help being turned on): never one from
  *   before, by their page or by a notice, however late it arrives, and no notice of words added
  *   later to one they can't see. The kid's Help screen named them from then on.
+ * - M1: change_wifi_only needs the Apps category, as block_app does: with it off, its answer is
+ *   the category's refusal whatever the app, so it no longer tells which apps the phone has or had.
+ *   sixth-review.test.ts's G4 test now walks every write tool too.
  */
 import Database from "better-sqlite3";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { describe, expect, it, vi } from "vitest";
+import { listAudit } from "../src/audit.js";
 import { loadMigrations, migrate } from "../src/db.js";
 import { Policy } from "../src/device/schemas.js";
 import { getCaregiver, listCaregivers } from "../src/family/caregivers/store.js";
+import { wifiOnlyApps } from "../src/family/mobiledata/store.js";
 import { buildPolicy, type PolicyContext } from "../src/family/policy.js";
-import { updateSettings } from "../src/settings.js";
-import { browserFor, deviceCall, enrollPhone, fix, get, PASSWORD, postForm, signIn, testServer, T0 } from "./helpers.js";
+import { createPersonalToken } from "../src/oauth/store.js";
+import { AI_SCOPES, type AiScope, getSettings, updateSettings } from "../src/settings.js";
+import { browserFor, deviceCall, enrollPhone, fix, get, PASSWORD, pkg, postForm, signIn, snapshot, testServer, T0 } from "./helpers.js";
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
 /** Thursday Nov 19 2026, 6:00 PM in New York. */
 const THURSDAY_6PM = "2026-11-19T18:00";
+/** Every AI category off, those added later included. */
+const NO_SCOPES = Object.fromEntries(Object.keys(AI_SCOPES).map((key) => [key, false])) as Record<AiScope, boolean>;
 
 async function family() {
   const fetch = vi.fn((_url: string | URL | Request, _init?: RequestInit) => Promise.resolve(new Response(null, { status: 201 })));
@@ -248,3 +258,59 @@ describe("H1: a caregiver gets only the help requests the kid asked once their h
   });
 });
 
+/** One parent, one phone with an app installed and one removed since, and an AI app on a personal access token. */
+async function mcpFamily() {
+  const t = testServer();
+  updateSettings(t.deps.db, { timezone: "America/New_York" });
+  const session = await signIn(t);
+  const phone = await enrollPhone(t, "Alex's phone");
+  await deviceCall(t, phone.token, "inventory", snapshot([pkg("com.example.video", { label: "Video Tube" }), pkg("com.example.diary", { label: "Secret Diary" })], T0));
+  await deviceCall(t, phone.token, "inventory", snapshot([pkg("com.example.video", { label: "Video Tube" })], T0 + MIN));
+  const { token } = createPersonalToken(t.deps.db, t.now(), session.parent.id, "Claude", "https://belay.example.org/mcp");
+  const client = new Client({ name: "belay-test", version: "1.0.0" });
+  await client.connect(
+    new StreamableHTTPClientTransport(new URL("https://belay.example.org/mcp"), {
+      fetch: (url, init) => Promise.resolve(t.app.request(String(url), init)),
+      requestInit: { headers: { authorization: `Bearer ${token}` } },
+    }),
+  );
+  const call = async (name: string, args: Record<string, unknown> = {}) => {
+    const res = await client.callTool({ name, arguments: args });
+    const text = (res.content as { text: string }[])[0]?.text ?? "";
+    let json: Record<string, unknown> = {};
+    try {
+      json = JSON.parse(text) as Record<string, unknown>;
+    } catch {
+      // A refusal is words.
+    }
+    return { json, text, isError: res.isError === true };
+  };
+  return { t, phone, client, call };
+}
+
+describe("M1: change_wifi_only needs the Apps category, as block_app does", () => {
+  it("with Apps off, the same refusal for an app on the phone, one removed since and one never there; nothing changes", async () => {
+    const f = await mcpFamily();
+    updateSettings(f.t.deps.db, { aiScopes: NO_SCOPES });
+    expect(Object.values(getSettings(f.t.deps.db).aiScopes).every((on) => !on)).toBe(true);
+    const probe = (name: string) => f.call("change_wifi_only", { device: "Alex's phone", change: { add: [name, "zzzz.not.an.app"] }, reason: "probe" });
+    const answers = [await probe("com.example.video"), await probe("com.example.diary"), await probe("com.example.neverhere")];
+    const blocked = await f.call("block_app", { device: "Alex's phone", package: "com.example.video" });
+    expect(blocked.isError).toBe(true);
+    for (const a of answers) expect(a).toEqual({ json: {}, text: blocked.text, isError: true });
+    expect(blocked.text).toBe("A parent turned off AI access to apps in Belay's settings, so this isn't available.");
+    // A removal, a role app, a phone that isn't there: the same words, before anything else.
+    expect((await f.call("change_wifi_only", { device: "Alex's phone", change: { remove: ["com.example.video"] }, reason: "x" })).text).toBe(blocked.text);
+    expect((await f.call("change_wifi_only", { device: "Alex's phone", change: { add: ["com.android.phone"] }, reason: "x" })).text).toBe(blocked.text);
+    expect((await f.call("change_wifi_only", { device: "Nobody's phone", change: { add: ["com.example.video"] }, reason: "x" })).text).toBe(blocked.text);
+    expect(wifiOnlyApps(f.t.deps.db, f.phone.deviceId)).toEqual([]);
+    // Apps on: it works as before, and its refusals name apps again, which that category reads anyway.
+    updateSettings(f.t.deps.db, { aiScopes: { ...NO_SCOPES, apps: true } });
+    expect((await probe("com.example.neverhere")).text).toContain("com.example.neverhere isn't an app this phone has reported");
+    const done = await f.call("change_wifi_only", { device: "Alex's phone", change: { add: ["com.example.video"] }, reason: "It uses most of the plan." });
+    expect(done.isError).toBe(false);
+    expect(wifiOnlyApps(f.t.deps.db, f.phone.deviceId).map((w) => w.package)).toEqual(["com.example.video"]);
+    expect(listAudit(f.t.deps.db, { limit: 1, includeReads: false })[0]).toMatchObject({ actor: "ai", action: "mobile_data.wifi_only_added" });
+    await f.client.close();
+  });
+});

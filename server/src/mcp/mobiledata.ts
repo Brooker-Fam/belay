@@ -63,6 +63,9 @@ export function registerMobileDataTools(server: McpServer, deps: Deps, caller: C
     getSettings(db).aiScopes.mobile_data
       ? null
       : refusal(`A parent turned off AI access to mobile data use in Belay's settings, so this isn't available. To change it, a parent ticks "${AI_SCOPES.mobile_data.split(":")[0] ?? "Mobile data"}" in Settings.`);
+  /** The Apps category, as block_app asks for it (mcp/server.ts's scopeOff("apps")), in its words. */
+  const appsOff = (): CallToolResult | null =>
+    getSettings(db).aiScopes.apps ? null : refusal(`A parent turned off AI access to ${AI_SCOPES.apps.split(":")[0]?.toLowerCase() ?? "apps"} in Belay's settings, so this isn't available.`);
   const phone = (name: string): DeviceRow | CallToolResult => {
     const row = findDeviceByName(db, name);
     if (row) return row;
@@ -191,7 +194,7 @@ export function registerMobileDataTools(server: McpServer, deps: Deps, caller: C
     {
       title: "Change which apps are Wi-Fi only",
       description:
-        "Makes apps on one phone Wi-Fi only (add): they can't use mobile data or another metered network, like a phone's hotspot. Adding applies at once: use it only when the parent asks. Removing an app is a proposal for a parent. Refused: the apps the phone never blocks (calls, texting, the keyboard, the home screen, Android's own parts) and apps it never reported.",
+        "Makes apps on one phone Wi-Fi only (add): they can't use mobile data or another metered network, like a phone's hotspot. Adding applies at once: use it only when the parent asks. Removing one is a proposal for a parent. Refused: apps the phone never blocks (calls, texting, the keyboard, the home screen, Android's parts) or never reported. Needs the Apps category.",
       inputSchema: {
         device: deviceParam,
         change: z
@@ -205,6 +208,10 @@ export function registerMobileDataTools(server: McpServer, deps: Deps, caller: C
       annotations: { ...TIGHTEN, idempotentHint: false },
     },
     ({ device, change, reason }) => {
+      // First, as block_app: its refusals tell which apps the phone has or had (one it never reported is
+      // named) and which are its texting app or dialer, and that's the Apps category's (the seventh review's M1).
+      const off = appsOff();
+      if (off) return off;
       const row = phone(device);
       if (isRefusal(row)) return row;
       if (row.revoked_at !== null) return refusal(`${row.name} is disconnected, so Belay can't change anything on it.`);
@@ -217,8 +224,8 @@ export function registerMobileDataTools(server: McpServer, deps: Deps, caller: C
       }
       if (!patch.add.length && !patch.remove.length) return refusal("Name apps to add or to remove.");
       const now = deps.now();
-      // What this AI app reads back names no app while the Apps category is off: the apps are counted.
-      const said = getSettings(db).aiScopes.apps ? phoneLabels(db, row.id) : null;
+      // The Apps category is on (above), so what this AI app reads back names the apps.
+      const said = phoneLabels(db, row.id);
       const never = neverBlockedOn(db, row.id);
       for (const pkg of patch.add) {
         const refused = wifiOnlyRefusal(db, row.id, pkg, ai, never);

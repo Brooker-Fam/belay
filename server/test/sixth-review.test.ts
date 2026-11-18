@@ -24,7 +24,7 @@ import { setCalls } from "../src/family/calls/changes.js";
 import { buildPolicy } from "../src/family/policy.js";
 import { createPersonalToken } from "../src/oauth/store.js";
 import { AI_SCOPES, type AiScope, updateSettings } from "../src/settings.js";
-import { device, deviceCall, enrollPhone, signIn, testServer, T0 } from "./helpers.js";
+import { device, deviceCall, enrollPhone, pkg, signIn, snapshot, testServer, T0 } from "./helpers.js";
 
 const MCP = "https://belay.example.org/mcp";
 const MIN = 60_000;
@@ -160,11 +160,76 @@ const ALWAYS_KEYS: Record<string, Record<string, string>> = {
   },
 };
 
+/**
+ * The write tools (the seventh review's M1: change_wifi_only's refusals told an AI app with every
+ * category off which apps the phone has or had). Each is called as a parent might ask, with every
+ * category off. One that answers is held key by key to the list, like the read tools above (`keys`);
+ * one without `keys` must refuse in a category's words, the same for an app on the phone, one
+ * removed since and one never on it. Every write tool is here, so a new one is held to this too.
+ * A limit change_screen_time adds is named as the kid sees it: after its apps, as the phone names
+ * them (get_rules' which_apps says so), on the kid's rules screen and in the activity log.
+ */
+const WRITE_CALLS: { tool: string; args: (app: string) => Record<string, unknown>; keys?: Record<string, string> }[] = [
+  { tool: "block_app", args: (app) => ({ package: app }) },
+  { tool: "mark_apps_reviewed", args: (app) => ({ packages: [app] }) },
+  { tool: "change_wifi_only", args: (app) => ({ change: { add: [app, "zzzz.not.an.app"] }, reason: "It uses most of the plan." }) },
+  { tool: "propose_change", args: (app) => ({ change: { kind: "allow_app", package: app }, reason: "They asked for it." }) },
+  { tool: "locate_now", args: () => ({}) },
+  {
+    tool: "pause_phone",
+    args: () => ({ minutes: 30 }),
+    keys: { phone: "The phone", paused_until: "Its rules", note: "Its rules", version: "Its rules", still_works: "about the answer", reminder: "about the answer" },
+  },
+  {
+    tool: "lock_phone",
+    args: () => ({ minutes: 60 }),
+    keys: { phone: "The phone", paused_until: "Its rules", note: "Its rules", locks: "about the answer", version: "Its rules", still_works: "about the answer", reminder: "about the answer" },
+  },
+  {
+    tool: "propose_change",
+    args: () => ({ change: { kind: "resume" }, reason: "Homework's done." }),
+    keys: { phone: "The phone", proposed: "Its rules", status: "Its rules", note: "Its rules", where: "about the answer", reminder: "about the answer" },
+  },
+  {
+    tool: "change_screen_time",
+    args: () => ({ change: { limits: [{ packages: ["*"], minutes: 180 }] }, reason: "A daily total." }),
+    keys: { phone: "The phone", status: "Screen time's rules", changes: "Screen time's rules", version: "Its rules", what_happens: "about the answer", reminder: "about the answer" },
+  },
+  {
+    tool: "change_calls",
+    args: () => ({ change: { quiet: true }, reason: "Quiet at bedtime." }),
+    keys: { phone: "The phone", status: "Calls'", changes: "Calls'", version: "Its rules", what_happens: "about the answer", always: "Calls'", reminder: "about the answer" },
+  },
+];
+
 describe("G4: what an AI app reads with every category off is what the kid's phone says it always reads", () => {
   it("docs/mcp.md's list is the one this test (and core's AiAlwaysTest, for the phone) holds the tools to", () => {
     expect(alwaysIncluded()).toEqual(["The phone", "Its rules", "Screen time's rules", "Location's", "Calls'"]);
-    const labels = new Set(Object.values(ALWAYS_KEYS).flatMap((keys) => Object.values(keys)));
+    const labels = new Set([...Object.values(ALWAYS_KEYS), ...WRITE_CALLS.map((w) => w.keys ?? {})].flatMap((keys) => Object.values(keys)));
     for (const label of labels) expect(["about the answer", "hidden", ...alwaysIncluded()]).toContain(label);
+  });
+
+  it("every write tool too: what it answers is one of those items, and one that takes an app refuses alike for any app", async () => {
+    const { t, phone, client, call } = await family();
+    // An app on the phone, and one the kid installed and removed since (the phone reported it once).
+    await deviceCall(t, phone.token, "inventory", snapshot([pkg("com.example.video", { label: "Video Tube" }), pkg("com.example.diary", { label: "Secret Diary" })], T0));
+    await deviceCall(t, phone.token, "inventory", snapshot([pkg("com.example.video", { label: "Video Tube" })], T0 + MIN));
+    const parentId = (t.deps.db.prepare("SELECT id FROM parents").get() as { id: string }).id;
+    setCalls({ db: t.deps.db, now: t.now() }, phone.deviceId, { enabled: true }, { kind: "parent", parentId });
+    const writes = (await client.listTools()).tools.filter((tool) => tool.annotations?.readOnlyHint !== true).map((tool) => tool.name);
+    expect([...new Set(WRITE_CALLS.map((w) => w.tool))].sort()).toEqual(writes.sort());
+    for (const w of WRITE_CALLS) {
+      const at = (app: string) => call(w.tool, { device: "Alex's phone", ...w.args(app) });
+      const answer = await at("com.example.video");
+      if (!w.keys) {
+        expect(answer.isError, w.tool).toBe(true);
+        expect(answer.text, w.tool).toMatch(/^A parent turned off AI access to [a-z ]+ in Belay's settings[ (),a-z]*, so this isn't available\./);
+        for (const app of ["com.example.diary", "com.example.neverhere"]) expect((await at(app)).text, `${w.tool} ${app}`).toBe(answer.text);
+        continue;
+      }
+      expect(answer.isError, `${w.tool}: ${answer.text}`).toBe(false);
+      expect(Object.keys(answer.json).filter((k) => !(k in (w.keys ?? {}))), w.tool).toEqual([]);
+    }
   });
 
   it("every key of every tool that answers with every category off is one of those items", async () => {
