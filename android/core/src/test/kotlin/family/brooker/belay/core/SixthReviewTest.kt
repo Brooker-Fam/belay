@@ -31,7 +31,8 @@ import kotlin.test.assertTrue
 
 /**
  * The sixth security review's probes on the phone (commit 4528f67), turned to assert what holds
- * now: the fixes (G1, G2, G3, I1), and what the review found sound. The steps run through core's
+ * now: the fixes (G1, G2, G3, I1), what the docs now say of I2 and I3, and what the review found
+ * sound. The steps run through core's
  * own functions, as the app's calls/CallsStep.kt, enforce/CommandRunner.kt and sync/Sync.kt run
  * them. Made-up 555-01xx numbers only; nothing dials anything.
  */

@@ -7,16 +7,19 @@ package family.brooker.belay.core
  * connected, so it never says the AI app reads less than it does: with every category off, it
  * still reads the phone's status and problems (the restart note among them), when it last checked
  * in, the rules, and how the last screen lock went. AiAlwaysTest holds docs/mcp.md's list to this one.
+ * Nothing about caregivers (Phase 12): an AI app reads none of it (a caregiver's pause reads like
+ * any other), so their cards, after this list, are what the kid reads about them.
  */
 object AiAlways {
     /** One thing always read: [docLabel] is its bold label in docs/mcp.md's list; [words], for the kid. */
     data class Item(val docLabel: String, val words: String)
 
     val ITEMS: List<Item> = listOf(
+        // "When it last connected", as a caregiver's card says it (DataCategories.caregiver).
         Item(
             "The phone",
             "This phone's name, whether it's OK, the problems Belay tells your parent about (like that " +
-                "the phone stayed locked a long time after it restarted), and when it last checked in",
+                "the phone stayed locked a long time after it restarted), and when it last connected",
         ),
         Item(
             "Its rules",
