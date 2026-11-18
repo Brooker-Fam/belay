@@ -247,7 +247,8 @@ Nothing new goes from the phone to the server.
   capped, at most 20, sorted, `locate` only as sent); Home's line for a caregiver's pause; a
   caregiver's check named in "What Belay told your parent".
 - **Emulator (CI):** the policy's caregiver reaches the phone's debug state, if it's a simple,
-  safe step.
+  safe step. Not built: the emulator job drives the server through its command line, which has no
+  way to add a caregiver (only the parent page does), so the phone's side is tested on the JVM.
 - **On the Pixel:** the kid's screens with a caregiver, at the largest font; a caregiver's pause,
   lock and check from another phone's browser, and what the kid sees; a help request's push to a
   caregiver on Android Chrome and on an iPhone (Home Screen).
