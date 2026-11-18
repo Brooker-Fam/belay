@@ -617,7 +617,7 @@
     <string name="calls_rule_call_anyone">You can call any number.</string>
     <string name="calls_rule_call_contacts">You can call your contacts, your parents, 911 and 988.</string>
     <string name="calls_rule_quiet">During bedtime and school, only your parents, 911 and 988 ring. Other calls go to voicemail.</string>
-    <string name="calls_rule_log">Belay tells your parent who you call and who calls you, and for how long. Never what anyone says, and never calls with 911, 988 or the numbers your parent made private.</string>
+    <string name="calls_rule_log">Belay tells your parent who you call and who calls you, and for how long. Never what anyone says, and never calls with 911, 988 or the numbers your parent made private. If the phone network says a caller\'s number may be fake, Belay counts it as a stranger\'s call and tells your parent without the number.</string>
     <string name="calls_rule_always">911 and 988 always work. For 2 hours after you call 911 or 988, anyone can call you back.</string>
 
     <!-- Ask to add a contact (a request your parent answers). -->
@@ -631,7 +631,7 @@
     <string name="calls_ask_failed">Belay couldn\'t send that. Check the name, and the whole phone number with its area code.</string>
 
     <!-- Recent calls: Belay's own list, on this phone. -->
-    <string name="calls_recent_private_note">Calls with 911, 988 and the numbers your parent made private show here only while the phone\'s own call history has them. Belay never keeps them or sends them to anyone.</string>
+    <string name="calls_recent_private_note">Calls with 911, 988 and the numbers your parent made private show here only while the phone\'s own call history has them. Belay never keeps them or sends them to anyone. A caller whose number the phone network says may be fake is a stranger, whatever number shows. You can remove any call from this list.</string>
     <string name="calls_recent_none">No calls yet.</string>
     <string name="calls_number_hidden">Hidden number</string>
     <string name="calls_unknown_caller">Unknown caller</string>
@@ -646,6 +646,12 @@
     <string name="calls_recent_refused_not_allowed">Missed: your parent hasn\'t allowed calls from this number</string>
     <string name="calls_recent_not_placed">Not placed: your parent hasn\'t allowed calls to this number</string>
     <string name="calls_recent_no_answer">Outgoing, no answer</string>
+    <string name="calls_recent_unverified">The phone network couldn\'t confirm this number. It may be fake.</string>
+    <string name="calls_recent_remove">Remove</string>
+    <string name="calls_recent_remove_title">Remove this call?</string>
+    <string name="calls_recent_remove_text">It goes from Belay\'s recent calls on this phone.</string>
+    <string name="calls_recent_remove_text_log">It goes from Belay\'s recent calls on this phone. Your parent\'s list of your calls stays as it is.</string>
+    <string name="calls_recent_remove_keep">Keep it</string>
 
     <!-- The call screen and its notifications. -->
     <string name="calls_incoming">Incoming call</string>

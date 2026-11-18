@@ -68,6 +68,8 @@ class DialerActions(
     val askContact: (name: String, number: String, reason: String?, done: (Boolean) -> Unit) -> Unit,
     /** A number formatted for the phone's country. */
     val display: (String?) -> String?,
+    /** Removes a call from Belay's own recent calls (only the phone's copy). */
+    val removeCall: (id: String) -> Unit = {},
 )
 
 private enum class DialerTab { KEYPAD, CONTACTS, RECENT }
@@ -382,6 +384,7 @@ private sealed interface RecentRow {
 private fun BelayRecent(entry: CallEntry, calls: CallsView, actions: DialerActions, call: (String) -> Unit) {
     val context = LocalContext.current
     val now = System.currentTimeMillis()
+    var removing by rememberSaveable(entry.id) { mutableStateOf(false) }
     val contact = calls.contacts.firstOrNull { it.id == entry.contactId }
     val name = contact?.name ?: actions.display(entry.number) ?: stringResource(R.string.calls_number_hidden)
     val what = stringResource(recentWords(entry))
@@ -391,9 +394,25 @@ private fun BelayRecent(entry: CallEntry, calls: CallsView, actions: DialerActio
             Text(name, style = MaterialTheme.typography.titleLarge)
             val duration = if (entry.durationS > 0) " · " + KidWords(context) { it }.duration(maxOf(1, (entry.durationS + 59) / 60)) else ""
             Text("$what$duration", style = MaterialTheme.typography.bodyMedium)
+            if (entry.unverified) Text(stringResource(R.string.calls_recent_unverified), style = MaterialTheme.typography.bodyMedium)
             Text(KidWords(context) { it }.at(entry.at, now), style = MaterialTheme.typography.bodySmall)
+            TextButton(onClick = { removing = true }) { Text(stringResource(R.string.calls_recent_remove)) }
         }
         if (callBack != null) CallButton { call(callBack) }
+    }
+    if (removing) {
+        AlertDialog(
+            onDismissRequest = { removing = false },
+            title = { Text(stringResource(R.string.calls_recent_remove_title)) },
+            text = { Text(stringResource(if (calls.calls.log) R.string.calls_recent_remove_text_log else R.string.calls_recent_remove_text)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    removing = false
+                    actions.removeCall(entry.id)
+                }) { Text(stringResource(R.string.calls_recent_remove)) }
+            },
+            dismissButton = { TextButton(onClick = { removing = false }) { Text(stringResource(R.string.calls_recent_remove_keep)) } },
+        )
     }
 }
 

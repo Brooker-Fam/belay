@@ -112,12 +112,13 @@ class NetworkLogStep(context: Context, private val store: AgentStore) {
         val wire = days.map(NetworkDigest::wire)
         state = NetworkLog.took(state, token, boot, now, lookups.size)
         store.commitNetwork(days, wire, state, NetworkDigest.keepFrom(zone, now), now)
-        // Counts only: never a name Android logged.
+        // Counts only: never a name Android logged, and not why a lookup wasn't kept (one reason is 988's sites).
+        val skipped = reduced.skipped.values.sum()
         Log.i(
             Agent.TAG,
             "network logging: took batch${if (tokens.size == 1) "" else "es"} ${tokens.joinToString()}: $events events, ${lookups.size} lookups, " +
                 "${reduced.kept} kept in ${days.size} day${if (days.size == 1) "" else "s"}" +
-                if (reduced.skipped.isEmpty()) "" else "; not kept: ${reduced.skipped.entries.joinToString { "${it.key.name.lowercase()} ${it.value}" }}",
+                if (skipped == 0) "" else "; lookups not kept: $skipped",
         )
         return Taken(wire.size)
     }
