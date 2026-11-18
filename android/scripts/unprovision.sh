@@ -28,24 +28,49 @@ usage() { sed -n '2,/^set -euo/p' "${BASH_SOURCE[0]}" | sed '$d' | sed 's/^# \{0
 # Releasing device owner drops the configuration without telling the tracker, and uninstalling
 # tells it nothing either, so the next install of family.brooker.belay, a release build too,
 # would be allowed that app-op again (platform notes T8). `am broadcast` waits for the switch's
-# answer (a stopped Belay gets it too); a debug build from before the test has no switch (result=0).
-stop_texts_test() {
+# answer (a stopped Belay gets it too).
+#
+# texts_test COMMAND: the switch's answer to `--es command COMMAND`: "ok <its line>" (RESULT_OK),
+# "none" (result=0: nobody set a result), or "failed <what adb printed>" (its 1, or an adb error).
+texts_test() {
   local out result
-  local -a cmd=(am broadcast --include-stopped-packages -a "$PKG.DEBUG_ARCHIVAL" -n "$PKG/.DebugArchivalReceiver" --es command stop)
-  say "Stopping the texts test, if it's on..."
-  if [ "$DRY_RUN" = 1 ]; then
-    run adb shell "${cmd[@]}"
-    return 0
-  fi
-  out="$(adb shell "${cmd[@]}" 2>&1 | tr -d '\r')" || true
+  out="$(adb shell am broadcast --include-stopped-packages -a "$PKG.DEBUG_ARCHIVAL" -n "$PKG/.DebugArchivalReceiver" --es command "$1" 2>&1 | tr -d '\r')" || true
   result="$(sed -n 's/^Broadcast completed: //p' <<<"$out")"
   case "$result" in
-    'result=-1, data="'*) info "$(sed 's/^result=-1, data="//; s/"$//' <<<"$result")" ;;
-    'result=0') warn "The texts test's switch didn't answer: a debug build from before the test has none, so there's nothing to stop." ;;
-    *)
-      die "The texts test didn't stop, so nothing else changed." "$out" \
-        "Try again in a minute. If it never stops, a factory reset takes everything back (docs/pixel.md)."
+    'result=-1, data="'*) printf 'ok %s\n' "$(sed 's/^result=-1, data="//; s/"$//' <<<"$result")" ;;
+    'result=0') echo none ;;
+    *) printf 'failed %s\n' "$out" ;;
+  esac
+}
+
+# result=0 is what a debug build from before the test answers (it has no switch), but also what
+# Android answers when the switch's process dies before it finishes its answer (goAsync), so the
+# stop may not have happened (the second bypass audit's C1). Only when `status` gets no answer
+# either is there no switch; when it answers, the test must be off with Google Messages naming no
+# one for Belay, or nothing else changes.
+stop_texts_test() {
+  local answer status again="Try again in a minute. If it never stops, a factory reset takes everything back (docs/pixel.md)."
+  say "Stopping the texts test, if it's on..."
+  if [ "$DRY_RUN" = 1 ]; then
+    run adb shell am broadcast --include-stopped-packages -a "$PKG.DEBUG_ARCHIVAL" -n "$PKG/.DebugArchivalReceiver" --es command stop
+    return 0
+  fi
+  answer="$(texts_test stop)"
+  case "$answer" in
+    ok\ *) info "${answer#ok }" ;;
+    none)
+      status="$(texts_test status)"
+      case "$status" in
+        none) warn "The texts test's switch didn't answer: a debug build from before the test has none, so there's nothing to stop." ;;
+        'ok off'*'messages_archival: not set'* | 'ok off'*"Belay isn't the device owner"*)
+          warn "The texts test's switch didn't answer the stop, but it says the test is off and Google Messages names no one for Belay:"
+          info "${status#ok }"
+          ;;
+        ok\ *) die "The texts test's switch didn't answer the stop, and it may still be on, so nothing else changed." "${status#ok }" "$again" ;;
+        *) die "The texts test's switch didn't answer the stop or say how it is, so nothing else changed." "${status#failed }" "$again" ;;
+      esac
       ;;
+    *) die "The texts test didn't stop, so nothing else changed." "${answer#failed }" "$again" ;;
   esac
 }
 

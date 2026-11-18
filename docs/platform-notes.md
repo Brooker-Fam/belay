@@ -2777,7 +2777,10 @@ printable ASCII characters an update, the last 20 updates, and past 100 only cou
 Stopping takes the configuration back first, through `setApplicationRestrictions` so the tracker hears
 of it, then the service, then `READ_SMS`, last (that restarts Belay, L7). "Release this phone" and
 `unprovision.sh` stop it before device owner goes, `unprovision.sh` waiting for the switch's answer
-(K3). The test runs with calls off, since the dialer role would hold the app-op anyway. For texts
+(K3). An answer of `result=0` is Android's default, both for a build with no switch and for a switch
+whose process died before it answered (`goAsync`), so the script then asks for `status`: only no
+answer again means no switch; otherwise it goes on only if the test says it's off with
+`messages_archival` not set (the second bypass audit's C1). The test runs with calls off, since the dialer role would hold the app-op anyway. For texts
 themselves: the archival service must take an update as a hint and read only one message's URI,
 since any app can start it.
 
