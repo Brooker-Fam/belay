@@ -40,10 +40,14 @@ function main(): void {
     console.warn("BELAY_PUBLIC_URL is plain http: fine for testing on your own network, but phones and claude.ai need https.");
   }
 
-  cleanUp(db, Date.now());
+  // A caregiver's access that ended gives their phones new policies: each phone's long-poll wakes.
+  const changed = (deviceId: string) => {
+    deps.waiters.changed(deviceId);
+  };
+  cleanUp(db, Date.now(), changed);
   cleanAgentTemp(config.agentsDir, Date.now());
   const timer = setInterval(() => {
-    cleanUp(db, Date.now());
+    cleanUp(db, Date.now(), changed);
     cleanAgentTemp(config.agentsDir, Date.now());
   }, 3_600_000);
   timer.unref();
