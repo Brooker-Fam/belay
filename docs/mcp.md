@@ -246,7 +246,9 @@ too, since whoever holds a phone's token can send any text.
   rules as they are then, and one whose subject changed since makes it out of date. Moving a
   phone to another stage is always a proposal, and to Off belay (Phase 11), the last stage, is
   refused: only a parent moves a phone there. `lock_phone` pauses and locks at once.
-- The kid never reads an AI app's words. The kid's phone shows each limit's and schedule's
+- The kid reads an AI app's words only in the name of a contact it proposes (`change_calls`),
+  once a parent has approved it on the Proposals page, which shows the name. The kid's phone
+  shows each limit's and schedule's
   name ("Time's up for Chess Club today"), so Belay names one an AI app adds, or asks to rename,
   after what it is: a limit after its apps, as the phone names them ("Chess Club and Puzzle
   Pop", "Chess Club, Puzzle Pop and 2 more apps", or "3 apps" for apps the phone never

@@ -6,10 +6,10 @@ import { createParent } from "../src/auth/parents.js";
 import { listAudit } from "../src/audit.js";
 import { Policy } from "../src/device/schemas.js";
 import { buildPolicy, currentDecision, pausePhone, protect, type PolicyContext } from "../src/family/policy.js";
-import { approveProposal, listProposals } from "../src/family/proposals.js";
+import { MAX_PENDING_PROPOSALS, approveProposal, listProposals } from "../src/family/proposals.js";
 import { createPersonalToken } from "../src/oauth/store.js";
 import { saveSubscription } from "../src/push.js";
-import { updateSettings } from "../src/settings.js";
+import { type AiScope, AI_SCOPES, OFF_BY_DEFAULT, updateSettings } from "../src/settings.js";
 import { device, deviceCall, enrollPhone, event, pkg, snapshot, testServer, T0, type TestServer } from "./helpers.js";
 
 const MCP = "https://belay.example.org/mcp";
@@ -71,6 +71,24 @@ describe("the MCP server", () => {
     expect(instructions).toContain("Nothing loosens without a parent");
     expect(instructions).toContain("family's timezone");
     expect(client.getServerVersion()?.name).toBe("belay");
+  });
+
+  it("names every category, which start on and which off, and stays compact: it's sent at every connection", async () => {
+    const { client } = await family();
+    const instructions = client.getInstructions() ?? "";
+    const [on = "", rest = ""] = instructions.split("start on;");
+    const off = rest.split("start off")[0] ?? "";
+    expect(off).not.toBe("");
+    for (const scope of Object.keys(AI_SCOPES) as AiScope[]) {
+      const name = AI_SCOPES[scope].split(":")[0] ?? scope;
+      expect(OFF_BY_DEFAULT.includes(scope) ? off : on, scope).toContain(name);
+    }
+    // Phase 5: a contact's name it proposes is the one way its words reach the kid, and only once a parent approves.
+    expect(instructions).toContain("Your words reach the kid's phone only as the name of a contact you propose, once a parent approves it");
+    expect(instructions).toContain("whatever a contact's can_text says, texting works with anyone but a blocked number");
+    expect(instructions).toContain("(a schedule that locks the screen is always a proposal)");
+    expect(instructions).toContain(`at most ${MAX_PENDING_PROPOSALS} wait per phone`);
+    expect(instructions.length).toBeLessThan(5_000);
   });
 
   it("annotates its tools: reads are read-only, blocking, pausing, locking, screen-time and calls changes change the phone, the rest only record", async () => {
