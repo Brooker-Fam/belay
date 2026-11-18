@@ -62,6 +62,9 @@ numbers (in North America's 555-01xx range, which is kept for fiction).
   games.
 - **Off, as for every new family:** location and network logging. You can turn them on, to see
   their pages; the simulated phone says it can't do them (below).
+- **No caregivers.** Add one on the Caregivers page and open their link in a private window to
+  see a caregiver's pages under `/care`, which carry the banner too; the terminal shows Robin's
+  phone listing them, as the kid's screen does.
 
 Times follow your computer's timezone, so school and bedtime are at your local times, and the Phones
 page shows the phone checking in now.
