@@ -132,6 +132,7 @@ describe("the demo's family", () => {
       ["Requests", "/requests"],
       ["Proposals", "/proposals"],
       ["Stages", "/stages"],
+      ["Caregivers", "/caregivers"],
       ["a stage", `/stages/${stage}`],
       ["Timeline", "/timeline"],
       ["Add a phone", "/add"],

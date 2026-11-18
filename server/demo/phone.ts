@@ -412,7 +412,7 @@ export class SimPhone {
     if (!policy.calls?.log) this.state.outbox.calls = [];
     this.save(this.state);
     const e = this.enforced(now);
-    const news = [...this.changes(before, e, first), ...this.cannot(was, policy), ...ran];
+    const news = [...this.changes(before, e, first), ...this.cannot(was, policy), ...this.caregivers(was, policy, now), ...ran];
     this.held = { suspended: e.suspended, schedule: e.schedule?.id ?? null };
     if (answered.length) news.push(`${this.kid()} sees your answer: ${answered.join("; ")}`);
     // A new version can change nothing the phone shows: a lock's result, reported, leaves the rules, say.
@@ -429,6 +429,14 @@ export class SimPhone {
     const update = policy.agent_update;
     if (update && update.sha256 !== was?.agent_update?.sha256) words.push(`couldn't install Belay ${update.version_name ?? `version ${String(update.version_code)}`}: it can't install a new version`);
     return words;
+  }
+
+  /** Phase 12: the kid's screen always lists who else a parent let look after the phone. */
+  private caregivers(was: Policy | null, policy: Policy, now: number): string[] {
+    const key = (p: Policy | null) => JSON.stringify(p?.caregivers ?? []);
+    if (key(was) === key(policy) || (was === null && policy.caregivers.length === 0)) return [];
+    const current = policy.caregivers.filter((c) => c.until > now && c.can.length > 0).map((c) => c.name);
+    return [current.length ? `${this.kid()} sees who else can look after the phone: ${current.join(", ")}` : `${this.kid()} sees that no one else can look after the phone now`];
   }
 
   /** What changed on the phone, in words: the apps held now, and why, and the ones that run again. */

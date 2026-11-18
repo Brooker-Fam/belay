@@ -28,7 +28,7 @@ const DAY = 86_400_000;
 describe("the simulated phone", () => {
   let t: TestServer;
   let phone: SimPhone;
-  let form: (path: string, fields: Record<string, string>) => Promise<Response>;
+  let form: (path: string, fields: Record<string, string | string[]>) => Promise<Response>;
   let parentId: () => string = () => "";
   const sent: Sent[] = [];
   /** What the demo's terminal shows the phone doing: what the kid would see on it. */
@@ -182,6 +182,14 @@ describe("the simulated phone", () => {
     const device = getDevice(t.deps.db, deviceId(), getSettings(t.deps.db), t.now());
     expect(device?.problems.map((p) => p.fromPhone)).toContain(SAYS.noNetworkLog);
     expect(lines).toContainEqual(expect.stringMatching(/Network logging is on, but it can't note which websites its apps look up\.$/));
+  });
+
+  it("tells the kid who else can look after the phone when a parent adds a caregiver", async () => {
+    // Phase 12: a made-up caregiver, on the parents' Caregivers page.
+    const added = await form("/caregivers", { name: "Grandma", phone: [deviceId()], can: ["status", "pause"], until: "2026-11-19T18:00" });
+    expect(added.status).toBe(200);
+    await until(() => lines.at(-1)?.endsWith("Robin sees who else can look after the phone: Grandma.") ?? false);
+    expect(reported()?.policy_version).toBe(policyVersion(t.deps.db, deviceId()));
   });
 
   it("sends only what the device API's schemas accept", () => {
