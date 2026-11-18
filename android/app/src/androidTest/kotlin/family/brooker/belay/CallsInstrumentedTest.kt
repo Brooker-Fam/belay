@@ -1,13 +1,20 @@
 package family.brooker.belay
 
 import android.app.admin.DevicePolicyManager
+import android.os.ParcelFileDescriptor
+import android.provider.CallLog
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import family.brooker.belay.calls.AndroidCalls
+import family.brooker.belay.calls.CallsStep
 import family.brooker.belay.calls.Dialer
 import family.brooker.belay.core.CategoryPermissions
 import family.brooker.belay.core.DataCategories
+import family.brooker.belay.core.calls.AfterRestart
+import family.brooker.belay.core.calls.WireCallOutcome
 import family.brooker.belay.store.AgentStore
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Before
@@ -27,7 +34,8 @@ import java.util.concurrent.TimeUnit
  */
 @RunWith(AndroidJUnit4::class)
 class CallsInstrumentedTest {
-    private val context = InstrumentationRegistry.getInstrumentation().targetContext
+    private val instrumentation = InstrumentationRegistry.getInstrumentation()
+    private val context = instrumentation.targetContext
     private val store = AgentStore.get(context)
 
     @Before
@@ -80,9 +88,49 @@ class CallsInstrumentedTest {
         while (!Dialer.isDialer(context) && System.currentTimeMillis() < until) Thread.sleep(500)
     }
 
+    /**
+     * The fourth review's N1, on Android's own call log: a call Telecom logged while the phone was
+     * locked after a restart (here, written by the shell, which holds WRITE_CALL_LOG) is taken by
+     * the same rules as Belay's own records, once. The restart itself is ci-emulator-test.sh's.
+     */
+    @Test
+    fun aCallAndroidLoggedBeforeTheUnlockIsTakenOnce() {
+        assumeTrue("Belay can't read the call log", AndroidCalls.canReadLog(context))
+        val now = System.currentTimeMillis()
+        val at = now - 20 * 60_000
+        shell(
+            "content insert --uri content://call_log/calls --bind number:s:$LOCKED --bind date:l:$at --bind duration:l:0 " +
+                "--bind type:i:${CallLog.Calls.MISSED_TYPE} --bind presentation:i:${CallLog.Calls.PRESENTATION_ALLOWED}",
+        )
+        try {
+            val policy = checkNotNull(store.policy())
+            val step = CallsStep(context, store)
+            val android = AndroidCalls.emergencyNumbers(context)
+            val spell = AfterRestart(bootAt = now - 60 * 60_000, unlockedAt = now - 60_000, callsOn = true)
+            val (read, taken) = step.lockedCalls(spell, policy, emptyList(), android)
+            val entry = taken.single { it.at == at }
+            assertEquals(LOCKED, entry.number)
+            assertEquals(WireCallOutcome.MISSED, entry.outcome)
+            assertNull("Belay refused nothing: it rang in the phone's own app", entry.reason)
+            assertTrue(read.read && at in read.seen)
+            // Read again (after a call that was still on), it isn't taken twice.
+            assertTrue(step.lockedCalls(read.copy(read = false), policy, emptyList(), android).second.none { it.at == at })
+        } finally {
+            shell("content delete --uri content://call_log/calls --where date=$at")
+        }
+    }
+
+    private fun shell(command: String): String =
+        ParcelFileDescriptor.AutoCloseInputStream(instrumentation.uiAutomation.executeShellCommand(command)).use { it.readBytes().decodeToString() }
+
     private fun agentStep() {
         val done = CountDownLatch(1)
         Agent.handle(context, Trigger.POLICY) { done.countDown() }
         assertTrue("the agent didn't finish a step", done.await(90, TimeUnit.SECONDS))
+    }
+
+    private companion object {
+        /** Made-up (555-01xx), and no other check's. */
+        const val LOCKED = "+15555550187"
     }
 }

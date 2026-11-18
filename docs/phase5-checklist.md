@@ -8,7 +8,9 @@ contact's id; a blocked number goes onto Android's own block list and comes off 
 calls goes off, the dialer is given back and Belay holds no call permission. It also shows that a
 spoofed 988 caller ID is refused and recorded as a stranger's, that a call Telecom marks as
 emergency callback mode rings, that a slow decision rings, and that a lock-now sent while a call
-rings waits for the call to end (the third security review's fixes). The emulator has no
+rings waits for the call to end (the third security review's fixes), and that a call before the
+first unlock after a restart, which Belay can't decide, reaches the server once afterwards, from
+Android's call log (the fourth's). The emulator has no
 call audio and (on the ATD image) no preloaded dialer. This checklist is for the real Pixel 8, with
 the **release** build and a SIM: real calls, Google's Phone app next to Belay, the incoming-call
 screen over the lock screen, Bluetooth, Do Not Disturb, and what happens when Belay breaks. Do
@@ -169,7 +171,9 @@ clears it too. Every step here is in maintenance (adb on).
    `adb shell dumpsys telecom | grep -i ecbm`: write down whether the call shows `ecbm` (emergency
    callback mode; not expected after a call routed as a normal one, and only with step 1's first
    setting true; Belay rings such a call whatever its rules, T18). Decline. Belay's Recent tab
-   lists the call; the parent page has no record of it.
+   lists the call; the parent page has no record of it. Belay's Recent tab lists step 2's call
+   too, declined, taken from the phone's call history (platform notes T22); the parent page has
+   no record of it either: it rang within 2 hours of the emergency call.
 6. Caller-ID codes (T17). Set whom the kid can call to only contacts. Make the second phone's number
    a test emergency number again (`-a <the second phone's number>:normal`, `-p` says
    `routing=NORMAL`). From Belay's dial pad, call `*67` then the second phone's number: Belay
@@ -178,6 +182,14 @@ clears it too. Every step here is in maintenance (adb on).
    `#31#` before the number. Then `-c`. Neither call is on the parent page, and for the next 2
    hours every caller rings (the window those calls opened).
 7. `adb shell cmd phone emergency-number-test-mode -p` lists nothing.
+8. A restart without the callback window (the fourth review's N1). At least 2 hours after step 4,
+   restart the Pixel and leave it locked for 10 minutes. Call it from the second phone (still not
+   a contact): Google's Phone app rings on the lock screen (write down what it shows); let it ring
+   out. Unlock the Pixel. Within a minute Belay's Recent tab lists the missed call, and the parent
+   page has its record: missed, with the second phone's number, and no reason. The phone's Calls
+   page (and its status) says "Belay on the phone says: The phone restarted and stayed locked for
+   N minutes. …", with N about the time from the restart to the unlock; it's gone a day later.
+   Restart once more and unlock at once: no such note.
 
 ## Results
 
@@ -220,3 +232,4 @@ clears it too. Every step here is in maintenance (adb on).
 | 11.5 | After the unlock: the stranger rings Belay's screen; `ecbm` or not; no record | pending | |
 | 11.6 | `*67` and `#31#` before a test emergency number: placed under only contacts; what the second phone shows; no record | pending | |
 | 11.7 | The test number cleared | pending | |
+| 11.8 | A restart, 10 minutes locked: Google's Phone app rings; after the unlock the missed call in Recent and on the parent page, no reason; the Calls page's note, and none after a quick restart | pending | |

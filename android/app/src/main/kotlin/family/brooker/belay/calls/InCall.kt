@@ -77,6 +77,13 @@ object InCall {
         carrierSince = null
     }
 
+    /**
+     * Telecom has a call that Belay's own in-call service doesn't: one the phone's own app took (an
+     * emergency call, or one that rang before the unlock and is still on). Only while Belay is the
+     * dialer; false when Belay can't tell.
+     */
+    fun elsewhere(context: Context): Boolean = !CallFlow.callOn && telecomInCall(context.applicationContext) == true
+
     /** Telecom's answer, only while Belay is the default dialer (then Telecom lets it ask); else null. */
     @SuppressLint("MissingPermission")
     private fun telecomInCall(app: Context): Boolean? {

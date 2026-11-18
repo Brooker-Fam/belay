@@ -26,7 +26,10 @@ parent can see" (built from the code that collects them: `inventory/Collectors.k
 - battery level, whether it's charging, free storage;
 - when it last restarted, its timezone and clock (to spot a wrong clock);
 - whether Belay is still device owner and has the permissions and battery exemption it
-  needs.
+  needs;
+- with calls on (Phase 5), for a day after the phone stayed locked 10 minutes or more after a
+  restart: how long it stayed locked, since Belay can't decide calls until it's unlocked. How
+  long only, never when, and nothing about the calls.
 
 **What the kid asks for (Phase 2)**
 
@@ -197,7 +200,11 @@ Belay is the phone app); Belay never writes them into Android's Contacts. While 
 Belay reads Android's call log on the phone, and never keeps or sends what it reads there: to
 notice a call to 911 or 988 made without Belay (which starts those 2 hours), and to show the kid
 their calls with 911, 988 and the private numbers in Belay's recent calls, for as long as
-Android's own log has them.
+Android's own log has them. The one exception is a restart: until the phone is first unlocked
+after one, its own phone app takes every call, and afterwards Belay takes those calls from
+Android's call log into its recent calls, and into the records while calls are recorded, by the
+same rules as its own: never one with 911, 988, an emergency or a private number, and one in the
+2 hours after the kid contacted 911 or 988 only on the phone.
 
 **Not collected in Phase 1:** messages, calls, contacts, photos, files, browsing, searches,
 location (Phase 4 adds it, off by default), what's on the screen, or how long apps are used. Later phases add some of these

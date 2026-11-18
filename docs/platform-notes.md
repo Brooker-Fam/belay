@@ -133,6 +133,7 @@ relying on something new, it goes here first, with a source.
 | T19 | A call to 911 before the first unlock reaches a direct-boot-aware receiver | Confirmed; before that unlock Telecom finds no service of Belay's | AOSP; Emulator (the storage); Pixel pending (a test number) |
 | T20 | Whether a call is on: Telecom's `isInCall` for the dialer, and the audio mode | Confirmed: neither needs a permission; only `MODE_IN_CALL` can't be set by an app | AOSP; Emulator (Phase 5 CI); Pixel pending |
 | T21 | `WRITE_SECURE_SETTINGS` granted over adb outlives the debugging lock | Confirmed; it can't turn adb back on | AOSP |
+| T22 | Calls before the first unlock are in Android's call log after it | Confirmed: its direct-boot copy is moved in before the first read | AOSP; Emulator pending (Phase 5 CI); Pixel pending |
 | O1 | Handing over: clearing reset protection, and what a reset from Settings does on a fully managed phone | Confirmed in AOSP; Pixel pending (Phase 11 checklist) | AOSP |
 
 "Emulator" entries were seen in CI: `ci-emulator-test.sh` passed end to end on the API 37.0
@@ -2004,8 +2005,9 @@ All read in AOSP `android-17.0.0_r1` on 2026-11-17 (`platform/frameworks/base` u
 is `packages/services/Telecomm`, the role controller `packages/modules/Permission`), and in the
 InCallService, CallScreeningService and BlockedNumberContract references. T1 to T6 moved here from
 [the drafts](design/platform-notes-drafts.md) and were checked again where Belay now relies on them;
-T10 to T16 are new, and T17 to T21 came with the third security review (read on 2026-11-18,
-with `frameworks/opt/telephony` and `packages/services/Telephony`); T7 to T9, about texts, stay in
+T10 to T16 are new, T17 to T21 came with the third security review (read on 2026-11-18,
+with `frameworks/opt/telephony` and `packages/services/Telephony`), and T22 with the fourth (with
+`packages/providers/ContactsProvider`); T7 to T9, about texts, stay in
 the drafts. The emulator checks run in CI (`CallFlowInstrumentedTest`, `CallsInstrumentedTest`,
 `LockedCallsInstrumentedTest` and `ci-emulator-test.sh`'s Phase 5 block); the Pixel's are in
 [phase5-checklist.md](phase5-checklist.md). No test calls or texts 911 or 988, on the emulator or
@@ -2400,8 +2402,11 @@ Belay's consequence: `OutgoingCallReceiver` is Belay's only direct-boot-aware co
 device-protected storage (`calls/LockedCalls.kt`); its watchers wait for the unlock. Once the phone
 is unlocked, CallsGate and the calls step read the time into the 2-hour window, and the step
 deletes it once the window is over or calls goes off. Before that unlock Belay's in-call and
-screening services can't run, so Telecom is expected to give every call to the preloaded dialer,
-unfiltered (calls fail open; the Pixel checklist looks).
+screening services can't run, so Telecom gives every call to the preloaded dialer, unfiltered
+(calls fail open; the Pixel checklist looks): Telecom's `InCallController.getDefaultDialerComponent`
+finds no in-call service of Belay's, and `bindToServices` makes an
+`EmergencyInCallServiceConnection` with only the system dialer. Android logs those calls, and
+Belay takes them from its call log after the unlock (T22).
 
 ### T20. Whether a call is on
 
@@ -2466,6 +2471,46 @@ move a connected phone to another server while Belay holds the debugging lock, u
 opened repair access (maintenance, or the recovery key), and the phone reports every app holding the
 permission as a sensitive one (`secure_settings`, Android's own apps included). Such an app can't
 turn adb back on.
+
+### T22. Android's call log before the first unlock
+
+**Confirmed in AOSP.** Verified on: AOSP (read 2026-11-18 for the fourth review's N1); Emulator
+pending (`ci-emulator-test.sh`, a call before the unlock; `CallsInstrumentedTest`, the read);
+Pixel pending (Phase 5 checklist, 11.2 and 11.5).
+
+- Telecom's `util/CallLogUtils.addCall` → `addEntryAndRemoveExpiredEntries` writes each call to
+  `content://call_log/calls` once the user is unlocked, and to the shadow,
+  `content://call_log_shadow/calls`, before ("The 'shadow' provider stores calllog when the real
+  calllog provider is encrypted"); a withheld caller is written with no number
+  (`PRESENTATION_RESTRICTED` clears it). `CallLogManager` logs a call when it ends, with
+  `getCreationTimeMillis` as its `DATE` (or an earlier connect time).
+- `packages/providers/ContactsProvider`'s manifest: `ShadowCallLogProvider` (`call_log_shadow`)
+  is `directBootAware`, behind `INTERACT_ACROSS_USERS`, which Belay doesn't hold;
+  `CallLogDatabaseHelper.getInstanceForShadow` keeps its `calllog_shadow.db` in device-protected
+  storage. `CallLogProvider` (`call_log`, `READ_CALL_LOG`) isn't direct-boot aware.
+- `CallLogProvider.onCreate` schedules `BACKGROUND_TASK_INITIALIZE`: `syncEntries` →
+  `syncEntriesFrom(USER_SYSTEM, sourceIsShadow = true, …)` copies every shadow entry newer than
+  the last sync (voicemails left out; number, presentation, type, date, duration…), skips one
+  already there by date and number, and deletes the copied ones from the shadow. Every `query`
+  first `waitForAccess(mReadAccessLatch)`, which that task counts down, so the first read after
+  the unlock already has the calls from before it. `Calls.shouldHaveSharedCallLogEntries` is
+  false only with `DISALLOW_OUTGOING_CALLS` (Belay never sets it) or for a profile.
+- Telecom has nothing for the unlock (`InCallController`, `CallsManager`): a call that rang
+  before it stays with the dialer that had it, and is logged when it ends.
+- `UserManager.getUserUnlockRealtime` would say when the unlock was, but it's `@hide`
+  (`maxTargetSdk = R`).
+
+Belay's consequence: the first agent step after a restart records it (core's `AfterRestart`: the
+boot count, when the phone started, and about when it was unlocked: that step, or the creation
+time of the first call Belay's own in-call service had since, if sooner). With calls on through
+the restart, Belay then reads Android's call log from the restart to that unlock time and keeps
+each call it didn't decide like one of its own, by the same rules (core's
+`CallRecords.whileLocked`: never 911, an emergency number, 988, a private number, or a call that
+rang only because of the 2-hour window), with what happened and no reason. A call Belay has
+itself, or one read before, isn't taken again. If Telecom had a call Belay didn't (one answered
+on the lock screen and still on), Belay reads once more after it, since Android logs it only at
+its end. While calls is on, `enforcement.calls.problem` says how long the phone stayed locked, for
+a day after an unlock 10 minutes or more after the restart.
 
 ## Off belay (Phase 11)
 

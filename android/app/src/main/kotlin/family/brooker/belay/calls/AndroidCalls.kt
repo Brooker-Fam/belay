@@ -8,11 +8,11 @@ import android.telephony.PhoneNumberUtils
 import android.telephony.TelephonyManager
 import android.util.Log
 import family.brooker.belay.Agent
-import family.brooker.belay.core.calls.AlwaysAllowed
 import family.brooker.belay.core.calls.AndroidLogCall
 import family.brooker.belay.core.calls.EmergencyNumbers
 import family.brooker.belay.core.calls.PhoneNumbers
 import family.brooker.belay.core.calls.WireCallDirection
+import family.brooker.belay.core.calls.WireCallOutcome
 import java.util.Locale
 
 /**
@@ -22,10 +22,12 @@ import java.util.Locale
  * - A number as Belay compares it: E.164 from Android's own formatter with the phone's country, so
  *   "5555550123" from the network matches a contact's "+15555550123". An always-allowed number
  *   (911, 988, Android's emergency numbers) is never reformatted.
- * - Android's own call log (READ_CALL_LOG, held only while calls is on), read only for two things on
- *   the phone: a call to 911 or 988 Belay's dialer didn't see (the callback window), and the calls
- *   with always-allowed or private numbers that Belay's recent calls show while Android still has
- *   them. Nothing read here is stored or sent.
+ * - Android's own call log (READ_CALL_LOG, held only while calls is on), read for three things: a
+ *   call to 911 or 988 Belay's dialer didn't see (the callback window), and the calls with
+ *   always-allowed or private numbers that Belay's recent calls show while Android still has them
+ *   (neither stored nor sent); and, after a restart, the calls that rang in the phone's own app
+ *   before the unlock, which Belay keeps and sends like its own, by the same rules (CallsStep,
+ *   core's CallRecords.whileLocked).
  */
 object AndroidCalls {
     /** Android's emergency numbers, and its E.164 formatter with the phone's country, for core's rules. */
@@ -73,28 +75,29 @@ object AndroidCalls {
      * always-allowed number (911, 988, Android's emergency numbers) is never reformatted, and a number
      * with `*` or `#` (a caller-id code before it: core's PhoneNumbers.withoutCodes) stays as dialed.
      */
-    fun key(context: Context, raw: String?, android: EmergencyNumbers = emergencyNumbers(context)): String? {
-        val dialable = PhoneNumbers.dialable(raw)
-        if (dialable.isEmpty()) return null
-        PhoneNumbers.e164(dialable)?.let { return it }
-        if (AlwaysAllowed.allows(dialable, android) || dialable.any { it == '*' || it == '#' }) return dialable
-        return formatE164(context, dialable) ?: dialable
-    }
+    fun key(context: Context, raw: String?, android: EmergencyNumbers = emergencyNumbers(context)): String? = PhoneNumbers.key(raw, android)
 
     /** Whether Belay may read Android's call log now (READ_CALL_LOG, granted by policy while calls is on). */
     fun canReadLog(context: Context): Boolean =
         context.checkSelfPermission(Manifest.permission.READ_CALL_LOG) == PackageManager.PERMISSION_GRANTED
 
-    /** Android's call log since [since], the newest first, at most [limit] calls; empty without READ_CALL_LOG. */
-    fun log(context: Context, since: Long, limit: Int = 500): List<AndroidLogCall> {
+    /**
+     * Android's call log from [since] (to [until], when given), the newest first, at most [limit]
+     * calls; empty without READ_CALL_LOG. After a restart the first read waits until Android has
+     * moved in the calls it logged before the unlock (platform notes T22).
+     */
+    fun log(context: Context, since: Long, limit: Int = 500, until: Long? = null): List<AndroidLogCall> {
         if (!canReadLog(context)) return emptyList()
         val uri = CallLog.Calls.CONTENT_URI.buildUpon().appendQueryParameter(CallLog.Calls.LIMIT_PARAM_KEY, limit.toString()).build()
-        val projection = arrayOf(CallLog.Calls.NUMBER, CallLog.Calls.DATE, CallLog.Calls.DURATION, CallLog.Calls.TYPE)
+        val projection = arrayOf(CallLog.Calls.NUMBER, CallLog.Calls.DATE, CallLog.Calls.DURATION, CallLog.Calls.TYPE, CallLog.Calls.NUMBER_PRESENTATION)
+        val selection = "${CallLog.Calls.DATE} >= ?" + if (until != null) " AND ${CallLog.Calls.DATE} <= ?" else ""
+        val args = listOfNotNull(since.toString(), until?.toString()).toTypedArray()
         return try {
-            context.contentResolver.query(uri, projection, "${CallLog.Calls.DATE} >= ?", arrayOf(since.toString()), "${CallLog.Calls.DATE} DESC")?.use { c ->
+            context.contentResolver.query(uri, projection, selection, args, "${CallLog.Calls.DATE} DESC")?.use { c ->
                 val out = ArrayList<AndroidLogCall>(c.count)
                 while (c.moveToNext()) {
                     val type = c.getInt(3)
+                    val durationS = c.getLong(2).coerceIn(0, Int.MAX_VALUE.toLong()).toInt()
                     out += AndroidLogCall(
                         number = c.getString(0),
                         at = c.getLong(1),
@@ -104,8 +107,18 @@ object AndroidCalls {
                             CallLog.Calls.REJECTED_TYPE, CallLog.Calls.BLOCKED_TYPE -> WireCallDirection.IN
                             else -> null
                         },
-                        durationS = c.getLong(2).coerceIn(0, Int.MAX_VALUE.toLong()).toInt(),
+                        durationS = durationS,
                         blocked = type == CallLog.Calls.BLOCKED_TYPE,
+                        // Telecom writes no number for a withheld caller (CallLogUtils.addCall).
+                        withheld = c.getInt(4) != CallLog.Calls.PRESENTATION_ALLOWED || c.getString(0).isNullOrBlank(),
+                        outcome = when (type) {
+                            CallLog.Calls.INCOMING_TYPE -> WireCallOutcome.ANSWERED
+                            CallLog.Calls.MISSED_TYPE -> WireCallOutcome.MISSED
+                            CallLog.Calls.REJECTED_TYPE -> WireCallOutcome.REJECTED
+                            CallLog.Calls.OUTGOING_TYPE -> if (durationS > 0) WireCallOutcome.ANSWERED else WireCallOutcome.MISSED
+                            // A voicemail, a blocked call, one answered on another device: never recorded.
+                            else -> null
+                        },
                     )
                 }
                 out

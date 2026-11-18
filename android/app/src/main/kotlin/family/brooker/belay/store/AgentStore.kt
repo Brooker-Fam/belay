@@ -100,6 +100,10 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
         val dropUnsent: Boolean = false,
         /** Calls went off: Belay's own recent calls go too. */
         val clearRecents: Boolean = false,
+        /** Calls that rang before the unlock after a restart, from Android's call log: kept like Belay's own (core's CallRecords.whileLocked). */
+        val entries: List<CallEntry> = emptyList(),
+        /** Their records, with `log`. */
+        val records: List<WireCallRecord> = emptyList(),
     )
 
     private val inventory = db.inventory()
@@ -461,6 +465,29 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
             if (dropped > 0) Log.i(Agent.TAG, "calls: $dropped unsent call records dropped (the policy doesn't log calls)")
         }
         if (write.clearRecents) enforcement.clearCalls()
+        writeCallEntries(write.entries, write.records, at)
+    }
+
+    /** Calls into Belay's recent calls, and their records into the outbox; inside a transaction. */
+    private fun writeCallEntries(entries: List<CallEntry>, records: List<WireCallRecord>, at: Long) {
+        if (entries.isNotEmpty()) {
+            enforcement.upsertCalls(entries.map { CallRow(it.id, it.at, json.encodeToString(CallEntry.serializer(), it)) })
+            enforcement.pruneCalls(at - CallRecords.KEEP_MS, CallRecords.MAX_KEPT)
+        }
+        if (records.isNotEmpty()) {
+            outbox.insert(
+                records.map { record ->
+                    OutboxRow(
+                        type = OutboxRow.TYPE_CALL,
+                        itemId = "call:${record.id}",
+                        packageName = null,
+                        payload = Wire.json.encodeToString(WireCallRecord.serializer(), record),
+                        createdAt = at,
+                    )
+                },
+            )
+            outbox.capPendingCalls(OutboxPolicy.MAX_PENDING_CALLS)
+        }
     }
 
     /** Phase 3, inside commitEnforcement's transaction. */
@@ -576,26 +603,7 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
      */
     fun commitCall(entry: CallEntry?, record: WireCallRecord?, at: Long) {
         if (entry == null && record == null) return
-        db.runInTransaction {
-            if (entry != null) {
-                enforcement.upsertCalls(listOf(CallRow(entry.id, entry.at, json.encodeToString(CallEntry.serializer(), entry))))
-                enforcement.pruneCalls(at - CallRecords.KEEP_MS, CallRecords.MAX_KEPT)
-            }
-            if (record != null) {
-                outbox.insert(
-                    listOf(
-                        OutboxRow(
-                            type = OutboxRow.TYPE_CALL,
-                            itemId = "call:${record.id}",
-                            packageName = null,
-                            payload = Wire.json.encodeToString(WireCallRecord.serializer(), record),
-                            createdAt = at,
-                        ),
-                    ),
-                )
-                outbox.capPendingCalls(OutboxPolicy.MAX_PENDING_CALLS)
-            }
-        }
+        db.runInTransaction { writeCallEntries(listOfNotNull(entry), listOfNotNull(record), at) }
     }
 
     /** Phase 4: location's state; null while location is off and nothing is being shared (no row). */

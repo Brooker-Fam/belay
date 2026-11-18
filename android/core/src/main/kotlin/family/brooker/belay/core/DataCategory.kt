@@ -46,7 +46,9 @@ object DataCategories {
             "The phone's time zone, and its clock, to check that the time is right",
             "Which of your parent's rules Belay is using, how many apps it's holding back, " +
                 "which apps it never blocks (like the phone and texting apps), and anything it couldn't do",
-            "Whether Belay is the phone's calling app, when your parent turned calls on",
+            "Whether Belay is the phone's calling app, when your parent turned calls on, and how " +
+                "long the phone stayed locked after it restarted, if that was 10 minutes or more " +
+                "(Belay can't decide calls until the phone is unlocked)",
             "Whether the SIM card was changed, how many other users or profiles are on the phone, " +
                 "and which settings something other than Belay has locked (not the phone number, " +
                 "and nothing about what's on them)",
@@ -98,6 +100,8 @@ object DataCategories {
                 "number of someone who isn't one of your contacts (not the number when you call a " +
                 "short number, like 211, or a number without its area code)",
             "Calls Belay didn't let through, and why, like a number that isn't in your contacts",
+            "Calls that come in after the phone restarts and before you unlock it, from the phone's " +
+                "own call history",
             "Never what anyone says. Calls with 911, 988 and the numbers your parent made private " +
                 "are never recorded or sent.",
         ),

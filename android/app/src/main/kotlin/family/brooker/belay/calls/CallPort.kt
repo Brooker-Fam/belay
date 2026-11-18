@@ -42,6 +42,9 @@ interface CallPort {
 
     /** When it connected (0 before). */
     val connectTimeMillis: Long
+
+    /** When Telecom created it, the time Android's call log gives it (CallLog.Calls.DATE); 0 when unknown. */
+    val creationTimeMillis: Long get() = 0L
     val canHold: Boolean
 
     fun answer()
@@ -79,6 +82,7 @@ class TelecomCallPort(private val call: Call) : CallPort {
             call.details.hasProperty(Call.Details.PROPERTY_NETWORK_IDENTIFIED_EMERGENCY_CALL)
     override val silentRingingRequested: Boolean get() = call.details.extras?.getBoolean(Call.EXTRA_SILENT_RINGING_REQUESTED, false) == true
     override val connectTimeMillis: Long get() = call.details.connectTimeMillis
+    override val creationTimeMillis: Long get() = call.details.creationTimeMillis
     override val canHold: Boolean get() = call.details.can(Call.Details.CAPABILITY_HOLD)
 
     override fun answer() = call.answer(VideoProfile.STATE_AUDIO_ONLY)

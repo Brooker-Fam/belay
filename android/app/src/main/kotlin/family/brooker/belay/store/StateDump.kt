@@ -218,5 +218,17 @@ object StateDump {
         )
         out.put("recent", store.calls().size)
         out.put("unsent", store.pendingCallCount())
+        // The last restart: how long the phone stayed locked, and whether Android's call log was
+        // read for the calls before the unlock (no times, no numbers).
+        state?.afterRestart?.let { restart ->
+            out.putJsonObject("after_restart") {
+                put("boot_count", restart.bootCount)
+                put("locked_minutes", (restart.unlockedAt - restart.bootAt) / 60_000)
+                put("calls_on", restart.callsOn)
+                put("read", restart.read)
+                put("again", restart.again)
+                put("seen", restart.seen.size)
+            }
+        }
     }
 }

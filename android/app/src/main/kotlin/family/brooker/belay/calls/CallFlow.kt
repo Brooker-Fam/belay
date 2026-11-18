@@ -177,6 +177,7 @@ object CallFlow {
     fun added(context: Context, port: CallPort) {
         val app = context.applicationContext
         val t = Tracked(port, System.currentTimeMillis())
+        if (firstCallAtNow == null) firstCallAtNow = port.creationTimeMillis.takeIf { it > 0 } ?: t.addedAt
         tracked[port.id] = t
         port.listen { changed(app, port.id) }
         if (port.incoming) decideIncoming(app, t) else decideOutgoing(app, t)
@@ -452,6 +453,16 @@ object CallFlow {
 
     @Volatile
     private var callOnNow = false
+
+    @Volatile
+    private var firstCallAtNow: Long? = null
+
+    /**
+     * When the first call Belay's in-call service had in this process began (Telecom's time, the call
+     * log's DATE). Belay is first bound after the unlock that follows a restart, so a call Android
+     * logged before it rang in the phone's own app (CallsStep, core's CallRecords.whileLocked).
+     */
+    val firstCallAt: Long? get() = firstCallAtNow
 
     /**
      * A call is on in Belay's own in-call service: ringing, being placed or going on (as the main

@@ -1,6 +1,7 @@
 package family.brooker.belay.core.calls
 
 import kotlinx.serialization.Serializable
+import kotlin.math.abs
 
 /**
  * What Belay keeps between steps about calls (one row, written by the agent thread), so it only
@@ -31,6 +32,42 @@ data class CallsState(
     val blockListCheckedAt: Long? = null,
     /** `enforcement.calls` as the last step saw it; null while calls is off. */
     val report: WireCallsStatus? = null,
+    /** The phone's last restart, as the first step after it saw it (the fourth review's N1). */
+    val afterRestart: AfterRestart? = null,
+)
+
+/**
+ * The phone's last restart, as the first agent step after it saw it. Before the first unlock after
+ * a restart Belay decides no calls: only its outgoing-call receiver is direct-boot aware, so
+ * Telecom gives every call to the phone's own app (platform notes T19), and Android logs them in
+ * its call log's direct-boot copy, which it moves into the call log at the unlock (T22). Belay then
+ * takes the ones it didn't decide from there (CallRecords.whileLocked), and, when the phone stayed
+ * locked long enough, says so in `enforcement.calls.problem` for a day (CallsPlan.lockedNote). Only
+ * times: no number.
+ */
+@Serializable
+data class AfterRestart(
+    /** Settings.Global.BOOT_COUNT, when Android has it: which restart this was. */
+    val bootCount: Int? = null,
+    /** When the phone started: the clock less the time since boot. */
+    val bootAt: Long,
+    /**
+     * About when it was unlocked: the first agent step after the restart, or the first call Belay's
+     * own in-call service saw since, if that was sooner. Belay runs only once the phone is
+     * unlocked, so it was locked until about then.
+     */
+    val unlockedAt: Long,
+    /** Calls was on before the restart and still was then: Belay takes the calls it didn't decide. */
+    val callsOn: Boolean = false,
+    /** Android's call log has been read for them. */
+    val read: Boolean = false,
+    /**
+     * A call Belay didn't have was still on when it read (one answered on the lock screen, say):
+     * Android logs a call when it ends, so Belay reads once more after it.
+     */
+    val again: Boolean = false,
+    /** The times (CallLog.Calls.DATE) of the call log's entries already read, so none is taken twice. */
+    val seen: List<Long> = emptyList(),
 )
 
 /** The block list's changes: add [add], remove [remove]; [mine] is Belay's record afterwards if both work. */
@@ -105,11 +142,74 @@ object CallsPlan {
         return newPolicy || now - refused >= DIALER_RETRY_MS || now < refused
     }
 
-    /** `enforcement.calls`: null while calls is off; the problem while Belay isn't the dialer. */
-    fun report(on: Boolean, isDialer: Boolean): WireCallsStatus? = when {
+    /**
+     * `enforcement.calls`: null while calls is off; the problem while Belay isn't the dialer, else
+     * [note] (the phone stayed locked a while after a restart: [lockedNote]).
+     */
+    fun report(on: Boolean, isDialer: Boolean, note: String? = null): WireCallsStatus? = when {
         !on -> null
-        isDialer -> WireCallsStatus(dialer = true)
+        isDialer -> WireCallsStatus(dialer = true, problem = note)
         else -> WireCallsStatus(dialer = false, problem = NOT_THE_DIALER)
+    }
+
+    /** Two records of a restart whose boot times are this close are the same one, without a boot count. */
+    const val SAME_BOOT_MS = 10L * 60 * 1000
+
+    /** After a restart the phone stayed locked this long or more: the report says so (a quick restart doesn't). */
+    const val LOCKED_NOTE_FROM_MS = 10L * 60 * 1000
+
+    /** For this long after the unlock: the daily summary has it. */
+    const val LOCKED_NOTE_FOR_MS = 24L * 60 * 60 * 1000
+
+    /**
+     * Belay's record of the last restart after this step: [previous] while it's the same restart,
+     * else a new one, unlocked at [unlockedAt] (this step, or Belay's first call since, if sooner).
+     * Its calls are read only when calls was on before the restart ([callsWasOn]: the stored state
+     * said so) and there was a record before: never at the first step with calls just on, or with
+     * this Belay just installed, when the calls since the restart weren't under the rules.
+     */
+    fun afterRestart(previous: AfterRestart?, bootCount: Int?, bootAt: Long, unlockedAt: Long, callsWasOn: Boolean): AfterRestart {
+        if (previous != null && sameBoot(previous, bootCount, bootAt)) return previous
+        val callsOn = previous != null && callsWasOn
+        return AfterRestart(bootCount, bootAt, maxOf(unlockedAt, bootAt), callsOn = callsOn, read = !callsOn)
+    }
+
+    /** Whether [spell] is the restart that [bootCount] and [bootAt] say the phone had last. */
+    fun sameBoot(spell: AfterRestart, bootCount: Int?, bootAt: Long): Boolean =
+        if (bootCount != null && spell.bootCount != null) bootCount == spell.bootCount else abs(bootAt - spell.bootAt) < SAME_BOOT_MS
+
+    /**
+     * Whether to read Android's call log for [spell]'s calls now: once, then once more if a call
+     * Belay didn't have was on then, after it ended ([callElsewhere]: Telecom has a call Belay's
+     * own in-call service doesn't; asked only then), and only with calls on.
+     */
+    fun readLockedCalls(spell: AfterRestart, callsOn: Boolean, callElsewhere: () -> Boolean): Boolean = when {
+        !callsOn || !spell.callsOn -> false
+        !spell.read -> true
+        else -> spell.again && !callElsewhere()
+    }
+
+    /**
+     * `enforcement.calls.problem` for [LOCKED_NOTE_FOR_MS] after the unlock, when the phone stayed
+     * locked [LOCKED_NOTE_FROM_MS] or more after a restart with calls on: until then Belay decided
+     * no calls. Only how long, never when (the server words times in the family's zone) or a call.
+     */
+    fun lockedNote(spell: AfterRestart?, now: Long): String? {
+        val restart = spell?.takeIf { it.callsOn } ?: return null
+        val locked = restart.unlockedAt - restart.bootAt
+        if (locked < LOCKED_NOTE_FROM_MS || now - restart.unlockedAt !in 0 until LOCKED_NOTE_FOR_MS) return null
+        return "The phone restarted and stayed locked for ${lockedFor(locked)}. Until it's unlocked after a restart, " +
+            "Belay can't decide calls: they ring in the phone's own app, whatever the rules."
+    }
+
+    private fun lockedFor(ms: Long): String {
+        val minutes = ms / 60_000
+        return when {
+            minutes < 60 -> "$minutes minutes"
+            minutes < 90 -> "about an hour"
+            minutes < 48 * 60 -> "about ${(minutes + 30) / 60} hours"
+            else -> "about ${(minutes + 12 * 60) / (24 * 60)} days"
+        }
     }
 
     /**

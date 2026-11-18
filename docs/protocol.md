@@ -435,6 +435,12 @@ phone's other calls (30 a minute).
 - **If Belay breaks,** Telecom falls back to the preloaded dialer with no filtering, on
   purpose: a phone that can't take calls is worse. Belay reports "Calls are going through the
   phone's own app" (`enforcement.calls.problem`).
+- **Before the first unlock after a restart** Belay decides no calls (only its outgoing-call
+  receiver runs then): the preloaded dialer takes them all, unfiltered. Once the phone is
+  unlocked, Belay takes those calls from Android's call log into its recent calls and records,
+  by the rules below, with what happened and no `reason`; and while calls is on, for a day after
+  a phone stayed locked 10 minutes or more, `enforcement.calls.problem` says how long ("The
+  phone restarted and stayed locked for about 8 hours. …"), never when or which calls.
 - **Records** (`log`): when, direction, duration, outcome, and the contact, or the number for
   a caller who isn't one. Calls with emergency numbers, 988 or the family's private numbers
   (dialed with a caller-id code too) are never recorded or sent, and neither is a call that rang
@@ -445,8 +451,9 @@ phone's other calls (30 a minute).
   in E.164); one to a number the phone can't write in E.164 (211, a number dialed without its
   area code) without the number, once the phone knows it isn't an emergency number, 988 or a
   private one (dialed without its area code, the end of a private number counts as it). The
-  kid can remove a call from Belay's own recent calls on the phone; its record, sent or
-  waiting to be, still goes.
+  calls Belay takes from Android's call log after a restart follow the same rules. The kid can
+  remove a call from Belay's own recent calls on the phone; its record, sent or waiting to be,
+  still goes.
 - **Contacts** live in the policy and in Belay's own storage; Belay never writes them into
   Android's Contacts. A `contact` request is the kid asking for one; a parent approves it.
 - Only a parent turns calls on or off or changes who may call; an AI client may only

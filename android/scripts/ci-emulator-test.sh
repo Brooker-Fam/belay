@@ -60,8 +60,11 @@
 # from another number is rejected without ringing and reaches the server as rejected, unknown, with
 # its number; block-number puts the number on Android's block list and unblock-number takes it off;
 # and `calls --off` gives the default dialer back (or, with none before, Android drops Belay from
-# the role), Belay loses its call permissions and comes back. Made-up 555-01xx numbers only: never
-# a call to or from 911 or 988.
+# the role), Belay loses its call permissions and comes back. Then, with calls on again and a PIN
+# on the emulator: a restart, a call before the first unlock (which Belay can't decide), the unlock
+# (`locksettings verify`), and Belay's record of that call from Android's call log on the server,
+# once and with no reason; the PIN comes off again. Made-up 555-01xx numbers only: never a call to
+# or from 911 or 988.
 #
 # Phase 3's network logging, with BELAY_E2E_CLI, the fixture APKs and a server whose status has
 # network: `network --on` turns Android's network logging on (its admin dump says
@@ -939,6 +942,85 @@ elif [ -n "$E2E_CLI" ]; then
   adb uninstall "$FIXTURE_PKG" >/dev/null
 elif [ -n "$E2E_SERVER" ]; then
   echo "BELAY_E2E_CLI not given: the network logging checks are skipped"
+fi
+
+# Phase 5, the fourth review's N1: before the first unlock after a restart Belay decides no calls
+# (only its outgoing-call receiver is direct-boot aware: platform notes T19), so a call rings in the
+# phone's own app (on ATD there's none, so it rings with no screen), and Android logs it in its call
+# log's direct-boot copy, which it moves into the call log at the unlock (T22). After the unlock,
+# Belay's first step takes it from there into its records. The emulators have no PIN, so they unlock
+# at boot: a PIN keeps this one locked across the restart (an emulator's only: this script runs on
+# nothing else), `locksettings verify` unlocks it (AOSP 17's LockSettingsService unlocks the user on
+# a verified credential), and `locksettings clear` takes it off again, also if a check fails.
+CI_PIN=246810
+pin_set=0
+clear_pin() {
+  if [ "$pin_set" = 1 ]; then
+    ash locksettings clear --old "$CI_PIN" >/dev/null 2>&1 || true
+    pin_set=0
+  fi
+}
+trap clear_pin EXIT
+# The call log's entries for $1, as the shell reads them (it holds READ_CALL_LOG), for a failed check.
+call_log_for() {
+  ash content query --uri content://call_log/calls --projection number:date:type:duration --where "\"number='$1'\"" 2>/dev/null || true
+}
+
+if [ -n "$E2E_CLI" ] && server_status | jq -e '.phones[0] | has("calls")' >/dev/null 2>&1 &&
+  [ "$(ash pm has-feature android.hardware.telephony 2>/dev/null | tr -d '[:space:]')" = true ]; then
+  phone="$(server_status | jq -r '.phones[0].name')"
+  # Made-up (555-01xx), and a number no other check uses. Never 911 or 988.
+  LOCKED_NUMBER=+15555550188
+
+  step "Phase 5: a call before the first unlock after a restart rings in the phone's own app; after the unlock, Belay records it"
+  server_cli calls "$phone" --mode contacts --unknown reject --log on
+  wait_applied
+  wait_dialer "$PKG" 60 || { diagnose; die "Belay didn't become the default dialer again within 60 s of calls --mode contacts"; }
+  wait_calls_state '.after_restart != null and .after_restart.boot_count != null' 30 ||
+    { diagnose; die "Belay's debug state has no record of the phone's last restart"; }
+  if ash locksettings set-pin "$CI_PIN" | contains "Pin set to"; then
+    pin_set=1
+  fi
+  if [ "$pin_set" = 1 ]; then
+    adb reboot
+    wait_boot
+    boot_now="$(ash settings get global boot_count | tr -d '[:space:]')"
+    [[ "$boot_now" =~ ^[0-9]+$ ]] || die "Android's boot_count after the restart isn't a number" "$boot_now"
+    # The phone's radio, before the call (the console's call needs it).
+    for _ in $(seq 1 60); do
+      ash dumpsys telephony.registry 2>/dev/null | contains 'mVoiceRegState=0(' && break
+      sleep 1
+    done
+    echo "the phone restarted (boot $boot_now) and is locked: a call from $LOCKED_NUMBER, not a contact"
+    gsm_call "$LOCKED_NUMBER"
+    sleep 8
+    gsm_cancel "$LOCKED_NUMBER"
+    sleep 3
+    ash locksettings verify --old "$CI_PIN" | contains "verified successfully" || { diagnose; die "locksettings verify didn't unlock the phone"; }
+    if ash locksettings clear --old "$CI_PIN" | contains "cleared"; then pin_set=0; fi
+    [ "$pin_set" = 0 ] || die "the PIN ($CI_PIN) couldn't be taken off again: adb shell locksettings clear --old $CI_PIN"
+    wake_up
+    for _ in $(seq 1 120); do service_running && break; sleep 1; done
+    service_running || { diagnose; die "BelayService didn't come back after the unlock"; }
+    # Belay's first step after the unlock recorded the restart and read the call log for it.
+    wait_calls_state ".after_restart.boot_count == $boot_now and .after_restart.calls_on and .after_restart.read" 120 ||
+      { echo "--- the call log: $(call_log_for "$LOCKED_NUMBER")"; diagnose; die "Belay didn't read Android's call log for the time before the unlock"; }
+    echo "the phone: $(calls_state | jq -c '.after_restart')"
+    # On the server: one record, with the number (not a contact), what happened, and no reason:
+    # Belay didn't decide it (a call Belay refused itself would be "rejected", "unknown").
+    locked_record="[.call_records[]? | select(.direction == \"in\" and .number == \"$LOCKED_NUMBER\")] | length == 1 and (.[0].reason == null) and (.[0].outcome == \"missed\" or .[0].outcome == \"rejected\")"
+    if ! server_status | jq -e ".phones[0] | $locked_record" >/dev/null 2>&1; then
+      echo "--- the call log: $(call_log_for "$LOCKED_NUMBER")"
+    fi
+    wait_server "$locked_record" "one record of the call before the unlock, from $LOCKED_NUMBER, with no reason" 60
+    server_status | jq -c "[.phones[0].call_records[]? | select(.number == \"$LOCKED_NUMBER\")]"
+  else
+    echo "locksettings couldn't set a PIN on this emulator: the check of a call before the unlock is skipped"
+  fi
+  server_cli calls "$phone" --off
+  for _ in $(seq 1 90); do service_running && break; sleep 1; done
+  service_running || { diagnose; die "BelayService didn't come back after calls went off"; }
+  wait_applied
 fi
 
 if [ -n "$E2E_CLI" ] && ! server_status | jq -e '.phones[0] | has("handover")' >/dev/null 2>&1; then

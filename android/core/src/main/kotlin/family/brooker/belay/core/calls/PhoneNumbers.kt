@@ -35,6 +35,24 @@ object PhoneNumbers {
     fun key(raw: String?): String? = e164(raw) ?: dialable(raw).takeIf { it.isNotEmpty() }
 
     /**
+     * [raw] as the phone makes it for the rules (calls/AndroidCalls.kt): E.164 when it's written so,
+     * or when Android's formatter writes it so with the phone's country ([android]); an always-allowed
+     * number (911, 988, Android's emergency numbers), or one with `*` or `#` (a caller-id code before
+     * it: [withoutCodes]), stays as dialed. Null when nothing is dialable.
+     */
+    fun key(raw: String?, android: EmergencyNumbers): String? {
+        val dialable = dialable(raw).takeIf { it.isNotEmpty() } ?: return null
+        e164(dialable)?.let { return it }
+        if (AlwaysAllowed.allows(dialable, android) || dialable.any { it == '*' || it == '#' }) return dialable
+        val written = try {
+            android.e164(dialable)
+        } catch (e: RuntimeException) {
+            null
+        }
+        return written?.takeIf(::isE164) ?: dialable
+    }
+
+    /**
      * The codes dialed before a number that hide or show the caller's number for that one call,
      * the only ones Android's own code reads so (platform notes T17): North America's `*67`
      * (hide) and `*82` (show), which telephony's MMI readers turn into GSM's `#31#` (hide) and

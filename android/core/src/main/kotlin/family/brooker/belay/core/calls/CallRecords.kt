@@ -47,6 +47,14 @@ data class AndroidLogCall(
     val durationS: Int,
     /** Android blocked it (CallLog.Calls.BLOCKED_TYPE). */
     val blocked: Boolean = false,
+    /** The caller withheld the number (CallLog.Calls.NUMBER_PRESENTATION other than allowed). */
+    val withheld: Boolean = false,
+    /**
+     * What happened, as a record says it: answered, missed or declined (REJECTED_TYPE), an outgoing
+     * call answered or not. Null for an entry Belay never records: a voicemail, a blocked call, one
+     * answered on another device.
+     */
+    val outcome: WireCallOutcome? = null,
 )
 
 /**
@@ -238,6 +246,68 @@ object CallRecords {
         log.filter { it.direction == WireCallDirection.OUT && !it.blocked && CallRules.callbackWindow(it.at, null, now) }
             .filter { AlwaysAllowed.opensCallbackWindow(it.number, android) }
             .maxOfOrNull { it.at }
+
+    /** What [whileLocked] takes: the entries to keep (and, with `log`, send), and every call log time read. */
+    data class Taken(val entries: List<CallEntry>, val seen: List<Long>)
+
+    /**
+     * The fourth review's N1: the calls Android's own log has from while Belay couldn't decide any,
+     * from the restart ([from]) to about the unlock ([until]). Before the first unlock after a
+     * restart Telecom gives every call to the phone's own app, and logs it in the call log's
+     * direct-boot copy, which Android moves into the call log at the unlock (platform notes T19,
+     * T22). Each is kept, and sent with `log`, like a call Belay decided and by the same rules:
+     * never one with 911, an emergency number, 988 or a private number, and never sent when it rang
+     * only because of an emergency: the family's [rules] would have refused it, and the callback
+     * window was open then ([emergencyAt]: Belay's record from before the restart, the time kept
+     * before the unlock, and calls to those numbers in the log itself). Its outcome is what
+     * happened in the phone's own app (answered, missed, declined), with no reason: Belay refused
+     * nothing. Never one Belay keeps itself ([kept]: the same way and number, within the call's
+     * time), or one read before ([seen]), so no call is taken twice, nor one the kid removed.
+     */
+    fun whileLocked(
+        log: List<AndroidLogCall>,
+        from: Long,
+        until: Long,
+        seen: Collection<Long>,
+        kept: List<CallEntry>,
+        rules: CallsNow,
+        quietAt: (Long) -> Boolean,
+        emergencyAt: List<Long>,
+        privateNumbers: Set<String>,
+        android: EmergencyNumbers,
+        newId: () -> String,
+    ): Taken {
+        val spell = log.filter { it.at in from..until }.sortedBy { it.at }
+        val emergencies = emergencyAt + spell.filter {
+            it.direction == WireCallDirection.OUT && !it.blocked && AlwaysAllowed.opensCallbackWindow(it.number, android)
+        }.map { it.at }
+        val taken = mutableListOf<CallEntry>()
+        for (call in spell) {
+            if (call.at in seen || call.blocked) continue
+            val direction = call.direction ?: continue
+            val outcome = call.outcome ?: continue
+            val number = if (call.withheld) null else PhoneNumbers.key(call.number, android)
+            val callback = direction == WireCallDirection.IN && CallRules.incoming(
+                IncomingCall(number, if (number == null) Presentation.WITHHELD else Presentation.NUMBER),
+                rules.copy(
+                    quietSchedule = quietAt(call.at),
+                    lastEmergencyContactAt = emergencies.filter { CallRules.callbackWindow(it, null, call.at) }.maxOrNull(),
+                    now = call.at,
+                ),
+                android,
+            ).callback
+            val contact = CallContacts.find(number, rules.contacts)
+            val entry = entry(newId(), call.at, direction, number, contact, call.durationS, outcome, null, privateNumbers, android, callback = callback) ?: continue
+            if ((kept + taken).any { sameCall(it, entry, call.durationS) }) continue
+            taken += entry
+        }
+        return Taken(taken, (seen + spell.map { it.at }).distinct().takeLast(MAX_KEPT))
+    }
+
+    /** [mine] (Belay's own) and [logged] (from Android's log, lasting [durationS]) are the same call. */
+    private fun sameCall(mine: CallEntry, logged: CallEntry, durationS: Int): Boolean =
+        mine.direction == logged.direction && mine.number == logged.number &&
+            mine.at in (logged.at - SAME_CALL_MS)..(logged.at + durationS.coerceAtLeast(0) * 1000L + SAME_CALL_MS)
 
     /** The server takes at most a day per call (its schema's duration_s). */
     const val MAX_DURATION_S = 86_400

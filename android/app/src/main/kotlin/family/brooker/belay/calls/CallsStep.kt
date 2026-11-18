@@ -1,18 +1,28 @@
 package family.brooker.belay.calls
 
 import android.content.Context
+import android.os.SystemClock
+import android.provider.Settings
 import android.util.Log
+import androidx.annotation.VisibleForTesting
 import family.brooker.belay.Agent
 import family.brooker.belay.core.PackageRecord
 import family.brooker.belay.core.WirePolicy
+import family.brooker.belay.core.calls.AfterRestart
 import family.brooker.belay.core.calls.CallContacts
+import family.brooker.belay.core.calls.CallEntry
 import family.brooker.belay.core.calls.CallRecords
 import family.brooker.belay.core.calls.CallRules
+import family.brooker.belay.core.calls.CallsNow
 import family.brooker.belay.core.calls.CallsPlan
 import family.brooker.belay.core.calls.CallsState
 import family.brooker.belay.core.calls.CallsWireLimits
+import family.brooker.belay.core.calls.EmergencyNumbers
+import family.brooker.belay.core.calls.QuietTimes
 import family.brooker.belay.core.calls.WireCallsStatus
 import family.brooker.belay.store.AgentStore
+import java.time.ZoneId
+import java.util.UUID
 
 /**
  * Calls' part of an agent step (Phase 5), on the agent thread, with core's CallsPlan:
@@ -24,6 +34,11 @@ import family.brooker.belay.store.AgentStore
  *   step is stored ([after]), the role given back to the dialer from before and Belay's dialer
  *   disabled, then the call permissions denied by policy (the agent step's last act: Android then
  *   restarts Belay, platform notes L7). Each is done again at the next step if it didn't happen.
+ * - after a restart (the fourth review's N1): the first step records it (core's AfterRestart), and,
+ *   with calls on through it, takes the calls Android logged while the phone was locked, which
+ *   Belay couldn't decide, into its recent calls and records (core's CallRecords.whileLocked), in
+ *   the same transaction; for a day, the report says how long the phone stayed locked, when that
+ *   was 10 minutes or more.
  * Idempotent: what's already so isn't done again.
  */
 class CallsStep(context: Context, private val store: AgentStore) {
@@ -56,6 +71,14 @@ class CallsStep(context: Context, private val store: AgentStore) {
         // The callback window: Belay's own record, the time kept before the first unlock after a
         // restart, and Android's call log for a call its dialer didn't see.
         val beforeUnlock = LockedCalls.emergencyContactAt(app)
+        // The last restart, and the calls Android logged while the phone was locked after it, read
+        // before the window below forgets the times they're decided by.
+        val restart = CallsPlan.afterRestart(
+            before?.afterRestart, bootCount(), bootAt = now - SystemClock.elapsedRealtime(),
+            unlockedAt = CallFlow.firstCallAt?.let { minOf(now, it - 1) } ?: now, callsWasOn = before?.on == true && calls != null,
+        )
+        val (spell, whileLocked) = lockedCalls(restart, policy, listOfNotNull(before?.lastEmergencyContactAt, beforeUnlock), android)
+        state = state.copy(afterRestart = spell)
         val fromLog = if (calls != null) CallRecords.lastEmergencyContact(AndroidCalls.log(app, now - CallsWireLimits.EMERGENCY_CALLBACK_MS, limit = 50), android, now) else null
         val seen = listOfNotNull(fromLog, beforeUnlock.takeIf { calls != null }).maxOrNull()
         state = state.copy(lastEmergencyContactAt = CallsPlan.emergencyContact(state.lastEmergencyContactAt, seen, now))
@@ -88,11 +111,45 @@ class CallsStep(context: Context, private val store: AgentStore) {
             problems += "Belay isn't the device owner, so it can't be the phone's calling app."
         }
         if (!isDialer) state.dialerProblem?.let { problems += it }
-        state = state.copy(on = true, report = CallsPlan.report(on = true, isDialer = isDialer))
+        state = state.copy(on = true, report = CallsPlan.report(on = true, isDialer = isDialer, note = CallsPlan.lockedNote(state.afterRestart, now)))
         // While the window holds Belay's blocks off, the timer brings them back when it ends.
         val nextAt = CallRules.callbackWindowEnds(state.lastEmergencyContactAt, now)?.takeIf { window && policy.blockedNumbers.isNotEmpty() }
-        return Done(AgentStore.CallsWrite(state, dropUnsent = !calls.log), state.report, problems, giveBackTo = null, disable = false, nextAt, state)
+        val private = CallContacts.private(policy)
+        val records = if (calls.log) whileLocked.mapNotNull { CallRecords.toWire(it, private, android) } else emptyList()
+        val write = AgentStore.CallsWrite(state, dropUnsent = !calls.log, entries = whileLocked, records = records)
+        return Done(write, state.report, problems, giveBackTo = null, disable = false, nextAt, state)
     }
+
+    /**
+     * The calls Android logged between the restart and the unlock that Belay didn't decide (core's
+     * CallRecords.whileLocked), when they're due to be read (CallsPlan.readLockedCalls): [spell] as
+     * read, and the entries to keep. [emergencyAt]: the kid's last emergency contact as Belay knew it
+     * before the restart, and the time kept before the unlock (LockedCalls).
+     */
+    @VisibleForTesting
+    internal fun lockedCalls(spell: AfterRestart, policy: WirePolicy, emergencyAt: List<Long>, android: EmergencyNumbers): Pair<AfterRestart, List<CallEntry>> {
+        val calls = policy.calls ?: return spell to emptyList()
+        val elsewhere by lazy { InCall.elsewhere(app) }
+        if (!CallsPlan.readLockedCalls(spell, callsOn = true) { elsewhere } || !AndroidCalls.canReadLog(app)) return spell to emptyList()
+        val log = AndroidCalls.log(app, since = spell.bootAt, limit = CallRecords.MAX_KEPT, until = spell.unlockedAt)
+        val zone = ZoneId.systemDefault()
+        val rules = CallsNow(calls = calls, contacts = CallContacts.of(policy), blocked = CallContacts.blocked(policy, android), now = spell.unlockedAt)
+        val quietAt = { at: Long ->
+            try {
+                QuietTimes.quiet(policy.screenTime, at, zone)
+            } catch (e: RuntimeException) {
+                false
+            }
+        }
+        val taken = CallRecords.whileLocked(
+            log, spell.bootAt, spell.unlockedAt, spell.seen, store.calls(), rules, quietAt, emergencyAt, CallContacts.private(policy), android,
+        ) { UUID.randomUUID().toString() }
+        // No count and no times: what was taken would say whether the kid had calls then.
+        Log.i(Agent.TAG, "calls: read Android's call log for the time before the unlock")
+        return spell.copy(read = true, again = !spell.read && elsewhere, seen = taken.seen) to taken.entries
+    }
+
+    private fun bootCount(): Int? = Settings.Global.getInt(app.contentResolver, Settings.Global.BOOT_COUNT, -1).takeIf { it >= 0 }
 
     /** Calls is off: undo what Belay did, if anything is left; nothing is stored once it's all undone. */
     private fun off(before: CallsState?, start: CallsState, owner: Boolean, protected: Set<String>, inventory: Map<String, PackageRecord>, now: Long): Done {
