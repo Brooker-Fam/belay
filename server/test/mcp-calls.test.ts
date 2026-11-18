@@ -144,15 +144,41 @@ describe("calls over MCP", () => {
     const v = policy().version;
     const { json, isError } = await call("change_calls", {
       device: "Alex's phone",
-      change: { unknown: "reject", quiet: true, outgoing: "contacts", change_contacts: [{ id: coach.id, texts: false }], block_numbers: ["+1 555 555 0199"] },
+      change: { unknown: "reject", quiet: true, outgoing: "contacts", change_contacts: [{ id: coach.id, calls: false }], block_numbers: ["+1 555 555 0199"] },
       reason: "The parent asked for quieter evenings",
     });
     expect(isError).toBe(false);
     expect(json).toMatchObject({ status: "done: it only tightens, so it applies at once", version: v + 1 });
     expect(json.changes.map((c: { effect: string }) => c.effect)).toEqual(["tightens", "tightens", "tightens", "tightens", "tightens"]);
     expect(policy()).toMatchObject({ calls: { unknown: "reject", quiet: true, outgoing: "contacts" }, blocked_numbers: [STRANGER] });
-    expect(policy().contacts.find((c) => c.id === coach.id)?.texts).toBe(false);
+    expect(policy().contacts.find((c) => c.id === coach.id)?.calls).toBe(false);
     expect(listAudit(t.deps.db, { limit: 1, includeReads: false })[0]).toMatchObject({ actor: "ai", clientName: "Claude", action: "calls.changed" });
+  });
+
+  it("texts aren't enforced yet: get_contacts says so, and change_calls refuses a contact's texts rather than call it done", async () => {
+    const { t, call, policy, callsOn } = await family();
+    const { coach } = callsOn();
+    updateSettings(t.deps.db, { aiScopes: { calls: true } });
+    const contacts = await call("get_contacts", { device: "Alex's phone" });
+    expect(contacts.json.texts).toBe("Not enforced yet: Belay doesn't manage texts yet, so texting works with anyone, whatever each contact's can_text says. It's kept for when Belay does.");
+    const before = policy();
+    for (const change of [
+      { change_contacts: [{ id: coach.id, texts: false }] },
+      { quiet: true, change_contacts: [{ id: coach.id, calls: false, texts: false }] },
+      { add_contacts: [{ name: "Grandma", numbers: ["+15555550123"], texts: true }] },
+    ]) {
+      const res = await call("change_calls", { device: "Alex's phone", change, reason: "No more texts from the coach" });
+      expect(res.isError, JSON.stringify(change)).toBe(true);
+      expect(res.text).toBe(
+        "Nothing changed: Belay doesn't manage texts yet (for now, texting works with anyone, whatever a contact's texts says), so leave texts out. Blocking a number stops both its calls and its texts.",
+      );
+    }
+    expect(policy()).toEqual(before);
+    expect(listAudit(t.deps.db, { limit: 50, includeReads: false }).filter((e) => e.action === "ai.refused").map((e) => e.detail?.why)).toEqual(["texts"]);
+    const { tools } = await (await family()).client.listTools();
+    const description = tools.find((x) => x.name === "change_calls")?.description ?? "";
+    expect(description).toContain("Belay doesn't manage texts yet (for now, texting works with anyone)");
+    expect(tools.find((x) => x.name === "get_contacts")?.description).toContain("whether they may text (not enforced yet: for now, texting works with anyone)");
   });
 
   it("change_calls: anything that loosens, or takes from a parent contact, is a proposal a parent approves", async () => {

@@ -57,6 +57,11 @@ const CALLS = AI_SCOPES.calls.split(":")[0] ?? "Calls";
  * same whatever the number, since anything else (whose it is, on the emergency card, blocked or
  * not) would tell an AI app what a parent keeps from it.
  */
+/** A contact's `texts`, over MCP: kept for Phase 5's texts, and the phone ignores it today. */
+const TEXTS = `Not enforced yet: Belay doesn't manage texts yet, so texting works with anyone, whatever each contact's can_text says. It's kept for when Belay does.`;
+const TEXTS_REFUSED =
+  "Nothing changed: Belay doesn't manage texts yet (for now, texting works with anyone, whatever a contact's texts says), so leave texts out. Blocking a number stops both its calls and its texts.";
+
 const NUMBERS_OFF = `Not done: a parent turned off AI access to calls in Belay's settings (it starts off), so change_calls takes no phone numbers: none to block or unblock, and no contact's numbers. You can still change the call rules, and change or remove contacts by id without their numbers. A parent can block a number or add a contact on the phone's Calls tab, or tick "${CALLS}" in Settings to let AI apps see calls.`;
 
 export function registerCallsTools(server: McpServer, deps: Deps, caller: Caller): void {
@@ -97,7 +102,7 @@ export function registerCallsTools(server: McpServer, deps: Deps, caller: Caller
     {
       title: "A phone's call rules and contacts",
       description:
-        "One phone's calls: whether Belay is its phone app (calls on or off), who may call the kid and whom the kid may call, quiet times, whether calls are recorded, the approved contacts (with ids, for change_calls: each one's name, whether they may call or text, and whether they're a parent, who always rings and is on the kid's emergency card), the blocked numbers, how many private numbers there are, and changes AI apps proposed that wait for a parent. Contacts' and blocked numbers need the Calls category. 911, 988 and emergency numbers always work, whatever the rules.",
+        "One phone's calls: whether Belay is its phone app (calls on or off), who may call the kid and whom the kid may call, quiet times, whether calls are recorded, the approved contacts (with ids, for change_calls: each one's name, whether they may call, whether they may text (not enforced yet: for now, texting works with anyone), and whether they're a parent, who always rings and is on the kid's emergency card), the blocked numbers, how many private numbers there are, and changes AI apps proposed that wait for a parent. Contacts' and blocked numbers need the Calls category. 911, 988 and emergency numbers always work, whatever the rules.",
       inputSchema: { device: deviceParam },
       annotations: READ,
     },
@@ -116,6 +121,7 @@ export function registerCallsTools(server: McpServer, deps: Deps, caller: Caller
         calls: callsSummary(s),
         ...(s?.enabled ? { rules: rulesInWords(s) } : { rules: "Calls are off: Belay isn't the phone app on this phone, so it doesn't decide who rings. Only a parent turns calls on, on the phone's Calls tab." }),
         always: ALWAYS,
+        texts: TEXTS,
         contacts: contacts.map((c) => ({
           id: c.id,
           can_call: c.calls,
@@ -202,7 +208,7 @@ export function registerCallsTools(server: McpServer, deps: Deps, caller: Caller
     name: z.string().min(1).max(CALL_LIMITS.contactName).describe("The family's name for them, like Grandma: the kid sees it"),
     numbers: z.array(e164).min(1).max(CALL_LIMITS.numbersPerContact).describe("E.164, like +15555550100"),
     calls: z.boolean().optional().describe("May call and be called. Default true."),
-    texts: z.boolean().optional().describe("May text. Default true."),
+    texts: z.boolean().optional().describe("Leave it out: texts aren't enforced yet (for now, texting works with anyone), so it's refused"),
     parent: z.boolean().optional().describe("A parent: always rings, and on the kid's emergency card. Default false."),
   });
   const contactChange = z.strictObject({
@@ -210,7 +216,7 @@ export function registerCallsTools(server: McpServer, deps: Deps, caller: Caller
     name: z.string().min(1).max(CALL_LIMITS.contactName).optional(),
     numbers: z.array(e164).min(1).max(CALL_LIMITS.numbersPerContact).optional().describe("The whole list"),
     calls: z.boolean().optional(),
-    texts: z.boolean().optional(),
+    texts: z.boolean().optional().describe("Leave it out: texts aren't enforced yet (for now, texting works with anyone), so it's refused"),
     parent: z.boolean().optional(),
   });
 
@@ -219,7 +225,7 @@ export function registerCallsTools(server: McpServer, deps: Deps, caller: Caller
     {
       title: "Change calls",
       description:
-        "Changes who may call the kid and whom the kid may call, on a phone whose calls are on: only contacts or anyone (mode), what happens to callers who aren't contacts (unknown) or have no caller ID (withheld): ring, voicemail or reject; whom the kid can call (outgoing: contacts or any); quiet times (quiet: only parents ring at bedtime and school times); add, change or remove contacts (by id from get_contacts); block or unblock numbers. The server decides: a change that only tightens (only contacts, a stricter rule for unknown or withheld callers, outgoing to contacts only, quiet on, fewer contacts allowed to call, blocking a number) applies at once, within seconds when the phone is online; use it only when the parent asks. Anything else, or a mix, or anything that takes from a parent contact, becomes a proposal a parent approves or rejects on the parent page: then say it's waiting for them, never that it's done. Turning calls on or off, recording them and private numbers are a parent's alone. 911, 988 and emergency numbers can't be blocked: they always work. Nor can a contact's number, or a number Belay doesn't let an AI app block (a parent decides about those). With the Calls category off (it starts off), it takes no phone numbers: blocking, unblocking and a contact's numbers need that category; the rules, and contacts by id without their numbers, don't. A change it refuses is in the activity log.",
+        "Changes who may call the kid and whom the kid may call, on a phone whose calls are on: only contacts or anyone (mode), what happens to callers who aren't contacts (unknown) or have no caller ID (withheld): ring, voicemail or reject; whom the kid can call (outgoing: contacts or any); quiet times (quiet: only parents ring at bedtime and school times); add, change or remove contacts (by id from get_contacts); block or unblock numbers. The server decides: a change that only tightens (only contacts, a stricter rule for unknown or withheld callers, outgoing to contacts only, quiet on, fewer contacts allowed to call, blocking a number) applies at once, within seconds when the phone is online; use it only when the parent asks. Anything else, or a mix, or anything that takes from a parent contact, becomes a proposal a parent approves or rejects on the parent page: then say it's waiting for them, never that it's done. Turning calls on or off, recording them and private numbers are a parent's alone. 911, 988 and emergency numbers can't be blocked: they always work. Nor can a contact's number, or a number Belay doesn't let an AI app block (a parent decides about those). With the Calls category off (it starts off), it takes no phone numbers: blocking, unblocking and a contact's numbers need that category; the rules, and contacts by id without their numbers, don't. Belay doesn't manage texts yet (for now, texting works with anyone), so a contact's texts isn't something it changes. A change it refuses is in the activity log.",
       inputSchema: {
         device: deviceParam,
         change: z
@@ -258,6 +264,8 @@ export function registerCallsTools(server: McpServer, deps: Deps, caller: Caller
       // Before anything looks at a number: the answer is the same whatever it is.
       const namesNumbers = !!(change.block_numbers?.length || change.unblock_numbers?.length || change.add_contacts?.length || change.change_contacts?.some((c) => c.numbers !== undefined));
       if (namesNumbers && !scopeOn()) return refused("numbers", NUMBERS_OFF);
+      // Never "done" for something the phone ignores: texts aren't built yet.
+      if ([...(change.add_contacts ?? []), ...(change.change_contacts ?? [])].some((c) => c.texts !== undefined)) return refused("texts", TEXTS_REFUSED);
       const s = callSettings(db, row.id);
       if (!s?.enabled) {
         return refused(

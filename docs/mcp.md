@@ -127,7 +127,7 @@ Phase 3 its screen-time rules (measuring, limits, schedules, exempt apps, self-s
 time given today, the last "lock now" and how it went), and from Phase 4 whether it shares
 where it is (off, on demand, or how often), and whether it's in lost mode: never where it is.
 From Phase 5: whether calls are on and the call rules, and the contacts' names, whether each may
-call and text and whether they're a parent, and how many blocked and private numbers there
+call and text (texts aren't enforced yet) and whether they're a parent, and how many blocked and private numbers there
 are: never who called, a number (not even in a proposal waiting, which names no contact either),
 or which numbers are private. From Phase 3's network logging:
 that Android paused it, as one of the phone's problems; never what apps looked up. Blocked and
@@ -185,7 +185,7 @@ reason.
 | `list_requests(device?, kind?, status?)` | What the kid asked for: "I need help" (first, marked urgent, until a parent has seen it), "Talk to my parent", an app, more time for a limit today, a contact to add (Phase 5: their name for them and why, under `untrusted`; the number only with the Calls category), or their answer to the family agreement (which needs the Stage and agreement category too), with their words and each answer: waiting, approved (with the minutes given), declined, let's talk, withdrawn by the kid, or for help whether a parent saw it. A help request's shared fix shows only with the Location category. Then the last 30 days. Needs the Requests category. |
 | `get_contacts(device)` | Phase 5: whether calls are on, the call rules in words, the contacts (with ids, for `change_calls`: their names under `untrusted`, whether each may call and text (texts aren't managed yet: the phone ignores that part), whether they're a parent), the blocked numbers, how many private numbers there are, and calls proposals waiting. Contacts' and blocked numbers need the Calls category, and so do the numbers and contacts a waiting proposal names. Always available otherwise. |
 | `get_calls(device, from?, to?)` | Phase 5: the calls the phone recorded, newest first: when, incoming or outgoing, answered, missed, refused, voicemail or not placed, why, how long, and the contact (its name under `untrusted`) or the number of someone who isn't one. Only while the phone records calls; the last 7 days by default, at most 92. Needs the Calls category. |
-| `change_calls(device, change, reason)` | Phase 5: `mode`, `unknown`, `withheld`, `outgoing`, `quiet`, contacts to add, change (by id) or remove, numbers to block or unblock, on a phone whose calls are on. The server decides: a change whose every part tightens applies at once; anything else, or a mix, or anything that takes from a parent contact, becomes a proposal for a parent. Turning calls on or off, recording them (`log`) and private numbers are refused, and so is blocking 911, 988 or an emergency number. Without the Calls category it takes no phone numbers (to block or unblock, or a contact's), with one answer whatever the number. |
+| `change_calls(device, change, reason)` | Phase 5: `mode`, `unknown`, `withheld`, `outgoing`, `quiet`, contacts to add, change (by id) or remove, numbers to block or unblock, on a phone whose calls are on. The server decides: a change whose every part tightens applies at once; anything else, or a mix, or anything that takes from a parent contact, becomes a proposal for a parent. Turning calls on or off, recording them (`log`) and private numbers are refused, and so is blocking 911, 988 or an emergency number, and a contact's `texts` (not enforced yet: texting works with anyone for now). Without the Calls category it takes no phone numbers (to block or unblock, or a contact's), with one answer whatever the number. |
 | `get_location(device)` | Phase 4: the latest fix the server keeps: when and how long ago, why it was taken, how accurate, its coordinates, and where it is by the family's places (inside one, or how far from the nearest). Needs the Location category. |
 | `locate_now(device)` | Phase 4: asks the phone for a fresh fix and waits up to a minute for it. Only while the phone shares where it is on demand or periodically, and with the Location category. The kid's phone shows a notice naming the AI app ("Your parent checked where this phone is, using Claude"). At most 6 an hour per connection and phone. |
 | `get_place_events(device, from?, to?)` | Phase 4: arrivals at and departures from the family's places, newest first; the last 7 days by default, at most 92. Needs the Location category. |
@@ -266,7 +266,9 @@ too, since whoever holds a phone's token can send any text.
 - `change_calls` (Phase 5) applies a change only when every part of it tightens: only contacts
   can call, a stricter rule for callers who aren't contacts or have no caller ID (ring, then
   voicemail, then refused), the kid calling only contacts, quiet times on, fewer contacts
-  allowed to call or text, a number taken off a contact, blocking a number. Anything else is a
+  allowed to call, a number taken off a contact, blocking a number. A contact's `texts` is
+  refused, never reported done: Belay doesn't manage texts yet, so texting works with anyone
+  whatever it says (the parent page says "not enforced yet" too). Anything else is a
   proposal, each change marked tightens or loosens on the Proposals page: adding a contact, or
   a number to one, the reverse of any of the above, and anything that takes from a parent
   contact (who always rings and is on the kid's emergency card) or renames a contact. When a

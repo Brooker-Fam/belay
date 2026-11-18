@@ -26,6 +26,12 @@ export const WITHHELD_WORDS: Record<CallAction, string> = {
   reject: "Callers with no caller ID are refused",
 };
 
+/**
+ * Phase 5's texts aren't built yet: a contact's `texts` is kept for when they are, and the phone
+ * ignores it, so wherever it's shown or chosen, it says so.
+ */
+export const TEXTS_NOT_ENFORCED = "not enforced yet: for now, texting works with anyone";
+
 const name = (text: string) => `"${oneLine(text, 60)}"`;
 const list = (numbers: string[]) => (numbers.length <= 3 ? numbers.join(", ") : `${numbers.slice(0, 3).join(", ")} and ${numbers.length - 3} more`);
 const can = (calls: boolean, texts: boolean) =>

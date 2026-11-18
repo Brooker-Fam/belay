@@ -436,9 +436,11 @@ What the server does with them:
 - **Who may change what:** turning calls on or off, `log` and `private_numbers` are a parent's
   alone (the parent page or the server's CLI), never an AI client's, not even as a proposal. An
   AI client may apply a change whose every part tightens (`mode: contacts`, a stricter `unknown`
-  or `withheld`, `outgoing: contacts`, `quiet` on, fewer contacts allowed to call or text, a
-  number taken off a contact, blocking a number); anything else, and anything that takes from a
-  `parent` contact, is a proposal a parent approves, checked again then.
+  or `withheld`, `outgoing: contacts`, `quiet` on, fewer contacts allowed to call, a number
+  taken off a contact, blocking a number); anything else, and anything that takes from a
+  `parent` contact, is a proposal a parent approves, checked again then. A contact's `texts` is
+  kept for Phase 5's texts and the phone ignores it today, so an AI client's change to it is
+  refused rather than applied.
 - **A `contact` request:** a new one for a number that has one waiting takes its place, with the
   kid's earlier reason; at most 60 can wait per phone, past that `429`. Approving it adds the
   contact (the parent may change the name, and chooses `calls` and `texts`, on by default); a

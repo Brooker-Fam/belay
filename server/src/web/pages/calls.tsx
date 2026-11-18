@@ -10,7 +10,7 @@ import type { Enforcement } from "../../device/schemas.js";
 import { CALL_LIMITS } from "../../family/calls/numbers.js";
 import type { CallRecordView } from "../../family/calls/records.js";
 import type { CallSettings, Contact, ListedNumber } from "../../family/calls/store.js";
-import { OUTCOME_WORDS, REASON_WORDS, rulesInWords } from "../../family/calls/words.js";
+import { OUTCOME_WORDS, REASON_WORDS, TEXTS_NOT_ENFORCED, rulesInWords } from "../../family/calls/words.js";
 import type { DeviceView } from "../../family/devices.js";
 import type { ContactRequestView } from "../../family/requests.js";
 import type { ParentNumber } from "../../settings.js";
@@ -161,7 +161,7 @@ const ContactForm: FC<{ view: View; device: DeviceView; contact?: Contact; prefi
           <input type="checkbox" name="calls" value="1" checked={contact?.calls ?? true} /> Can call and be called
         </label>
         <label class="check">
-          <input type="checkbox" name="texts" value="1" checked={contact?.texts ?? true} /> Can text
+          <input type="checkbox" name="texts" value="1" checked={contact?.texts ?? true} /> Can text ({TEXTS_NOT_ENFORCED})
         </label>
         <label class="check">
           <input type="checkbox" name="parent" value="1" checked={contact?.parent ?? prefill?.parent ?? false} /> A parent: always rings, even at quiet times,
@@ -355,7 +355,7 @@ export const CallsPage: FC<{ view: View; data: CallsPageData; message?: string; 
                 <strong>{c.name}</strong>{" "}
                 <span class="small muted">
                   {c.parent ? "parent · " : ""}
-                  {c.calls ? "calls" : "no calls"} · {c.texts ? "texts" : "no texts"}
+                  {c.calls ? "calls" : "no calls"} · {c.texts ? "texts" : "no texts"}, not enforced yet
                 </span>
                 <br />
                 <span class="pkg">{c.numbers.join(", ")}</span>

@@ -30,6 +30,8 @@ function refusedWords(tool: string, why: string): string {
       return "to change calls with phone numbers while AI access to calls is off";
     case "parents_only":
       return "to turn calls on or off, record them or choose private numbers, which only a parent does";
+    case "texts":
+      return "to change who may text, which Belay doesn't manage yet";
     default:
       return "a change to calls that Belay doesn't allow an AI app";
   }

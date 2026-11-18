@@ -106,6 +106,9 @@ describe("the Calls tab", () => {
     let { html } = await page(`${base}/calls`);
     expect(html).toContain("<strong>&lt;i&gt;Coach&lt;/i&gt;</strong>");
     expect(html).not.toContain("<i>Coach</i>");
+    // Texts aren't built yet: the choice says so, and so does each contact's line. The field stays, for when they are.
+    expect(html).toContain("Can text (not enforced yet: for now, texting works with anyone)");
+    expect(html).toContain("calls · no texts, not enforced yet");
     await form(`${base}/calls/contacts`, { id: coach?.id ?? "", name: "Coach Lee", number: [COACH, "+15555550143"], calls: "1", texts: "1", parent: "" });
     expect(policy().contacts).toEqual([{ id: coach?.id, name: "Coach Lee", numbers: [COACH, "+15555550143"], calls: true, texts: true, parent: false }]);
     const problems: [Record<string, string | string[]>, string][] = [
@@ -206,6 +209,7 @@ describe("the kid's contact request on the Requests page", () => {
     expect(html).toContain('<span class="kid">&lt;b&gt;Coach&lt;/b&gt;</span>');
     expect(html).toContain("My &lt;i&gt;coach&lt;/i&gt;");
     expect(html).toContain("Calls are off on this phone: the contact is kept for when you turn them on");
+    expect(html).toContain("Can text (not enforced yet: for now, texting works with anyone)");
     const res = await form(`${base}/requests/request-0001/answer`, { back: "requests", answer: "approved", contact_form: "1", contact_name: "Coach Lee", contact_calls: "1", note: "OK" });
     expect(res.headers.get("location")).toBe("/requests?saved=answer_contact");
     expect(policy().contacts).toMatchObject([{ name: "Coach Lee", numbers: [COACH], calls: true, texts: false, parent: false }]);
