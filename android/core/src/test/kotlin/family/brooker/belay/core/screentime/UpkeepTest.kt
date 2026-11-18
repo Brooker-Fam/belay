@@ -198,6 +198,55 @@ class UpkeepTest {
     }
 
     @Test
+    fun `a schedule's lock waits while a call is on, and locks once after it if the schedule is still on`() {
+        val policy = screenTime.copy(schedules = listOf(bedtime))
+        fun decide(time: String) = Rules.evaluate(Rules.Input(policy, t(time), NY, null, measured = true, apps = setOf(BLOCKS), neverBlocked = emptySet()))
+        // Bedtime starts during a call (a 988 call, say): no lock, and it's still due.
+        val (during, waiting) = Upkeep.locks(decide("21:00"), ScreenTimeState(), t("21:00"), callOn = true)
+        assertEquals(emptyList(), during)
+        assertTrue(Upkeep.lockDue(decide("21:00"), waiting, t("21:00")))
+        assertTrue(BLOCKS in decide("21:00").suspend, "the schedule's rules apply at once: only the lock waits")
+        // Still on the call at 21:20: still waiting.
+        val (stillDuring, stillWaiting) = Upkeep.locks(decide("21:20"), waiting, t("21:20"), callOn = true)
+        assertEquals(emptyList(), stillDuring)
+        // The call ends at 21:40: the step after it locks, once.
+        val (after, done) = Upkeep.locks(decide("21:40"), stillWaiting, t("21:40"))
+        assertEquals(listOf("s-bed"), after.map { it.scheduleId })
+        assertFalse(Upkeep.lockDue(decide("21:41"), done, t("21:41")))
+        assertEquals(emptyList(), Upkeep.locks(decide("21:41"), done, t("21:41")).first)
+        // A call that lasts past the schedule's end: nothing is due once it's over.
+        val morning = Upkeep.locks(decide("2026-11-18T07:30"), waiting, t("2026-11-18T07:30")).first
+        assertEquals(emptyList(), morning)
+    }
+
+    @Test
+    fun `twenty locking schedules an hour lock twenty times, each once, and none during a call`() {
+        // The third review's probe: an AI app may add 20 one-minute locking schedules (the server
+        // bounds that); the phone locks once as each starts, and never in the middle of a call.
+        val schedules = (0 until 20).map { i ->
+            val start = 15 * 60 + 3 * i
+            WireSchedule("s-$i", WireScheduleKind.CUSTOM, "Schedule", WireDay.entries.toList(), "%02d:%02d".format(start / 60, start % 60), "%02d:%02d".format((start + 1) / 60, (start + 1) % 60), lock = true)
+        }
+        val policy = screenTime.copy(schedules = schedules)
+        fun count(callOn: (Int) -> Boolean): Int {
+            var state = ScreenTimeState()
+            var locks = 0
+            for (minute in 0..60) {
+                val now = t("15:00") + minute * MIN + 5 * SEC
+                val decision = Rules.evaluate(Rules.Input(policy, now, NY, null, measured = true, apps = setOf(BLOCKS), neverBlocked = emptySet()))
+                val (due, next) = Upkeep.locks(decision, state, now, callOn(minute))
+                locks += due.size
+                state = next
+            }
+            return locks
+        }
+        assertEquals(20, count { false })
+        assertEquals(0, count { true }, "on a call the whole hour")
+        // A call from 15:00 to 15:30: the ten schedules that start then are over before it ends.
+        assertEquals(10, count { it < 30 })
+    }
+
+    @Test
     fun `self-serve minutes are taken once per tap, count at once, and stop at the rule's times`() {
         val policy = screenTime.copy(selfServe = WireSelfServe(15, 2))
         val (take, state) = Upkeep.take(policy, ScreenTimeState(), t("16:00"), NY, "take-1", "l-games", BLOCKS)!!

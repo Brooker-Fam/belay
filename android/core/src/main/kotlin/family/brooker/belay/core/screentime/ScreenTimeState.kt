@@ -58,12 +58,21 @@ object Upkeep {
      */
     fun keepFrom(days: DayClock, now: Long): Long = days.startOf(days.dayAt(now).minusDays(1))
 
-    /** The screen locks due now ([Decision.lockNow]) that weren't done yet, and the state with them done. */
-    fun locks(decision: Decision, state: ScreenTimeState, now: Long): Pair<List<LockNow>, ScreenTimeState> {
+    /**
+     * The screen locks due now ([Decision.lockNow]) that weren't done yet, and the state with them
+     * done. While a call is on ([callOn]), none is done: each waits (ScreenLocks), still due, and
+     * locks at the first step after the call if its schedule is still on then.
+     */
+    fun locks(decision: Decision, state: ScreenTimeState, now: Long, callOn: Boolean = false): Pair<List<LockNow>, ScreenTimeState> {
         val locked = state.locked.filterValues { recent(it, now) }
         val due = decision.lockNow.filter { it.key !in locked }
+        if (callOn) return emptyList<LockNow>() to state.copy(locked = locked)
         return due to state.copy(locked = locked + due.associate { it.key to now })
     }
+
+    /** Whether a schedule's lock is due now and not done yet (see [locks]). */
+    fun lockDue(decision: Decision, state: ScreenTimeState, now: Long): Boolean =
+        decision.lockNow.any { it.key !in state.locked.filterValues { at -> recent(at, now) } }
 
     /**
      * The kid takes self-serve minutes now for [limitId], only for [packageName] when given
