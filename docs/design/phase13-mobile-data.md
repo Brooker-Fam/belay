@@ -1,8 +1,18 @@
 # Phase 13: mobile data
 
-**Status: designed, not built yet.** The Android facts are in
+**Status: built** (the phone, the server, MCP and the parent page, in CI's emulator job); not yet
+checked on a Pixel ([phase13-checklist.md](../phase13-checklist.md)). The Android facts are in
 [platform-notes.md](../platform-notes.md) as Q1 to Q9, read in AOSP `android-17.0.0_r1` and on
 developer.android.com on 2026-11-18; none of them ran on a device yet.
+
+What building changed from the design below: the SDK sandbox calls Belay uses to give an app its
+sandbox's bytes (`Process.isSdkSandboxUid`, `getAppUidForSdkSandboxUid`) are public from API 35,
+not 33 (lint, from the SDK's API database); the server also refuses Android's own parts the phone
+reported (system apps without a launcher icon), as the phone does; the AI scope starts on for a
+family that never saved its choices or left every category on, and off, marked new in Settings,
+for one that saved any category off, as settings.ts does for every new category (location, calls
+and network start off, so a family that saved Settings with them off gets it off too, until a
+parent ticks it); and the CLI's `wifi-only` and `mobile-data` are what CI's emulator job uses.
 
 A kid's first phone is usually on a family plan with a data cap. This phase has two parts, both
 off until a parent turns them on: **Wi-Fi-only apps** (enforcement: a parent marks apps that may

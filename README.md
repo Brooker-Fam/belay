@@ -6,11 +6,11 @@ Open-source, AI-first parental controls for a kid's first Android phone.
 > more slack as you get better.
 
 **Status: built, and run end to end on the Android 17 emulator in CI; not yet checked on a
-real Pixel.** Phases 1 to 8, 10 and 11 are built: the phone reports its apps to the family's
+real Pixel.** Phases 1 to 8 and 10 to 13 are built: the phone reports its apps to the family's
 own server, new apps wait until a parent approves them, the web is filtered, and the settings
 that undo Belay are locked when a parent turns protection on; screen time, location, calls,
-the kid's help button, self-updates, backups, the setup kit and the hand-over at the end are
-there too. Phase 5's texts and Phase 9 (more families) aren't built yet. A parent manages it
+the kid's help button, self-updates, backups, the setup kit, the hand-over at the end,
+caregivers, and Wi-Fi-only apps with mobile data use are there too. Phase 5's texts and Phase 9 (more families) aren't built yet. A parent manages it
 by asking Claude or on the parent page. Locking factory reset and USB debugging is a separate
 step a parent takes when ready. What a determined kid can still do is in
 [docs/threat-model.md](docs/threat-model.md); the phase checklists, from
@@ -29,7 +29,7 @@ no monthly fee and no company that can change or disappear. A parent mostly mana
 asking Claude (or any MCP client) things like "what did they install this week, and is it
 OK?", with a web page as the fallback.
 
-## What exists today (Phases 1 to 8, 10 and 11, except Phase 5's texts)
+## What exists today (Phases 1 to 8 and 10 to 13, except Phase 5's texts)
 
 All of it is built, and runs end to end on the Android 17 emulator in CI; none of it has been
 checked on a real Pixel yet. Phase 9 (more families) isn't built either.
@@ -193,6 +193,19 @@ checked on a real Pixel yet. Phase 9 (more families) isn't built either.
   it. The kid's phone lists each caregiver with what they can see and do and until when, from the
   policy, and every pause and check names them. AI apps never see caregivers. The Pixel
   checklist is [docs/phase12-checklist.md](docs/phase12-checklist.md).
+- **Phase 13: mobile data, both sides.** For a family plan with a data cap, a phone's Mobile data
+  tab, both parts off until a parent turns them on. **Wi-Fi-only apps:** a parent picks apps that
+  may not use mobile data, and the phone keeps them off every metered network as device owner
+  (`setMeteredDataDisabledPackages`), offline too: mobile data, another phone's hotspot, Wi-Fi
+  marked metered. Never Belay, the phone app, texting (RCS needs data), the keyboard, the home
+  screen or Android's own parts, so calls, texts, 911 and 988 always work. Adding an app tightens
+  (an AI app may, when asked); letting one use mobile data again is a proposal a parent approves.
+  The kid sees which apps and what it means under This phone's rules. **Mobile data use**, only
+  while a parent measures it: each app's bytes on mobile data per day, from Android's own
+  accounting, with the day's Wi-Fi total, and the phone app, texting and Android's own parts on
+  one line together; never which websites or networks. Bars with a table of the same numbers on
+  the parent page, `get_mobile_data` over MCP (on by default, like screen time), kept 90 days.
+  The Pixel checklist is [docs/phase13-checklist.md](docs/phase13-checklist.md).
 - **`setup-kit/`: setting up a phone without the Android SDK (Phase 8).** A container you
   build and run on your own computer: it makes the family's release key (once, in a folder of
   yours), builds and signs Belay (keeping each build in that folder, for updates), and serves a
@@ -300,7 +313,7 @@ they install this week?"
 | `android/scripts` | Provisioning (its plan, `provision-plan.json`, and the plan's fixture tests), release key, QR test, the emulator tests. |
 | `setup-kit/` | Setting up a phone without the Android SDK: the plan's second interpreter, the page, the container ([docs/setup-kit.md](docs/setup-kit.md)). Vitest tests. |
 | `server/` | The family's server: device API, parent pages, OAuth and MCP. Vitest tests. |
-| `docs/` | [the guide for parents](docs/guide.md), [server](docs/server.md), [MCP](docs/mcp.md), [privacy](docs/privacy.md), [threat model](docs/threat-model.md), [device API](docs/protocol.md), [platform notes](docs/platform-notes.md), [emulator](docs/emulator.md), [Pixel 8](docs/pixel.md), [Phase 0](docs/phase0-checklist.md), [Phase 1](docs/phase1-checklist.md), [Phase 2](docs/phase2-checklist.md), [Phase 3](docs/phase3-checklist.md), [Phase 4](docs/phase4-checklist.md), [Phase 5](docs/phase5-checklist.md), [Phase 6](docs/phase6-checklist.md), [Phase 7](docs/phase7-checklist.md), [Phase 11](docs/phase11-checklist.md) and [Phase 12](docs/phase12-checklist.md) checklists, [signing](docs/signing.md), [prior art](docs/prior-art.md) |
+| `docs/` | [the guide for parents](docs/guide.md), [server](docs/server.md), [MCP](docs/mcp.md), [privacy](docs/privacy.md), [threat model](docs/threat-model.md), [device API](docs/protocol.md), [platform notes](docs/platform-notes.md), [emulator](docs/emulator.md), [Pixel 8](docs/pixel.md), [Phase 0](docs/phase0-checklist.md), [Phase 1](docs/phase1-checklist.md), [Phase 2](docs/phase2-checklist.md), [Phase 3](docs/phase3-checklist.md), [Phase 4](docs/phase4-checklist.md), [Phase 5](docs/phase5-checklist.md), [Phase 6](docs/phase6-checklist.md), [Phase 7](docs/phase7-checklist.md), [Phase 11](docs/phase11-checklist.md), [Phase 12](docs/phase12-checklist.md) and [Phase 13](docs/phase13-checklist.md) checklists, [signing](docs/signing.md), [prior art](docs/prior-art.md) |
 | `ROADMAP.md` | Phases 2 to 5 and later. |
 | `CLAUDE.md` | Conventions and commands, for people and for Claude. |
 
