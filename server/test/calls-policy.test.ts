@@ -116,8 +116,8 @@ describe("the policy's calls", () => {
         return error instanceof RuleRefused ? error.message : "not refused";
       }
     };
-    for (const n of ["911", "+1 911", "112", "999"]) expect(refusal(n), n).toBe("Belay never blocks 911 or any other emergency number: they always work, in and out, whatever the rules say.");
-    for (const n of ["988", "+1988", "+18002738255", "1-800-273-8255"]) expect(refusal(n), n).toBe("Belay never blocks 988: the crisis line always works, in and out, whatever the rules say.");
+    for (const n of ["911", "+1 911", "112", "999"]) expect(refusal(n), n).toBe("Belay never blocks 911 or any other emergency number: the kid can always call them, and their calls always ring, whatever the rules say.");
+    for (const n of ["988", "+1988", "+18002738255", "1-800-273-8255"]) expect(refusal(n), n).toBe("Belay never blocks 988: the kid can always call and text the crisis line, whatever the rules say.");
     expect(refusal(MOM)).toBe("+15555550100 is Mom's number, a contact: take it off the contact first, then block it.");
     expect(refusal("+15555550123")).toBe("+15555550123 is on the kid's emergency card: take it off the card first, then block it.");
     // A private number (a helpline the kid may call): a parent takes it off the private numbers first.

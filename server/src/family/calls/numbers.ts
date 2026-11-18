@@ -94,8 +94,8 @@ export type NumberUse = "contact" | "private" | "blocked";
 
 const ALWAYS_WORDS: Record<NumberUse, Record<AlwaysAllowed, string>> = {
   blocked: {
-    emergency: "Belay never blocks 911 or any other emergency number: they always work, in and out, whatever the rules say.",
-    "988": "Belay never blocks 988: the crisis line always works, in and out, whatever the rules say.",
+    emergency: "Belay never blocks 911 or any other emergency number: the kid can always call them, and their calls always ring, whatever the rules say.",
+    "988": "Belay never blocks 988: the kid can always call and text the crisis line, whatever the rules say.",
   },
   private: {
     emergency: "Calls with 911 and every emergency number are always private: Belay never records them, so there's no need to add one.",
