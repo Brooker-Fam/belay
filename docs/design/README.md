@@ -77,7 +77,7 @@ status, pausing or locking it (only ever tighter), the kid's "I need help", and,
 allows it, checking where it is now. A separate kind of account with its own few pages and a
 session no parent page, MCP or OAuth accepts (a test walks every route); never anything that
 loosens. The kid's screen lists each caregiver with what they can see and do and until when, from
-the policy, and every pause and check names them. Nothing new on Android.
+the policy, and every pause and check names them. No new Android capability: only the kid's words.
 
 ## Recommended build order
 

@@ -1,8 +1,9 @@
 # Phase 12: caregivers
 
-**Status: design.** A new phase. Nothing on Android is new: the phone runs the same pause,
-`lock_now` and `locate_now` it already runs, and shows the kid more words from its policy. The
-work is on the server (a second, much smaller kind of account) and in what the kid's screens say.
+**Status: built** (server and phone; [the Pixel checklist](../phase12-checklist.md) is open). No
+new Android capability: the phone runs the same pause, `lock_now` and `locate_now` it already
+runs, and shows the kid more words from its policy. The work is on the server (a second, much
+smaller kind of account) and in what the kid's screens say.
 
 A parent sometimes hands the kid to someone else for a while: a grandparent for a weekend, a
 babysitter for an evening, a coach on a trip, or the kid's other household. That person may want
@@ -133,29 +134,35 @@ link), and the server's (access ended at its time). The parents' Activity page s
 
 ### On the kid's phone
 
-Built from the policy's new `caregivers` list (below) in `:core` (`kid/Caregivers.kt`), with the
-words in `strings.xml`:
+Built from the policy's new `caregivers` list (below) in `:core` (`kid/Caregivers.kt`); what each
+caregiver can see and do is in `DataCategory.kt` (`DataCategories.caregiver`, beside the words for
+what the parents see, tested on the JVM), and the other lines are in `strings.xml`:
 
 - **What your parent can see** gets a card, "Caregivers your parent added", listing each one
   with what they can see and do and until when, and what they can't: "Grandma, until Sunday at
-  6:00 PM" · "Can see whether this phone is on, when it last connected, its battery, and whether
-  it's paused or on a schedule" · "Can pause this phone or lock it now. Only your parent can end a
-  pause early." · "Gets your "I need help" requests, with what you write and where this phone is,
-  if you share it" · "Can check where this phone is, right now. You get a notification each time."
-  · "Can't see your apps, your screen time, your calls, the websites apps look up, or where this
-  phone has been."
+  6:00 PM" (a date further than 6 days ahead: "Dec 5, 6:00 PM") · "Can see whether this phone is
+  online and when it last connected, its battery, and whether it's paused or on a schedule" · "Can
+  pause this phone, or pause it and lock the screen, for up to 4 hours at a time. Only your parent
+  can end a pause early." · "Gets your "I need help" requests, with what you write, and where this
+  phone is if you share it" · "Can check where this phone is right now. You get a notification
+  every time." · "Can't see your apps, your screen time, your calls, the websites apps look up, or
+  where this phone has been" · "Can't give you more time or let an app through. Only your parent
+  can."
 - **Home** gets one line per caregiver, "Your parent gave Grandma some access to this phone until
   Sunday at 6:00 PM.", and a button to that card.
-- **Help** says who else gets it: "Grandma gets your help requests too, with what you write and
-  where this phone is, if you share it."
-- **A caregiver's pause** reads "Paused by Grandma until 5:30 PM" on Home, the pause banner and
-  the pause notice, and on a paused app's screen.
+- **Help** says who else gets it: "Grandma gets your help requests too, with what you write, and
+  where this phone is if you share it."
+- **A caregiver's pause** reads "Paused by Grandma until 5:30 PM" on Home and on the pause notice,
+  "Grandma paused this phone" on the pause banner (with "Only your parent can end it early."), and
+  "Grandma paused this phone until 5:30 PM." in the words for paused apps (Today).
 - **A caregiver's check** reads "Grandma checked where this phone is (8:15 PM)." in the notice
   and in "What Belay told your parent".
 
 The phone lists a caregiver only until their `until`, by its own clock (automatic and locked,
-Phase 2), even before it gets a new policy. Each name is the parent's words: shown as plain
-text, capped at 40 characters.
+Phase 2), even before it gets a new policy, from the next time a screen is drawn. Each name is the
+parent's words: shown as plain text, on one line, capped at 40 characters, without characters that
+hide or reorder text (the phone cleans it again). `locate` shows only as sent, and only while the
+policy's location takes checks.
 
 ### On the parent page
 
@@ -176,16 +183,17 @@ layout with no parent menu, which says whose family it is and that a parent chos
 
 ## Protocol
 
-All additive. The server always sends them; a phone that doesn't know them ignores them, and one
-that does defaults them to nothing.
+All additive. The server always sends `caregivers`, and `caregiver` only when a caregiver did
+something; a phone that doesn't know them ignores them, and one that does defaults them to
+nothing.
 
 ### Policy additions
 
 | Field | Type | |
 |---|---|---|
 | `caregivers` | `[{name, until, can}]` | The caregivers with access to this phone (not ended), soonest end first, then by name; at most 20. `name`: the parent's words, one line, at most 40 characters. `until`: when access ends (epoch ms). `can`: what they may do now, in this order, from `status`, `pause`, `help`, `locate` (`locate` only while the phone's location takes checks: `on_demand` or `periodic`). The phone lists one only until `until`, by its own clock. |
-| `pause.caregiver` | string? | The caregiver who set the pause in force (their name); null when a parent, an AI app or the server's CLI did. |
-| `commands[].caregiver` | string? | The caregiver who sent this `lock_now` or `locate_now` (their name); null otherwise. Never with `via`. |
+| `pause.caregiver` | string? | The caregiver who set the pause in force (their name), only when one did: absent when a parent, an AI app or the server's CLI did, so a policy without caregivers is the same as before. |
+| `commands[].caregiver` | string? | The caregiver who sent this `lock_now` or `locate_now` (their name), only when one did; absent otherwise. Never with `via`. |
 
 Example:
 
