@@ -165,7 +165,7 @@ describe("Talk to my parent", () => {
     const { t, phone, ctx, parent, policy, browser } = await family();
     await send(t, phone.token, talk(t, "request-0001", "Getting a game"));
     await vi.waitFor(() => {
-      expect(browser.notices()[0]).toMatchObject({ body: 'Alex\'s phone: the kid would like to talk: "Getting a game"', url: "/requests", urgency: "normal" });
+      expect(browser.notices()[0]).toMatchObject({ body: 'Alex\'s phone: the kid would like to talk: "Getting a game"', url: "/requests#request-request-0001", urgency: "normal" });
     });
     expect(getRequest(t.deps.db, phone.deviceId, "request-0001")).toMatchObject({ kind: "talk", status: "pending", reason: "Getting a game" });
     const done = answerRequest(ctx(), phone.deviceId, "request-0001", "talk", parent, "After dinner");

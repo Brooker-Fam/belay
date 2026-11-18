@@ -174,12 +174,13 @@ describe("sending notices", () => {
     expect(auth?.[2]).toBe(vapidKeys(t.deps.db).publicKey);
     expect(JSON.parse(unb64(auth?.[1]?.split(".")[1] ?? "").toString())).toMatchObject({ aud: "https://fcm.googleapis.com", sub: "https://belay.example.org" });
     const notice = JSON.parse(decrypt(Buffer.from(toMine?.init.body as Uint8Array), mine.keys, mine.auth)) as Record<string, string>;
-    expect(notice).toEqual({ title: "Belay", body: 'Sam\'s phone: "Chatter Box" is waiting for you', url: "/requests" });
+    // One request: a tap opens its own card on the Requests page.
+    expect(notice).toEqual({ title: "Belay", body: 'Sam\'s phone: "Chatter Box" is waiting for you', url: "/requests#request-request-0001" });
 
     const toTheirs = calls.find((c) => c.url === theirs.input.endpoint);
     const apple = /^vapid t=([\w-]+\.[\w-]+\.[\w-]+)/.exec(toTheirs?.init.headers.authorization ?? "");
     expect(JSON.parse(unb64(apple?.[1]?.split(".")[1] ?? "").toString()).aud).toBe("https://web.push.apple.com");
-    expect(JSON.parse(decrypt(Buffer.from(toTheirs?.init.body as Uint8Array), theirs.keys, theirs.auth))).toMatchObject({ url: "/requests" });
+    expect(JSON.parse(decrypt(Buffer.from(toTheirs?.init.body as Uint8Array), theirs.keys, theirs.auth))).toMatchObject({ url: notice.url });
   });
 
   it("sends nothing for a request it already has", async () => {
