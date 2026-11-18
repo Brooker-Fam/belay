@@ -430,7 +430,11 @@ sends outside the family's server, and the parent page says so where you choose 
   still waiting can be changed or taken back.
 - **What your parent can see:** each kind of data, where it goes ("your parent's Belay server at …,
   and nowhere else"), and for each one the parents' AI app may read, "Your parent's AI app can read
-  this." (the policy's `ai_reads`, which follows Settings' "What AI apps may read").
+  this." (the policy's `ai_reads`, which follows Settings' "What AI apps may read"). Then what the
+  AI app can always read, with every category off too: the phone's name, how it's doing, its
+  problems and last check-in, the rules, and how the last screen lock went ([mcp.md](mcp.md)'s
+  "Always included", in plain words; the sixth security review's G4), and "Your parent hasn't let
+  their AI app read anything else here." when no category is on.
 - **What Belay told your parent:** every check of the last 30 days, each lost mode, and each fix
   the kid shared, from the phone's own record, so none is left out.
 

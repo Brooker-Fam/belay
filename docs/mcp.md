@@ -122,21 +122,30 @@ kid is, about other people (friends' numbers), and about which websites and serv
 apps use. The kid's phone shows which categories the AI app
 may read (the policy's `ai_reads`), under "What your parent can see".
 
-Always included: the phones' names, their status and problems ("silent for 14 hours",
-"the phone hasn't applied the rules changed 4 hours ago", or, first, that someone may be
-getting around Belay when the phone reports Android's own Parental Controls, another
-profile, a proxy on its network or wireless debugging), when they last checked in, and
-each phone's rules (protection, pause and its note, the locked settings, the web filter,
-Chrome's settings, maintenance mode, whether reset protection is set, whether the phone has a
-recovery key and when one was last used, and proposals waiting for a parent), and from
-Phase 3 its screen-time rules (measuring, limits, schedules, exempt apps, self-serve, extra
-time given today, the last "lock now" and how it went), and from Phase 4 whether it shares
-where it is (off, on demand, or how often), and whether it's in lost mode: never where it is.
-From Phase 5: whether calls are on and the call rules, and the contacts' names, whether each may
-call and text (texts aren't enforced yet) and whether they're a parent, and how many blocked and private numbers there
-are: never who called, a number (not even in a proposal waiting, which names no contact either),
-or which numbers are private. From Phase 3's network logging:
-that Android paused it, as one of the phone's problems; never what apps looked up. Blocked and
+**Always included**, with every category off too. The kid's phone lists these in plain words under
+"What your parent can see" (core's `AiAlways`, the sixth security review's G4: it used to say the
+AI app could read none of it; `AiAlwaysTest` holds this list to the phone's, and
+`sixth-review.test.ts` holds what the tools return with every category off to it):
+
+- **The phone:** the phones' names, their status and problems ("silent for 14 hours", "the phone
+  hasn't applied the rules changed 4 hours ago", or, first, that someone may be getting around
+  Belay when the phone reports Android's own Parental Controls, another profile, a proxy on its
+  network or wireless debugging; and the phone's own words, like how long it stayed locked after
+  a restart, or, from Phase 3's network logging, that Android paused it: never what apps looked
+  up), and when they last checked in.
+- **Its rules:** protection, pause and its note, the locked settings, the web filter, Chrome's
+  settings, maintenance mode, whether reset protection is set, whether the phone has a recovery
+  key and when one was last used, and proposals waiting for a parent.
+- **Screen time's rules** (Phase 3): measuring, limits, schedules, exempt apps, self-serve, extra
+  time given today, and the last "lock now" and how it went.
+- **Location's** (Phase 4): whether it shares where it is (off, on demand, or how often), and
+  whether it's in lost mode: never where it is.
+- **Calls'** (Phase 5): whether calls are on and the call rules, and the contacts' names, whether
+  each may call and text (texts aren't enforced yet) and whether they're a parent, and how many
+  blocked and private numbers there are: never who called, a number (not even in a proposal
+  waiting, which names no contact either), or which numbers are private.
+
+Blocked and
 waiting apps are listed only with the Apps category, and so are the apps under each screen-time
 rule (a limit's, a schedule's that stay open, the exempt ones): without it, `get_rules` only
 counts them, and so do the sentences about the next stage and proposals waiting, and what

@@ -386,7 +386,9 @@ Location, Calls and Network start off for every family: they're about where your
 other people who never agreed to Belay (their friends' numbers), and about which websites and
 services your kid's apps use. Turn one on only if you want Claude's help with it. A category a
 new version of Belay adds starts off if you had turned any off, marked "new" until you save. The
-kid's phone shows which ones are on: "Your parent's AI app can read this."
+kid's phone shows which ones are on: "Your parent's AI app can read this.", and, with every
+category off too, what Claude can always read: the phone's name, how it's doing and its problems,
+when it last checked in, and its rules (the call rules and contacts' names among them).
 
 **What Claude can do:** read those categories, mark apps reviewed, and tighten at once: block an
 app, pause or lock the phone, tighten screen time or the call rules. **Anything that loosens**

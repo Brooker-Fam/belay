@@ -509,7 +509,9 @@
     <string name="can_see_ai">Your parent\'s AI app can read this.</string>
     <string name="can_see_ai_agreement">Your parent\'s AI app can also read your stage and your family agreement, and your answers to it.</string>
     <string name="can_see_ai_other">Your parent\'s AI app can also read: %1$s</string>
-    <string name="can_see_ai_none">Your parent hasn\'t let their AI app read any of this.</string>
+    <!-- Before the list of what an AI app always reads (core's AiAlways: the same list as docs/mcp.md's "Always included"). -->
+    <string name="can_see_ai_always">Your parent\'s AI app can always read these:</string>
+    <string name="can_see_ai_none">Your parent hasn\'t let their AI app read anything else here.</string>
     <!-- Phase 3: under "Which websites and services apps look up", while network logging is on. -->
     <string name="network_android_says">When Android says \"your organization manages this device and may monitor network traffic\", it means your parent, through Belay: only the names above, not what\'s on the pages.</string>
 
