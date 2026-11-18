@@ -202,7 +202,8 @@ object StateDump {
             mobileData?.report?.let { put("report", Json.encodeToJsonElement(WireMobileDataStatus.serializer(), it)) }
             put("measure", store.policy()?.mobileData?.measure == true)
             put("measuring_since", mobileData?.uploads?.since)
-            put("last_upload_at", mobileData?.uploads?.lastAt)
+            // The latest time a day not over yet was counted up to (noon or 6 PM: core's DataUseUploads).
+            put("so_far_counted_to", mobileData?.uploads?.lastAt)
             put("days_sent_complete", JsonArray(mobileData?.uploads?.complete.orEmpty().map(::JsonPrimitive)))
             put("unsent", store.pendingMobileDataCount())
         }
