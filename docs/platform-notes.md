@@ -134,6 +134,7 @@ relying on something new, it goes here first, with a source.
 | T20 | Whether a call is on: Telecom's `isInManagedCall` for the dialer, and the audio mode | Confirmed: neither needs a permission; an app's self-managed call isn't a managed one, and only `MODE_IN_CALL` can't be set by an app | AOSP; Emulator (Phase 5 CI); Pixel pending |
 | T21 | `WRITE_SECURE_SETTINGS` granted over adb outlives the debugging lock | Confirmed; it can't turn adb back on | AOSP |
 | T22 | Calls before the first unlock are in Android's call log after it | Confirmed: its direct-boot copy is moved in before the first read | AOSP; Emulator pending (Phase 5 CI); Pixel pending |
+| T8 | Google Messages' RCS archival for a device owner set up over adb, with no managed Google Play | Confirmed in AOSP for any device owner (both flags on in Android 17); Google Messages' side untested; `WRITE_SMS` keeps no app out | Docs; AOSP; Emulator (the debug switch sets nothing without Google Messages); Pixel pending (Phase 5 checklist, 12) |
 | O1 | Handing over: clearing reset protection, and what a reset from Settings does on a fully managed phone | Confirmed in AOSP; Pixel pending (Phase 11 checklist) | AOSP |
 | Q1 | A device owner keeps apps off metered networks with `setMeteredDataDisabledPackages`; it refuses admins and apps not installed or hidden | Confirmed | AOSP; Docs; Emulator pending (Phase 13 CI) |
 | Q2 | Android enforces it per uid on every metered network; being in front, Data Saver's exemption and the app's switches don't lift it | Confirmed: uids resolved at each call and at boot | AOSP |
@@ -2043,8 +2044,8 @@ InCallService, CallScreeningService and BlockedNumberContract references. T1 to 
 [the drafts](design/platform-notes-drafts.md) and were checked again where Belay now relies on them;
 T10 to T16 are new, T17 to T21 came with the third security review (read on 2026-11-18,
 with `frameworks/opt/telephony` and `packages/services/Telephony`), and T22 with the fourth (with
-`packages/providers/ContactsProvider`); T7 to T9, about texts, stay in
-the drafts. The emulator checks run in CI (`CallFlowInstrumentedTest`, `CallsInstrumentedTest`,
+`packages/providers/ContactsProvider`); T7 and T9, about texts, stay in
+the drafts, and T8 is under [Texts](#texts-phase-5s-second-half), with its Pixel test. The emulator checks run in CI (`CallFlowInstrumentedTest`, `CallsInstrumentedTest`,
 `LockedCallsInstrumentedTest` and `ci-emulator-test.sh`'s Phase 5 block); the Pixel's are in
 [phase5-checklist.md](phase5-checklist.md). No test calls or texts 911 or 988, on the emulator or
 anywhere else: those paths are JVM tests (`AlwaysAllowedTest`, `CallRulesTest`, `CallRecordsTest`,
@@ -2625,6 +2626,95 @@ kid can delete an entry before Belay reads it. Belay reports that permission as 
 (core's `SensitivePermissions`), so a parent sees it when deciding on such an app (threat model).
 While calls is on, `enforcement.calls.problem` says how long the phone stayed locked, for
 a day after an unlock 10 minutes or more after the restart.
+
+## Texts (Phase 5's second half)
+
+Read on 2026-11-18 in AOSP `android-17.0.0_r1` (`platform/frameworks/base` unless named;
+`platform/build/release` for the flags, `packages/providers/TelephonyProvider`,
+`packages/modules/Permission`) and on developer.android.com. Texts aren't built: they wait on T8's
+Pixel test, which only a debug build carries ([phase5-checklist.md](phase5-checklist.md), section
+12). T7 and T9 are still [drafts](design/platform-notes-drafts.md).
+
+### T8. Google Messages' RCS archival, for a device owner set up over adb
+
+**Confirmed in the docs and in AOSP; untested on a device.** Verified on: Docs; AOSP; Emulator (only
+that the debug build's switch sets nothing where Google Messages isn't installed:
+`ci-emulator-test.sh`); Pixel pending (Phase 5 checklist, section 12).
+
+- developer.android.com/work/dpc/rcs-messages-archival [2026-10-23]: "available only on fully
+  managed devices", with Google Messages the default messaging app. Its managed configuration key
+  `messages_archival` takes the archival app's package name ("If the value is empty, null, or the key
+  is not present, archival is disabled"). Then "Google Messages writes message data to Android on
+  message events" (sent, received, edited, deleted), "for both RCS and SMS/MMS messages", and tells the
+  archival app with `GOOGLE_MESSAGES_ARCHIVAL_UPDATE`, "in some cases" with the extra
+  `com.google.android.apps.messaging.EXTRA_ARCHIVAL_URI`. The page calls that "an explicit broadcast",
+  yet asks for a foreground service for it: exported, `foregroundServiceType="shortService"`,
+  `android:permission="android.permission.WRITE_SMS"` ("to assure only Google Messages can start the
+  service"). The archival app "needs READ_SMS permission". The page names no managed Google Play; its
+  Testing section says "use TestDPC or your preferred EMM client" (TestDPC is often made device owner
+  over adb, as Belay is: a hint, not a confirmation).
+- `services/devicepolicy/.../RcsArchivalAppTracker` (new in 17) reads `messages_archival` from the
+  application restrictions admins set, in the policy engine, on whichever app holds the SMS role (no
+  fixed package), preferring a device policy controller's (`DPC_AUTHORITY`, which a device owner
+  has however it was set up: `DevicePolicyManagerService.getEnforcingAdmin`). It sets
+  `OP_READ_RESTRICTED_MESSAGES` to allowed, as the named package's own mode, and puts the package it
+  named before back to `MODE_DEFAULT`. It looks again when the SMS role changes, when the named
+  package is installed, and when restrictions change through `setApplicationRestrictions`; nothing
+  else tells it: releasing device owner drops Belay's policies (`removePoliciesForAdmin`) without it.
+- Two flags gate it. `DevicePolicyManagerService` starts the tracker, and tells it of a change, only
+  with `com.android.internal.telephony.flags.secure_access_to_restricted_rcs_messages`; and a device
+  owner's `setApplicationRestrictions` reaches the policy engine only with
+  `android.app.admin.flags.app_restrictions_coexistence` (without it, `UserManager`'s own file, which
+  the tracker never reads). `platform/build/release`: Android 17's release configuration is `cp2a`
+  (the tag's `aosp_current`; the names count quarters, and 26Q2 is the first flag's target), where both
+  are `ENABLED` and `READ_ONLY`: the first set in `cp2a`, the second since `bp4a`. A Pixel's build
+  could differ; the Pixel test shows it.
+- Google Messages reads its configuration from the same place: with coexistence,
+  `UserManagerService.getApplicationRestrictionsForUser` (behind `RestrictionsManager`) returns the
+  policy engine's bundles, a device policy controller's first.
+- `WRITE_SMS` keeps no app out. `core/res/AndroidManifest.xml`: `protectionLevel="normal"`,
+  `permissionFlags="removed"`; `attrs_manifest.xml`: "Removed permissions are kept as normal
+  permissions for backwards compatibility"; `AppIdPermissionPolicy` grants a normal permission at
+  install to any app that asks for it. So any app that declares `WRITE_SMS` can start the archival
+  service, with any extras.
+- `READ_SMS` is dangerous and hard-restricted, and an adb install allowlists it (I4). A device owner's
+  `setPermissionGrantState` grants it: the PermissionController (`AdminRestrictedPermissionsUtils`)
+  limits it only for a managed profile, and the permission service refuses only a hard-restricted
+  permission that isn't allowlisted ("Cannot grant hard-restricted non-exempt permission").
+- `packages/providers/TelephonyProvider`: `sms`, `mms` and `mms-sms` need `READ_SMS`. A row marked
+  restricted (the `read_restriction` column, which the app that writes the message sets; writing
+  needs the SMS app's access, and `ProviderUtil.canWriteRestrictedMessages` asks nothing more) is
+  left out of every query unless the caller is the system or the phone process, or is allowed
+  `OP_READ_RESTRICTED_MESSAGES` (`ProviderUtil.canReadRestrictedMessages`). The
+  one-time-code filter (T7) is off on a fully managed phone (`Telephony.Sms.isOtpRedactionEnabled`
+  is false while `isDeviceManaged()`).
+- `PermissionController/res/xml/roles.xml`: the SMS role grants both restricted-messages app-ops, and
+  the DIALER role `read_restricted_messages`, as the uid's mode (`AppOp.grantAsUser`), behind the same
+  flag: Belay as the phone app holds it anyway. `appops get` tells the two apart: a role's line starts
+  with `Uid mode:`.
+- An app reads its own mode of that op with no permission (`AppOpsService.checkOperation`; the op
+  doesn't restrict reads), and another app's configuration schema with
+  `RestrictionsManager.getManifestRestrictions`.
+- The foreground service types page [2026-11-16]: a short service needs only `FOREGROUND_SERVICE`,
+  runs "about 3 minutes", and must stop before its timeout or Android calls it not responding;
+  `Service.callOnTimeout` calls `onTimeout(startId)` and then `onTimeout(startId, fgsType)`.
+
+Untested: whether Google Messages honors `messages_archival` from a device owner set up over adb
+with no managed Google Play (Android's side reads exactly what `setApplicationRestrictions` stores);
+whether it starts the service or sends a broadcast; whether its updates carry a URI, RCS ones too; and
+what it shows the kid.
+
+Belay's consequence: debug builds carry the Pixel test (`ArchivalTest`, switched over adb by
+`DebugArchivalReceiver`; release builds contain none of it, and CI checks the release APK's manifest
+and classes). For a time box, an hour unless asked, it names Belay in Google Messages' configuration
+(keeping any other key), holds `READ_SMS` by policy (DeviceOwnerSetup plans it like a tied permission:
+denied by policy otherwise, so the dialer role can't grant it), and enables the service the docs
+describe and a receiver for the same action. Each update keeps only when it came, how, its extras'
+names and, for a URI in the phone's message store, its column names and row count, never a value.
+Stopping takes the configuration back first, through `setApplicationRestrictions` so the tracker hears
+of it, then the service, then `READ_SMS`, last (that restarts Belay, L7). The test runs with calls
+off, since the dialer role would hold the app-op anyway. For texts themselves: the archival service
+must take an update as a hint and read only the message store, since any app can start it.
 
 ## Off belay (Phase 11)
 

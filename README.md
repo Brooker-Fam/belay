@@ -109,6 +109,9 @@ checked on a real Pixel yet. Phase 9 (more families) isn't built either.
   phone's own app, unfiltered, and the parents are told. So they do after a restart, until the
   phone is first unlocked: then Belay records those calls from Android's call log, by the same
   rules, and the parents see how long the phone stayed locked.
+  Texts aren't built; debug builds carry their one Pixel test (T8), an adb switch that for an hour
+  counts Google Messages' updates and never reads a text (the
+  [Phase 5 checklist](docs/phase5-checklist.md)'s section 12).
 - **`server/`: the family's server.** Node and SQLite in one Docker image. The device API,
   the parent pages (phones and their health, a Getting started card that ticks off a new
   family's setup steps from what the server sees, apps with "new" badges and reviews, the

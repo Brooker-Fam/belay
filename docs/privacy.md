@@ -533,6 +533,12 @@ sends outside the family's server, and the parent page says so where you choose 
   screen says the parent's list stays as it is.
 - When Belay isn't the phone's calling app (it broke, or Android refused), its screen says so:
   "calls go through the phone's own app. Your parent can see this."
+- Debug builds only, for the Pixel test texts wait on (T8, an adb switch): while it's on, an hour
+  unless asked, the managed notice says "Belay is testing whether it can tell when a text comes or
+  goes. It counts them and never reads them.", and What your parent can see lists "A test about
+  texts". It keeps, on the phone only, when Google Messages told Belay of a message event, the names
+  of what came with it and, for a message, its column names and row count: never a message's text,
+  sender, recipient or anything in it, and nothing is sent. Release builds have none of it.
 
 These are the phone's words and screens ([protocol.md](protocol.md), "Calls rules"); the server
 sends the rules and contacts they're built from, and nothing else about calls.
