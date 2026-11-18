@@ -190,11 +190,11 @@ the phone uses it ([pixel.md](pixel.md#which-google-account)).
 - Make it a few days early: reset protection (section 6) can take up to 72 hours to accept a
   new account.
 - Keep its password from the kid, and don't add it to the phone until Belay is set up.
-- Know that an adult's own account turns on **Gemini inside Google Messages**, the texting app:
-  Google offers it to a personal account 18 or over, not to a Family Link or work account. Belay
-  never pauses the texting app, so that AI chat works during a pause and at bedtime, and Belay
-  can't turn it off: Google documents no setting for it that Belay could set. Section 6 says how
-  to hide its button, which your kid can show again.
+- Know that an adult's own account brings **Gemini inside Google Messages**, the texting app:
+  Google offers it to a personal account that's 18 or over, not to a Family Link or Google
+  Workspace account. Belay never pauses the texting app, so that AI chat works during a pause and
+  at bedtime, and Belay can't turn it off: Google documents no setting for it that Belay could
+  set. Section 6 says how to hide its button, which your kid can show again.
 
 ### A password manager
 
