@@ -224,8 +224,9 @@ hide whether the archival configuration gave it.
 
 The test never reads a text. For each update Google Messages sends, it keeps when it came, how
 (Belay's service or a broadcast), the names of its extras and, when one names a message, whether
-reading that worked, its column names and its row count; nothing goes to the server. While it's on,
-the phone says so (step 3). Use made-up words in every message, and write down no phone numbers.
+reading that worked and how many rows it has: Belay asks only for the rows' ids, to count them, so
+nothing in a message reaches it. Nothing goes to the server. While it's on, the phone says so
+(step 3). Use made-up words in every message, and write down no phone numbers.
 
 You need: the Pixel with its SIM and the debug build as device owner; a parent's phone that texts it
 and can turn RCS (chat features) off and on (an Android phone with Google Messages, or an iPhone with
@@ -267,8 +268,8 @@ adb shell am broadcast -a family.brooker.belay.DEBUG_ARCHIVAL -n family.brooker.
    question 1).
 6. **What came.** `adb shell run-as family.brooker.belay cat no_backup/debug-archival-test.json`:
    for each update write down its time (to match it to steps 4 and 5), `via` (`service` or
-   `broadcast`), its `extras` names, and its `uri`'s `outcome`, `columns` and `rows`: names and counts
-   only, nothing from a message. `adb logcat -d | grep -E "GOOGLE_MESSAGES_ARCHIVAL|archival test"`:
+   `broadcast`), its `extras` names, and its `uri`'s `outcome` and `rows`: names and counts only,
+   nothing from a message. `adb logcat -d | grep -E "GOOGLE_MESSAGES_ARCHIVAL|archival test"`:
    write down any line that says Belay's archival service wasn't allowed to start. If no update came
    at all, force-stop and reopen Google Messages as in step 2 and send one more SMS before concluding.
 7. **Stop:** `--es command stop`. Expected `result=-1`, "off since … (stopped over adb)" and "READ_SMS
@@ -285,8 +286,8 @@ What the outcome means (send the results; the texts design decides from them):
 - **Archival works:** updates came for the SMS and the RCS messages, and each one with a URI read with
   `rows` 1 (or the updates had no URI: then texts would compare Android's message store before and
   after, as Google's page describes). Texts get the design's recommended **Option A**: Google Messages
-  stays, Belay reads each message on the phone and sends only alerts. Step 6's `via`, extras and
-  columns shape how.
+  stays, Belay reads each message on the phone and sends only alerts. Step 6's `via` and extras
+  shape how.
 - **Updates, but RCS can't be read:** the SMS's URI read with `rows` 1, but an RCS one with `rows` 0,
   or "restricted messages" never became allowed. Google Messages calls Belay, but Android didn't let
   Belay read RCS messages (or Google Messages didn't write them to Android's store): Option A would
@@ -345,7 +346,7 @@ What the outcome means (send the results; the texts design decides from them):
 | 12.3 | The managed notice's and What your parent can see's words; what Google Messages shows, word for word | pending | |
 | 12.4 | SMS each way: updates, and with a message URI, after each | pending | |
 | 12.5 | RCS each way (and a group chat): updates, and with a message URI, after each | pending | |
-| 12.6 | Each update: via, extras' names, the URI's outcome, columns, rows; logcat | pending | |
+| 12.6 | Each update: via, extras' names, the URI's outcome and rows; logcat | pending | |
 | 12.7 | Stop: all taken back, Belay restarted; Google Messages' notice gone? | pending | |
 | 12.8 | The time box ends it by itself | pending | |
 | 12 | The outcome: archival works, SMS only, or Google Messages doesn't call Belay | pending | |

@@ -113,8 +113,7 @@ class ArchivalLogTest {
 
     @Test
     fun `an update keeps the extras' names, never their values, and never the URI`() {
-        val read = ArchivalLog.read(listOf("_id", "thread_id", "address", "body", "date", "read_restriction"), 1)
-        val update = ArchivalLog.update(t0 + minute, ArchivalVia.SERVICE, madeUpExtras.keys, read)
+        val update = ArchivalLog.update(t0 + minute, ArchivalVia.SERVICE, madeUpExtras.keys, ArchivalLog.read(1))
         val state = ArchivalLog.record(started(), update)
         assertEquals(madeUpExtras.keys.sorted(), state.updates.single().extras)
 
@@ -123,10 +122,12 @@ class ArchivalLogTest {
         assertFalse("4242" in json, "the URI's message id was kept")
         assertFalse("content://" in json, "the URI was kept")
 
-        // Each update has exactly these fields, and its URI part only these: nowhere to keep a value.
+        // Each update has exactly these fields, and its URI part only these: what reading it gave and how
+        // many rows, nowhere to keep a value or anything else about a row.
         val kept = ArchivalLog.JSON.parseToJsonElement(json).jsonObject["updates"]!!.jsonArray.single().jsonObject
         assertEquals(setOf("at", "via", "extras", "more_extras", "uri"), kept.keys)
-        assertEquals(setOf("outcome", "columns", "rows", "error"), (kept["uri"] as JsonObject).keys)
+        assertEquals(setOf("outcome", "rows", "error"), (kept["uri"] as JsonObject).keys)
+        assertEquals(UriRead(ArchivalRead.READ, rows = 1), state.updates.single().uri)
     }
 
     @Test
@@ -135,12 +136,11 @@ class ArchivalLogTest {
         assertEquals(UriRead(ArchivalRead.FAILED, error = "SecurityException"), failed)
         assertEquals(ArchivalLog.MAX_ERROR_LENGTH, ArchivalLog.failed("X".repeat(500)).error!!.length)
         assertEquals("?", ArchivalLog.failed(null).error)
-        assertEquals(emptyList(), failed.columns)
         assertNull(failed.rows)
     }
 
     @Test
-    fun `names and columns from another app are capped and shown plainly`() {
+    fun `names from another app are capped and shown plainly`() {
         val names = (1..30).map { "extra_${it.toString().padStart(2, '0')}" }
         val update = ArchivalLog.update(t0, ArchivalVia.BROADCAST, names + listOf(null, "extra_01"), null)
         assertEquals(ArchivalLog.MAX_NAMES, update.extras.size)
@@ -151,10 +151,13 @@ class ArchivalLogTest {
         assertEquals(ArchivalLog.MAX_NAME_LENGTH, long.length)
         assertTrue(long.endsWith("…"))
         assertEquals("a?b?c", ArchivalLog.clean("a\nb\u0000c"))
+    }
 
-        val columns = ArchivalLog.read((1..100).map { "c$it" }, 3).columns
-        assertEquals(ArchivalLog.MAX_COLUMNS, columns.size)
-        assertEquals(0, ArchivalLog.read(null, -1).rows)
+    @Test
+    fun `a read keeps only how many rows, never less than none`() {
+        assertEquals(UriRead(ArchivalRead.READ, rows = 3), ArchivalLog.read(3))
+        assertEquals(0, ArchivalLog.read(-1).rows)
+        assertNull(ArchivalLog.read(0).error)
     }
 
     @Test
@@ -169,7 +172,7 @@ class ArchivalLogTest {
     fun `every update is counted, the list keeps the last 50`() {
         var state = started()
         val outcomes = listOf(
-            ArchivalLog.read(listOf("_id"), 1),
+            ArchivalLog.read(1),
             UriRead(ArchivalRead.NO_CURSOR),
             ArchivalLog.failed("SecurityException"),
             UriRead(ArchivalRead.NOT_MESSAGES),
@@ -198,7 +201,7 @@ class ArchivalLogTest {
 
     @Test
     fun `the state file reads back, and ignores fields it doesn't know`() {
-        val state = ArchivalLog.record(started(), ArchivalLog.update(t0 + minute, ArchivalVia.SERVICE, listOf("x"), ArchivalLog.read(listOf("_id"), 1)))
+        val state = ArchivalLog.record(started(), ArchivalLog.update(t0 + minute, ArchivalVia.SERVICE, listOf("x"), ArchivalLog.read(1)))
         val json = ArchivalLog.JSON.encodeToString(ArchivalTestState.serializer(), state)
         assertEquals(state, ArchivalLog.JSON.decodeFromString(ArchivalTestState.serializer(), json))
         val newer = json.replaceFirst("{", "{\"from_a_newer_build\":1,")
@@ -210,14 +213,12 @@ class ArchivalLogTest {
 
     @Test
     fun `the one-line summary has the counts and times, never a name`() {
-        val read = ArchivalLog.read(listOf("_id", "body_column_name"), 1)
-        val state = ArchivalLog.record(started(), ArchivalLog.update(t0 + minute, ArchivalVia.SERVICE, listOf("secret_extra_name"), read))
+        val state = ArchivalLog.record(started(), ArchivalLog.update(t0 + minute, ArchivalVia.SERVICE, listOf("secret_extra_name"), ArchivalLog.read(1)))
         val on = ArchivalLog.summary(state, t0 + 2 * minute, zone)
         assertTrue(on.startsWith("on until 2027-01-15T04:00:00-05:00 (58 min left); updates: 1 (service 1, broadcast 0)"), on)
         assertTrue("with a message URI: 1 (read 1, rows 1, failed 0, not read 0)" in on, on)
         assertTrue("first 2027-01-15T03:01:00-05:00, last 2027-01-15T03:01:00-05:00" in on, on)
         assertFalse("secret_extra_name" in on)
-        assertFalse("body_column_name" in on)
 
         val off = ArchivalLog.summary(ArchivalLog.stop(state, t0 + 3 * minute, ArchivalStop.TIME_UP), t0 + 4 * minute, zone)
         assertTrue(off.startsWith("off since 2027-01-15T03:03:00-05:00 (its time was up)"), off)

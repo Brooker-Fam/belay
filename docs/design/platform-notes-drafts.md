@@ -471,7 +471,8 @@ Pixel test.
 
 **Moved** to [platform-notes.md](../platform-notes.md#t8-google-messages-rcs-archival-for-a-device-owner-set-up-over-adb)
 and checked again in AOSP 17 (2026-11-18), when debug builds gained the Pixel test for it
-([phase5-checklist.md](../phase5-checklist.md), section 12); this draft stays as it was written. What
+([phase5-checklist.md](../phase5-checklist.md), section 12: it counts Google Messages' updates and, for
+a message one names, reads only the rows' ids, to count them); this draft stays as it was written. What
 the second look added, still untested on a device: the tracker reads the restrictions of whichever app
 holds the SMS role, and only through the policy engine, so it works only with
 `app_restrictions_coexistence` (on, read-only, in Android 17's `cp2a`) and starts only with

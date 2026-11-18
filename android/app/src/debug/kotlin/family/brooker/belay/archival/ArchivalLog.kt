@@ -19,9 +19,9 @@ import java.time.temporal.ChronoUnit
  * time box, an hour by default, Belay names itself the archival app in Google Messages' managed
  * configuration, and Google Messages may then tell it of each message event (sent, received, edited,
  * deleted). For each update the test keeps only when it came, how (Belay's service or a broadcast),
- * the names of its extras and, when one names a message, whether reading it worked, its column
- * names and its row count. Never a value: no text, sender, recipient, thread, URI or anything else
- * from a message, and nothing about it is sent to the server.
+ * the names of its extras and, when one names a message, whether reading it worked and how many rows
+ * it has: only the rows' ids are read, to count them. Never a value: no text, sender, recipient,
+ * thread, URI or anything else from a message, and nothing about it is sent to the server.
  */
 
 /** How an update reached Belay: the foreground service the docs describe, or a broadcast. */
@@ -37,7 +37,7 @@ enum class ArchivalVia {
 /** What reading an update's message URI gave. */
 @Serializable
 enum class ArchivalRead {
-    /** The phone's message store answered: [UriRead.columns] and [UriRead.rows]. */
+    /** The phone's message store answered: [UriRead.rows] (counted from the rows' ids alone). */
     @SerialName("read")
     READ,
 
@@ -58,11 +58,13 @@ enum class ArchivalRead {
     NOT_A_URI,
 }
 
-/** An update's URI as the test keeps it: never the URI itself, and never a value from a row. */
+/**
+ * An update's URI as the test keeps it: what reading it gave and, when it was read, how many rows it
+ * has. Never the URI itself, and nothing from a row: Belay asks only for the rows' ids, to count them.
+ */
 @Serializable
 data class UriRead(
     val outcome: ArchivalRead,
-    val columns: List<String> = emptyList(),
     val rows: Int? = null,
     val error: String? = null,
 )
@@ -160,8 +162,6 @@ object ArchivalLog {
     const val MAX_KEPT = 50
     const val MAX_NAMES = 20
     const val MAX_NAME_LENGTH = 80
-    const val MAX_COLUMNS = 64
-    const val MAX_COLUMN_LENGTH = 64
     const val MAX_ERROR_LENGTH = 60
 
     /** The state file's form: every field written, unknown ones ignored. */
@@ -208,11 +208,8 @@ object ArchivalLog {
         return if (shown.length <= max) shown else shown.take(max - 1) + "…"
     }
 
-    /** A query's columns, as the test keeps them: at most [MAX_COLUMNS] names. */
-    fun columns(names: List<String>?): List<String> = names.orEmpty().take(MAX_COLUMNS).map { clean(it, MAX_COLUMN_LENGTH) }
-
-    /** The message store answered: its [columns] and how many [rows], never what's in them. */
-    fun read(columns: List<String>?, rows: Int): UriRead = UriRead(ArchivalRead.READ, columns(columns), rows.coerceAtLeast(0))
+    /** The message store answered with [rows] rows, counted from their ids alone. */
+    fun read(rows: Int): UriRead = UriRead(ArchivalRead.READ, rows.coerceAtLeast(0))
 
     /** The query threw an exception of class [errorClass] (its message is never kept: it can hold the URI). */
     fun failed(errorClass: String?): UriRead = UriRead(ArchivalRead.FAILED, error = clean(errorClass ?: "?", MAX_ERROR_LENGTH))

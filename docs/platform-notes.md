@@ -2682,10 +2682,12 @@ that the debug build's switch sets nothing where Google Messages isn't installed
   limits it only for a managed profile, and the permission service refuses only a hard-restricted
   permission that isn't allowlisted ("Cannot grant hard-restricted non-exempt permission").
 - `packages/providers/TelephonyProvider`: `sms`, `mms` and `mms-sms` need `READ_SMS`. A row marked
-  restricted (the `read_restriction` column, which the app that writes the message sets; writing
-  needs the SMS app's access, and `ProviderUtil.canWriteRestrictedMessages` asks nothing more) is
-  left out of every query unless the caller is the system or the phone process, or is allowed
-  `OP_READ_RESTRICTED_MESSAGES` (`ProviderUtil.canReadRestrictedMessages`). The
+  restricted (by `read_restriction`, which the app that writes the message sets; writing needs the
+  SMS app's access, and `ProviderUtil.canWriteRestrictedMessages` asks nothing more) is left out of
+  every query unless the caller is the system or the phone process, or is allowed
+  `OP_READ_RESTRICTED_MESSAGES` (`ProviderUtil.canReadRestrictedMessages`), so a restricted message
+  Belay may not read counts as no row at all. `SqlQueryChecker` refuses only `read_restriction`
+  itself in a query, so asking for `_id` alone is fine. The
   one-time-code filter (T7) is off on a fully managed phone (`Telephony.Sms.isOtpRedactionEnabled`
   is false while `isDeviceManaged()`).
 - `PermissionController/res/xml/roles.xml`: the SMS role grants both restricted-messages app-ops, and
@@ -2710,7 +2712,8 @@ and classes). For a time box, an hour unless asked, it names Belay in Google Mes
 (keeping any other key), holds `READ_SMS` by policy (DeviceOwnerSetup plans it like a tied permission:
 denied by policy otherwise, so the dialer role can't grant it), and enables the service the docs
 describe and a receiver for the same action. Each update keeps only when it came, how, its extras'
-names and, for a URI in the phone's message store, its column names and row count, never a value.
+names and, for a URI in the phone's message store, its row count, never a value: Belay queries it
+for the rows' ids alone (`_id`), to count them, so nothing in a message reaches Belay's process.
 Stopping takes the configuration back first, through `setApplicationRestrictions` so the tracker hears
 of it, then the service, then `READ_SMS`, last (that restarts Belay, L7). The test runs with calls
 off, since the dialer role would hold the app-op anyway. For texts themselves: the archival service

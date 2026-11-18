@@ -537,8 +537,9 @@ sends outside the family's server, and the parent page says so where you choose 
   unless asked, the managed notice says "Belay is testing whether it can tell when a text comes or
   goes. It counts them and never reads them.", and What your parent can see lists "A test about
   texts". It keeps, on the phone only, when Google Messages told Belay of a message event, the names
-  of what came with it and, for a message, its column names and row count: never a message's text,
-  sender, recipient or anything in it, and nothing is sent. Release builds have none of it.
+  of what came with it and, for a message, how many rows Android's message store has for it, counted
+  from the rows' ids alone: never a message's text, sender, recipient or anything else in it, and
+  nothing is sent. Release builds have none of it.
 
 These are the phone's words and screens ([protocol.md](protocol.md), "Calls rules"); the server
 sends the rules and contacts they're built from, and nothing else about calls.

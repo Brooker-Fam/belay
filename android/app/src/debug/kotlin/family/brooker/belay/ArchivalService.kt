@@ -22,7 +22,8 @@ import family.brooker.belay.service.ManagedNotice
  *
  * WRITE_SMS doesn't keep other apps out, whatever the docs hope: Android 17 keeps it as a removed
  * permission, which any app that asks for it holds (docs/platform-notes.md T8). So an update is only
- * counted, never trusted, and a message URI is read only in the phone's own message store.
+ * counted, never trusted, and a message URI is read only in the phone's own message store, and only
+ * for its rows' ids, to count them.
  */
 class ArchivalService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null

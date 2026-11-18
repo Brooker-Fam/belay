@@ -18,6 +18,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Process
 import android.os.UserManager
+import android.provider.BaseColumns
 import android.provider.Telephony
 import android.util.AtomicFile
 import android.util.Log
@@ -58,7 +59,8 @@ import java.util.concurrent.TimeUnit
  * - The archival service, and a receiver for the same update (the docs call it a broadcast too),
  *   are enabled; the manifest has them disabled.
  *
- * Each update is kept as ArchivalLog keeps it: never a value from a message, and nothing is sent.
+ * Each update is kept as ArchivalLog keeps it: never a value from a message (a message URI's rows are
+ * only counted, from their ids), and nothing is sent.
  * Stopping (over adb, at the end of the time box, or for "Release this phone") takes it all back in
  * the other order: the configuration first, then the service, and READ_SMS last, after the answer is
  * out (denying a granted permission restarts Belay, platform notes L7). While it's on, the managed
@@ -72,6 +74,9 @@ object ArchivalTest {
     private const val OP_READ_RESTRICTED = "android:read_restricted_messages"
     private const val FILE = "debug-archival-test.json"
     private const val CATEGORY_ID = "debug_archival_test"
+
+    /** All the test ever asks a message store for: each row's id, to count the rows. */
+    private val ID_ONLY = arrayOf(BaseColumns._ID)
 
     /** One thread for the test's own work (start, stop, each update), so its file has one writer. */
     private val executor = Executors.newSingleThreadExecutor { r -> Thread(r, "belay-archival") }
@@ -146,9 +151,9 @@ object ArchivalTest {
 
     /**
      * An update from Google Messages (ArchivalService, ArchivalUpdateReceiver), on the test's thread:
-     * when it came, how, its extras' names (never their values) and, for a message URI, what a query of
-     * it gives: its column names and row count, and no value from any row. Kept only while the test is
-     * on. [done] runs afterwards, there.
+     * when it came, how, its extras' names (never their values) and, for a message URI, how many rows a
+     * query of it gives, asking only for their ids. Kept only while the test is on. [done] runs
+     * afterwards, there.
      */
     fun update(context: Context, via: ArchivalVia, intent: Intent?, done: () -> Unit) {
         val app = context.applicationContext
@@ -322,7 +327,8 @@ object ArchivalTest {
 
     /**
      * What an update's message URI gives Belay: only a URI in the phone's message store is read, once,
-     * for its column names and row count. No value is read from any row, and the URI isn't kept.
+     * and only the rows' ids ([BaseColumns._ID]), to count them, so no message's text, sender or anything
+     * else in it ever reaches Belay. The URI isn't kept.
      */
     private fun read(app: Context, extras: Bundle): UriRead {
         val uri = try {
@@ -332,7 +338,7 @@ object ArchivalTest {
         } ?: return UriRead(ArchivalRead.NOT_A_URI)
         if (uri.scheme != ContentResolver.SCHEME_CONTENT || !ArchivalLog.readable(uri.authority)) return UriRead(ArchivalRead.NOT_MESSAGES)
         return try {
-            app.contentResolver.query(uri, null, null, null, null)?.use { cursor -> ArchivalLog.read(cursor.columnNames?.toList(), cursor.count) }
+            app.contentResolver.query(uri, ID_ONLY, null, null, null)?.use { cursor -> ArchivalLog.read(cursor.count) }
                 ?: UriRead(ArchivalRead.NO_CURSOR)
         } catch (e: RuntimeException) {
             ArchivalLog.failed(e.javaClass.simpleName)
