@@ -11,6 +11,8 @@ import family.brooker.belay.DeviceOwnerSetup
 import family.brooker.belay.core.NeverBlocked
 import family.brooker.belay.core.WirePolicy
 import family.brooker.belay.core.network.DnsLookup
+import family.brooker.belay.core.network.Domains
+import family.brooker.belay.core.network.NetworkDay
 import family.brooker.belay.core.network.NetworkDigest
 import family.brooker.belay.core.network.NetworkLog
 import family.brooker.belay.core.network.NetworkLogState
@@ -25,12 +27,16 @@ import java.time.ZoneId
  *   `network_log` is (DevicePolicyManager.setNetworkLoggingEnabled, device owner only), and the
  *   report: whether Android logs, and whether it paused (another user or profile on the phone).
  *   With logging off, the days Belay was counting and every unsent day are deleted: collecting is a
- *   parent's decision, and nothing more is sent.
+ *   parent's decision, and nothing more is sent. When the family's private websites change, what
+ *   the days kept counted of them goes, and each day that changed is queued again, in place of an
+ *   unsent report (which never goes).
  * - [take], when Android says a batch is ready (AdminReceiver.onNetworkLogsAvailable): Belay takes
  *   it at once (Android discards a batch 5 minutes after it's taken), and any it missed, reads only
  *   the DNS lookups (never the connect events, an address and a port), reduces them to counts per
- *   app, per domain, per day (core's NetworkDigest), and queues each changed day for the server.
- *   The raw events never reach storage, the outbox or Belay's log.
+ *   app, per domain, per day (core's NetworkDigest), never keeping 988's websites or the family's
+ *   private ones, and queues each changed day for the server. The raw events never reach storage,
+ *   the outbox or Belay's log, and neither do the private websites' names: the log counts their
+ *   lookups with 988's, as "private".
  *
  * Idempotent: a batch is taken once (core's NetworkLog.tokens), and a second step changes nothing.
  */
@@ -69,8 +75,22 @@ class NetworkLogStep(context: Context, private val store: AgentStore) {
             return Done(if (anything) AgentStore.NetworkWrite(report?.let { NetworkLogState(report = it) }, dropDays = true) else null, problems)
         }
         if (android && state.enabledAt == null) state = NetworkLog.turnedOn(now, bootCount())
+        // The family's private websites changed: what the days kept counted of them before goes, and
+        // each day that changed is sent again, in place of an unsent report (which never goes).
+        val private = Domains.privateSet(policy.networkLog.privateDomains)
+        val digest = NetworkLog.digest(private)
+        var cleared = emptyList<NetworkDay>()
+        if (state.privateDigest != digest) {
+            if (private.isNotEmpty()) cleared = store.allNetworkDays().mapNotNull { NetworkDigest.without(it, private) }
+            state = state.copy(privateDigest = digest)
+            // Counts only: never a name.
+            if (cleared.isNotEmpty()) Log.i(Agent.TAG, "network logging: private websites taken out of ${cleared.size} day${if (cleared.size == 1) "" else "s"} kept, sent again")
+        }
         state = state.copy(report = NetworkLog.report(policyOn = true, androidOn = android, otherUsers = otherUsers, state = state))
-        return Done(if (state != stored) AgentStore.NetworkWrite(state) else null, problems)
+        return Done(
+            if (state != stored || cleared.isNotEmpty()) AgentStore.NetworkWrite(state, cleared = cleared, resend = cleared.map(NetworkDigest::wire)) else null,
+            problems,
+        )
     }
 
     /**
@@ -107,8 +127,9 @@ class NetworkLogStep(context: Context, private val store: AgentStore) {
         }
         val zone = ZoneId.systemDefault()
         val never = NeverBlocked.of(PhoneFacts.roles(app), store.loadBaseline().inventory, store.applied().hidden).keys
-        val reduced = NetworkDigest.reduce(lookups, never, zone, now)
-        val days = NetworkDigest.merge(store.networkDays(reduced.days.keys), reduced, zone)
+        val private = Domains.privateSet(policy.networkLog.privateDomains)
+        val reduced = NetworkDigest.reduce(lookups, never, zone, now, private)
+        val days = NetworkDigest.merge(store.networkDays(reduced.days.keys), reduced, zone, private)
         val wire = days.map(NetworkDigest::wire)
         state = NetworkLog.took(state, token, boot, now, lookups.size)
         store.commitNetwork(days, wire, state, NetworkDigest.keepFrom(zone, now), now)

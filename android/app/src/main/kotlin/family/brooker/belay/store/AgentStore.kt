@@ -82,8 +82,15 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
     /**
      * Phase 3, network logging: what an enforcement step does with its row. [state] null: the row
      * goes. [dropDays]: logging is off, so the days Belay was counting, and every unsent day, go too.
+     * [cleared]: days kept that lost the family's private websites (counted before they were
+     * private), kept as they are now and queued again as [resend], in place of an unsent report.
      */
-    data class NetworkWrite(val state: NetworkLogState?, val dropDays: Boolean = false)
+    data class NetworkWrite(
+        val state: NetworkLogState?,
+        val dropDays: Boolean = false,
+        val cleared: List<NetworkDay> = emptyList(),
+        val resend: List<WireNetworkDay> = emptyList(),
+    )
 
     /** Phase 5: what an enforcement step does with calls' row and Belay's own call records. */
     data class CallsWrite(
@@ -469,6 +476,8 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
             network.clearCounts()
             val unsent = outbox.deleteAllPendingNetwork()
             if (days + unsent > 0) Log.i(Agent.TAG, "network logging: off, so $days days counted and $unsent unsent are deleted")
+        } else {
+            writeNetworkDays(write.cleared, write.resend, at)
         }
     }
 
@@ -496,6 +505,9 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
     /** Every day Belay is counting, oldest first, with how many entries each has (for the debug state: no names). */
     fun networkDaySizes(): List<Pair<NetworkDayRow, Int>> = network.allDays().map { it to network.countEntries(it.day) }
 
+    /** Every day Belay is counting, oldest first, each with its counts. */
+    fun allNetworkDays(): List<NetworkDay> = networkDays(network.allDays().map { it.day }).values.sortedBy { it.day }
+
     /**
      * Phase 3, the agent thread: a batch of Android's lookups, reduced (core's NetworkDigest): the
      * [days] it changed, each kept with everything counted so far and queued for the server as its
@@ -505,30 +517,39 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
      */
     fun commitNetwork(days: List<NetworkDay>, wire: List<WireNetworkDay>, state: NetworkLogState, keepFrom: String, at: Long) {
         db.runInTransaction {
-            if (days.isNotEmpty()) {
-                network.upsertDays(days.map { NetworkDayRow(it.day, it.zone, it.asOf, it.overflow, at) })
-                for (day in days) {
-                    network.upsertCounts(day.counts.map { (key, lookups) -> NetworkCountRow(day.day, key.packageName, key.domain, lookups) })
-                }
-            }
+            writeNetworkDays(days, wire, at)
             network.pruneCounts(keepFrom)
             network.pruneDays(keepFrom)
             network.setState(NetworkStateRow(state = json.encodeToString(NetworkLogState.serializer(), state), updatedAt = at))
-            if (wire.isNotEmpty()) {
-                wire.forEach { outbox.deletePendingNetwork(networkPrefix(it.day)) }
-                outbox.insert(
-                    wire.map {
-                        OutboxRow(
-                            type = OutboxRow.TYPE_NETWORK,
-                            itemId = networkPrefix(it.day) + at,
-                            packageName = null,
-                            payload = Wire.json.encodeToString(WireNetworkDay.serializer(), it),
-                            createdAt = at,
-                        )
-                    },
-                )
-                outbox.capPendingNetwork(OutboxPolicy.MAX_PENDING_NETWORK)
+        }
+    }
+
+    /**
+     * Inside a transaction: each of [days] kept as it is now, its counts replaced (a website made
+     * private since leaves it), and its [wire] report queued in place of an unsent one of that day.
+     */
+    private fun writeNetworkDays(days: List<NetworkDay>, wire: List<WireNetworkDay>, at: Long) {
+        if (days.isNotEmpty()) {
+            network.upsertDays(days.map { NetworkDayRow(it.day, it.zone, it.asOf, it.overflow, at) })
+            for (day in days) {
+                network.clearDayCounts(day.day)
+                network.upsertCounts(day.counts.map { (key, lookups) -> NetworkCountRow(day.day, key.packageName, key.domain, lookups) })
             }
+        }
+        if (wire.isNotEmpty()) {
+            wire.forEach { outbox.deletePendingNetwork(networkPrefix(it.day)) }
+            outbox.insert(
+                wire.map {
+                    OutboxRow(
+                        type = OutboxRow.TYPE_NETWORK,
+                        itemId = networkPrefix(it.day) + at,
+                        packageName = null,
+                        payload = Wire.json.encodeToString(WireNetworkDay.serializer(), it),
+                        createdAt = at,
+                    )
+                },
+            )
+            outbox.capPendingNetwork(OutboxPolicy.MAX_PENDING_NETWORK)
         }
     }
 

@@ -191,15 +191,24 @@ object DataCategories {
     /**
      * Phase 3, while the policy's `network_log` is on: the domains each app looks up, per day, that
      * Belay sends (POST /api/v1/network), reduced on the phone to counts (core's NetworkDigest).
+     * With [privateSites] (the family made some websites private, never noted like 988's), it says
+     * so, and never which: a parent, or anyone holding the phone, may see this screen, and the kid
+     * may use one of them, like a helpline's, privately. It's given no names, so it can't show one.
      */
-    val NETWORK = DataCategory(
+    fun network(privateSites: Boolean): DataCategory = DataCategory(
         id = NETWORK_ID,
         title = "Which websites and services apps look up, per day",
-        details = listOf(
+        details = listOfNotNull(
             "The names of the websites and online services each app looks up, like example.com, and how " +
                 "many times a day. Not the pages, messages, searches or anything you type.",
             "Not what the phone app, your texting app or the other apps that always work look up, and " +
                 "never 988's websites",
+            if (privateSites) {
+                "Never the other websites your parent made private. Belay doesn't name them here, so no one " +
+                    "who sees this screen can tell which they are. Ask your parent if you want to know."
+            } else {
+                null
+            },
         ),
     )
 }

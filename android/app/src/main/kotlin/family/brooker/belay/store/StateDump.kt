@@ -35,8 +35,8 @@ import kotlinx.serialization.json.putJsonObject
  * block list Belay keeps and how it decided the last calls, without numbers, (Phase 11) the
  * hand-over: when the policy asked for it, what Belay did about reset protection, and whether it
  * still holds any of the hand-over's locks, and (Phase 3) network logging's switch, batches and
- * days, as counts, never a name. Debug builds write it after every step
- * (DebugTools.afterStep), for android/scripts/ci-emulator-test.sh.
+ * days, and how many private websites the policy lists, as counts, never a name. Debug builds
+ * write it after every step (DebugTools.afterStep), for android/scripts/ci-emulator-test.sh.
  */
 object StateDump {
     fun json(context: Context, store: AgentStore, connection: Connection): String = buildJsonObject {
@@ -149,10 +149,11 @@ object StateDump {
         // parent's own blocked list, and never when the kid last called 911 or 988.
         putJsonObject("calls") { callsDump(this, store, context) }
         // Phase 3: network logging: Android's switch, the batches taken and the days counted, as
-        // counts: never an app's or a domain's name.
+        // counts: never an app's or a domain's name. The family's private websites: how many, never which.
         val network = store.networkState()
         putJsonObject("network") {
             put("on", store.policy()?.networkLog?.enabled == true)
+            put("private_domains", store.policy()?.networkLog?.privateDomains?.size ?: 0)
             put("android", runCatching { context.getSystemService(DevicePolicyManager::class.java).isNetworkLoggingEnabled(DeviceOwnerSetup.admin(context)) }.getOrNull())
             network?.report?.let { put("report", Json.encodeToJsonElement(WireNetworkLogStatus.serializer(), it)) }
             put("enabled_at", network?.enabledAt)

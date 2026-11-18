@@ -1,6 +1,7 @@
 package family.brooker.belay.core.network
 
 import family.brooker.belay.core.Applied
+import family.brooker.belay.core.DataCategories
 import family.brooker.belay.core.Enforcement
 import family.brooker.belay.core.PolicyResponse
 import family.brooker.belay.core.Wire
@@ -96,6 +97,22 @@ class NetworkLogTest {
         assertEquals(state, Json.decodeFromString(NetworkLogState.serializer(), json))
         // Kept from before private websites: none cleared yet.
         assertNull(Json.decodeFromString(NetworkLogState.serializer(), """{"enabledAt":1}""").privateDigest)
+    }
+
+    @Test
+    fun `what your parent can see says other websites are never noted when the family made some private, never which`() {
+        val plain = DataCategories.network(privateSites = false)
+        val private = DataCategories.network(privateSites = true)
+        assertEquals(DataCategories.NETWORK_ID, private.id)
+        assertEquals(plain.title, private.title)
+        assertEquals(plain.details, private.details.dropLast(1))
+        assertEquals(
+            "Never the other websites your parent made private. Belay doesn't name them here, so no one who sees this " +
+                "screen can tell which they are. Ask your parent if you want to know.",
+            private.details.last(),
+        )
+        assertTrue(plain.details.none { "private" in it })
+        assertTrue(plain.details.any { "988's websites" in it })
     }
 
     @Test
