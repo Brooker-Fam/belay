@@ -113,8 +113,8 @@ may read (the policy's `ai_reads`), under "What your parent can see".
 
 Always included: the phones' names, their status and problems ("silent for 14 hours",
 "the phone hasn't applied the rules changed 4 hours ago", or, first, that someone may be
-getting around Belay when the phone reports Android's own Parental Controls or another
-profile), when they last checked in, and
+getting around Belay when the phone reports Android's own Parental Controls, another
+profile, a proxy on its network or wireless debugging), when they last checked in, and
 each phone's rules (protection, pause and its note, the locked settings, the web filter,
 Chrome's settings, maintenance mode, whether reset protection is set, whether the phone has a
 recovery key and when one was last used, and proposals waiting for a parent), and from
