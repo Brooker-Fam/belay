@@ -10,7 +10,7 @@
  * client's. The policy carries the offer (agent_update) while the phone runs an older version.
  */
 import { createHash, randomBytes } from "node:crypto";
-import { createReadStream, createWriteStream } from "node:fs";
+import { createReadStream, createWriteStream, readdirSync, rmSync, statSync } from "node:fs";
 import { mkdir, rename, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { Transform } from "node:stream";
@@ -57,7 +57,7 @@ export function agentPath(dir: string, sha256: string): string {
  * written to a temporary file in the store while it's hashed, at most LIMITS.maxAgentBytes, then
  * renamed to <sha256>.apk. The same file added again keeps one copy.
  */
-export async function addAgentFile(
+export function addAgentFile(
   db: DB,
   dir: string,
   now: number,
@@ -65,6 +65,25 @@ export async function addAgentFile(
   version: { code: number; name: string | null },
   by: { parentId: string | null },
   maxBytes: number = LIMITS.maxAgentBytes,
+): Promise<{ file: AgentFile; existed: boolean }> {
+  // One at a time, each waiting its turn: each holds up to maxBytes on disk while it's written,
+  // and an add prunes. A stalled upload ends at the server's request timeout, and the next goes.
+  const run = queue.then(() => addOne(db, dir, now, source, version, by, maxBytes));
+  queue = run.catch(() => undefined);
+  return run;
+}
+
+/** The adds in this process (the server's, or the CLI's own), one after another. */
+let queue: Promise<unknown> = Promise.resolve();
+
+async function addOne(
+  db: DB,
+  dir: string,
+  now: number,
+  source: string | NodeJS.ReadableStream,
+  version: { code: number; name: string | null },
+  by: { parentId: string | null },
+  maxBytes: number,
 ): Promise<{ file: AgentFile; existed: boolean }> {
   if (!Number.isSafeInteger(version.code) || version.code < 1) throw new AgentFileError("The version code is a whole number, 1 or more: Belay's versionCode in android/app/build.gradle.kts.");
   if (version.name !== null && !VERSION_NAME.test(version.name)) {
@@ -116,7 +135,7 @@ export async function addAgentFile(
   const file = getAgentFile(db, sha256);
   if (!file) throw new Error("agent file vanished");
   // The file just added stays, even one first added long ago and added again now.
-  await pruneAgentFiles(db, dir, KEEP_AGENT_FILES, sha256);
+  pruneAgentFiles(db, dir, KEEP_AGENT_FILES, sha256);
   return { file, existed: known !== null };
 }
 
@@ -129,7 +148,7 @@ export const KEEP_AGENT_FILES = 10;
  * parent's password) adds. The older ones' files and rows go; the phones already installed them,
  * or never will.
  */
-export async function pruneAgentFiles(db: DB, dir: string, keep: number = KEEP_AGENT_FILES, except: string | null = null): Promise<string[]> {
+export function pruneAgentFiles(db: DB, dir: string, keep: number = KEEP_AGENT_FILES, except: string | null = null): string[] {
   // Newest first, with `except` (the file just added) first of all: it's one of the ones kept.
   const old = db
     .prepare<[string, number], { sha256: string }>(
@@ -139,11 +158,41 @@ export async function pruneAgentFiles(db: DB, dir: string, keep: number = KEEP_A
     )
     .all(except ?? "", keep)
     .map((r) => r.sha256);
-  for (const sha256 of old) {
-    db.prepare("DELETE FROM agent_files WHERE sha256 = ? AND NOT EXISTS (SELECT 1 FROM agent_offers o WHERE o.sha256 = ?)").run(sha256, sha256);
-    await rm(agentPath(dir, sha256), { force: true });
+  // The rows go in one transaction (an offer made meanwhile keeps its row), and each file goes
+  // only if its row did, at once, with nothing in between: never a file whose row is still there.
+  const remove = db.prepare("DELETE FROM agent_files WHERE sha256 = ? AND NOT EXISTS (SELECT 1 FROM agent_offers o WHERE o.sha256 = ?)");
+  const deleted = db.transaction(() => old.filter((sha256) => remove.run(sha256, sha256).changes === 1)).immediate();
+  for (const sha256 of deleted) {
+    if (!getAgentFile(db, sha256)) rmSync(agentPath(dir, sha256), { force: true });
   }
-  return old;
+  return deleted;
+}
+
+/**
+ * The temporary files of adds that never finished (the server stopped mid-upload: a restart, a
+ * crash, the power): removed once they're older than any upload can take. At start and hourly.
+ */
+export function cleanAgentTemp(dir: string, now: number, olderThanMs = 3_600_000): number {
+  let removed = 0;
+  let names: string[];
+  try {
+    names = readdirSync(dir);
+  } catch {
+    return 0;
+  }
+  for (const name of names) {
+    if (!/^\.adding-[0-9a-f]+\.tmp$/.test(name)) continue;
+    const path = join(dir, name);
+    try {
+      if (now - statSync(path).mtimeMs > olderThanMs) {
+        rmSync(path, { force: true });
+        removed++;
+      }
+    } catch {
+      // Gone already, or being written: the next clean-up looks again.
+    }
+  }
+  return removed;
 }
 
 export function getAgentFile(db: DB, sha256: string): AgentFile | null {

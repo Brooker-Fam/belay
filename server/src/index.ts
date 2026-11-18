@@ -5,6 +5,7 @@ import { parentCount, newSetupToken } from "./auth/parents.js";
 import { ConfigError, loadConfig } from "./config.js";
 import { type DB, openDatabase } from "./db.js";
 import { makeDeps } from "./deps.js";
+import { cleanAgentTemp } from "./family/agent.js";
 import { cleanUp } from "./maintenance.js";
 import { serveDegraded } from "./ops/degraded.js";
 import { startOps } from "./ops/jobs.js";
@@ -40,8 +41,10 @@ function main(): void {
   }
 
   cleanUp(db, Date.now());
+  cleanAgentTemp(config.agentsDir, Date.now());
   const timer = setInterval(() => {
     cleanUp(db, Date.now());
+    cleanAgentTemp(config.agentsDir, Date.now());
   }, 3_600_000);
   timer.unref();
   // Daily backups, the server's own health, and telling the parents about it (ops/jobs.ts).
