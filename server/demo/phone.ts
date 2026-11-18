@@ -395,6 +395,7 @@ export class SimPhone {
     const now = this.now();
     const before = this.held?.suspended ?? (this.state.policy ? this.enforced(now).suspended : new Map<string, Why>());
     const first = this.state.policy === null;
+    const was = this.state.policy;
     this.state.policy = policy;
     this.state.appliedAt = now;
     const ran = this.runCommands(policy, now);
@@ -411,12 +412,23 @@ export class SimPhone {
     if (!policy.calls?.log) this.state.outbox.calls = [];
     this.save(this.state);
     const e = this.enforced(now);
-    const news = [...this.changes(before, e, first), ...ran];
+    const news = [...this.changes(before, e, first), ...this.cannot(was, policy), ...ran];
     this.held = { suspended: e.suspended, schedule: e.schedule?.id ?? null };
     if (answered.length) news.push(`${this.kid()} sees your answer: ${answered.join("; ")}`);
     // A new version can change nothing the phone shows: a lock's result, reported, leaves the rules, say.
     const applied = `applied the rules (version ${String(policy.version)})`;
     this.log(`${this.name}: ${news.length ? [applied, ...news.map(sentence)].join(". ") : `${applied}: nothing new on the phone`}.`);
+  }
+
+  /** What a parent just turned on that this phone can't do, in words: it reports each as a problem too. */
+  private cannot(was: Policy | null, policy: Policy): string[] {
+    const located = (p: Policy | null) => p?.location != null && (p.location.mode !== "off" || p.location.lost !== null);
+    const words: string[] = [];
+    if (located(policy) && !located(was)) words.push("location is on, but it has no GPS: it can't share where it is");
+    if (policy.network_log.enabled && !was?.network_log.enabled) words.push("network logging is on, but it can't note which websites its apps look up");
+    const update = policy.agent_update;
+    if (update && update.sha256 !== was?.agent_update?.sha256) words.push(`couldn't install Belay ${update.version_name ?? `version ${String(update.version_code)}`}: it can't install a new version`);
+    return words;
   }
 
   /** What changed on the phone, in words: the apps held now, and why, and the ones that run again. */

@@ -111,6 +111,7 @@ describe("the simulated phone", () => {
 
     expect((await form(`/devices/${deviceId()}/location`, { mode: "on_demand", provider: "gps" })).status).toBe(302);
     await until(() => reported()?.location?.problem === SAYS.noGps);
+    expect(lines).toContainEqual(expect.stringMatching(/Location is on, but it has no GPS: it can't share where it is\.$/));
     expect((await form(`/devices/${deviceId()}/location/check`, {})).status).toBe(302);
     await until(() => listCommands(t.deps.db, deviceId(), t.now(), { kind: "locate_now" })[0]?.state === "failed");
     expect(listCommands(t.deps.db, deviceId(), t.now(), { kind: "locate_now" })[0]?.problem).toBe(SAYS.noGps);
@@ -172,6 +173,7 @@ describe("the simulated phone", () => {
     expect((await form(`/devices/${deviceId()}/update`, { sha256: file.sha256 })).status).toBe(302);
     await until(() => currentOffer(t.deps.db, deviceId())?.state === "failed");
     expect(currentOffer(t.deps.db, deviceId())?.problem).toBe(SAYS.noUpdate);
+    expect(lines).toContainEqual(expect.stringMatching(/Couldn't install Belay 0\.6\.0: it can't install a new version\.$/));
   });
 
   it("says it can't log the network, as a problem the phone's page shows", async () => {
@@ -179,6 +181,7 @@ describe("the simulated phone", () => {
     await until(() => reported()?.network_log?.enabled === false);
     const device = getDevice(t.deps.db, deviceId(), getSettings(t.deps.db), t.now());
     expect(device?.problems.map((p) => p.fromPhone)).toContain(SAYS.noNetworkLog);
+    expect(lines).toContainEqual(expect.stringMatching(/Network logging is on, but it can't note which websites its apps look up\.$/));
   });
 
   it("sends only what the device API's schemas accept", () => {
