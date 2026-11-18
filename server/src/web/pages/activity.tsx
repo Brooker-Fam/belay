@@ -130,8 +130,6 @@ function what(e: AuditEntry, tz: string): string {
       return d.again === true ? "chose a new password with a sign-in link" : "joined as a caregiver";
     case "caregiver.signed_in":
       return "signed in to their caregiver page";
-    case "caregiver.signed_out_everywhere":
-      return "signed out on every browser";
     case "caregiver.limited":
       return `was refused: they tried to ${d.what === "checks" ? "check where the phone is" : "pause or lock the phone"} more than ${str(d.limit)} times in an hour${device}`;
     case "token.created":

@@ -348,6 +348,10 @@ describe("checking where the phone is", () => {
     await deviceCall(f.t, f.phone.token, "locations", { fixes: [fix({ reason: "on_demand", command_id: command?.id })], place_events: [] });
     expect((await care.page(at)).html).toContain("Open in a map");
     expect(listAudit(f.t.deps.db, { limit: 10, includeReads: false }).find((e) => e.action === "command.issued")).toMatchObject({ actor: "caregiver", caregiverName: "Grandma" });
+    // The parents' Location page names her among the checks, never as the server's command line.
+    const checks = await (await get(f.t, `/devices/${f.phone.deviceId}/location`, f.sam.cookie)).text();
+    expect(checks).toContain("Grandma (a caregiver)");
+    expect(checks).not.toContain("the server&#39;s command line");
     // A parent's later check never answers the caregiver's, and after 15 minutes nothing shows.
     f.t.advance(16 * MIN);
     expect((await care.page(at)).html).toContain("That check was a while ago");
