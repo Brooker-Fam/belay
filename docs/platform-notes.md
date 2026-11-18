@@ -131,7 +131,7 @@ relying on something new, it goes here first, with a source.
 | T17 | What Android counts as an emergency call: the whole number, so "*67911" isn't one, and a caller ID showing 911 is | Confirmed: Belay takes the caller-ID codes Android knows (`*67`, `*82`, `#31#`, `*31#`) off itself; the network decides what "*67911" reaches | AOSP; Pixel pending (Phase 5 checklist, a test number) |
 | T18 | What Telecom tells an in-call service about an emergency | Confirmed: emergency callback mode and a network-identified emergency call, both skip filtering; emergency SMS mode can't be read | AOSP; Pixel pending (the carrier's setting) |
 | T19 | A call to 911 before the first unlock reaches a direct-boot-aware receiver | Confirmed; before that unlock Telecom finds no service of Belay's | AOSP; Emulator (the storage); Pixel pending (a test number) |
-| T20 | Whether a call is on: Telecom's `isInCall` for the dialer, and the audio mode | Confirmed: neither needs a permission; only `MODE_IN_CALL` can't be set by an app | AOSP; Emulator (Phase 5 CI); Pixel pending |
+| T20 | Whether a call is on: Telecom's `isInManagedCall` for the dialer, and the audio mode | Confirmed: neither needs a permission; an app's self-managed call isn't a managed one, and only `MODE_IN_CALL` can't be set by an app | AOSP; Emulator (Phase 5 CI); Pixel pending |
 | T21 | `WRITE_SECURE_SETTINGS` granted over adb outlives the debugging lock | Confirmed; it can't turn adb back on | AOSP |
 | T22 | Calls before the first unlock are in Android's call log after it | Confirmed: its direct-boot copy is moved in before the first read | AOSP; Emulator pending (Phase 5 CI); Pixel pending |
 | O1 | Handing over: clearing reset protection, and what a reset from Settings does on a fully managed phone | Confirmed in AOSP; Pixel pending (Phase 11 checklist) | AOSP |
@@ -2415,19 +2415,35 @@ Belay takes them from its call log after the unlock (T22).
 
 **Confirmed.** Verified on: AOSP; Emulator (a call on Belay's screen, Phase 5 CI); Pixel pending
 (Phase 3 checklist: a call in Google's Phone app, and an app's call). Read again on 2026-11-18
-for the fourth review's N5.
+for the fourth review's N5, and for the fifth review's F3 (`isInManagedCall`, in place of
+`isInCall`).
 
-- Telecom's `TelecomServiceImpl.isInCall` → `canReadPhoneState`: "The system/default dialer can
-  always read phone state - so that emergency calls will still work" (`isPrivilegedDialerCalling`:
-  `DefaultDialerCache.isDefaultOrSystemDialer`); any other app needs `READ_PRIVILEGED_PHONE_STATE`,
-  or `READ_PHONE_STATE` and its app op, and without either `enforceCallingOrSelfPermission`
-  throws. Belay holds neither. The answer is `CallsManager.hasOngoingCalls(…)`:
-  `CALL_FILTER_ALL`, "both managed and self-managed calls" (external ones aren't), in
-  `ONGOING_CALL_STATES` (choosing a SIM, dialing, ringing, answered, active, on hold…): every
-  carrier call, an emergency call in the preloaded dialer included, and the calls apps place
-  through Android's own call system (self-managed `ConnectionService`s). Telecom doesn't end
-  a suspended app's calls (nothing in `CallsManager` or `TelecomServiceImpl` handles
-  suspension).
+- Telecom's `TelecomServiceImpl.isInManagedCall` and `isInCall` both start with
+  `canReadPhoneState`: "The system/default dialer can always read phone state - so that emergency
+  calls will still work" (`isPrivilegedDialerCalling`: `DefaultDialerCache.isDefaultOrSystemDialer`);
+  any other app needs `READ_PRIVILEGED_PHONE_STATE`, or `READ_PHONE_STATE` and its app op, and
+  without either `enforceCallingOrSelfPermission` throws (`isInManagedCall` also throws "Only the
+  default dialer or caller with READ_PHONE_STATE permission can use this method." where `isInCall`
+  returns false for a denied app op). Belay holds neither, so it asks only while it's the default
+  dialer. The reference [2026-08-28] lists `isInManagedCall` from API 26: "an ongoing call
+  originating from a managed `ConnectionService` … If you also need to know if there are ongoing
+  self-managed calls, use `isInCall()` instead."
+- `isInManagedCall`'s answer is `CallsManager.hasOngoingManagedCalls(…)`: `CALL_FILTER_MANAGED`,
+  which `getNumCallsWithState` filters with `!call.isSelfManaged()` (external calls are left out
+  by every filter but `CALL_FILTER_EXTERNAL`), in `ONGOING_CALL_STATES` (choosing a SIM, dialing,
+  ringing, answered, active, on hold…). That's every carrier call, an emergency call in the
+  preloaded dialer included, and calls through a calling account the user turned on: a
+  `PhoneAccount` with `CAPABILITY_CALL_PROVIDER` starts disabled whatever the app says
+  (`PhoneAccountRegistrar.addOrReplacePhoneAccount`: "we do not read the enabled state that the
+  source app provides or else an third party app could enable itself"), and Telecom hands its
+  calls to the default dialer's in-call service, Belay's. `isInCall`'s answer,
+  `hasOngoingCalls(…)`, is `CALL_FILTER_ALL`, "both managed and self-managed calls".
+- A self-managed call is any app's to make: `MANAGE_OWN_CALLS` is `protectionLevel="normal"`
+  (`core/res/AndroidManifest.xml`), registering a self-managed account needs only it
+  (`TelecomServiceImpl.registerPhoneAccount` → `enforceRegisterSelfManaged`), such an account is
+  enabled at once, a transactional call (`TelecomManager.addCall`) is made self-managed
+  (`hasTransactionalCallCapabilities`), and the app sets its own calls active. Telecom doesn't end
+  a suspended app's calls (nothing in `CallsManager` or `TelecomServiceImpl` handles suspension).
 - `AudioService.getMode` and `AudioManager.addOnModeChangedListener` need no permission.
   `AudioService.setMode` takes `MODE_IN_CALL`, `MODE_CALL_REDIRECT` and
   `MODE_COMMUNICATION_REDIRECT` only from a holder of `MODIFY_PHONE_STATE` ("MODIFY_PHONE_STATE
@@ -2444,12 +2460,15 @@ for the fourth review's N5.
 
 Belay's consequence: every screen lock Belay makes waits while a call is on, and only for a call
 an app can't make up (the fourth review's N5). While Belay is the dialer, a lock_now and a
-schedule's lock wait for any call Telecom has (`isInCall`, or a call on Belay's own screen), as
-long as it lasts; that includes an app's call placed through Android's own call system, paused
-or not. While Belay isn't the dialer, Telecom won't answer it, so they wait only while the audio
-mode is `MODE_IN_CALL` (a carrier call), for at most 30 minutes from the step the wait began;
-then the screen locks, and the call goes on. Lost mode's one lock waits only for a call Telecom
-has. No other audio mode holds a lock off. A lock still due happens at the first step after the
+schedule's lock wait for a managed call Telecom has (`isInManagedCall`, or a call on Belay's own
+screen), as long as it lasts, and never for an app's self-managed call, which an app can hold
+open all night, paused or not (the fifth review's F3: Belay asked `isInCall` before, which counts
+them). A call through a calling account the kid turned on in Settings rings on Belay's own
+screen, by the family's rules, so it's a call Belay decided. While Belay isn't the dialer,
+Telecom won't answer it, so they wait only while the audio mode is `MODE_IN_CALL` (a carrier
+call), for at most 30 minutes from the step the wait began; then the screen locks, and the call
+goes on. Lost mode's one lock waits only for a managed call Telecom has. No other audio mode
+holds a lock off. A lock still due happens at the first step after the
 call (core's `ScreenLocks`): Belay takes a step when the audio mode changes, and looks again
 every minute. A `lock_now` that expires while it waits is reported `expired` with
 `waited_for_call`.

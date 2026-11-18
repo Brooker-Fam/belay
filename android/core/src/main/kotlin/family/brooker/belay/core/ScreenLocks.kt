@@ -3,15 +3,32 @@ package family.brooker.belay.core
 import family.brooker.belay.core.location.LostApplied
 
 /**
- * What Belay can tell about a call now, for the screen locks that wait for one (enforce/InCall.kt,
- * platform notes T20). [telecom]: a call Telecom has, ringing or on: one in Belay's own in-call
- * service, or, while Belay is the default dialer, any (TelecomManager.isInCall: carrier calls and
- * self-managed calls of apps that place theirs through Android's own call system). [carrier]:
- * Android's audio mode is MODE_IN_CALL, which only the phone's own services may set (an app
- * can't), read only while Belay isn't the dialer, when Telecom won't answer Belay. Any other audio
- * mode (an app's MODE_IN_COMMUNICATION, MODE_RINGTONE) counts for nothing: any app may set it.
+ * What Belay can tell about a call now, for the screen locks that wait for one (calls/InCall.kt,
+ * platform notes T20). [telecom]: a managed call Telecom has, ringing or on: one in Belay's own
+ * in-call service, or, while Belay is the default dialer, any (TelecomManager.isInManagedCall:
+ * carrier calls, an emergency call in the preloaded dialer, and calls through a calling account
+ * the user turned on), never an app's self-managed call (the fifth review's F3: any app may place
+ * one, MANAGE_OWN_CALLS being a normal permission). [carrier]: Android's audio mode is
+ * MODE_IN_CALL, which only the phone's own services may set (an app can't), read only while Belay
+ * isn't the dialer, when Telecom won't answer Belay. Any other audio mode (an app's
+ * MODE_IN_COMMUNICATION, MODE_RINGTONE) counts for nothing: any app may set it.
  */
-data class CallNow(val telecom: Boolean = false, val carrier: Boolean = false)
+data class CallNow(val telecom: Boolean = false, val carrier: Boolean = false) {
+    companion object {
+        /**
+         * From what Belay reads, each asked only when what comes before it doesn't settle it: a call
+         * on Belay's own screen ([belays]); Telecom's answer whether it has a managed call
+         * ([managed], TelecomManager.isInManagedCall: null while Belay isn't the default dialer,
+         * since Telecom answers only the dialer, or when it refused); else whether Android's audio
+         * mode is MODE_IN_CALL ([inCallMode]).
+         */
+        fun of(belays: Boolean, managed: () -> Boolean?, inCallMode: () -> Boolean): CallNow {
+            if (belays) return CallNow(telecom = true)
+            managed()?.let { return CallNow(telecom = it) }
+            return CallNow(carrier = inCallMode())
+        }
+    }
+}
 
 /**
  * Every screen lock Belay makes waits while a call is on, so the screen doesn't go off in the

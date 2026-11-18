@@ -13,13 +13,15 @@ import family.brooker.belay.core.ScreenLocks
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Whether a call is on now, for the screen locks that wait for one (core's ScreenLocks), from what
- * Belay may read on Android 17 (docs/platform-notes.md T20) and what an app can't make up:
+ * Whether a call is on now, for the screen locks that wait for one (core's ScreenLocks and
+ * CallNow.of), from what Belay may read on Android 17 (docs/platform-notes.md T20) and what an app
+ * can't make up:
  * - Belay's own in-call service's calls (CallFlow.callOn), while it's the dialer;
- * - TelecomManager.isInCall, which Telecom answers for the default dialer without a permission (any
- *   other app needs READ_PHONE_STATE, which Belay doesn't hold): every managed and self-managed
- *   call, an emergency call the preloaded dialer took included. While Belay is the dialer, that's
- *   all Belay trusts;
+ * - TelecomManager.isInManagedCall, which Telecom answers for the default dialer without a
+ *   permission (any other app needs READ_PHONE_STATE, which Belay doesn't hold): every managed
+ *   call, carrier calls and an emergency call the preloaded dialer took included, and none of an
+ *   app's self-managed calls, which any app may place (MANAGE_OWN_CALLS is a normal permission:
+ *   the fifth review's F3). While Belay is the dialer, that's all Belay trusts;
  * - while Belay isn't the dialer, only Android's audio mode MODE_IN_CALL (AudioManager.getMode, no
  *   permission), which only holders of MODIFY_PHONE_STATE (the phone's own services) can set: a
  *   carrier call. A wait for it alone lasts at most 30 minutes (ScreenLocks.CARRIER_WAIT_MS), from
@@ -49,17 +51,17 @@ object InCall {
     @Volatile
     private var carrierSince: Long? = null
 
-    /** What Belay can tell about a call now (core's CallNow). */
+    /** What Belay can tell about a call now (core's CallNow.of). */
     fun now(context: Context): CallNow {
-        if (CallFlow.callOn) return CallNow(telecom = true)
         val app = context.applicationContext
-        telecomInCall(app)?.let { return CallNow(telecom = it) }
-        val mode = try {
-            app.getSystemService(AudioManager::class.java)?.mode
-        } catch (e: RuntimeException) {
-            null
+        return CallNow.of(belays = CallFlow.callOn, managed = { managedCall(app) }) {
+            val mode = try {
+                app.getSystemService(AudioManager::class.java)?.mode
+            } catch (e: RuntimeException) {
+                null
+            }
+            mode == AudioManager.MODE_IN_CALL
         }
-        return CallNow(carrier = mode == AudioManager.MODE_IN_CALL)
     }
 
     /**
@@ -78,18 +80,22 @@ object InCall {
     }
 
     /**
-     * Telecom has a call that Belay's own in-call service doesn't: one the phone's own app took (an
-     * emergency call, or one that rang before the unlock and is still on). Only while Belay is the
-     * dialer; false when Belay can't tell.
+     * Telecom has a managed call that Belay's own in-call service doesn't: one the phone's own app
+     * took (an emergency call, or one that rang before the unlock and is still on). Only while
+     * Belay is the dialer; false when Belay can't tell.
      */
-    fun elsewhere(context: Context): Boolean = !CallFlow.callOn && telecomInCall(context.applicationContext) == true
+    fun elsewhere(context: Context): Boolean = !CallFlow.callOn && managedCall(context.applicationContext) == true
 
-    /** Telecom's answer, only while Belay is the default dialer (then Telecom lets it ask); else null. */
+    /**
+     * Telecom's answer whether it has a managed call (TelecomManager.isInManagedCall: an app's
+     * self-managed call isn't one), only while Belay is the default dialer (then Telecom lets it
+     * ask); else null, as when Telecom refuses.
+     */
     @SuppressLint("MissingPermission")
-    private fun telecomInCall(app: Context): Boolean? {
+    private fun managedCall(app: Context): Boolean? {
         if (!Dialer.isDialer(app)) return null
         return try {
-            app.getSystemService(TelecomManager::class.java)?.isInCall
+            app.getSystemService(TelecomManager::class.java)?.isInManagedCall
         } catch (e: SecurityException) {
             null
         }

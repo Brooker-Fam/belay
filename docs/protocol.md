@@ -643,10 +643,11 @@ server decides whether a change tightens or loosens.
 - **`lock_now`** (a command): locks the screen once, unless it arrives after `expires_at`.
   The phone runs it after applying the rest of the policy, so a pause sent with it suspends
   the apps first. While a call is on, a call to 988 included, the lock waits and the command
-  stays unrun: while Belay is the phone app, a call Telecom has (`TelecomManager.isInCall`:
-  carrier calls, and calls apps place through Android's own call system); otherwise a carrier
-  call by the audio mode (`MODE_IN_CALL`, which no app can set), for at most 30 minutes. No
-  other audio mode counts, so an app holding `MODE_IN_COMMUNICATION` holds no lock off. It's
+  stays unrun: while Belay is the phone app, a managed call Telecom has
+  (`TelecomManager.isInManagedCall`: carrier calls, and calls through a calling account the
+  user turned on, never an app's self-managed call); otherwise a carrier call by the audio mode
+  (`MODE_IN_CALL`, which no app can set), for at most 30 minutes. No other audio mode counts,
+  so an app holding `MODE_IN_COMMUNICATION` holds no lock off. It's
   `done` once the call ends, or `expired` with `waited_for_call: true` if the call outlasts
   it. A phone updated to a Belay that can lock reads that permission at its next
   restart (platform notes S5): until then the result is `failed`, "Android lets Belay lock the

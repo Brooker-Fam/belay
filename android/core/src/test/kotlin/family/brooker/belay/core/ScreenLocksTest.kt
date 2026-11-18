@@ -51,6 +51,23 @@ class ScreenLocksTest {
     }
 
     @Test
+    fun `only a managed call holds a lock while Belay is the dialer, never an app's own call`() {
+        // While Belay is the dialer Telecom answers isInManagedCall, which leaves self-managed calls
+        // out (platform notes T20): an app's call left open all night is no call to Belay, and the
+        // audio mode isn't asked then.
+        val appsOwnCall = CallNow.of(belays = false, managed = { false }) { error("the audio mode isn't asked while Telecom answers") }
+        assertEquals(none, appsOwnCall)
+        assertFalse(ScreenLocks.wait(appsOwnCall, carrierSince = null, now = 0).waits)
+        // A carrier call, or an emergency call in the preloaded dialer: Telecom has it.
+        assertEquals(telecom, CallNow.of(belays = false, managed = { true }) { error("not asked") })
+        // A call on Belay's own screen: Telecom isn't asked either.
+        assertEquals(telecom, CallNow.of(belays = true, managed = { error("not asked") }) { error("not asked") })
+        // Belay isn't the dialer, or Telecom refused: only the audio mode's MODE_IN_CALL, 30 minutes at most.
+        assertEquals(carrier, CallNow.of(belays = false, managed = { null }) { true })
+        assertEquals(none, CallNow.of(belays = false, managed = { null }) { false })
+    }
+
+    @Test
     fun `a call Telecom has holds a lock as long as it lasts`() {
         assertEquals(ScreenLocks.CallWait(waits = true), ScreenLocks.wait(telecom, null, 0))
         assertTrue(ScreenLocks.wait(telecom, carrierSince = 0, now = 10 * 60 * minute).waits, "a whole night")
