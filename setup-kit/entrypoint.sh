@@ -7,7 +7,9 @@
 #    android/scripts/make-release-key.sh (once, ever: it never overwrites a key), and shows the
 #    certificate's SHA-256 and how to back the key up (docs/signing.md).
 # 2. It builds Belay and signs it with that key: android/scripts/build-release.sh, which asks
-#    for the key's password.
+#    for the key's password. It keeps a copy of the app in the same folder, named with its
+#    version code (like belay-0.6.0-version-code-7.apk): updating Belay from the family's
+#    server later takes that file and its version code.
 # 3. It serves the setup page at http://localhost:8090: open it in Chrome or Edge on this
 #    computer to set up the phone.
 #
@@ -99,7 +101,42 @@ fi
 rm -f "$props"
 [ -f "$APK" ] || stop "The build didn't make $APK."
 
+# A copy of the app in your folder, named with its version, never over a different file: the
+# next build replaces the one in the image, and updating Belay from the server's page takes this
+# file and its version code. The version is the APK's own, as build-release.sh printed it.
+aapt2=""
+for tool in "${ANDROID_HOME:-/opt/android-sdk}"/build-tools/*/aapt2; do
+  if [ -x "$tool" ]; then aapt2="$tool"; fi
+done
+badging=""
+[ -z "$aapt2" ] || badging="$("$aapt2" dump badging "$APK" 2>/dev/null | sed -n '/^package: /p' || true)"
+version_code="$(sed -n "s/.* versionCode='\([0-9]*\)'.*/\1/p" <<<"$badging")"
+version_name="$(sed -n "s/.* versionName='\([0-9A-Za-z.+_-]*\)'.*/\1/p" <<<"$badging")"
+sha256="$(sha256sum "$APK" | cut -d' ' -f1)"
+if [ -n "$version_code" ]; then
+  name="belay-${version_name:+$version_name-}version-code-$version_code"
+else
+  name="belay-${sha256:0:12}"
+fi
+copy="$KEYS/$name.apk"
+[ ! -e "$copy" ] || cmp -s "$APK" "$copy" 2>/dev/null || copy="$KEYS/$name-${sha256:0:8}.apk"
+say ""
+if [ -e "$copy" ] && cmp -s "$APK" "$copy" 2>/dev/null; then
+  say "This app is already in the folder you gave as /keys: $(basename "$copy")"
+elif cp "$APK" "$copy"; then
+  chown "$(stat -c '%u:%g' "$KEYS")" "$copy" 2>/dev/null || true
+  say "Saved a copy of this app in the folder you gave as /keys, next to the key: $(basename "$copy")"
+else
+  say "Couldn't save a copy of this app in the folder you gave as /keys (above). Save one from the"
+  say "page instead: \"Save a copy of this app\" puts it where your browser saves downloads."
+  copy="$APK"
+fi
+if [ -n "$version_code" ]; then
+  say "To update Belay on a phone later, add this app's file on the phone's page on your server"
+  say "(Updating Belay, then Add a version of Belay), with version code $version_code."
+fi
+
 say ""
 say "Compare the certificate SHA-256 above with the one you wrote down when the key was made."
-export BELAY_KIT_APK="$APK"
+export BELAY_KIT_APK="$copy"
 serve
