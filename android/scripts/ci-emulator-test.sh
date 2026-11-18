@@ -1166,10 +1166,6 @@ elif [ -n "$E2E_CLI" ]; then
   care_user=ci-grandma
   care_password="ci-$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
   care_jar="$(mktemp)"
-  if [ -n "$FIXTURE_V1" ]; then
-    adb install -r -t "$FIXTURE_V1" >/dev/null
-    wait_fixture "hidden=false suspended=false" 15 || { diagnose; die "the fixture app isn't installed and open to use"; }
-  fi
 
   step "Phase 12: a parent adds a caregiver; the phone lists them, with what they may do and until when"
   # Three days on, to the minute: the emulator keeps this computer's time.
@@ -1183,6 +1179,11 @@ elif [ -n "$E2E_CLI" ]; then
   echo "the phone lists: $(state | jq -c '.caregivers')"
 
   step "Phase 12: the caregiver joins with the link and pauses the phone from their page, as a browser does"
+  # With the fixture app, the pause can be seen holding an app.
+  if [ -n "$FIXTURE_V1" ]; then
+    adb install -r -t "$FIXTURE_V1" >/dev/null
+    wait_fixture "hidden=false suspended=false" 15 || { diagnose; die "the fixture app isn't installed and open to use"; }
+  fi
   device_id="$(state | jq -r '.connection.device_id // empty')"
   [ -n "$device_id" ] || die "the phone's debug state has no device id"
   [ "$(care_curl -o /dev/null -w '%{http_code}' "$link")" = 200 ] || die "the caregiver's join page didn't open"
