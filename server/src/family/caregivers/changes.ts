@@ -81,10 +81,22 @@ export function endProblem(endsAt: number | null, now: number): string | null {
   return null;
 }
 
-function setPhones(db: DB, caregiverId: string, phones: string[]): void {
-  db.prepare("DELETE FROM caregiver_phones WHERE caregiver_id = ?").run(caregiverId);
-  const add = db.prepare("INSERT INTO caregiver_phones (caregiver_id, device_id) VALUES (?, ?)");
-  for (const id of new Set(phones)) add.run(caregiverId, id);
+/**
+ * The phones a caregiver's access covers, and when each one's help requests began for them
+ * (`help_from`, the seventh security review's H1): a phone they keep keeps its start, a phone added
+ * with help on starts `now`, and so does each phone when help is turned on; with help off, none
+ * has one. Only the help requests the kid asks from then on are theirs (store.ts's getsHelpAsked).
+ */
+function setPhones(db: DB, caregiverId: string, phones: string[], help: boolean, now: number): void {
+  const wanted = [...new Set(phones)];
+  const remove = db.prepare("DELETE FROM caregiver_phones WHERE caregiver_id = ? AND device_id = ?");
+  for (const r of db.prepare<[string], { device_id: string }>("SELECT device_id FROM caregiver_phones WHERE caregiver_id = ?").all(caregiverId)) {
+    if (!wanted.includes(r.device_id)) remove.run(caregiverId, r.device_id);
+  }
+  const add = db.prepare("INSERT INTO caregiver_phones (caregiver_id, device_id, help_from) VALUES (?, ?, ?) ON CONFLICT (caregiver_id, device_id) DO NOTHING");
+  for (const id of wanted) add.run(caregiverId, id, help ? now : null);
+  if (help) db.prepare("UPDATE caregiver_phones SET help_from = ? WHERE caregiver_id = ? AND help_from IS NULL").run(now, caregiverId);
+  else db.prepare("UPDATE caregiver_phones SET help_from = NULL WHERE caregiver_id = ?").run(caregiverId);
 }
 
 function mustGet(db: DB, id: string): Caregiver {
@@ -113,14 +125,17 @@ export function addCaregiver(ctx: PolicyContext, input: CaregiverInput & { endsA
       `INSERT INTO caregivers (id, name, can_status, can_pause, can_help, can_locate, access_from, ends_at, created_by, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(id, name, input.can.status ? 1 : 0, input.can.pause ? 1 : 0, input.can.help ? 1 : 0, input.can.locate ? 1 : 0, now, input.endsAt, who.parentId, now, now);
-    setPhones(db, id, phones);
+    setPhones(db, id, phones, input.can.help, now);
     log("caregiver.added", { caregiver: name, phones: phoneNames(db, phones), can: canList(input.can), until: input.endsAt });
     return createCareLink(db, now, id, input.endsAt, who.parentId);
   });
   return { caregiver: mustGet(db, id), link };
 }
 
-/** Changes a caregiver's name, phones or what they may do; the phones it touches get new policies. */
+/**
+ * Changes a caregiver's name, phones or what they may do; the phones it touches get new policies.
+ * A phone added, or help turned on, gets them only the help requests the kid asks from now.
+ */
 export function changeCaregiver(ctx: PolicyContext, id: string, input: CaregiverInput, who: Parent): Caregiver {
   const { db, now } = ctx;
   const before = mustGet(db, id);
@@ -138,7 +153,7 @@ export function changeCaregiver(ctx: PolicyContext, id: string, input: Caregiver
       now,
       id,
     );
-    setPhones(db, id, phones);
+    setPhones(db, id, phones, input.can.help, now);
     log("caregiver.changed", { caregiver: name, ...(name !== before.name ? { from: before.name } : {}), phones: phoneNames(db, phones), can: canList(input.can) });
   });
   return mustGet(db, id);
@@ -159,6 +174,8 @@ export function renewCaregiver(ctx: PolicyContext, id: string, endsAt: number, w
       // Its time may have come before the hourly clean-up ended it: what goes when access ends goes now.
       forgetAccess(db, id);
       db.prepare("UPDATE caregivers SET ends_at = ?, access_from = ?, ended_at = NULL, ended_by = NULL, updated_at = ? WHERE id = ?").run(endsAt, now, now, id);
+      // Help begins again too: what the kid asked while they had no access is never theirs.
+      db.prepare("UPDATE caregiver_phones SET help_from = ? WHERE caregiver_id = ? AND help_from IS NOT NULL").run(now, id);
     } else {
       db.prepare("UPDATE caregivers SET ends_at = ?, updated_at = ? WHERE id = ?").run(endsAt, now, id);
     }

@@ -93,9 +93,13 @@ export function sendToCaregiver(deps: Deps, caregiverId: string, notice: Notice)
  * The kid's help request (push.ts's helpNotice), to every caregiver who gets this phone's help
  * requests now, without waiting: it opens their own page. Checked again at sending: access
  * current, the phone theirs, help on.
+ *
+ * Only to those whose help on this phone began by `askedAt`, when the kid asked (store.ts's
+ * helpAskedAt): a request asked before, sent once the phone came online, or words the kid added
+ * later to one, never go to a caregiver whose name the kid's Help screen didn't show then.
  */
-export function notifyCaregivers(deps: Deps, deviceId: string, notice: Notice): void {
-  const browsers = helpCaregivers(deps.db, deviceId, deps.now()).flatMap((c) => listCareSubscriptions(deps.db, c.id));
+export function notifyCaregivers(deps: Deps, deviceId: string, notice: Notice, askedAt: number): void {
+  const browsers = helpCaregivers(deps.db, deviceId, deps.now(), askedAt).flatMap((c) => listCareSubscriptions(deps.db, c.id));
   if (!browsers.length) return;
   void pushTo(deps, browsers, { ...notice, url: "/care#help" }, "caregiver_push").catch((error: unknown) => {
     deps.log(`Notices to caregivers didn't go out: ${error instanceof Error ? error.message : "error"}.`);

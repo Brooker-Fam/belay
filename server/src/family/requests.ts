@@ -172,14 +172,19 @@ export interface SavedRequests {
     withdrawn?: boolean;
     /** help: whether the kid shared where the phone was. */
     shared?: boolean;
+    /** When the kid asked: the phone's clock, never later than now (help: which caregivers hear of it). */
+    askedAt: number;
     /** contact: the name the kid gave (untrusted, cleaned), and the number. */
     contactName?: string;
     contactNumber?: string;
   }[];
   /** Pending requests the kid withdrew in this call. */
   withdrawn: { id: string; kind: RequestKind }[];
-  /** Help requests not seen yet that the kid added words or where the phone was to, in this call: the parents hear again. */
-  helpUpdated: { id: string; reason: string | null; shared: boolean }[];
+  /**
+   * Help requests not seen yet that the kid added words or where the phone was to, in this call:
+   * the parents hear again, and caregivers who get that request (by when it was asked, `askedAt`).
+   */
+  helpUpdated: { id: string; reason: string | null; shared: boolean; askedAt: number }[];
   /** The kid's answers to the agreement in this call, for the agreement's version (family/screentime/changes.ts). */
   agreement: { version: number; answer: "agree" | "talk"; at: number }[];
   /** New ones not kept, because the phone already has too many waiting. */
@@ -286,9 +291,10 @@ export function saveRequests(db: DB, deviceId: string, requests: Request[], now:
       talk: MAX_PENDING_TALK,
       contact: MAX_PENDING_CONTACT,
     };
-    const find = db.prepare<[string, string], { status: StoredRequestStatus; reason: string | null; kind: RequestKind; seen_at: number | null }>(
-      "SELECT status, reason, kind, seen_at FROM requests WHERE device_id = ? AND id = ?",
-    );
+    const find = db.prepare<
+      [string, string],
+      { status: StoredRequestStatus; reason: string | null; kind: RequestKind; seen_at: number | null; asked_at: number; received_at: number }
+    >("SELECT status, reason, kind, seen_at, asked_at, received_at FROM requests WHERE device_id = ? AND id = ?");
     const waiting = {
       app: db.prepare<[string, string], { id: string; reason: string | null }>(
         "SELECT id, reason FROM requests WHERE device_id = ? AND kind = 'app' AND package = ? AND status = 'pending' ORDER BY received_at DESC, rowid DESC",
@@ -337,7 +343,10 @@ export function saveRequests(db: DB, deviceId: string, requests: Request[], now:
         const newWords = reason !== null && reason !== existing.reason;
         if (newWords) db.prepare("UPDATE requests SET reason = ?, updated_at = ? WHERE device_id = ? AND id = ?").run(reason, now, deviceId, r.id);
         const shared = shareFix(r.id, r);
-        if (r.kind === "help" && existing.seen_at === null && (newWords || shared)) helpUpdated.push({ id: r.id, reason: newWords ? reason : existing.reason, shared });
+        if (r.kind === "help" && existing.seen_at === null && (newWords || shared)) {
+          // When the kid first asked, never this resend's time: words added later to an older request go only where it went.
+          helpUpdated.push({ id: r.id, reason: newWords ? reason : existing.reason, shared, askedAt: Math.min(existing.asked_at, existing.received_at) });
+        }
         continue;
       }
       const at = Math.min(r.asked_at, now);
@@ -364,6 +373,7 @@ export function saveRequests(db: DB, deviceId: string, requests: Request[], now:
           reason,
           withdrawn: true,
           shared,
+          askedAt: at,
           ...(r.kind === "contact" ? { contactName: contactNameOf(r.contact_name), contactNumber: r.contact_number } : {}),
         });
         continue;
@@ -394,18 +404,18 @@ export function saveRequests(db: DB, deviceId: string, requests: Request[], now:
       const words = reason ?? (r.kind === "agreement" ? null : (older.find((o) => o.reason !== null)?.reason ?? null));
       insertNew(db, deviceId, r, words, now, { status: r.kind === "agreement" && r.answer === "agree" ? "approved" : "pending" });
       if (r.kind === "app") {
-        created.push({ id: r.id, kind: "app", package: r.package, label: cleanText(r.label, 200) || r.package, again: older.length > 0, reason: words });
+        created.push({ id: r.id, kind: "app", package: r.package, label: cleanText(r.label, 200) || r.package, again: older.length > 0, reason: words, askedAt: at });
       } else if (r.kind === "more_time") {
-        created.push({ id: r.id, kind: "more_time", package: r.package ?? null, label: null, again: older.length > 0, limitId: r.limit_id, minutes: r.minutes, reason: words });
+        created.push({ id: r.id, kind: "more_time", package: r.package ?? null, label: null, again: older.length > 0, limitId: r.limit_id, minutes: r.minutes, reason: words, askedAt: at });
       } else if (r.kind === "agreement") {
-        created.push({ id: r.id, kind: "agreement", package: null, label: null, again: older.length > 0, answer: r.answer, version: r.version, reason: words });
+        created.push({ id: r.id, kind: "agreement", package: null, label: null, again: older.length > 0, answer: r.answer, version: r.version, reason: words, askedAt: at });
         agreement.push({ version: r.version, answer: r.answer, at });
       } else if (r.kind === "help") {
-        created.push({ id: r.id, kind: "help", package: null, label: null, again: false, reason: words, shared: shareFix(r.id, r) });
+        created.push({ id: r.id, kind: "help", package: null, label: null, again: false, reason: words, shared: shareFix(r.id, r), askedAt: at });
       } else if (r.kind === "contact") {
-        created.push({ id: r.id, kind: "contact", package: null, label: null, again: older.length > 0, reason: words, contactName: contactNameOf(r.contact_name), contactNumber: r.contact_number });
+        created.push({ id: r.id, kind: "contact", package: null, label: null, again: older.length > 0, reason: words, contactName: contactNameOf(r.contact_name), contactNumber: r.contact_number, askedAt: at });
       } else {
-        created.push({ id: r.id, kind: "talk", package: null, label: null, again: false, reason: words });
+        created.push({ id: r.id, kind: "talk", package: null, label: null, again: false, reason: words, askedAt: at });
       }
     }
     keepSettled(db, deviceId);

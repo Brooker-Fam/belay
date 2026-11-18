@@ -35,9 +35,9 @@ export const CAN_WORDS: Readonly<Record<CaregiverCan, { title: string; detail: s
   help: {
     title: "Get the kid's \"I need help\"",
     detail:
-      "A notification at once, and on their page: what the kid wrote, where the phone was if the kid shared it, and Call, with the kid's number if you added it. From when their access starts.",
+      "A notification at once, and on their page: what the kid wrote, where the phone was if the kid shared it, and Call, with the kid's number if you added it. Only what the kid asks from when you give them this for a phone, never earlier help requests.",
     yours:
-      "On your caregiver page, and as a notification at once if you turn them on there: what the kid wrote, where the phone was if the kid shared it, and Call, with the kid's number if a parent added it. From when your access began.",
+      "On your caregiver page, and as a notification at once if you turn them on there: what the kid wrote, where the phone was if the kid shared it, and Call, with the kid's number if a parent added it. Only what the kid asks from when a parent gave you this for that phone.",
   },
   locate: {
     title: "Check where the phone is now",
@@ -56,7 +56,7 @@ export const NAME_MAX = 40;
 export const MAX_CAREGIVERS = LIMITS.maxCaregivers;
 /** A one-time link works this long at most, and never after access ends. */
 export const LINK_TTL_MS = 7 * 86_400_000;
-/** A caregiver's page shows the help requests received since their access began, at most this far back. */
+/** A caregiver's page shows the help requests the kid asked since their help began (getsHelpAsked), received at most this far back. */
 export const HELP_WINDOW_MS = 7 * 86_400_000;
 /** A phone that asked for its rules this recently is online now: it asks about once a minute while it is. */
 export const ONLINE_MS = 5 * 60_000;
@@ -72,7 +72,13 @@ export interface Caregiver {
   can: Record<CaregiverCan, boolean>;
   /** The phones their access covers (ids), by name. */
   phones: string[];
-  /** When this access began: help requests from before it don't show. */
+  /**
+   * For each of those phones with help on for them: when its help requests began for them (the
+   * later of the phone being added and help being turned on, and again from when access is given
+   * again). The kid's Help screen names them from then on; nothing the kid asked before is theirs.
+   */
+  helpFrom: Record<string, number>;
+  /** When this access began. */
   accessFrom: number;
   /** When access ends by itself. */
   endsAt: number;
@@ -112,23 +118,24 @@ const SELECT = `SELECT c.id, c.name, c.username, c.password_hash, c.can_status, 
     c.ended_at, e.name AS ended_by_name, p.name AS created_by_name, c.created_at, c.updated_at, c.joined_at, c.last_signed_in_at
   FROM caregivers c LEFT JOIN parents p ON p.id = c.created_by LEFT JOIN parents e ON e.id = c.ended_by`;
 
-function phonesOf(db: DB, caregiverId: string): string[] {
+function phonesOf(db: DB, caregiverId: string): { device_id: string; help_from: number | null }[] {
   return db
-    .prepare<[string], { device_id: string }>(
-      "SELECT cp.device_id FROM caregiver_phones cp JOIN devices d ON d.id = cp.device_id WHERE cp.caregiver_id = ? ORDER BY d.name COLLATE NOCASE, d.id",
+    .prepare<[string], { device_id: string; help_from: number | null }>(
+      "SELECT cp.device_id, cp.help_from FROM caregiver_phones cp JOIN devices d ON d.id = cp.device_id WHERE cp.caregiver_id = ? ORDER BY d.name COLLATE NOCASE, d.id",
     )
-    .all(caregiverId)
-    .map((r) => r.device_id);
+    .all(caregiverId);
 }
 
 function toCaregiver(db: DB, r: Row): Caregiver {
+  const phones = phonesOf(db, r.id);
   return {
     id: r.id,
     name: r.name,
     username: r.username,
     joined: r.password_hash !== null,
     can: { status: r.can_status === 1, pause: r.can_pause === 1, help: r.can_help === 1, locate: r.can_locate === 1 },
-    phones: phonesOf(db, r.id),
+    phones: phones.map((p) => p.device_id),
+    helpFrom: Object.fromEntries(phones.flatMap((p) => (p.help_from === null ? [] : [[p.device_id, p.help_from] as const]))),
     accessFrom: r.access_from,
     endsAt: r.ends_at,
     endedAt: r.ended_at,
@@ -197,16 +204,36 @@ export function careAccess(c: Caregiver, deviceId: string, can: CaregiverCan, no
   return accessCurrent(c, now) && c.phones.includes(deviceId) && c.can[can];
 }
 
-/** The caregivers to tell about a help request from this phone now: help on, access current. */
-export function helpCaregivers(db: DB, deviceId: string, now: number): Caregiver[] {
+/**
+ * When the kid asked for help: by the phone's clock (which Belay keeps automatic), never later
+ * than the server got the request, so a clock ahead can't make an earlier request look newer.
+ */
+export function helpAskedAt(r: { askedAt: number; receivedAt: number }): number {
+  return Math.min(r.askedAt, r.receivedAt);
+}
+
+/**
+ * Whether a caregiver gets a help request the kid asked at `askedAt` (helpAskedAt) on this phone:
+ * help on for them there and access current now, and asked at or after their help began on it
+ * (helpFrom), since the kid's Help screen named them from then on. A request asked before and
+ * sent later (the phone was offline), and words added later to one, are never theirs. Their page,
+ * the notices and the notices of updates all ask this (the seventh security review's H1).
+ */
+export function getsHelpAsked(c: Caregiver, deviceId: string, askedAt: number, now: number): boolean {
+  const from = c.helpFrom[deviceId];
+  return careAccess(c, deviceId, "help", now) && from !== undefined && askedAt >= from;
+}
+
+/** The caregivers to tell about a help request from this phone that the kid asked at `askedAt` (helpAskedAt): getsHelpAsked. */
+export function helpCaregivers(db: DB, deviceId: string, now: number, askedAt: number): Caregiver[] {
   return db
-    .prepare<[string, number], { id: string }>(
+    .prepare<[string, number, number], { id: string }>(
       `SELECT c.id FROM caregivers c JOIN caregiver_phones cp ON cp.caregiver_id = c.id
-       WHERE cp.device_id = ? AND c.can_help = 1 AND c.ended_at IS NULL AND c.ends_at > ?`,
+       WHERE cp.device_id = ? AND c.can_help = 1 AND c.ended_at IS NULL AND c.ends_at > ? AND cp.help_from <= ?`,
     )
-    .all(deviceId, now)
+    .all(deviceId, now, askedAt)
     .flatMap((r) => {
       const c = getCaregiver(db, r.id);
-      return c && careAccess(c, deviceId, "help", now) ? [c] : [];
+      return c && getsHelpAsked(c, deviceId, askedAt, now) ? [c] : [];
     });
 }
