@@ -336,7 +336,7 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
     {
       title: "List phones",
       description:
-        "The family's phones: name, status (OK, needs attention, silent, disconnected) with any problems, model, Android version and security-patch age, last check-in, how many apps are installed and waiting for a parent's review, whether protection is on or the phone is paused, and how many of the kid's requests are waiting. Also phones waiting to enroll.",
+        "The family's phones: name, status (OK, needs attention, silent, disconnected) with any problems, last check-in, whether protection is on or the phone is paused, and whether location and calls are on. With the Device status category, model, Android version, security-patch age and a Belay update a parent offered; with Apps, how many apps are installed and to review; with Requests, the kid's requests waiting and help no parent has seen. Also phones waiting to enroll.",
       inputSchema: {},
       annotations: READ,
     },
@@ -399,7 +399,7 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
     {
       title: "Phone status",
       description:
-        "One phone's health: battery, storage, Android version and security patch, when it last restarted, whether Belay is still device owner with the permissions and battery exemption it needs, and when it last checked in and sent its app list; an update of Belay a parent offered and how it's going; whether Belay's signing certificate changed; other users or profiles on the phone and restrictions Belay didn't set.",
+        "One phone's health: battery, storage, Android version and security patch, when it last restarted, whether Belay is still device owner with the permissions and battery exemption it needs, and when it last checked in and sent its app list; an update of Belay a parent offered and how it's going; whether Belay's signing certificate changed; other users or profiles on the phone, a parent's last request to remove them, and restrictions Belay didn't set. Needs the Device status category.",
       inputSchema: { device: deviceParam },
       annotations: READ,
     },
@@ -483,7 +483,7 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
     {
       title: "Installed apps",
       description:
-        "The apps on one phone: name, package, version, when it was installed and updated, where it came from, the sensitive permissions it holds, its rule (allowed, blocked, or waiting for a parent), and whether a parent has reviewed it. User apps by default; system apps on request. Filter by a search text or by a permission.",
+        "The apps on one phone: name, package, version, when it was installed and updated, where it came from, the sensitive permissions it holds, its rule (allowed, blocked, waiting for a parent, or runs), and whether a parent has reviewed it. User apps by default; system apps on request. Filter by a search text or by a permission. Needs the Apps category.",
       inputSchema: {
         device: deviceParam,
         include_system: z.boolean().optional().describe("Also list system apps (preinstalled). Default false."),
@@ -517,7 +517,7 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
     {
       title: "App changes",
       description:
-        "The timeline of app changes (installed, updated, removed, reinstalled), newest first, for one phone or all of them. Defaults to the last 7 days. Times may be a date (2026-11-10, midnight in the family's timezone) or a date and time.",
+        "The timeline of app changes (installed, updated, removed, reinstalled), newest first, for one phone or all of them. Defaults to the last 7 days. Times may be a date (2026-11-10, midnight in the family's timezone) or a date and time. Needs the Apps category.",
       inputSchema: {
         device: deviceParam.optional().describe("Only this phone; all phones when left out"),
         since: z.string().max(40).optional().describe("Start, like 2026-11-10 or 2026-11-10T15:00. Default: 7 days ago."),
@@ -559,7 +559,7 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
     {
       title: "Apps to review",
       description:
-        "Apps installed or reinstalled since a parent last reviewed them, or that gained a sensitive permission since then, on one phone or all of them. Each comes with its Play Store link, where it came from, its permissions and its rule, so you can look it up.",
+        "Apps installed or reinstalled since a parent last reviewed them, or that gained a sensitive permission since then, on one phone or all of them. Each comes with its Play Store link, where it came from, its permissions and its rule, so you can look it up. Needs the Apps category.",
       inputSchema: { device: deviceParam.optional().describe("Only this phone; all phones when left out") },
       annotations: READ,
     },
@@ -590,7 +590,7 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
     {
       title: "Mark apps reviewed",
       description:
-        "Records that the parent reviewed these apps, with an optional note on what they decided and why, so they stop showing as new. Only do this when the parent asks. It doesn't change anything on the phone (it doesn't allow or block anything), and the activity log shows it was done through you.",
+        "Records that the parent reviewed these apps, with an optional note on what they decided and why, so they stop showing as new. Only do this when the parent asks. It doesn't change anything on the phone (it doesn't allow or block anything), and the activity log shows it was done through you. Needs the Apps category.",
       inputSchema: {
         device: deviceParam,
         packages: z.array(packageName).min(1).max(100).describe("Package names, as get_installed_apps or list_unreviewed_apps show them"),
@@ -627,7 +627,7 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
     {
       title: "The kid's requests",
       description:
-        "What the kid asked for from Belay's screen on the phone: \"I need help\" (urgent: these come first until a parent has seen them), \"Talk to my parent\", an app they want to use, more time for a limit today, a contact to add (the number needs the Calls category), or their answer to the family agreement (that needs the agreement category too), with their words, and each answer: waiting for a parent, approved, declined, let's talk, withdrawn by the kid, or for help, whether a parent saw it. Then the last 30 days. Only a parent answers them, or marks help seen, on the parent page; you can summarize them and suggest an answer.",
+        "What the kid asked for from Belay's screen on the phone: \"I need help\" (urgent), \"Talk to my parent\", an app they want to use, more time for a limit today, a contact to add, or their answer to the family agreement, with their words, and each answer: waiting for a parent, approved, declined, let's talk, withdrawn by the kid, or for help, whether a parent saw it. Help no parent has seen first, then those waiting, then the rest of the last 30 days. Only a parent answers them, or marks help seen, on the parent page. Needs the Requests category; a contact's number needs Calls too, agreement answers Stage and agreement, and where a help request was sent from, Location.",
       inputSchema: {
         device: deviceParam.optional().describe("Only this phone; all phones when left out"),
         kind: z.enum(["help", "talk", "app", "more_time", "agreement", "contact"]).optional().describe("Only this kind of request"),
@@ -775,7 +775,7 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
     {
       title: "A phone's rules",
       description:
-        "What one phone enforces now, in words: protection, new apps (ask or allow), pause, the locked settings, the web filter and Chrome settings, maintenance mode, factory reset protection, whether it shares where it is (never where it is: get_location, with the Location category), blocked and waiting apps, and the changes AI apps proposed that wait for a parent. With the rules' version, and whether the phone has applied it.",
+        "What one phone enforces now, in words: protection, new apps (ask or allow), pause, the locked settings, the web filter and Chrome settings, maintenance mode, factory reset protection, the recovery key, a line each on screen time, location and calls (never where the phone is), blocked and waiting apps (with the Apps category), and the changes AI apps proposed that wait for a parent. With the rules' version, and whether the phone has applied it.",
       inputSchema: { device: deviceParam },
       annotations: READ,
     },
@@ -880,7 +880,7 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
     {
       title: "Block an app",
       description:
-        "Blocks one app on a phone at once: the phone hides and suspends it within seconds if it's online. Tightening, so it acts directly; use it only when the parent asks. Only a parent can unblock it, on the parent page (you can propose that with propose_change). It refuses the apps the phone never blocks, so 911 and 988 always work: Belay, the dialer, texting, the keyboard, the home screen, emergency apps, System UI and Settings. An app not on the phone yet is blocked if it's installed; AI apps may block at most 50 of those per phone.",
+        "Blocks one app on a phone at once: the phone hides and suspends it within seconds if it's online. Use it only when the parent asks. Only a parent can unblock it, on the parent page (you can propose that with propose_change). It refuses the apps the phone never blocks, so 911 and 988 always work: Belay, the dialer, texting, the keyboard, the home screen, emergency apps, System UI, Settings, and any other the phone says it never blocks. An app not on the phone yet is blocked if it's installed; AI apps may block at most 50 of those per phone. Needs the Apps category.",
       inputSchema: {
         device: deviceParam,
         package: packageName.describe("The app's package name, as get_installed_apps shows it"),
@@ -922,7 +922,7 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
     {
       title: "Pause the phone",
       description:
-        `Pauses a phone at once: every app but the phone app, texting and Belay is suspended, for some minutes or until a parent resumes it. Tightening, so it acts directly; use it only when the parent asks. A pause you set can only be as long as one already running, or longer. The kid's phone says so in Belay's own words ("Your parent paused this phone until 6:30 PM."), never yours: a parent can add a note of their own on the parent page. Only a parent can resume early, on the parent page (you can propose that with propose_change). At most ${AI_PER_HOUR.locks} pauses and locks (lock_phone) an hour per phone through this connection: past that it says when to try again.`,
+        `Pauses a phone at once, for some minutes or until a parent resumes it: every app is suspended but the ones the phone never blocks, like the phone app, texting and Belay. Use it only when the parent asks. It can't shorten a pause already running: against one at least as long, nothing changes. The kid's phone says so in Belay's own words ("Your parent paused this phone until 6:30 PM."), never yours: a parent can add a note of their own on the parent page. Only a parent can resume early, on the parent page (you can propose that with propose_change). At most ${AI_PER_HOUR.locks} pauses and locks (lock_phone) an hour per phone through this connection, a pause that changed nothing aside: past that it says when to try again.`,
       inputSchema: {
         device: deviceParam,
         minutes: z.number().int().min(1).max(LIMITS.maxPauseMinutes).optional().describe("How long. Leave it out to pause until a parent resumes it."),
@@ -956,7 +956,7 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
     {
       title: "Propose loosening a rule",
       description:
-        "Proposes a change that loosens a phone's rules, for a parent to approve or reject on the parent page: allow_app (approve or unblock an app; give package), resume (end a pause), lift_restriction (unlock a locked setting; give restriction), web_filter_off (turn off the web filter), new_apps_allow (let new apps run without asking). Nothing changes until a parent approves it; tell the parent it's waiting for them, never that it's done. Factory reset, debugging, reset protection and maintenance mode can't be proposed.",
+        "Proposes a change that loosens a phone's rules, for a parent to approve or reject on the parent page: allow_app (approve or unblock an app; give package; needs the Apps category), resume (end a pause), lift_restriction (unlock a locked setting; give restriction), web_filter_off (turn off the web filter), new_apps_allow (let new apps run without asking). Nothing changes until a parent approves it; tell the parent it's waiting for them, never that it's done. Factory reset, debugging, reset protection and maintenance mode can't be proposed.",
       inputSchema: {
         device: deviceParam,
         change: z

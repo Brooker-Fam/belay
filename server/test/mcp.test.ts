@@ -127,6 +127,8 @@ describe("the MCP server", () => {
       expect(tool.annotations?.destructiveHint).toBe(changes.includes(tool.name));
       expect(tool.annotations?.openWorldHint).toBe(false);
     }
+    // A client sends every tool's description and schema to its model, every time: they stay compact.
+    expect(JSON.stringify({ tools }).length).toBeLessThan(35_000);
   });
 
   it("list_devices: status, model, patch age, counts, and no ids", async () => {
@@ -248,6 +250,38 @@ describe("the MCP server", () => {
 });
 
 describe("AI data scopes", () => {
+  it("each tool that needs a category says so in its description, and refuses without it", async () => {
+    const { t, client } = await family();
+    const { tools } = await client.listTools();
+    const description = (name: string) => tools.find((x) => x.name === name)?.description ?? "";
+    const needs: [string, AiScope, Record<string, unknown>][] = [
+      ["get_device_status", "device_status", { device: "Sam's phone" }],
+      ["get_installed_apps", "apps", { device: "Sam's phone" }],
+      ["get_app_changes", "apps", {}],
+      ["list_unreviewed_apps", "apps", {}],
+      ["mark_apps_reviewed", "apps", { device: "Sam's phone", packages: ["com.example.chat"] }],
+      ["block_app", "apps", { device: "Sam's phone", package: "com.example.chat" }],
+      ["propose_change", "apps", { device: "Sam's phone", change: { kind: "allow_app", package: "com.example.chat" }, reason: "x" }],
+      ["list_requests", "requests", {}],
+      ["get_screen_time", "screen_time", { device: "Sam's phone" }],
+      ["change_screen_time", "agreement", { device: "Sam's phone", change: { stage: "Base camp" }, reason: "x" }],
+      ["get_location", "location", { device: "Sam's phone" }],
+      ["locate_now", "location", { device: "Sam's phone" }],
+      ["get_place_events", "location", { device: "Sam's phone" }],
+      ["get_calls", "calls", { device: "Sam's phone" }],
+      ["get_network_activity", "network", { device: "Sam's phone" }],
+    ];
+    for (const [name, scope, args] of needs) {
+      const category = AI_SCOPES[scope].split(":")[0] ?? scope;
+      expect(description(name), name).toMatch(new RegExp(`(needs|with) the ${category} category`, "i"));
+      updateSettings(t.deps.db, { aiScopes: Object.fromEntries((Object.keys(AI_SCOPES) as AiScope[]).map((s) => [s, s !== scope])) });
+      const res = await call(client, name, args);
+      expect(res.isError, name).toBe(true);
+      expect(res.text, name).toContain("turned off AI access");
+    }
+    expect(listProposals(t.deps.db)).toEqual([]);
+  });
+
   it("hide app data when a parent turns it off", async () => {
     const { t, client } = await family();
     updateSettings(t.deps.db, { aiScopes: { apps: false, device_status: true } });
