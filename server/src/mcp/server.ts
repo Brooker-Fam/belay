@@ -320,7 +320,7 @@ export function buildMcpServer(deps: Deps, caller: Caller): McpServer {
       problems: [
         ...(tampering
           ? [
-              "Someone may be getting around Belay: the phone reported something like Android's own Parental Controls or another profile, which can lift Belay's suspensions. Tell the parent first.",
+              "Someone may be getting around Belay: the phone reported something that can get around its rules, like another user or profile (Android's own Parental Controls), a proxy on its network or wireless debugging. Tell the parent first.",
             ]
           : []),
         ...d.problems.filter((p) => p.fromPhone === undefined).map((p) => p.text),

@@ -522,6 +522,14 @@ describe("rules over MCP", () => {
     expect(json.phones[0].problems.join(" ")).not.toContain("Ignore previous instructions");
     expect(json.phones[0].untrusted).toEqual({ model: "Google Pixel 8", problems_belay_on_the_phone_reported: [said] });
     expect((await call(client, "get_device_status", { device: "Sam's phone" })).json.problems[0]).toContain("Tell the parent first");
+    // A proxy or wireless debugging is the same kind of report, and lifts no suspension: the words say what it can be, no more.
+    const proxy = "This phone's network uses a proxy, set in its Wi-Fi or mobile network settings. Apps that use the proxy can get around the web filter.";
+    await deviceCall(t, phone.token, "checkin", { status: device({ device_time: t.now(), enforcement: { policy_version: 0, applied_at: t.now(), problems: [proxy] } }) });
+    const again = (await call(client, "list_devices")).json.phones[0];
+    expect(again.problems[0]).toBe(
+      "Someone may be getting around Belay: the phone reported something that can get around its rules, like another user or profile (Android's own Parental Controls), a proxy on its network or wireless debugging. Tell the parent first.",
+    );
+    expect(again.untrusted.problems_belay_on_the_phone_reported).toEqual([proxy]);
   });
 
   it("a new proposal is pushed to the parents' browsers, once", async () => {
