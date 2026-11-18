@@ -27,7 +27,8 @@ export const AddPage: FC<{ view: View; pending: PendingCode[]; error?: string }>
       </li>
       <li>
         <strong>Make an enrollment code below</strong>, then run <code>provision.sh</code> from the Belay repository on your computer with the server
-        and code it shows. It installs Belay, makes it the device owner and connects it to this server.
+        and code it shows. It installs Belay, makes it the device owner and connects it to this server. No Android SDK on that computer? The setup
+        kit does the same from Chrome or Edge, with Docker: <a href={`${DOCS}/setup-kit.md`}>docs/setup-kit.md</a>.
       </li>
     </ol>
     {error && <Notice kind="error">{error}</Notice>}

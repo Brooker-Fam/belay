@@ -3,8 +3,9 @@
 # The Belay setup kit: what provision.sh needs on a parent's computer (a JDK, the Android SDK,
 # Gradle), pinned, in one image. On its first run it makes the family's release key in the folder
 # mounted at /keys (make-release-key.sh); then it builds and signs Belay with that key
-# (build-release.sh) and serves the setup page at http://localhost:8090, which sets up the phone
-# over WebUSB from the parent's own browser. docs/setup-kit.md has the rest.
+# (build-release.sh), keeps a copy of the app in that folder, and serves the setup page at
+# http://localhost:8090, which sets up the phone over WebUSB from the parent's own browser.
+# docs/setup-kit.md has the rest.
 #
 # Build it from the repository's root, then run it with a folder of its own for the key:
 #   docker build -f setup-kit/Dockerfile -t belay-setup .

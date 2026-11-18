@@ -294,14 +294,15 @@ docker run --rm -it -p 127.0.0.1:8090:8090 -v ~/.config/belay:/keys belay-setup
    the key up as in section 2, then press Enter. Later runs use the key in that folder: the kit
    never overwrites one.
 2. **The build.** It builds Belay, signs it with your key (it asks for the key's password), and
-   prints the SHA-256 again: it must be the one you wrote down.
+   prints the SHA-256 again: it must be the one you wrote down. It keeps a copy of the app in
+   that folder, named with its version code.
 3. **The page.** Open `http://localhost:8090` in Chrome or Edge on the same computer and follow
-   it. Compare the app's SHA-256 with yours. Choose **Save a copy of this app** and keep the
-   file: you'll need it to update Belay, and the server's backups don't hold it. Paste the
-   server's address and the code, choose **Connect the phone** and pick it, then **Check the
-   phone first** (it changes nothing), then **Set up the phone**. It asks before making Belay
-   the device owner, restarts the phone once (unlock it when it's back), and ends with a check.
-   Press Ctrl+C in the terminal when you're done.
+   it. Compare the app's SHA-256 with yours. Keep the copy of the app in your key folder (or
+   choose **Save a copy of this app** for another): you'll need it to update Belay, and the
+   server's backups don't hold it. Paste the server's address and the code, choose **Connect
+   the phone** and pick it, then **Check the phone first** (it changes nothing), then **Set up
+   the phone**. It asks before making Belay the device owner, restarts the phone once (unlock it
+   when it's back), and ends with a check. Press Ctrl+C in the terminal when you're done.
 
 If Chrome can't open the phone: on Linux it may need the Android udev rules; on Windows, try
 Google's USB driver; and anywhere, stop a running adb first (`adb kill-server`)
@@ -744,22 +745,30 @@ leaves alone. (If you set up your server before that and `git pull` refuses beca
 `docker-compose.yml`: put your server's name in `.env` and your other changes in the override,
 then `git checkout docker-compose.yml` and pull.)
 
-**Belay on the phone** updates itself from your server, with no cable
-([Updating Belay](server.md#updating-belay)):
+**Belay on the phone** updates itself from your server, with no cable and nothing to type on
+the server ([Updating Belay](server.md#updating-belay)):
 
 1. Get the newer Belay (`git pull` on your computer) and build it with **the same key**: run the
-   setup kit again (`docker build` first) and **Save a copy of this app**, or run
-   `android/scripts/build-release.sh`. Check the SHA-256.
-2. Copy the APK to the server, and add it there with the version code and name in
-   `android/app/build.gradle.kts` (the code must be higher than the phone's):
-   ```bash
-   docker compose exec -T belay node dist/cli.js agent-add - \
-     --version-code 7 --version-name 0.6.0 < app-release.apk
-   ```
-3. On the phone's page, under **Updating Belay**, choose that version and **Offer this
-   version**. The phone downloads it, checks that it's Belay, newer and signed with the same
-   key, installs it by itself, and tells the kid. The page shows each step, and you get a notice
-   if it fails.
+   setup kit again (`docker build` first; it doesn't need the phone, so press Ctrl+C once its
+   page is up), or `android/scripts/build-release.sh`. Check the certificate's SHA-256: it must
+   be yours. Both print the app's version code, and the kit keeps the app in your key folder,
+   named with it, like `belay-0.6.0-version-code-7.apk`
+   ([setup-kit.md](setup-kit.md#save-a-copy-of-this-app)).
+2. On the phone's page, under **Updating Belay**, **Add a version of Belay**: choose that file,
+   type its version code (it must be higher than the phone's) and, if you like, its version
+   name, then **Add this version**. The page after it shows the file's SHA-256, the one the
+   build printed, and the version.
+3. Choose **Offer it to** the phone there. The phone downloads it, checks that it's Belay, has
+   that version code and is signed with the same key, installs it by itself, and tells the kid.
+   The phone's page shows each step, and you get a notice if it fails.
+
+Or copy the APK to the server and add it there with the server's command line, from its
+`server` folder, then offer it on the phone's page:
+
+```bash
+docker compose exec -T belay node dist/cli.js agent-add - \
+  --version-code 7 --version-name 0.6.0 < belay-0.6.0-version-code-7.apk
+```
 
 Keep every APK you build: the server's backups don't hold them. If an update is refused, update
 over USB in maintenance mode instead: run the setup kit or `provision.sh` again, which installs

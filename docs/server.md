@@ -319,16 +319,31 @@ Outside Docker, use `npm run cli -- <command>` from `server/`.
 Phase 6 updates Belay on the phones from this server, so a phone whose debugging is locked
 doesn't need a computer and maintenance mode for each new version.
 
-1. Build the release APK on the family's computer (`android/scripts/build-release.sh`); the
-   signing key never leaves it ([signing.md](signing.md)).
-2. Add it: `agent-add <apk> --version-code <n> [--version-name <name>]`, with the version code
-   and name from `android/app/build.gradle.kts` (or `-` to read the APK from stdin, as
-   above). The server streams it into `agents/<sha256>.apk` in its data directory (written to
-   a temporary file while it's hashed, at most 100 MB, then renamed) and records the version
-   you give it. It doesn't parse the APK beyond checking that it starts like a zip file.
-3. Offer it to a phone: on the phone's page (Updating Belay), or `agent-offer`. The policy then
-   carries `agent_update`, while the phone runs an older version code; the page warns when the
-   phone already runs that version or a newer one, which Android won't replace.
+1. Build the release APK on the family's computer, with the family's key: the setup kit
+   ([setup-kit.md](setup-kit.md#save-a-copy-of-this-app)), which keeps a copy of each build in
+   the key's folder, named with its version code, or `android/scripts/build-release.sh`. Both
+   print the version code, next to the certificate's SHA-256 and the file's. The signing key
+   never leaves that computer ([signing.md](signing.md)).
+2. Add it on a phone's page: under **Updating Belay**, **Add a version of Belay** takes the
+   APK file, its version code and, if you like, its version name, as the build printed them.
+   The page after it shows the file's SHA-256 and the version, with **Offer it to** the phone.
+   Adding is a parent's action, never an AI app's, and the activity log keeps it.
+   - Or with the server's command line: `agent-add <apk> --version-code <n> [--version-name
+     <name>]` (or `-` to read the APK from stdin, as above).
+
+   Either way the server streams the file into `agents/<sha256>.apk` in its data directory
+   (written to a temporary file while it's hashed, at most 100 MB, then renamed; the same file
+   added again is kept once, and it can't be added with another version code) and records the
+   version given. It doesn't parse the APK beyond checking that it starts like a zip file. The
+   page reads its upload as it arrives, with a limit of its own (100 MB and 64 KB) where the
+   other parent pages take 64 KB, so a proxy in front must let a request that large through
+   (Caddy does). The server keeps the 10 versions added last, and any version offered to a
+   phone however old: adding an eleventh deletes the oldest of the rest, file and all, so the
+   versions never take more than about a gigabyte.
+3. Offer it to a phone: the button after adding it, the phone's page (Updating Belay), or
+   `agent-offer`. The policy then carries `agent_update`, while the phone runs an older version
+   code; the page warns when the phone already runs that version or a newer one, which Android
+   won't replace.
 4. The phone downloads it (`GET /api/v1/agent/<sha256>.apk`, only the file offered to that
    phone, resumable), checks that it's Belay, newer, and signed with the same certificate,
    and installs it. The phone's page shows each step it reports. If it fails, the parents get
@@ -342,7 +357,8 @@ again. Android doesn't install an older version over a newer one, so a version w
 is fixed with a newer one.
 
 Backups hold the database, not the APK files: keep each release APK on the family's computer,
-where it was built, and add it again after a restore if a phone still needs it.
+where it was built (the setup kit keeps them in the key's folder), and add it again after a
+restore if a phone still needs it.
 
 ## The recovery key
 

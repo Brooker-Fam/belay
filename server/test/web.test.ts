@@ -212,6 +212,12 @@ describe("pages", () => {
     expect(await (await get(t, "/", a.cookie)).text()).toContain("Waiting to enroll");
   });
 
+  it("point to the setup kit for a computer without the Android SDK: a link, not a request", async () => {
+    const { t, a } = await family();
+    const page = await (await get(t, "/add", a.cookie)).text();
+    expect(page).toContain('kit does the same from Chrome or Edge, with Docker: <a href="https://github.com/brooker-fam/belay/blob/main/docs/setup-kit.md">docs/setup-kit.md</a>.');
+  });
+
   it("disconnect a phone, which stops its token", async () => {
     const { t, a, phone } = await family();
     await postForm(t, `/devices/${phone.deviceId}/disconnect`, { _csrf: a.csrf }, { cookie: a.cookie });

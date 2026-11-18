@@ -155,13 +155,14 @@ checked on a real Pixel yet. Phase 9 (more families) isn't built either.
   (disk space, a fast-growing database, failing backups, its clock, a database it can't
   open) on the parent page, over MCP and on `/healthz`, pushes the urgent ones to the
   parents, and sends an opt-in daily summary with counts only.
-- **Phases 6 and 10 on the server: updates, the recovery key, other users.** A parent offers
-  a phone a newer Belay (added to the server with `agent-add`), and its page shows how the
-  update goes, with a notice if it fails and a flag if the phone goes quiet after it; the
-  server pins Belay's signing certificate. Each phone gets a recovery key, shown once, that
-  lifts the factory reset and debugging locks offline if the server is ever lost. When
-  another user or profile appears (Android's own Parental Controls make one), the phone's
-  page says so and a parent can remove it. AI clients can only read these.
+- **Phases 6 and 10 on the server: updates, the recovery key, other users.** A parent adds a
+  newer Belay on a phone's page (the APK built with the family's key, and its version code; or
+  with `agent-add`) and offers it to the phone, and its page shows how the update goes, with a
+  notice if it fails and a flag if the phone goes quiet after it; the server pins Belay's
+  signing certificate. Each phone gets a recovery key, shown once, that lifts the factory
+  reset and debugging locks offline if the server is ever lost. When another user or profile
+  appears (Android's own Parental Controls make one), the phone's page says so and a parent
+  can remove it. AI clients can only read these.
 - **Phase 11: off belay, both sides.** Every family's stage list ends with Off belay, which
   blocks nothing; the kid's "My stage" shows it last from the first day, with the family's words
   for when it comes, and says so once Belay really blocks no app or website. A parent can stop
@@ -176,9 +177,10 @@ checked on a real Pixel yet. Phase 9 (more families) isn't built either.
   [docs/phase11-checklist.md](docs/phase11-checklist.md).
 - **`setup-kit/`: setting up a phone without the Android SDK (Phase 8).** A container you
   build and run on your own computer: it makes the family's release key (once, in a folder of
-  yours), builds and signs Belay, and serves a page on `localhost` that sets up the phone from
-  Chrome over USB (WebUSB, with Tango). `provision.sh` and the kit run the same provisioning
-  plan, held to the same fixtures; not yet tried with a real Pixel 8.
+  yours), builds and signs Belay (keeping each build in that folder, for updates), and serves a
+  page on `localhost` that sets up the phone from Chrome over USB (WebUSB, with Tango).
+  `provision.sh` and the kit run the same provisioning plan, held to the same fixtures; not yet
+  tried with a real Pixel 8.
 - **CI:** Android build, unit tests and lint, an Android 17 emulator job that provisions
   the agent and checks it end to end, the server's tests and Docker image, and the setup
   kit's tests, with an informational emulator job that provisions with the kit's runner.
@@ -243,7 +245,8 @@ For development, without Docker: `cd server && npm ci --ignore-scripts && BELAY_
 
 - **The setup kit, without the Android SDK** ([docs/setup-kit.md](docs/setup-kit.md)): with
   Docker and Chrome or Edge on your computer. It makes your family's release key the first
-  time (kept in the folder you give it, never on the server), builds and signs Belay, and
+  time (kept in the folder you give it, never on the server), builds and signs Belay (a copy of
+  each build goes in that folder too, for updating Belay from the parent page later), and
   serves a page on `http://localhost:8090` that sets up the phone over USB.
 
   ```bash

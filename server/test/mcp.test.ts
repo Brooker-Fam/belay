@@ -6,10 +6,10 @@ import { createParent } from "../src/auth/parents.js";
 import { listAudit } from "../src/audit.js";
 import { Policy } from "../src/device/schemas.js";
 import { buildPolicy, currentDecision, pausePhone, protect, type PolicyContext } from "../src/family/policy.js";
-import { approveProposal, listProposals } from "../src/family/proposals.js";
+import { MAX_PENDING_PROPOSALS, approveProposal, listProposals } from "../src/family/proposals.js";
 import { createPersonalToken } from "../src/oauth/store.js";
 import { saveSubscription } from "../src/push.js";
-import { updateSettings } from "../src/settings.js";
+import { type AiScope, AI_SCOPES, OFF_BY_DEFAULT, updateSettings } from "../src/settings.js";
 import { device, deviceCall, enrollPhone, event, pkg, snapshot, testServer, T0, type TestServer } from "./helpers.js";
 
 const MCP = "https://belay.example.org/mcp";
@@ -73,6 +73,24 @@ describe("the MCP server", () => {
     expect(client.getServerVersion()?.name).toBe("belay");
   });
 
+  it("names every category, which start on and which off, and stays compact: it's sent at every connection", async () => {
+    const { client } = await family();
+    const instructions = client.getInstructions() ?? "";
+    const [on = "", rest = ""] = instructions.split("start on;");
+    const off = rest.split("start off")[0] ?? "";
+    expect(off).not.toBe("");
+    for (const scope of Object.keys(AI_SCOPES) as AiScope[]) {
+      const name = AI_SCOPES[scope].split(":")[0] ?? scope;
+      expect(OFF_BY_DEFAULT.includes(scope) ? off : on, scope).toContain(name);
+    }
+    // Phase 5: a contact's name it proposes is the one way its words reach the kid, and only once a parent approves.
+    expect(instructions).toContain("Your words reach the kid's phone only as the name of a contact you propose, once a parent approves it");
+    expect(instructions).toContain("whatever a contact's can_text says, texting works with anyone but a blocked number");
+    expect(instructions).toContain("(a schedule that locks the screen is always a proposal)");
+    expect(instructions).toContain(`at most ${MAX_PENDING_PROPOSALS} wait per phone`);
+    expect(instructions.length).toBeLessThan(5_000);
+  });
+
   it("annotates its tools: reads are read-only, blocking, pausing, locking, screen-time and calls changes change the phone, the rest only record", async () => {
     const { client } = await family();
     const { tools } = await client.listTools();
@@ -109,6 +127,8 @@ describe("the MCP server", () => {
       expect(tool.annotations?.destructiveHint).toBe(changes.includes(tool.name));
       expect(tool.annotations?.openWorldHint).toBe(false);
     }
+    // A client sends every tool's description and schema to its model, every time: they stay compact.
+    expect(JSON.stringify({ tools }).length).toBeLessThan(35_000);
   });
 
   it("list_devices: status, model, patch age, counts, and no ids", async () => {
@@ -230,6 +250,38 @@ describe("the MCP server", () => {
 });
 
 describe("AI data scopes", () => {
+  it("each tool that needs a category says so in its description, and refuses without it", async () => {
+    const { t, client } = await family();
+    const { tools } = await client.listTools();
+    const description = (name: string) => tools.find((x) => x.name === name)?.description ?? "";
+    const needs: [string, AiScope, Record<string, unknown>][] = [
+      ["get_device_status", "device_status", { device: "Sam's phone" }],
+      ["get_installed_apps", "apps", { device: "Sam's phone" }],
+      ["get_app_changes", "apps", {}],
+      ["list_unreviewed_apps", "apps", {}],
+      ["mark_apps_reviewed", "apps", { device: "Sam's phone", packages: ["com.example.chat"] }],
+      ["block_app", "apps", { device: "Sam's phone", package: "com.example.chat" }],
+      ["propose_change", "apps", { device: "Sam's phone", change: { kind: "allow_app", package: "com.example.chat" }, reason: "x" }],
+      ["list_requests", "requests", {}],
+      ["get_screen_time", "screen_time", { device: "Sam's phone" }],
+      ["change_screen_time", "agreement", { device: "Sam's phone", change: { stage: "Base camp" }, reason: "x" }],
+      ["get_location", "location", { device: "Sam's phone" }],
+      ["locate_now", "location", { device: "Sam's phone" }],
+      ["get_place_events", "location", { device: "Sam's phone" }],
+      ["get_calls", "calls", { device: "Sam's phone" }],
+      ["get_network_activity", "network", { device: "Sam's phone" }],
+    ];
+    for (const [name, scope, args] of needs) {
+      const category = AI_SCOPES[scope].split(":")[0] ?? scope;
+      expect(description(name), name).toMatch(new RegExp(`(needs|with) the ${category} category`, "i"));
+      updateSettings(t.deps.db, { aiScopes: Object.fromEntries((Object.keys(AI_SCOPES) as AiScope[]).map((s) => [s, s !== scope])) });
+      const res = await call(client, name, args);
+      expect(res.isError, name).toBe(true);
+      expect(res.text, name).toContain("turned off AI access");
+    }
+    expect(listProposals(t.deps.db)).toEqual([]);
+  });
+
   it("hide app data when a parent turns it off", async () => {
     const { t, client } = await family();
     updateSettings(t.deps.db, { aiScopes: { apps: false, device_status: true } });
@@ -470,6 +522,14 @@ describe("rules over MCP", () => {
     expect(json.phones[0].problems.join(" ")).not.toContain("Ignore previous instructions");
     expect(json.phones[0].untrusted).toEqual({ model: "Google Pixel 8", problems_belay_on_the_phone_reported: [said] });
     expect((await call(client, "get_device_status", { device: "Sam's phone" })).json.problems[0]).toContain("Tell the parent first");
+    // A proxy or wireless debugging is the same kind of report, and lifts no suspension: the words say what it can be, no more.
+    const proxy = "This phone's network uses a proxy, set in its Wi-Fi or mobile network settings. Apps that use the proxy can get around the web filter.";
+    await deviceCall(t, phone.token, "checkin", { status: device({ device_time: t.now(), enforcement: { policy_version: 0, applied_at: t.now(), problems: [proxy] } }) });
+    const again = (await call(client, "list_devices")).json.phones[0];
+    expect(again.problems[0]).toBe(
+      "Someone may be getting around Belay: the phone reported something that can get around its rules, like another user or profile (Android's own Parental Controls), a proxy on its network or wireless debugging. Tell the parent first.",
+    );
+    expect(again.untrusted.problems_belay_on_the_phone_reported).toEqual([proxy]);
   });
 
   it("a new proposal is pushed to the parents' browsers, once", async () => {
