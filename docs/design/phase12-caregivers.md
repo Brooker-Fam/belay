@@ -1,9 +1,10 @@
 # Phase 12: caregivers
 
-**Status: built** (server and phone; [the Pixel checklist](../phase12-checklist.md) is open). No
-new Android capability: the phone runs the same pause, `lock_now` and `locate_now` it already
-runs, and shows the kid more words from its policy. The work is on the server (a second, much
-smaller kind of account) and in what the kid's screens say.
+**Status: built** (server and phone, run end to end in CI's emulator job;
+[the Pixel checklist](../phase12-checklist.md) is open). No new Android capability: the phone runs
+the same pause, `lock_now` and `locate_now` it already runs, and shows the kid more words from its
+policy. The work is on the server (a second, much smaller kind of account) and in what the kid's
+screens say.
 
 A parent sometimes hands the kid to someone else for a while: a grandparent for a weekend, a
 babysitter for an evening, a coach on a trip, or the kid's other household. That person may want
@@ -73,7 +74,9 @@ activity log keeps its name.
 
 At most 20 caregivers per server, ended ones included. AI apps can't see, add or change
 caregivers, not even as a proposal: giving someone access to the kid's phone is a parent's
-decision, out of band.
+decision, out of band. The server's command line adds, lists, renews and ends them too
+(`caregiver-add`, `caregivers`, `caregiver-renew`, `caregiver-end`), through the same functions,
+with the same limits, logged as the server's.
 
 ### What a caregiver may do
 
@@ -246,9 +249,13 @@ Nothing new goes from the phone to the server.
 - **Core (JVM):** the kid's lines from the policy (an expired one dropped, names cleaned and
   capped, at most 20, sorted, `locate` only as sent); Home's line for a caregiver's pause; a
   caregiver's check named in "What Belay told your parent".
-- **Emulator (CI):** the policy's caregiver reaches the phone's debug state, if it's a simple,
-  safe step. Not built: the emulator job drives the server through its command line, which has no
-  way to add a caregiver (only the parent page does), so the phone's side is tested on the JVM.
+- **Emulator (CI):** the command line's `caregiver-add` gives a made-up caregiver status, pause
+  and help, and the phone's debug state lists them with exactly that and their end, by its own
+  clock; the caregiver joins with the one-time link and pauses the phone from their page over HTTP
+  (curl with their cookie, the form's CSRF token and a browser's Origin; one from another site is
+  refused); the phone has the pause as theirs and holds the fixture app for it; `caregiver-end`
+  takes them off the phone's list and signs them out, their pause stays, and a parent resumes it
+  (`ci-emulator-test.sh`).
 - **On the Pixel:** the kid's screens with a caregiver, at the largest font; a caregiver's pause,
   lock and check from another phone's browser, and what the kid sees; a help request's push to a
   caregiver on Android Chrome and on an iPhone (Home Screen).

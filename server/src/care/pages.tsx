@@ -7,7 +7,7 @@ import type { FC, PropsWithChildren } from "hono/jsx";
 import { PASSWORD_MIN } from "../auth/parents.js";
 import { CAN_WORDS, CAREGIVER_CAN, type Caregiver } from "../family/caregivers/store.js";
 import { CARE_PAUSE_MINUTES } from "../family/caregivers/changes.js";
-import type { FixView } from "../family/location/store.js";
+import type { CheckOutcome } from "../family/location/fixes.js";
 import type { HelpView } from "../family/requests.js";
 import { formatAgo, formatDateTime, offsetLabel } from "../time.js";
 import { FixLine, type Where } from "../web/pages/help.js";
@@ -246,7 +246,7 @@ const LocateForm: FC<{ view: CareView; phone: CarePhone; on: boolean }> = ({ vie
       <button type="submit" class="quiet">
         Check where {phone.name} is now
       </button>
-      <p class="muted small">It asks the phone for where it is and waits up to a minute. The kid gets a notification that you checked.</p>
+      <p class="muted small">It asks the phone for where it is and waits up to a minute for its answer. The kid gets a notification that you checked.</p>
     </form>
   ) : (
     <p class="muted small">Location is off for {phone.name}, so you can't check where it is. A parent can turn it on.</p>
@@ -384,11 +384,11 @@ export const CareHomePage: FC<{
   </CareLayout>
 );
 
-/** The answer to a caregiver's check: this one fix, or why there's none. */
-export const CareCheckPage: FC<{ view: CareView; phone: { id: string; name: string }; fix: FixView | null; where: Where; expired: boolean }> = ({
+/** The answer to a caregiver's check: this one fix, the phone's own words for why it couldn't (untrusted, quoted), or why there's none. */
+export const CareCheckPage: FC<{ view: CareView; phone: { id: string; name: string }; outcome: CheckOutcome | null; where: Where; expired: boolean }> = ({
   view,
   phone,
-  fix,
+  outcome,
   where,
   expired,
 }) => (
@@ -396,10 +396,18 @@ export const CareCheckPage: FC<{ view: CareView; phone: { id: string; name: stri
     <h1>Where {phone.name} is</h1>
     {expired ? (
       <p>That check was a while ago. Check again to see where the phone is now.</p>
-    ) : fix ? (
+    ) : outcome?.kind === "fix" ? (
       <p>
-        <FixLine view={view} deviceId={phone.id} fix={fix} where={where} />
+        <FixLine view={view} deviceId={phone.id} fix={outcome.fix} where={where} />
       </p>
+    ) : outcome?.kind === "failed" ? (
+      <>
+        <p>The phone answered: it couldn't find where it is.{outcome.problem ? " Belay on the phone says:" : " It didn't say why."}</p>
+        {outcome.problem && <blockquote>{outcome.problem}</blockquote>}
+        <p>Try again in a few minutes.</p>
+      </>
+    ) : outcome?.kind === "expired" ? (
+      <p>The phone got the check too late, by its own clock, so it didn't check where it is. Check again.</p>
     ) : (
       <p>The phone hasn't answered in a minute. It may be offline, or out of reach of GPS. Try again in a few minutes.</p>
     )}

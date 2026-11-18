@@ -36,7 +36,7 @@ import { type Caregiver, HELP_WINDOW_MS, ONLINE_MS, accessCurrent, careAccess } 
 import { LOCATE_NOW_MS } from "../family/commands.js";
 import { getDevice } from "../family/devices.js";
 import { phoneHelp } from "../family/kidside.js";
-import { checkAnswer } from "../family/location/fixes.js";
+import { checkOutcome } from "../family/location/fixes.js";
 import { locationSettings, takesChecks } from "../family/location/store.js";
 import { type PolicyContext, RuleRefused, activePause, getRules } from "../family/policy.js";
 import { type HelpView, listRequests } from "../family/requests.js";
@@ -309,7 +309,10 @@ export function careRoutes(deps: Deps, assets: Assets): Hono<CareEnv> {
     return c.redirect(`/care?saved=${done.result.kept && !lock ? "kept" : lock ? "locked" : "paused"}#phone-${device.id}`);
   });
 
-  /** Check where it is now: the phone gets a check within seconds; this waits up to a minute for its fix, then shows it. */
+  /**
+   * Check where it is now: the phone gets a check within seconds; this waits up to a minute for its
+   * answer, the fix or its word that it couldn't, and stops as soon as either comes. Then it shows it.
+   */
   app.post("/phones/:id/locate", async (c) => {
     const device = theirPhone(c);
     if (!device) return noPhone(c);
@@ -327,11 +330,11 @@ export function careRoutes(deps: Deps, assets: Assets): Hono<CareEnv> {
       throw error;
     }
     careCounted(deps, caregiver, "locate", device.id);
-    await deps.fixWaiters.wait(device.id, () => checkAnswer(db, device.id, command, { withinMs: LOCATE_NOW_MS }) !== null, deps.locateWaitMs, c.req.raw.signal);
+    await deps.fixWaiters.wait(device.id, () => checkOutcome(db, device.id, command, { withinMs: LOCATE_NOW_MS }) !== null, deps.locateWaitMs, c.req.raw.signal);
     return c.redirect(`/care/phones/${device.id}/checks/${encodeURIComponent(command)}`);
   });
 
-  /** A check's answer: only this caregiver's own, for a few minutes, and never a later check's fix. */
+  /** A check's answer: only this caregiver's own, for a few minutes, and never a later check's fix or failure. */
   app.get("/phones/:id/checks/:command", (c) => {
     const device = theirPhone(c);
     if (!device) return noPhone(c);
@@ -343,8 +346,8 @@ export function careRoutes(deps: Deps, assets: Assets): Hono<CareEnv> {
       .get(device.id, c.req.param("command"), caregiver.id);
     if (!mine) return message(c, "No such check", "Check again to see where the phone is now.", 404, { href: `/care#phone-${device.id}`, label: "Back" });
     const expired = now - mine.issued_at > CHECK_SHOWN_MS;
-    const fix = expired ? null : checkAnswer(db, device.id, c.req.param("command"), { withinMs: LOCATE_NOW_MS });
-    return render(c, <CareCheckPage view={view(c)} phone={{ id: device.id, name: device.name }} fix={fix} where={whereFor(deps)} expired={expired} />);
+    const outcome = expired ? null : checkOutcome(db, device.id, c.req.param("command"), { withinMs: LOCATE_NOW_MS });
+    return render(c, <CareCheckPage view={view(c)} phone={{ id: device.id, name: device.name }} outcome={outcome} where={whereFor(deps)} expired={expired} />);
   });
 
   // ── Notifications: only the kid's help requests, so only with help on ─

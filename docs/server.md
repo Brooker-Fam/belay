@@ -46,7 +46,10 @@ Any small Linux VPS with Docker works (1 GB of memory is plenty).
    docker compose logs belay
    ```
 5. Open the link (it works once, for 24 hours) and create the first parent account. You
-   can invite a second parent from Settings.
+   can invite a second parent from Settings. The Phones page's **Getting started** card then
+   lists the steps after this one ([guide.md](guide.md#3-set-up-the-server)), each ticked off
+   from what the server sees, until the essential ones are done or a parent hides it (for
+   themselves: Settings brings it back).
 
 Caddy gets and renews the certificate on its own. `Caddyfile` and `.env` stay out of git:
 they name your server. **Don't edit `docker-compose.yml`:** your own changes (the backup
@@ -282,6 +285,23 @@ Numbers are E.164 (`+`, the country code, the number). `block-number` refuses 91
 every emergency number, a contact's number, one on the emergency card and a private one, with
 why.
 
+And for caregivers (Phase 12), as the Caregivers page adds, renews and ends them:
+
+```bash
+docker compose exec belay node dist/cli.js caregiver-add "Sam's phone" --name Grandma --until 2026-11-21T18:00   # prints only the one-time link; --can status,pause,help,locate
+docker compose exec belay node dist/cli.js caregivers                                  # each one: until when, their phones, what they may do, whether they joined (--json for scripts)
+docker compose exec belay node dist/cli.js caregiver-renew Grandma --until 2026-11-28T18:00   # a new end; for one whose access ended, access again from now
+docker compose exec belay node dist/cli.js caregiver-end Grandma                       # End access now
+```
+
+`caregiver-add` takes one or more phones, each in quotes. `--until` is a date and time in the
+family's timezone (or one with its offset, like `2026-11-21T23:00Z`), at most 30 days ahead;
+`--can` is any of `status`, `pause`, `help` and `locate`, comma separated (the page's recommended
+`status,pause,help` if left out). They refuse what the page refuses, in its words. `caregivers
+--json` gives `[{name, access: "current"|"ended", until, ended_at, phones, can, joined,
+joined_at, last_signed_in_at}]`, times in the family's timezone. Changing a caregiver, a new link
+and removing one are on the parent page only.
+
 They're logged as the server's ("The server" on the Activity page), and a running server
 passes them to the phone within a second or two. `status --json` gives each phone's
 `policy_version` (the server's), `enforcement` (what the phone last said it applied, exactly
@@ -321,8 +341,9 @@ does.
 For scripts: `agent-add` prints only the APK's SHA-256 (lowercase) on stdout,
 `recovery-key` prints only the key, grouped like `7KD2M-8Q4ZX-1HNP3-RT6VW-B9CF0G`,
 `limit`, `schedule`, `lock-now`, `place`, `locate-now` and `contact` print only the id of the
-limit, schedule, place, command or contact, and `handover` prints one sentence; everything else
-goes to stderr. They exit 1 with a reason on stderr when they can't.
+limit, schedule, place, command or contact, `caregiver-add` prints only the one-time link, and
+`handover` prints one sentence; everything else goes to stderr. They exit 1 with a reason on
+stderr when they can't.
 
 Outside Docker, use `npm run cli -- <command>` from `server/`.
 
@@ -551,7 +572,8 @@ Only a parent changes any of it, there or with the CLI; AI apps can't, and can't
   location on, its own words for a fix that failed) is there too, and a phone that should share
   where it is but can't is flagged on the phone's page and in the daily summary.
 - **Check now** sends a check (`locate_now`, which lasts 2 minutes) and waits up to a minute
-  for the phone's fix, then shows it. **Checks** lists every one of the last 30 days, a
+  for the phone's answer: its fix, or its own words for why it couldn't (or that it got the
+  check too late), shown as soon as either comes. **Checks** lists every one of the last 30 days, a
   parent's or their AI app's: the same list the kid sees on the phone, where each check also
   posts a notice.
 - **Places** (at most 20): a name the kid sees (at most 40 characters), a center from
@@ -670,7 +692,8 @@ The end of the rules, for when the kid outgrows Belay: each step is a parent's, 
 Someone who looks after the kid for a while (a grandparent for a weekend, a babysitter, a coach on
 a trip, the kid's other household) gets their own sign-in, never a parent's
 ([design](design/phase12-caregivers.md)). Each step about a caregiver is a parent's, on the parent
-page; AI apps can't see, add or change caregivers, not even as a proposal.
+page (adding, renewing and ending one also with the [admin commands](#admin-commands), as the
+server's); AI apps can't see, add or change caregivers, not even as a proposal.
 
 - **Caregivers** (in the menu): add one with a name (1 to 40 characters, one line: the kid sees
   it), the phones it covers, what they may do (below), and when access ends: a date and time in
@@ -817,7 +840,8 @@ sudo chown 1000 backup-passphrase.txt && sudo chmod 600 backup-passphrase.txt
 
 A passphrase that's set but unusable (shorter than 15 characters, or a file that can't be
 read) fails the backup, with the reason on the parent page; Belay never falls back to an
-unencrypted one. A new passphrase applies to new backups; older ones keep the one they were
+unencrypted one. Until a usable one is set, the Phones page's Getting started card lists it as
+a step left, with that reason. A new passphrase applies to new backups; older ones keep the one they were
 made with. After turning encryption on, the unencrypted ones age out within 14 days, or
 delete them.
 

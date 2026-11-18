@@ -33,8 +33,12 @@ jobs:
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm run typecheck
       - run: npm run lint
-      - run: npm test
+      # Built before the tests, so demo-build.test.ts checks that the built dist/ holds no demo
+      # code, and fails without one (no other test reads dist/).
       - run: npm run build
+      - run: npm test
+        env:
+          BELAY_TEST_DIST: required
 
   # The image is built and run on both architectures a family's server is likely to have: a PC or
   # a VPS (amd64), and a Raspberry Pi 4 or 5 or an arm64 NAS (arm64, on GitHub's arm64 runner).

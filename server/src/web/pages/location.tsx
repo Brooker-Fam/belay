@@ -10,7 +10,7 @@ import type { FC } from "hono/jsx";
 import type { Enforcement } from "../../device/schemas.js";
 import type { DeviceView } from "../../family/devices.js";
 import type { PhoneHelp } from "../../family/kidside.js";
-import type { Check, PlaceEventView } from "../../family/location/fixes.js";
+import type { Check, CheckOutcome, PlaceEventView } from "../../family/location/fixes.js";
 import { LOCATION_LIMITS, LOST_MESSAGE, type FixView, type LocationSettings, type Place } from "../../family/location/store.js";
 import type { HelpView } from "../../family/requests.js";
 import { MAX_PARENT_NUMBERS, type ParentNumber } from "../../settings.js";
@@ -32,8 +32,8 @@ export interface LocationPageData {
   familyNumbers: ParentNumber[];
   unseenHelp: HelpView[];
   where: Where;
-  /** After "Check now": the check, and the fix that answered it, if one did in time. */
-  checked: { command: string; fix: FixView | null } | null;
+  /** After "Check now": the check, and how the phone answered it (its fix, or that it couldn't), if it has. */
+  checked: { command: string; outcome: CheckOutcome | null } | null;
 }
 
 const EVERY = [15, 20, 30, 45, 60, 90, 120];
@@ -52,6 +52,34 @@ const CHECK_WORDS: Record<Check["command"]["state"], string> = {
   expired: "the phone got it too late, so it didn't check",
   not_done: "the phone didn't answer in time",
   replaced: "a newer check took its place",
+};
+
+/** After "Check now": the phone's answer, its fix or its own words for why it couldn't (untrusted, quoted), or that none came in time. */
+const CheckedNotice: FC<{ view: View; deviceId: string; outcome: CheckOutcome | null; where: Where }> = ({ view, deviceId, outcome, where }) => {
+  if (outcome?.kind === "fix") {
+    return (
+      <Notice>
+        The phone answered: <FixLine view={view} deviceId={deviceId} fix={outcome.fix} where={where} />
+      </Notice>
+    );
+  }
+  if (outcome?.kind === "failed") {
+    return (
+      <Notice kind="warn">
+        <p>The phone answered: it couldn't find where it is.{outcome.problem ? " Belay on the phone says:" : " It didn't say why."}</p>
+        {outcome.problem && <blockquote>{outcome.problem}</blockquote>}
+      </Notice>
+    );
+  }
+  if (outcome?.kind === "expired") {
+    return <Notice kind="warn">The phone answered: it got the check too late, by its own clock, so it didn't check where it is. Check again.</Notice>;
+  }
+  return (
+    <Notice kind="warn">
+      No answer yet: the phone hasn't answered within a minute. It may be offline, or GPS needs longer indoors. The check stays open for 2 minutes, and
+      the fix shows here if it comes.
+    </Notice>
+  );
 };
 
 const ModeLine: FC<{ settings: LocationSettings | null }> = ({ settings: s }) => {
@@ -288,17 +316,7 @@ export const LocationPage: FC<{ view: View; data: LocationPageData; message?: st
             Lost mode is on, since <Time ms={s.lost.since} tz={view.tz} />: the phone shares where it is every 5 minutes.
           </Notice>
         )}
-        {data.checked && (
-          <Notice kind={data.checked.fix ? undefined : "warn"}>
-            {data.checked.fix ? (
-              <>
-                The phone answered: <FixLine view={view} deviceId={device.id} fix={data.checked.fix} where={where} />
-              </>
-            ) : (
-              "No answer yet: the phone hasn't sent a fix within a minute. It may be offline, or GPS needs longer indoors. The check stays open for 2 minutes, and the fix shows here if it comes."
-            )}
-          </Notice>
-        )}
+        {data.checked && <CheckedNotice view={view} deviceId={device.id} outcome={data.checked.outcome} where={where} />}
         {data.latest ? (
           <p>
             Last fix: <FixLine view={view} deviceId={device.id} fix={data.latest} where={where} />
@@ -311,7 +329,12 @@ export const LocationPage: FC<{ view: View; data: LocationPageData; message?: st
             Check now
           </PostButton>
         )}
-        {takesChecks && <p class="muted small">Check now asks the phone for a fresh fix and waits up to a minute. The kid gets a notice: "Your parent checked where this phone is".</p>}
+        {takesChecks && (
+          <p class="muted small">
+            Check now asks the phone for a fresh fix and waits up to a minute for its answer: the fix, or why it couldn't. The kid gets a notice: "Your
+            parent checked where this phone is".
+          </p>
+        )}
         <PhoneReport view={view} settings={s} report={data.report} />
         {s !== null && s.dropped > 0 && (
           <p class="small muted">

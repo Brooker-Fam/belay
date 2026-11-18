@@ -8,13 +8,14 @@
 import { createECDH, randomBytes } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { listAudit } from "../src/audit.js";
+import { createFixWaiters } from "../src/device/fixwaiters.js";
 import { Policy } from "../src/device/schemas.js";
 import { getCaregiver, listCaregivers } from "../src/family/caregivers/store.js";
 import { setLocation } from "../src/family/location/changes.js";
 import { buildPolicy, getRules, pausePhone, resumePhone, type PolicyContext } from "../src/family/policy.js";
 import { cleanUp } from "../src/maintenance.js";
 import { updateSettings } from "../src/settings.js";
-import { browserFor, deviceCall, enrollPhone, fix, get, PASSWORD, postForm, signIn, testServer, T0 } from "./helpers.js";
+import { browserFor, device, deviceCall, enrollPhone, fix, get, PASSWORD, postForm, signIn, testServer, T0 } from "./helpers.js";
 
 const MIN = 60_000;
 const HOUR = 60 * MIN;
@@ -368,6 +369,48 @@ describe("checking where the phone is", () => {
     const coach = await add(f, { name: "Coach Lee", can: ["locate"] });
     const lee = await join(f, coach.token, "lee");
     expect((await lee.page(at)).status).toBe(404);
+  });
+
+  it("stops waiting as soon as the phone says it couldn't, and shows the phone's words, escaped; never a parent's later check's", async () => {
+    const f = await family();
+    const { token } = await add(f, { can: ["status", "pause", "help", "locate"] });
+    const care = await join(f, token);
+    setLocation(f.ctx(), f.phone.deviceId, { mode: "on_demand" }, f.parent);
+    // A real server's minute, and a poll of an hour: only the phone's answer ends the wait.
+    f.t.deps.locateWaitMs = 60_000;
+    f.t.deps.fixWaiters = createFixWaiters({ pollMs: 3_600_000 });
+    const checkin = (commands: { id: string; result: "failed" | "expired"; problem?: string }[]) =>
+      deviceCall(f.t, f.phone.token, "checkin", { status: device({ enforcement: { policy_version: f.policy().version, commands: commands.map((c) => ({ at: f.t.now(), ...c })) } }) });
+    const started = Date.now();
+    const pending = care.form(`/care/phones/${f.phone.deviceId}/locate`);
+    await vi.waitFor(() => {
+      expect(f.policy().commands.filter((c) => c.kind === "locate_now")).toHaveLength(1);
+    });
+    const command = f.policy().commands.find((c) => c.kind === "locate_now");
+    await checkin([{ id: command?.id ?? "", result: "failed", problem: "Location is <i>off</i> in the phone's settings" }]);
+    const res = await pending;
+    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(f.t.deps.fixWaiters.size).toBe(0);
+    const at = res.headers.get("location") ?? "";
+    expect(at).toBe(`/care/phones/${f.phone.deviceId}/checks/${command?.id ?? ""}`);
+    const { html } = await care.page(at);
+    expect(html).toContain("The phone answered: it couldn&#39;t find where it is. Belay on the phone says:");
+    expect(html).toContain("<blockquote>Location is &lt;i&gt;off&lt;/i&gt; in the phone&#39;s settings</blockquote>");
+    expect(html).not.toContain("hasn&#39;t answered in a minute");
+    // A parent's check much later, and what the phone says of it, is never her check's answer.
+    f.t.advance(5 * MIN);
+    const parentCheck = f.form(`/devices/${f.phone.deviceId}/location/check`);
+    await vi.waitFor(() => {
+      expect(f.policy().commands.filter((c) => c.kind === "locate_now")).toHaveLength(1);
+    });
+    const theirs = f.policy().commands.find((c) => c.kind === "locate_now");
+    expect(theirs?.id).not.toBe(command?.id);
+    expect(theirs?.caregiver ?? null).toBeNull();
+    await checkin([{ id: theirs?.id ?? "", result: "expired" }]);
+    expect((await parentCheck).status).toBe(302);
+    const later = (await care.page(at)).html;
+    expect(later).toContain("Belay on the phone says:");
+    expect(later).not.toContain("too late");
   });
 });
 

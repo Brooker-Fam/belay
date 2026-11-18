@@ -1,11 +1,13 @@
 /**
- * Phase 4: a parent's "Check now" (and MCP's locate_now) waits up to a minute for the fix that
- * answers it. In memory, like the policy long-poll's waiters: a fix stored by this process wakes
- * the phone's waiters at once (`arrived`), and every waiter also looks again each second, so an
- * answer is never missed.
+ * Phase 4: a parent's "Check now" (a caregiver's check, and MCP's locate_now) waits up to a minute
+ * for the phone's answer: the fix that answers it, or the phone's report that it couldn't, or got
+ * it too late (family/location/fixes.ts, checkOutcome). In memory, like the policy long-poll's
+ * waiters: a fix stored by this process, or a check's result in a check-in, wakes the phone's
+ * waiters at once (`arrived`), and every waiter also looks again each second, so an answer is
+ * never missed.
  */
 export interface FixWaiters {
-  /** A fix arrived from this phone: whoever waits for one looks again. */
+  /** A fix, or a check's result, arrived from this phone: whoever waits for an answer looks again. */
   arrived(deviceId: string): void;
   /** Waits until `answered()` is true (true), or until `ms` pass or the signal aborts (false). */
   wait(deviceId: string, answered: () => boolean, ms: number, signal?: AbortSignal): Promise<boolean>;
