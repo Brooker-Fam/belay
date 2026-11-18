@@ -99,7 +99,7 @@ home network; see docs/platform-notes.md.)
 | `BELAY_EXTRA_REDIRECT_URIS` | none | More OAuth redirect URIs to allow, comma-separated and exact, for MCP clients other than Claude. They get no refresh tokens. |
 | `BELAY_BACKUP_PASSPHRASE` | none | Encrypts the daily backups with this passphrase, at least 15 characters ([Encrypted backups](#encrypted-backups)). Without it they're plain SQLite files. Prefer the `_FILE` form. |
 | `BELAY_BACKUP_PASSPHRASE_FILE` | none | A file that holds the passphrase instead, like a Docker secret (`/run/secrets/belay_backup`); a final new line is ignored. Set one of the two, not both. |
-| `BELAY_DEMO_BANNER` | off | Only `npm run demo` sets it ([demo.md](demo.md)): `1` puts "Demo: a made-up family. Nothing here is real." on every page. It changes nothing else. |
+| `BELAY_DEMO_BANNER` | off | Only `npm run demo` sets it ([demo.md](demo.md)): `1` puts "Demo: a made-up family. Nothing here is real." on every page, and only on a database the demo made (its own mark in the settings), so set on a real family's server by mistake it shows nothing. It changes nothing else. |
 
 The family's timezone, the silent threshold, what AI apps may read, how long screen time,
 where the phone was, call records, network activity, mobile data use and the activity log are kept (the activity

@@ -1,16 +1,25 @@
 /**
  * The demo banner (docs/demo.md): "Demo: a made-up family. Nothing here is real." on every page
- * of a server with BELAY_DEMO_BANNER=1, which only `npm run demo` sets, and on no other server's.
+ * of a server with BELAY_DEMO_BANNER=1, which only `npm run demo` sets, whose database is the
+ * demo's own (the seventh review's J3), and on no other server's.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { markDatabase } from "../demo/dir.js";
 import { loadConfig } from "../src/config.js";
-import { updateSettings } from "../src/settings.js";
-import { enrollPhone, get, PASSWORD, postForm, signIn, testServer } from "./helpers.js";
+import { isDemoDatabase, updateSettings } from "../src/settings.js";
+import { deviceCall, enrollPhone, get, PASSWORD, postForm, signIn, testServer } from "./helpers.js";
 import { structureProblems } from "./html.js";
 
 const BANNER = "Demo: a made-up family. Nothing here is real.";
+
+/** A server as `npm run demo` starts it: BELAY_DEMO_BANNER=1, on a database the demo marked as its own. */
+function demoServer() {
+  const t = testServer({ config: { demoBanner: true } });
+  markDatabase(t.deps.db, "0123456789abcdef0123456789abcdef", t.now());
+  return t;
+}
 
 describe("the demo banner", () => {
   it("is on only when BELAY_DEMO_BANNER is 1", () => {
@@ -20,7 +29,7 @@ describe("the demo banner", () => {
   });
 
   it("is on every page of a server that sets it, signed in or out, and the title says demo", async () => {
-    const t = testServer({ config: { demoBanner: true } });
+    const t = demoServer();
     const parent = await signIn(t);
     for (const [path, signedIn] of [
       ["/login", false],
@@ -41,7 +50,7 @@ describe("the demo banner", () => {
   });
 
   it("is on a caregiver's pages too, signed in or out", async () => {
-    const t = testServer({ config: { demoBanner: true } });
+    const t = demoServer();
     updateSettings(t.deps.db, { timezone: "America/New_York" });
     const parent = await signIn(t);
     const phone = await enrollPhone(t, "A made-up phone");
@@ -62,6 +71,34 @@ describe("the demo banner", () => {
       expect(html, path).toMatch(/<title>[^<]* · Belay demo<\/title>/);
       expect(structureProblems(html), path).toEqual([]);
     }
+  });
+
+  it("with BELAY_DEMO_BANNER=1 on a real family's database (no demo mark), is on none of its pages", async () => {
+    const t = testServer({ config: { demoBanner: true } });
+    expect(isDemoDatabase(t.deps.db)).toBe(false);
+    updateSettings(t.deps.db, { timezone: "America/New_York" });
+    const parent = await signIn(t);
+    const phone = await enrollPhone(t, "Alex's phone");
+    await deviceCall(t, phone.token, "requests", { requests: [{ id: "request-0001", kind: "help", asked_at: t.now(), reason: "A real one" }] });
+    const added = await postForm(t, "/caregivers", { _csrf: parent.csrf, name: "Grandma", phone: [phone.deviceId], can: ["status", "help"], until: "2026-11-19T18:00" }, { cookie: parent.cookie });
+    const token = /\/care\/join\/([A-Za-z0-9_-]{43})/.exec(await added.text())?.[1] ?? "";
+    const joined = await postForm(t, `/care/join/${token}`, { username: "grandma", password: PASSWORD, repeat: PASSWORD });
+    const cookie = (joined.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
+    for (const [path, as] of [
+      ["/login", undefined],
+      ["/oauth/authorize", undefined],
+      ["/requests", parent.cookie],
+      ["/settings", parent.cookie],
+      ["/care/login", undefined],
+      ["/care", cookie],
+    ] as const) {
+      const html = await (await get(t, path, as)).text();
+      expect(html, path).not.toContain("made-up family");
+      expect(html, path).not.toContain("Belay demo");
+    }
+    // A database marked with something else, or an id that isn't one, isn't the demo's either.
+    t.deps.db.prepare("INSERT INTO settings (key, value) VALUES ('demo', ?)").run(JSON.stringify({ id: "not an id" }));
+    expect(isDemoDatabase(t.deps.db)).toBe(false);
   });
 
   it("is on no other server's pages", async () => {

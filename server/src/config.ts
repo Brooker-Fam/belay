@@ -18,7 +18,8 @@ export interface Config {
   /** Cookies get the Secure flag (and the __Host- prefix) when the public URL is https. */
   secureCookies: boolean;
   /**
-   * "Demo: a made-up family. Nothing here is real." on every page (BELAY_DEMO_BANNER=1). Only
+   * "Demo: a made-up family. Nothing here is real." on every page (BELAY_DEMO_BANNER=1), and
+   * only on a database the demo marked as its own (settings.ts's isDemoDatabase). Only
    * `npm run demo` sets it (docs/demo.md), and it changes nothing else.
    */
   demoBanner: boolean;

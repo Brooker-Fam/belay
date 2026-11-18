@@ -44,7 +44,7 @@ import { phoneRules } from "../family/screentime/rules.js";
 import { type Bindings, clientAddress } from "../http.js";
 import { testNoticeLimited } from "../ratelimit.js";
 import { browserName, subscriptionProblem, vapidKeys } from "../push.js";
-import { getSettings } from "../settings.js";
+import { getSettings, isDemoDatabase } from "../settings.js";
 import type { Assets } from "../web/assets.js";
 import { whereFor } from "../web/location.js";
 import { first, render, safeNext, sameOrigin } from "../web/routes.js";
@@ -109,7 +109,7 @@ export function careRoutes(deps: Deps, assets: Assets): Hono<CareEnv> {
       now: deps.now(),
       path: c.req.path,
       assets: assets.urls,
-      demo: config.demoBanner,
+      demo: config.demoBanner && isDemoDatabase(db),
     };
   };
   const message = (c: CareContext, title: string, text: string, status: ContentfulStatusCode = 200, link?: { href: string; label: string }) =>

@@ -39,7 +39,9 @@ the same id in its database's settings, and a `.gitignore` that keeps git out of
 It reads no `.env` and no `BELAY_*` settings from your environment (it says which it ignored): it
 sets its own, `BELAY_PUBLIC_URL=http://localhost:8080` (or the port you gave), its directory,
 `BELAY_HOST=127.0.0.1` and `BELAY_DEMO_BANNER=1`, which puts the banner on every page and changes
-nothing else. Its daily backup has no passphrase, whatever your shell says.
+nothing else. The banner shows only on a database the demo marked as its own, so the setting on a
+real family's server by mistake shows nothing. Its daily backup has no passphrase, whatever your
+shell says.
 
 ## What's in it
 
@@ -158,6 +160,7 @@ MCP client on the same computer). What Claude reads goes to Anthropic, as with a
 - **Not in the server's build or image.** The demo lives in `server/demo/`, outside `src/`:
   `npm run build` compiles only `src/` (`tsconfig.build.json`), the Dockerfile copies only `src/`,
   and `.dockerignore` leaves `demo/` out of the image's build context. The only part of it in the
-  server is `BELAY_DEMO_BANNER`, and all that does is the banner. `test/demo-build.test.ts`
+  server is `BELAY_DEMO_BANNER`, and all that does is the banner, on the demo's own database only
+  (settings.ts's `isDemoDatabase`, the seventh security review's J3). `test/demo-build.test.ts`
   checks all three, that nothing in `src/` imports the demo, and that a built `dist/` holds none
   of it (CI builds before the tests for that one; elsewhere it's skipped without a `dist/`).

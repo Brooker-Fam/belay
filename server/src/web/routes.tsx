@@ -98,6 +98,7 @@ import {
   NETWORK_DAYS,
   USAGE_MONTHS,
   getSettings,
+  isDemoDatabase,
   updateSettings,
 } from "../settings.js";
 import { sameName } from "../text.js";
@@ -311,7 +312,7 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
       path: c.req.path,
       assets: assets.urls,
       waiting: session ? { requests: pendingRequestCount(db), proposals: pendingProposalCount(db) } : undefined,
-      demo: config.demoBanner,
+      demo: config.demoBanner && isDemoDatabase(db),
     };
   };
   const message = (c: WebContext, title: string, text: string, status: ContentfulStatusCode = 200, link?: { href: string; label: string }) =>

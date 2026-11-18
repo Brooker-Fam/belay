@@ -18,6 +18,7 @@ import { listStages, phoneRules, phoneStage } from "../src/family/screentime/rul
 import { usageDays } from "../src/family/screentime/usage.js";
 import { setOpsOptions } from "../src/ops/options.js";
 import { getSettings } from "../src/settings.js";
+import { markDatabase } from "../demo/dir.js";
 import { APPS, PHONE_NAME } from "../demo/family.js";
 import { type Seeded, seedDemo } from "../demo/seed.js";
 import { type Sent, checkRequest } from "./demo-helpers.js";
@@ -36,6 +37,8 @@ describe("the demo's family", () => {
 
   beforeAll(async () => {
     t = testServer({ config: { demoBanner: true } });
+    // As npm run demo does, before seeding: the banner shows only on the demo's own database.
+    markDatabase(t.deps.db, "0123456789abcdef0123456789abcdef", t.now());
     seeded = await seedDemo({
       db: t.deps.db,
       config: t.deps.config,

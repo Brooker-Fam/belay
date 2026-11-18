@@ -286,3 +286,21 @@ export function updateSettings(db: DB, change: SettingsChange): Settings {
   if (change.aiScopes !== undefined) write(db, "ai_scopes", { ...getSettings(db).aiScopes, ...change.aiScopes });
   return getSettings(db);
 }
+
+/**
+ * Whether this database is `npm run demo`'s own made-up family: the demo marks a database it makes
+ * with a settings row of its own ("demo", with the id its directory's marker file has: server/demo/
+ * dir.ts), which nothing in the server writes. BELAY_DEMO_BANNER puts the demo's banner up only on
+ * such a database (the seventh review's J3): set on a real family's server by mistake, it would
+ * say "Nothing here is real." above a real help request.
+ */
+export function isDemoDatabase(db: DB): boolean {
+  const row = db.prepare<[], { value: string }>("SELECT value FROM settings WHERE key = 'demo'").get();
+  if (!row) return false;
+  try {
+    const value = JSON.parse(row.value) as { id?: unknown } | null;
+    return typeof value?.id === "string" && /^[0-9a-f]{32}$/.test(value.id);
+  } catch {
+    return false;
+  }
+}

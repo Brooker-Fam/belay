@@ -14,7 +14,7 @@ import { checkPassword, createSession, loadSession } from "../auth/parents.js";
 import { pkceChallenge, randomToken, safeEqual, sha256 } from "../crypto.js";
 import type { Deps } from "../deps.js";
 import { clientAddress, type Bindings } from "../http.js";
-import { AI_SCOPES, getSettings } from "../settings.js";
+import { AI_SCOPES, getSettings, isDemoDatabase } from "../settings.js";
 import { Csrf, Layout, Notice, type View } from "../web/ui.js";
 import { first, pageHeaders, render, sameOrigin, sessionCookie } from "../web/routes.js";
 import type { Assets } from "../web/assets.js";
@@ -152,7 +152,7 @@ export function oauthRoutes(deps: Deps, assets: Assets): Hono<{ Bindings: Bindin
 
   // ── Authorize: sign in, then consent ───────────────────────────────
 
-  const view = (c: Context, csrf = ""): View => ({ parentName: null, csrf, tz: getSettings(db).timezone, now: deps.now(), path: c.req.path, assets: assets.urls, demo: config.demoBanner });
+  const view = (c: Context, csrf = ""): View => ({ parentName: null, csrf, tz: getSettings(db).timezone, now: deps.now(), path: c.req.path, assets: assets.urls, demo: config.demoBanner && isDemoDatabase(db) });
 
   const errorPage = (c: Context, status: 400 | 403 | 503, title: string, text: string) =>
     render(
