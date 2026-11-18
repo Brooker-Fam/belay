@@ -67,8 +67,11 @@
 # isNetworkLoggingEnabled=true) and the phone reports it; the fixture app looks up a made-up name
 # under example.com, `dpm force-network-logs` has Android hand Belay the batch at once, and the
 # server's network activity lists the fixture app with example.com (Belay sends each batch's days
-# as soon as it has them, so no debug-only path is needed); `network --off` turns Android's logging
-# off again (and dpm refuses to force logs), and the phone reports none and keeps nothing.
+# as soon as it has them, so no debug-only path is needed). With example.org a private website
+# (`private-website`, when the server has them), the fixture's lookups of names under it never
+# reach the server, and Belay's log counts them as "private" without naming one. `network --off`
+# turns Android's logging off again (and dpm refuses to force logs), and the phone reports none and
+# keeps nothing.
 #
 # Phase 11, with BELAY_E2E_CLI and a server whose status has handover, just before the restart: a
 # parent hands the phone over; the phone applies that policy, and its debug state shows the hand-over
@@ -837,13 +840,23 @@ elif [ -n "$E2E_CLI" ] && [ -z "$FIXTURE_V1" ]; then
   echo "the fixture APKs not given: the network logging checks are skipped"
 elif [ -n "$E2E_CLI" ]; then
   phone="$(server_status | jq -r '.phones[0].name')"
+  # The family's private websites (a server from before them has none to set: skipped).
+  private_sites=0
+  if server_status | jq -e '.phones[0].network_log | has("private_domains")' >/dev/null 2>&1; then private_sites=1; fi
 
   step "Phase 3: network logging on: Android logs DNS lookups, and the phone says so"
   server_cli network "$phone" --on
+  # A private website: the phone never keeps a lookup of it, or of a name under it, like 988's.
+  if [ "$private_sites" = 1 ]; then server_cli private-website "$phone" example.org; fi
   wait_applied
   wait_server '.enforcement.network_log.enabled == true' "the phone's report that Android logs network lookups" 30
   [ "$(android_logs)" = true ] || { diagnose; die "the phone reports network logging on, but Android's admin dump says isNetworkLoggingEnabled=$(android_logs)"; }
   echo "Android logs: $(server_status | jq -c '.phones[0].enforcement.network_log')"
+  if [ "$private_sites" = 1 ]; then
+    [ "$(state | jq -r '.network.private_domains')" = 1 ] || { diagnose; die "the phone's state doesn't count the private website" "$(state | jq -c '.network')"; }
+  else
+    echo "the server's status has no private websites (not there yet): their checks are skipped"
+  fi
 
   step "Phase 3: an app's lookup reaches the server's network activity, as its registrable domain"
   adb install -r -t "$FIXTURE_V1" >/dev/null
@@ -851,8 +864,11 @@ elif [ -n "$E2E_CLI" ]; then
   wake_up
   looked_up="[.network[]? | .entries[]? | select(.package == \"$FIXTURE_PKG\" and .domain == \"example.com\")] | length > 0"
   got=0
+  adb logcat -c
   # Android hears of a lookup after answering it, and finishes a batch only with events in it: a few tries.
   for attempt in 1 2 3; do
+    # A name under the private website first, so the batch with the kept lookup has it too.
+    if [ "$private_sites" = 1 ]; then ash am start -W -n "$FIXTURE_PKG/.FixtureActivity" --es lookup "ci-private-$attempt.example.org" >/dev/null; fi
     ash am start -W -n "$FIXTURE_PKG/.FixtureActivity" --es lookup "ci-lookup-$attempt.example.com" >/dev/null
     sleep 3
     # A batch closes at 1200 events or after 90 minutes; the shell can close it now (platform notes W6).
@@ -875,6 +891,29 @@ elif [ -n "$E2E_CLI" ]; then
   fi
   server_status | jq -c ".phones[0].network[0] | {day, zone, as_of, dropped, entries: [.entries[] | select(.package == \"$FIXTURE_PKG\")]}"
   echo "the phone: $(state | jq -c '.network | {report, last_token, last_batch_lookups, days}')"
+
+  if [ "$private_sites" = 1 ]; then
+    step "Phase 3: a private website's lookups are dropped on the phone: never sent, and never named in its log"
+    private_sent="[.network[]? | .entries[]? | select(.domain == \"example.org\" or (.domain | endswith(\".example.org\")))] | length"
+    # Belay's log counts them with 988's, as "private" (never by name): proof the phone dropped them,
+    # since the server drops any that arrive too. A lookup Android logged after the batch: one more.
+    dropped=""
+    belay_log=""
+    for attempt in 1 2 3; do
+      belay_log="$(adb logcat -d -v brief -s Belay:V || true)"
+      dropped="$(grep -F 'network logging: took batch' <<<"$belay_log" | grep -oE 'not kept: .*private [0-9]+' | head -n 1 || true)"
+      [ -n "$dropped" ] && break
+      ash am start -W -n "$FIXTURE_PKG/.FixtureActivity" --es lookup "ci-private-again-$attempt.example.org" >/dev/null
+      sleep 3
+      ash dpm force-network-logs >/dev/null 2>&1 || true
+      sleep 5
+    done
+    [ -n "$dropped" ] || { diagnose; die "Belay's log never counted the private website's lookups as not kept"; }
+    [ "$(server_status | jq -r ".phones[0] | $private_sent")" = 0 ] || { diagnose; die "the server's network activity lists the private website" "$(server_status | jq -c '.phones[0].network')"; }
+    if grep -qF 'ci-private' <<<"$belay_log"; then diagnose; die "Belay's log names a private website's lookup"; fi
+    echo "the phone dropped them ($dropped), and the server has none"
+    server_cli private-website "$phone" --remove example.org
+  fi
 
   step "Phase 3: network logging off: Android's is off too, and the phone keeps nothing"
   server_cli network "$phone" --off
