@@ -194,6 +194,27 @@ object DataCategories {
     /** What screen time collects under a policy that [measures] or doesn't. */
     fun screenTime(measures: Boolean): DataCategory = if (measures) SCREEN_TIME else SCREEN_TIME_LIMITS
 
+    /** Phase 13: the mobile data category's id, which is also the server's AI scope. */
+    const val MOBILE_DATA_ID = "mobile_data"
+
+    /**
+     * Phase 13, while the policy's `mobile_data.measure` is on: how much mobile data each app used
+     * each day, and the day's Wi-Fi total, that Belay sends (POST /api/v1/mobile-data), from
+     * Android's own accounting (core's DataUse). Wi-Fi-only apps are a rule, not data: they're on
+     * the rules screen.
+     */
+    val MOBILE_DATA = DataCategory(
+        id = MOBILE_DATA_ID,
+        title = "How much mobile data apps use",
+        details = listOf(
+            "How much mobile data each app uses each day, like 120 MB",
+            "How much the phone uses on Wi-Fi each day, all apps together",
+            "How much the phone app, your texting app and Android's own parts use, together and not one by one, " +
+                "and how much other devices use through this phone's hotspot",
+            "Not which websites or Wi-Fi networks, and nothing you send or get",
+        ),
+    )
+
     /** Phase 3: the network category's id, which is also the server's AI scope. */
     const val NETWORK_ID = "network"
 

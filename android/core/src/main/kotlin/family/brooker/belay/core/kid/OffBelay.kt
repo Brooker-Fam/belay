@@ -4,6 +4,7 @@ import family.brooker.belay.core.EnforcementPlan
 import family.brooker.belay.core.Lock
 import family.brooker.belay.core.WireOffBelayPosition
 import family.brooker.belay.core.WirePolicy
+import family.brooker.belay.core.mobiledata.WifiOnly
 
 /**
  * Phase 11: Off belay, the family's last stage, on the kid's "My stage" (docs/protocol.md, "Off
@@ -39,8 +40,8 @@ object OffBelay {
     /**
      * Whether Belay blocks no app and no website: nothing suspended or hidden (waiting, blocked,
      * paused, a limit or a schedule), no pause, no web filter or Chrome settings, no time limits or
-     * schedules, and nothing kept from installing. Locked settings (like Private DNS) can remain:
-     * "This phone's rules" lists them.
+     * schedules, nothing kept from installing, and (Phase 13) no app kept off mobile data. Locked
+     * settings (like Private DNS) can remain: "This phone's rules" lists them.
      */
     fun blocksNothing(policy: WirePolicy, plan: EnforcementPlan?): Boolean {
         if (plan == null) return false
@@ -48,6 +49,7 @@ object OffBelay {
         return plan.suspend.isEmpty() && plan.hide.isEmpty() && plan.pause == null &&
             plan.privateDns == null && plan.chrome == null &&
             Lock.UNKNOWN_SOURCES !in plan.locks && Lock.UNKNOWN_SOURCES_REGISTERED_STORES !in plan.locks &&
-            screenTime?.limits.isNullOrEmpty() && screenTime?.schedules.isNullOrEmpty()
+            screenTime?.limits.isNullOrEmpty() && screenTime?.schedules.isNullOrEmpty() &&
+            WifiOnly.listed(policy.mobileData.wifiOnly).isEmpty()
     }
 }

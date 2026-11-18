@@ -13,9 +13,10 @@ import java.time.format.DateTimeParseException
  * a third lane, for the same reason (`POST /locations`, idempotent by each item's id); a place event
  * goes after the fix it names. Call records have a fourth (`POST /calls`, idempotent by id), so a
  * server from before Phase 5 (404, tried again later) holds back nothing else. Network days (Phase 3's
- * network logging) have a fifth (`POST /network`, each day replacing the server's).
+ * network logging) have a fifth (`POST /network`, each day replacing the server's), and mobile data
+ * days (Phase 13) a sixth (`POST /mobile-data`, each day replacing the server's).
  */
-enum class OutboxType { EVENT, SNAPSHOT, REQUEST, USAGE, FIX, PLACE_EVENT, CALL, NETWORK }
+enum class OutboxType { EVENT, SNAPSHOT, REQUEST, USAGE, FIX, PLACE_EVENT, CALL, NETWORK, MOBILE_DATA }
 
 /**
  * One item waiting to be sent. [id]s grow in the order the agent made the items, and
@@ -112,16 +113,30 @@ object OutboxPolicy {
     /** Unsent network days kept: one per day (a newer report of a day replaces it), the newest. */
     const val MAX_PENDING_NETWORK = 31
 
+    /** Phase 13: well under the server's 256 KB limit for `POST /api/v1/mobile-data`. */
+    const val MAX_MOBILE_DATA_BODY_BYTES = 192 * 1024
+
+    /** `{"days":[` and `]}` around the comma-separated days. */
+    const val MOBILE_DATA_WRAPPER_BYTES = 11
+
+    /** The server takes at most 31 days in one request. */
+    const val MAX_MOBILE_DATA_DAYS_PER_REQUEST = 31
+
+    /** Unsent mobile data days kept: one per day (a newer report of a day replaces it), the newest. */
+    const val MAX_PENDING_MOBILE_DATA = 31
+
     /**
      * The lanes the outbox is sent in: everything in order, then usage on its own (Phase 3), then
      * fixes and place events (Phase 4), then call records (Phase 5), then network days (Phase 3's
-     * network logging). A failure in one holds back only the rest of that lane.
+     * network logging), then mobile data days (Phase 13). A failure in one holds back only the rest
+     * of that lane.
      */
     fun lane(type: OutboxType): Int = when (type) {
         OutboxType.USAGE -> 1
         OutboxType.FIX, OutboxType.PLACE_EVENT -> 2
         OutboxType.CALL -> 3
         OutboxType.NETWORK -> 4
+        OutboxType.MOBILE_DATA -> 5
         else -> 0
     }
 
@@ -201,7 +216,7 @@ object OutboxPolicy {
     /**
      * How many items from [from] go in one request. A snapshot goes alone. Events go
      * together up to the server's count limit and [maxBytes], and so do requests, usage
-     * days, fixes with place events, call records and network days (each with their own limits); a batch never mixes kinds
+     * days, fixes with place events, call records, network days and mobile data days (each with their own limits); a batch never mixes kinds
      * (fixes and place events count as one) or passes a snapshot: always at least one item.
      */
     fun batchSize(queue: List<OutboxItem>, from: Int = 0, maxBytes: Int? = null): Int {
@@ -214,6 +229,7 @@ object OutboxPolicy {
             OutboxType.FIX -> MAX_LOCATIONS_PER_REQUEST
             OutboxType.CALL -> MAX_CALLS_PER_REQUEST
             OutboxType.NETWORK -> MAX_NETWORK_DAYS_PER_REQUEST
+            OutboxType.MOBILE_DATA -> MAX_MOBILE_DATA_DAYS_PER_REQUEST
             else -> WireLimits.MAX_REQUESTS_PER_REQUEST
         }
         val byteLimit = maxBytes ?: when (type) {
@@ -222,6 +238,7 @@ object OutboxPolicy {
             OutboxType.FIX -> MAX_LOCATIONS_BODY_BYTES
             OutboxType.CALL -> MAX_CALLS_BODY_BYTES
             OutboxType.NETWORK -> MAX_NETWORK_BODY_BYTES
+            OutboxType.MOBILE_DATA -> MAX_MOBILE_DATA_BODY_BYTES
             else -> MAX_REQUESTS_BODY_BYTES
         }
         var count = 0
@@ -231,6 +248,7 @@ object OutboxPolicy {
             OutboxType.FIX -> LOCATIONS_WRAPPER_BYTES
             OutboxType.CALL -> CALLS_WRAPPER_BYTES
             OutboxType.NETWORK -> NETWORK_WRAPPER_BYTES
+            OutboxType.MOBILE_DATA -> MOBILE_DATA_WRAPPER_BYTES
             else -> REQUESTS_WRAPPER_BYTES
         }.toLong()
         while (from + count < queue.size && count < maxCount) {
