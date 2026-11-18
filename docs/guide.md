@@ -606,8 +606,12 @@ Then Belay becomes the phone's phone app, and you decide who can call (anyone, o
 contacts), what happens to other callers and hidden numbers, whom the kid can call, quiet times
 at bedtime and school, and whether Belay keeps a record of calls (off until you tick it). Add
 each parent as a contact marked **A parent**: parents always ring, and are on the emergency
-card. **911, 988 and every emergency number always work**, in and out, even while the phone is
-paused; for 2 hours after a call to one, anyone can call back; and Belay never records them.
+card. **911, 988 and every emergency number always work**: the kid can always call them, even
+while the phone is paused, and a call from 911 rings, unless the phone network says its caller
+ID is fake; for 2 hours after a call to one, anyone can call back; and Belay never records them.
+A caller ID that only shows 988's number is treated like any other caller (988 doesn't call
+people; a counselor calls back from their own number, which those 2 hours let through), and a
+caller whose caller ID may be fake is a stranger, whatever number it shows.
 Texting isn't managed yet: the texting app works with anyone, and a contact's "Can text" does
 nothing for now.
 
