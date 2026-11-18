@@ -140,12 +140,38 @@ describe("whether a change to calls tightens or loosens", () => {
       contacts: [...before.contacts, { id: "c-gran", name: "Grandma", numbers: ["+15555550123"], calls: true, texts: false, parent: false }],
       blockedNumbers: [STRANGER],
     });
-    expect(classifyCallsChange(before, after).changes.map(callChangeSentence)).toEqual([
+    const changes = classifyCallsChange(before, after).changes;
+    expect(changes.map((c) => callChangeSentence(c))).toEqual([
       "Callers who aren't contacts are refused (they go to voicemail now)",
       "At bedtime and school times, only parents ring",
       'Add "Grandma" (+15555550123) as a contact, who can call (not text)',
       "Block +15555550199",
     ]);
+    // For an AI app without the Calls category: no number, and no contact's name.
+    expect(changes.map((c) => callChangeSentence(c, { numbers: false }))).toEqual([
+      "Callers who aren't contacts are refused (they go to voicemail now)",
+      "At bedtime and school times, only parents ring",
+      "Add a contact, who can call (not text)",
+      "Block a number",
+    ]);
+    const more = side({
+      contacts: [
+        { id: "c-mom", name: "Mum", numbers: [MOM, "+15555550101", "+15555550102"], calls: true, texts: false, parent: false },
+        { id: "c-coach", name: "Coach Lee", numbers: [], calls: false, texts: true, parent: false },
+      ],
+      blockedNumbers: [],
+    });
+    const hidden = classifyCallsChange(side({ blockedNumbers: [STRANGER, "+15555550198"] }), more).changes.map((c) => callChangeSentence(c, { numbers: false }));
+    expect(hidden).toEqual([
+      "Rename a contact",
+      "Add 2 numbers to a contact",
+      "A contact can't text",
+      "A contact isn't a parent any more: off the emergency card",
+      "Take a number off a contact",
+      "A contact can't call",
+      "Unblock 2 numbers",
+    ]);
+    for (const words of hidden) expect(words).not.toMatch(/555|Mom|Mum|Coach/);
   });
 });
 

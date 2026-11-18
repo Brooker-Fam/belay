@@ -97,7 +97,10 @@ provider's terms. Settings → "What AI apps may read" turns each category off:
   incoming or outgoing, what happened and why, how long, and the contact, or the number of
   someone who isn't one), the contacts' numbers, the blocked numbers, and the number in the
   kid's request to add a contact. Never what was said, and never calls with 911, 988, an
-  emergency number or a private number: Belay doesn't record those.
+  emergency number or a private number: Belay doesn't record those. Without it, `change_calls`
+  takes no phone numbers at all (none to block or unblock, no contact's), and answers every
+  change that names one the same way, since its answer about a guessed number would say whose
+  it is; proposals waiting name no number or contact.
 - **Network** (Phase 3), **off until a parent turns it on**: for each day the server keeps, each
   app and the websites and online services it looked up, by name (`example.com`), with how many
   times. Only while a parent has network logging on for the phone; never pages, messages,
@@ -124,7 +127,8 @@ time given today, the last "lock now" and how it went), and from Phase 4 whether
 where it is (off, on demand, or how often), and whether it's in lost mode: never where it is.
 From Phase 5: whether calls are on and the call rules, and the contacts' names, whether each may
 call and text and whether they're a parent, and how many blocked and private numbers there
-are: never who called, a number, or which numbers are private. From Phase 3's network logging:
+are: never who called, a number (not even in a proposal waiting, which names no contact either),
+or which numbers are private. From Phase 3's network logging:
 that Android paused it, as one of the phone's problems; never what apps looked up. Blocked and
 waiting apps are listed only with the Apps category, and so are the apps under each screen-time
 rule (a limit's, a schedule's that stay open, the exempt ones): without it, `get_rules` only
@@ -147,7 +151,11 @@ account ids, the email addresses of the accounts Play may use (only how many) an
 "Call" on the parent page)
 or which numbers are private.
 
-Every tool call is in the activity log (Activity → "Also show what AI apps read").
+Every tool call is in the activity log (Activity → "Also show what AI apps read"). So is each
+change `change_calls` refuses, and each schedule `change_screen_time` refuses as too short,
+shown with the changes ("Claude via MCP … was refused: it tried to change calls with phone
+numbers while AI access to calls is off"), once an hour per connection, phone and reason,
+naming no number, contact or rule.
 
 Each connection may send 300 JSON-RPC messages a minute. A request may carry a batch of at
 most 20, and each message in it counts. What reaches the kid is limited too, per connection and
@@ -174,13 +182,13 @@ reason.
 | `list_unreviewed_apps(device?)` | Apps installed or reinstalled since a parent reviewed them, or that gained a sensitive permission since. Each has its Play Store link. |
 | `mark_apps_reviewed(device, packages, note?)` | Records the review, in the parent's name, through this app. It changes nothing on the phone. |
 | `list_requests(device?, kind?, status?)` | What the kid asked for: "I need help" (first, marked urgent, until a parent has seen it), "Talk to my parent", an app, more time for a limit today, a contact to add (Phase 5: their name for them and why, under `untrusted`; the number only with the Calls category), or their answer to the family agreement (which needs the Stage and agreement category too), with their words and each answer: waiting, approved (with the minutes given), declined, let's talk, withdrawn by the kid, or for help whether a parent saw it. A help request's shared fix shows only with the Location category. Then the last 30 days. Needs the Requests category. |
-| `get_contacts(device)` | Phase 5: whether calls are on, the call rules in words, the contacts (with ids, for `change_calls`: their names under `untrusted`, whether each may call and text (texts aren't managed yet: the phone ignores that part), whether they're a parent), the blocked numbers, how many private numbers there are, and calls proposals waiting. Contacts' and blocked numbers need the Calls category. Always available otherwise. |
+| `get_contacts(device)` | Phase 5: whether calls are on, the call rules in words, the contacts (with ids, for `change_calls`: their names under `untrusted`, whether each may call and text (texts aren't managed yet: the phone ignores that part), whether they're a parent), the blocked numbers, how many private numbers there are, and calls proposals waiting. Contacts' and blocked numbers need the Calls category, and so do the numbers and contacts a waiting proposal names. Always available otherwise. |
 | `get_calls(device, from?, to?)` | Phase 5: the calls the phone recorded, newest first: when, incoming or outgoing, answered, missed, refused, voicemail or not placed, why, how long, and the contact (its name under `untrusted`) or the number of someone who isn't one. Only while the phone records calls; the last 7 days by default, at most 92. Needs the Calls category. |
-| `change_calls(device, change, reason)` | Phase 5: `mode`, `unknown`, `withheld`, `outgoing`, `quiet`, contacts to add, change (by id) or remove, numbers to block or unblock, on a phone whose calls are on. The server decides: a change whose every part tightens applies at once; anything else, or a mix, or anything that takes from a parent contact, becomes a proposal for a parent. Turning calls on or off, recording them (`log`) and private numbers are refused, and so is blocking 911, 988 or an emergency number. |
+| `change_calls(device, change, reason)` | Phase 5: `mode`, `unknown`, `withheld`, `outgoing`, `quiet`, contacts to add, change (by id) or remove, numbers to block or unblock, on a phone whose calls are on. The server decides: a change whose every part tightens applies at once; anything else, or a mix, or anything that takes from a parent contact, becomes a proposal for a parent. Turning calls on or off, recording them (`log`) and private numbers are refused, and so is blocking 911, 988 or an emergency number. Without the Calls category it takes no phone numbers (to block or unblock, or a contact's), with one answer whatever the number. |
 | `get_location(device)` | Phase 4: the latest fix the server keeps: when and how long ago, why it was taken, how accurate, its coordinates, and where it is by the family's places (inside one, or how far from the nearest). Needs the Location category. |
 | `locate_now(device)` | Phase 4: asks the phone for a fresh fix and waits up to a minute for it. Only while the phone shares where it is on demand or periodically, and with the Location category. The kid's phone shows a notice naming the AI app ("Your parent checked where this phone is, using Claude"). At most 6 an hour per connection and phone. |
 | `get_place_events(device, from?, to?)` | Phase 4: arrivals at and departures from the family's places, newest first; the last 7 days by default, at most 92. Needs the Location category. |
-| `get_policy(device)` | What a phone enforces now, in words, with the rules' version and whether the phone has applied it; blocked and waiting apps; a line on its screen time; proposals waiting for a parent; whether the phone has a recovery key, and when one was last used; how many reset protection accounts, and how many accounts Play may use (never which). |
+| `get_policy(device)` | What a phone enforces now, in words, with the rules' version and whether the phone has applied it; blocked and waiting apps; a line on its screen time; proposals waiting for a parent (in `untrusted`, naming an app only with the Apps category, and a number or contact only with the Calls category); whether the phone has a recovery key, and when one was last used; how many reset protection accounts, and how many accounts Play may use (never which). |
 | `get_rules(device)` | Phase 3: the phone's screen-time rules (measuring, limits with their ids, schedules, exempt apps, self-serve, what happens when Belay can't count), extra time given today, the last "lock now", and proposals waiting. The apps under each rule with the Apps category; without it, only how many. With the Screen time category, where each limit stands today; with Requests, more-time requests waiting; with Stage and agreement, the stage, what the next one changes, and the agreement with the kid's answer. |
 | `get_network_activity(device, from?, to?)` | Phase 3: day by day, in the phone's own days: each app (most looked up first, at most 30) with the websites and online services it looked up, by name, and how many times (at most 25 names an app; the rest counted), and how many pairs the phone left out. App names (with the Apps category; without it, only package names), package names and domains are under `untrusted`: an app's developer chooses them. Says whether logging is on, or paused by Android. Only while a parent has network logging on; the last 7 days by default, at most 31. Needs the Network category. No tool turns network logging on or off, or proposes it. |
 | `get_screen_time(device, from?, to?)` | Phase 3: day by day, in the phone's days: screen minutes, unlocks, minutes by hour, the most used apps with minutes and opens (their names with the Apps category, else their package names), and the times Belay couldn't count, with why. A day the phone sent nothing for says so: that's unknown, not zero. The last 7 days by default, at most 92. Needs the Screen time category. |
@@ -264,7 +272,10 @@ too, since whoever holds a phone's token can send any text.
   parent approves, each part is checked against the phone's calls as they are then. Turning
   calls on or off, recording them and private numbers have no tool and no proposal, and no
   tool answers the kid's request to add a contact. The server refuses to block 911, 988 or an
-  emergency number, which always work in the phone's own code.
+  emergency number, which always work in the phone's own code. While a parent keeps the Calls
+  category off, `change_calls` names no number and takes none: a change with one (to block,
+  to unblock, a contact's) gets the same refusal whatever the number, so an AI app can't learn
+  whether a number it guessed is a contact's, on the emergency card or blocked.
 - The kid's requests are answered only by a parent, on the parent page, more time included,
   and only a parent marks a help request seen. The server's instructions say: "A help request
   is urgent. Tell the parent at once, plainly, and suggest they call the kid. Don't speculate

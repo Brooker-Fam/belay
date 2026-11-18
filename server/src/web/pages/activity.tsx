@@ -25,7 +25,14 @@ function refusedWords(tool: string, why: string): string {
   if (tool === "change_screen_time") {
     return why === "short_schedule" ? `to add or change a schedule shorter than ${AI_MIN_SCHEDULE_MINUTES} minutes` : "a change to screen time that Belay doesn't allow an AI app";
   }
-  return "a change to calls that Belay doesn't allow an AI app";
+  switch (why) {
+    case "numbers":
+      return "to change calls with phone numbers while AI access to calls is off";
+    case "parents_only":
+      return "to turn calls on or off, record them or choose private numbers, which only a parent does";
+    default:
+      return "a change to calls that Belay doesn't allow an AI app";
+  }
 }
 
 /** "0.4.0 (version 4)" from an entry's version_name and version_code. */

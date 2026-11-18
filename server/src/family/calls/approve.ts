@@ -44,5 +44,5 @@ export function addRequestedContact(db: DB, deviceId: string, input: RequestedCo
   if (problem) return { problem };
   writeSide(db, deviceId, current, side, now, by, (contactId) => (contactId === id ? input.requestId : null));
   const name = side.contacts.find((c) => c.id === id)?.name ?? input.name;
-  return { contactId: id, name, existing: false, unblocked, changes: classifyCallsChange(current, side).changes.map(callChangeSentence) };
+  return { contactId: id, name, existing: false, unblocked, changes: classifyCallsChange(current, side).changes.map((c) => callChangeSentence(c)) };
 }

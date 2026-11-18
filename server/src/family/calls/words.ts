@@ -48,8 +48,42 @@ export function callsSummary(s: CallSettings | null): string {
   return `on: ${s.mode === "open" ? "anyone can call" : "only contacts can call"}, the kid can call ${s.outgoing === "contacts" ? "only contacts" : "any number"}${s.quiet ? ", quiet at bedtime and school times" : ""}, ${s.log ? "calls recorded" : "no record of calls"}`;
 }
 
-/** One change, as a parent reads it ("Add "Coach Lee" (+15555550142), who can call and text"). */
-export function callChangeSentence(c: CallChange): string {
+/** "a number", "3 numbers". */
+const howMany = (numbers: string[]) => (numbers.length === 1 ? "a number" : `${numbers.length} numbers`);
+
+/**
+ * One change, as a parent reads it ("Add "Coach Lee" (+15555550142), who can call and text").
+ * With `numbers` false, for an AI app while a parent keeps calls from AI apps (the Calls category
+ * off), it names no number and no contact: "Add a contact, who can call and text".
+ */
+export function callChangeSentence(c: CallChange, opts: { numbers?: boolean } = {}): string {
+  if (opts.numbers === false) {
+    switch (c.kind) {
+      case "contact_added":
+        return `Add a contact, ${can(c.calls, c.texts)}${c.parent ? ", as a parent: always rings, and on the emergency card" : ""}`;
+      case "contact_removed":
+        return `Remove a contact${c.parent ? " (a parent, on the emergency card)" : ""}`;
+      case "contact_renamed":
+        return "Rename a contact";
+      case "contact_numbers_added":
+        return `Add ${howMany(c.numbers)} to a contact`;
+      case "contact_numbers_removed":
+        return `Take ${howMany(c.numbers)} off a contact`;
+      case "contact_calls":
+        return c.to ? "A contact can call" : "A contact can't call";
+      case "contact_texts":
+        return c.to ? "A contact can text" : "A contact can't text";
+      case "contact_parent":
+        return c.to ? "A contact is a parent: always rings, and on the emergency card" : "A contact isn't a parent any more: off the emergency card";
+      case "blocked":
+        return `Block ${howMany(c.numbers)}`;
+      case "unblocked":
+        return `Unblock ${howMany(c.numbers)}`;
+      default:
+        // The rest name no one.
+        break;
+    }
+  }
   switch (c.kind) {
     case "enabled":
       return c.to ? "Turn calls on: Belay becomes the phone app" : "Turn calls off: Belay stops being the phone app";

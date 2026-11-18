@@ -73,7 +73,7 @@ function change(
     }
     if (canonical(current) === canonical(side)) return { classification, changes: [], unblocked: [] };
     writeSide(db, deviceId, current, side, now, byOf(who), opts.requestOf);
-    const changes = classification.changes.map(callChangeSentence);
+    const changes = classification.changes.map((c) => callChangeSentence(c));
     const turned = classification.changes.find((c) => c.kind === "enabled");
     const detail = {
       changes,
