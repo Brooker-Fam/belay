@@ -119,7 +119,8 @@ it counted of one before it was private out of the days it keeps; Belay's own lo
 lookups with 988's under one word, "private", and never names one, and nothing the phone sends
 counts them. The server drops any that arrive anyway, says nothing about it in its log (an
 older Belay sends them, and the log's time would say when one was used), and adding one deletes
-what it kept of it. Only a parent sees which websites they are: the kid's "What your parent can
+what it kept of it (the daily backups hold it until they age out, as for anything deleted). Only
+a parent sees which websites they are: the kid's "What your parent can
 see" says other websites your parent made private are never noted, without naming them, since a
 parent or anyone holding the phone may see that screen (the parent page suggests telling the kid
 which); the activity log says a website was made private, never which; and AI apps never see

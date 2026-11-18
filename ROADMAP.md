@@ -168,7 +168,9 @@ Pixel-only: Android's own notice, and a real browser's lookups).
 - **Stages and a family agreement:** named levels bundle the rules, the phone shows what the next
   stage changes, and an MCP prompt, `family_check_in`, supports a monthly talk.
 - Opt-in network logging, reduced on the phone to domains per app per day; AI can't read it
-  unless allowed.
+  unless allowed. Never 988's websites, nor the private websites a parent lists (a helpline's, a
+  counselor's), which no AI app sees. Open family decision: a built-in list of child-safety
+  helplines' websites too ([threat model](docs/threat-model.md#the-kid-and-network-logging-phase-3)).
 
 ### Phase 4: location ([design](docs/design/phase4-location.md)) (built)
 
