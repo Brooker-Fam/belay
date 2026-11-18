@@ -6,10 +6,12 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import family.brooker.belay.core.DataCategories
 import family.brooker.belay.core.WirePolicy
+import family.brooker.belay.core.mobiledata.DataUse
 import family.brooker.belay.core.mobiledata.WireMobileData
 import family.brooker.belay.core.mobiledata.WireMobileDataStatus
 import family.brooker.belay.enforce.EnforcementReport
 import family.brooker.belay.inventory.Collectors
+import family.brooker.belay.mobiledata.DataUseReader
 import family.brooker.belay.store.AgentStore
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -20,6 +22,7 @@ import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.time.ZoneId
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -105,6 +108,15 @@ class MobileDataInstrumentedTest {
         assertNotNull("today wasn't read", uploads?.lastAt)
         assertTrue(store.applied().problems.joinToString(), store.applied().problems.none { "mobile data" in it })
         assertTrue(Collectors.categories(on).any { it.id == DataCategories.MOBILE_DATA_ID })
+        // Android's accounting answers a device owner: the last hour, every uid's (an emulator may have used little).
+        val now = System.currentTimeMillis()
+        val hour = DataUse.Range("today", ZoneId.systemDefault().id, now - HOUR, now, complete = false)
+        val (rows, wifi) = DataUseReader(context).read(hour)
+        assertTrue("Wi-Fi bytes $wifi", wifi >= 0)
+        assertTrue(rows.all { it.bytes >= 0 })
+        // Folded into a day, an app Belay never blocks is never on a line of its own.
+        val folded = DataUse.day(hour, rows, wifi, setOf("com.android.phone"))
+        assertTrue(folded.apps.none { it.packageName == "com.android.phone" })
 
         DebugTools.policyOverride = on.copy(version = on.version + 1, mobileData = WireMobileData())
         agentStep()
@@ -127,5 +139,6 @@ class MobileDataInstrumentedTest {
     private companion object {
         /** Test policies get versions of their own, well past the server's. */
         const val VERSION_OFFSET = 3_000_000
+        const val HOUR = 3_600_000L
     }
 }
