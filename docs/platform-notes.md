@@ -1342,8 +1342,11 @@ Belay's consequence: Chrome's configuration carries `ProxySettings` `{"ProxyMode
 (core's `ChromeConfig.PROXY_DIRECT`). On a network that only works through a proxy, Chrome then
 can't open pages. Belay reports a proxy on the default network while the policy has a web
 filter (core's `Workarounds`), at every step and at once when link properties change, without
-its address; the server shows it as someone maybe getting around Belay. Locking Wi-Fi's or the
-mobile network's settings is the family's choice (threat model).
+its address; the server shows it as someone maybe getting around Belay. Belay's own connection
+to the server goes direct too (OkHttp's `Proxy.NO_PROXY`; by default OkHttp follows the
+system's proxy), so a proxy can't hold that report back; on a proxy-only network the phone shows
+as silent. Locking Wi-Fi's or the mobile network's settings is the family's choice (threat
+model).
 
 ### H3. Apps a parent approved, in special roles
 

@@ -29,6 +29,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.ResponseBody
 import java.io.IOException
+import java.net.Proxy
 import java.util.concurrent.TimeUnit
 
 /**
@@ -210,7 +211,12 @@ object Http {
         client.newBuilder().readTimeout(PolicyRules.POLL_WAIT_S + 25L, TimeUnit.SECONDS).build()
     }
 
-    /** One client for the whole process, so connections are reused. */
+    /**
+     * One client for the whole process, so connections are reused. It connects directly, never
+     * through a proxy set on the phone's network (platform notes H2): one the kid set could
+     * otherwise hold back Belay's reports, the report of that proxy included. On a network that
+     * only works through a proxy, Belay can't reach the server there, and the phone shows as silent.
+     */
     val client: OkHttpClient by lazy {
         val specs = if (DebugTools.CLEARTEXT_HOSTS.isEmpty()) {
             listOf(ConnectionSpec.MODERN_TLS)
@@ -218,6 +224,7 @@ object Http {
             listOf(ConnectionSpec.MODERN_TLS, ConnectionSpec.CLEARTEXT)
         }
         OkHttpClient.Builder()
+            .proxy(Proxy.NO_PROXY)
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)

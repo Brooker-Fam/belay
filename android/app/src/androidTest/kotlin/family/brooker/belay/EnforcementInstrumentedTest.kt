@@ -25,6 +25,7 @@ import family.brooker.belay.enforce.PhoneFacts
 import family.brooker.belay.health.DeviceStatus
 import family.brooker.belay.health.HealthReader
 import family.brooker.belay.store.AgentStore
+import family.brooker.belay.sync.Http
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -34,6 +35,7 @@ import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.net.Proxy
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -204,6 +206,8 @@ class EnforcementInstrumentedTest {
      */
     @Test
     fun aProxyIsSeenAndGoneAgain() {
+        // Belay's own connection never goes through one, so a proxy can't hold its reports back.
+        assertEquals(Proxy.NO_PROXY, Http.client.proxy)
         assumeTrue("this phone already has a proxy", !PhoneFacts.proxy(context))
         try {
             shell("settings put global http_proxy 127.0.0.1:9")
