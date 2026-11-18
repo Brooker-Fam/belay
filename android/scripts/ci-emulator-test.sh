@@ -69,8 +69,9 @@
 # under example.com, `dpm force-network-logs` has Android hand Belay the batch at once, and the
 # server's network activity lists the fixture app with example.com (Belay sends each batch's days
 # as soon as it has them, so no debug-only path is needed). With example.org a private website
-# (`private-website`, when the server has them), the fixture's lookups of names under it never
-# reach the server, and Belay's log counts them as "private" without naming one. `network --off`
+# (`private-website`, when the server has them), the phone's debug state counts one, and the
+# fixture's lookups of names under it, made just before the kept ones, never reach the server's
+# network activity or Belay's log, which counts the lookups it didn't keep and never says why. `network --off`
 # turns Android's logging off again (and dpm refuses to force logs), and the phone reports none and
 # keeps nothing.
 #
@@ -883,9 +884,11 @@ elif [ -n "$E2E_CLI" ]; then
   adb logcat -c
   # Android hears of a lookup after answering it, and finishes a batch only with events in it: a few tries.
   for attempt in 1 2 3; do
-    # A name under the private website first, so the batch with the kept lookup has it too.
-    if [ "$private_sites" = 1 ]; then ash am start -W -n "$FIXTURE_PKG/.FixtureActivity" --es lookup "ci-private-$attempt.example.org" >/dev/null; fi
-    ash am start -W -n "$FIXTURE_PKG/.FixtureActivity" --es lookup "ci-lookup-$attempt.example.com" >/dev/null
+    # With a private website, a name under it first, on the fixture's one thread: Android logs it
+    # first, so the batch with the kept lookup has it too, or follows one Belay took that does.
+    names="ci-lookup-$attempt.example.com"
+    if [ "$private_sites" = 1 ]; then names="ci-private-$attempt.example.org,$names"; fi
+    ash am start -W -n "$FIXTURE_PKG/.FixtureActivity" --es lookup "$names" >/dev/null
     sleep 3
     # A batch closes at 1200 events or after 90 minutes; the shell can close it now (platform notes W6).
     forced="$(ash dpm force-network-logs 2>&1 || true)"
@@ -909,25 +912,17 @@ elif [ -n "$E2E_CLI" ]; then
   echo "the phone: $(state | jq -c '.network | {report, last_token, last_batch_lookups, days}')"
 
   if [ "$private_sites" = 1 ]; then
-    step "Phase 3: a private website's lookups are dropped on the phone: never sent, and never named in its log"
+    step "Phase 3: a private website's lookups never reach the server's network activity, and Belay's log never names one"
+    # Belay took them with the kept lookup above (Android logged them first). The server drops any
+    # that arrive too, and Belay's log says only how many lookups it didn't keep, never why (one
+    # reason is 988's websites), so that the phone drops them itself is core's NetworkDigestTest's
+    # to show; here: they're nowhere on the server, and nowhere in Belay's log.
     private_sent="[.network[]? | .entries[]? | select(.domain == \"example.org\" or (.domain | endswith(\".example.org\")))] | length"
-    # Belay's log counts them with 988's, as "private" (never by name): proof the phone dropped them,
-    # since the server drops any that arrive too. A lookup Android logged after the batch: one more.
-    dropped=""
-    belay_log=""
-    for attempt in 1 2 3; do
-      belay_log="$(adb logcat -d -v brief -s Belay:V || true)"
-      dropped="$(grep -F 'network logging: took batch' <<<"$belay_log" | grep -oE 'not kept: .*private [0-9]+' | head -n 1 || true)"
-      [ -n "$dropped" ] && break
-      ash am start -W -n "$FIXTURE_PKG/.FixtureActivity" --es lookup "ci-private-again-$attempt.example.org" >/dev/null
-      sleep 3
-      ash dpm force-network-logs >/dev/null 2>&1 || true
-      sleep 5
-    done
-    [ -n "$dropped" ] || { diagnose; die "Belay's log never counted the private website's lookups as not kept"; }
     [ "$(server_status | jq -r ".phones[0] | $private_sent")" = 0 ] || { diagnose; die "the server's network activity lists the private website" "$(server_status | jq -c '.phones[0].network')"; }
+    belay_log="$(adb logcat -d -v brief -s Belay:V || true)"
+    grep -qE 'network logging: took batch.*lookups not kept: [1-9]' <<<"$belay_log" || { diagnose; die "Belay's log never counted a lookup it didn't keep"; }
     if grep -qF 'ci-private' <<<"$belay_log"; then diagnose; die "Belay's log names a private website's lookup"; fi
-    echo "the phone dropped them ($dropped), and the server has none"
+    echo "the private website's lookups: not on the server, and not named in Belay's log"
     server_cli private-website "$phone" --remove example.org
   fi
 

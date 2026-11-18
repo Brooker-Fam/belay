@@ -15,7 +15,9 @@ import java.net.UnknownHostException;
  *
  *     adb shell am start -n family.brooker.belay.fixture/.FixtureActivity --es lookup example.com
  *
- * It does nothing else.
+ * Several names, comma separated, are looked up one after the other, in that order, so Android
+ * logs them in that order ("ci-private.example.org,ci-lookup.example.com": a batch with the
+ * second has the first, or follows one that does). It does nothing else.
  */
 public class FixtureActivity extends Activity {
     static final String EXTRA_LOOKUP = "lookup";
@@ -33,16 +35,19 @@ public class FixtureActivity extends Activity {
         lookUp(intent);
     }
 
-    /** Off the main thread: Android looks names up over the network. */
+    /** Off the main thread: Android looks names up over the network. One thread, so in order. */
     private static void lookUp(Intent intent) {
-        String host = intent == null ? null : intent.getStringExtra(EXTRA_LOOKUP);
-        if (host == null || host.isEmpty()) return;
+        String names = intent == null ? null : intent.getStringExtra(EXTRA_LOOKUP);
+        if (names == null || names.isEmpty()) return;
         new Thread(() -> {
-            try {
-                Log.i(TAG, "looked up " + host + ": " + InetAddress.getAllByName(host).length + " addresses");
-            } catch (UnknownHostException e) {
-                // Looked up all the same: Android logs a lookup, answer or not.
-                Log.i(TAG, "looked up " + host + ": no answer");
+            for (String host : names.split(",")) {
+                if (host.isEmpty()) continue;
+                try {
+                    Log.i(TAG, "looked up " + host + ": " + InetAddress.getAllByName(host).length + " addresses");
+                } catch (UnknownHostException e) {
+                    // Looked up all the same: Android logs a lookup, answer or not.
+                    Log.i(TAG, "looked up " + host + ": no answer");
+                }
             }
         }, "fixture-lookup").start();
     }

@@ -42,7 +42,7 @@ data class NetworkDay(
  *   services, the shell), where Belay can't tell which app it was;
  * - lookups of 988's websites and of the family's private ones, or of a name under one
  *   ([Domains.neverKept], checked against the whole name before it's reduced), counted together
- *   as [Skip.PRIVATE] for Belay's own log, which never names one; nothing sent counts them;
+ *   as [Skip.PRIVATE], never by name; nothing sent counts them;
  * - IP addresses, reverse lookups and other names that aren't websites or online services ([Domains]).
  * A day keeps at most [MAX_KEPT] entries and sends the [MAX_SENT] most looked up (fewer if they'd
  * pass [MAX_DAY_BYTES]); the rest are counted in `dropped`. A day kept from before a website was
@@ -67,8 +67,8 @@ object NetworkDigest {
     private const val MAX_PACKAGE = 255
 
     /**
-     * Why a lookup wasn't kept, for Belay's own log (counts only, never a name). [PRIVATE] is 988's
-     * websites and the family's private ones together, so the log never says which it was.
+     * Why a lookup wasn't kept (counts only, never a name; Belay's log gives only their total, never
+     * why). [PRIVATE] is 988's websites and the family's private ones together: nothing tells them apart.
      */
     enum class Skip { NO_APP, SHARED_UID, NEVER_BLOCKED, NOT_A_DOMAIN, PRIVATE, TOO_OLD }
 

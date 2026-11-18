@@ -35,8 +35,8 @@ import java.time.ZoneId
  *   the DNS lookups (never the connect events, an address and a port), reduces them to counts per
  *   app, per domain, per day (core's NetworkDigest), never keeping 988's websites or the family's
  *   private ones, and queues each changed day for the server. The raw events never reach storage,
- *   the outbox or Belay's log, and neither do the private websites' names: the log counts their
- *   lookups with 988's, as "private".
+ *   the outbox or Belay's log, and neither do the private websites' names: the log says only how
+ *   many lookups weren't kept, never why.
  *
  * Idempotent: a batch is taken once (core's NetworkLog.tokens), and a second step changes nothing.
  */
@@ -83,8 +83,8 @@ class NetworkLogStep(context: Context, private val store: AgentStore) {
         if (state.privateDigest != digest) {
             if (private.isNotEmpty()) cleared = store.allNetworkDays().mapNotNull { NetworkDigest.without(it, private) }
             state = state.copy(privateDigest = digest)
-            // Counts only: never a name.
-            if (cleared.isNotEmpty()) Log.i(Agent.TAG, "network logging: private websites taken out of ${cleared.size} day${if (cleared.size == 1) "" else "s"} kept, sent again")
+            // The same words whatever the days held: how many changed would say the kid used one lately.
+            Log.i(Agent.TAG, "network logging: the private websites changed")
         }
         state = state.copy(report = NetworkLog.report(policyOn = true, androidOn = android, otherUsers = otherUsers, state = state))
         return Done(
