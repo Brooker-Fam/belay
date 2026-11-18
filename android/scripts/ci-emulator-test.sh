@@ -56,7 +56,7 @@
 # `calls --mode contacts --unknown reject --log on`, Belay becomes the default dialer (telecom
 # get-default-dialer) and reports it; the calls instrumented tests run; an incoming call from a
 # contact's number (the emulator console's `gsm call`) rings Belay's screen (its debug state), and a
-# lock-now sent while it rings is done at once, its lock due until the call ends; one
+# lock-now sent while it rings is done at once, its lock due until 2 minutes after the call ends; one
 # from another number is rejected without ringing and reaches the server as rejected, unknown, with
 # its number; block-number puts the number on Android's block list and unblock-number takes it off;
 # and `calls --off` gives the default dialer back (or, with none before, Android drops Belay from
@@ -77,6 +77,15 @@
 # network activity or Belay's log, which counts the lookups it didn't keep and never says why. `network --off`
 # turns Android's logging off again (and dpm refuses to force logs), and the phone reports none and
 # keeps nothing.
+#
+# Phase 13, with BELAY_E2E_CLI, the fixture APKs and a server whose status has mobile_data: with the
+# fixture app installed, `wifi-only` makes it Wi-Fi only, and the phone reports it in
+# enforcement.mobile_data, its debug state shows Android's list for Belay
+# (getMeteredDataDisabledPackages) and Android's admin dump prints it under Belay's admin
+# (meteredDisabledPackages=[…]); `wifi-only --remove` empties all three. `mobile-data --measure on`
+# gets a day of mobile data use to the server (its bytes may be 0: the first report counts from
+# when measuring turned on), and `--measure off` leaves the phone nothing unsent. Only the Pixel
+# shows an app actually losing mobile data (docs/phase13-checklist.md).
 #
 # Phase 11, with BELAY_E2E_CLI and a server whose status has handover, just before the restart: a
 # parent hands the phone over; the phone applies that policy, and its debug state shows the hand-over
@@ -197,6 +206,8 @@ diagnose() {
   state 2>/dev/null | jq -c '.calls' 2>/dev/null || true
   echo "--- network logging (Phase 3), as counts:"
   state 2>/dev/null | jq -c '.network' 2>/dev/null || true
+  echo "--- mobile data (Phase 13), never an app's bytes:"
+  state 2>/dev/null | jq -c '.mobile_data' 2>/dev/null || true
 }
 # Phase 3: "suspended=true" or "suspended=false" for package $1, user 0 (dumpsys package).
 package_suspended() {
@@ -788,7 +799,7 @@ elif [ -n "$E2E_CLI" ]; then
     { gsm_cancel "$CONTACT_NUMBER"; diagnose; die "Belay's in-call service doesn't show the contact's call"; }
   echo "Belay rings: $(calls_state | jq -c '{ringing, now}')"
 
-  step "Phase 5: lock-now while a call rings is done at once, and its lock waits for the call to end"
+  step "Phase 5: lock-now while a call rings is done at once, and its lock waits for the call to end, and 2 minutes more"
   lock_id="$(server_cli_out lock-now "$phone")"
   [[ "$lock_id" =~ ^[A-Za-z0-9_-]+$ ]] || { gsm_cancel "$CONTACT_NUMBER"; die "lock-now should print only the command's id" "$lock_id"; }
   wait_applied
@@ -803,8 +814,15 @@ elif [ -n "$E2E_CLI" ]; then
   fi
   gsm_cancel "$CONTACT_NUMBER"
   wait_calls_state '(.now // []) | length == 0' 20 || { diagnose; die "the contact's call didn't end after gsm cancel"; }
-  # Then the lock happens at the next step: the audio mode's change, or the policy timer's minute.
-  wait_lock_done 90 || { diagnose; die "lock-now's lock was still due after the call ended"; }
+  # Then the lock waits 2 minutes more (the sixth security review's I1: a call that dropped can be
+  # made again first), from the first step with no call (the call's end, the audio mode's change
+  # or the policy timer's minute): still due 30 seconds on, and done at the step 2 minutes on.
+  sleep 30
+  if ! lock_due; then
+    diagnose
+    die "lock-now's lock happened within 30 seconds of the call's end (it waits 2 minutes after a call)"
+  fi
+  wait_lock_done 240 || { diagnose; die "lock-now's lock was still due 4 minutes after the call ended"; }
   locked=0
   for _ in $(seq 1 15); do
     if screen_off_or_locked; then
@@ -965,6 +983,58 @@ elif [ -n "$E2E_CLI" ]; then
   adb uninstall "$FIXTURE_PKG" >/dev/null
 elif [ -n "$E2E_SERVER" ]; then
   echo "BELAY_E2E_CLI not given: the network logging checks are skipped"
+fi
+
+# Phase 13: the packages Android keeps off metered networks for Belay, from Belay's own entry in the
+# admins' dump (AOSP 17 ActiveAdmin.dump prints "meteredDisabledPackages=[…]" once Belay has set a
+# list, "[]" after an empty one), like "[family.brooker.belay.fixture]"; nothing before any.
+android_metered() {
+  ash dumpsys device_policy | awk -v admin="$PKG/.AdminReceiver:" '
+    { line = $0; sub(/^[ \t]+/, "", line) }
+    line == admin { mine = 1; next }
+    mine && line ~ /^meteredDisabledPackages=/ { sub(/^meteredDisabledPackages=/, "", line); print line; exit }
+  ' || true
+}
+
+if [ -n "$E2E_CLI" ] && ! server_status | jq -e '.phones[0] | has("mobile_data")' >/dev/null 2>&1; then
+  echo "the server's status has no mobile_data (Phase 13 isn't there yet): the mobile data checks are skipped"
+elif [ -n "$E2E_CLI" ] && [ -z "$FIXTURE_V1" ]; then
+  echo "the fixture APKs not given: the mobile data checks are skipped"
+elif [ -n "$E2E_CLI" ]; then
+  phone="$(server_status | jq -r '.phones[0].name')"
+
+  step "Phase 13: a Wi-Fi-only app reaches Android's list for Belay, and the phone reports it"
+  adb install -r -t "$FIXTURE_V1" >/dev/null
+  wait_fixture "hidden=false suspended=false" 15 || { diagnose; die "the fixture app isn't installed and open to use"; }
+  server_cli wifi-only "$phone" "$FIXTURE_PKG"
+  wait_applied
+  wait_server ".enforcement.mobile_data.wifi_only == [\"$FIXTURE_PKG\"]" "the phone's report that Android keeps the fixture app off mobile data" 30
+  held="$(state | jq -c '.mobile_data.android')"
+  [ "$held" = "[\"$FIXTURE_PKG\"]" ] || { diagnose; die "the phone's debug state doesn't show Android's list with the fixture app" "$held"; }
+  [ "$(android_metered)" = "[$FIXTURE_PKG]" ] || { diagnose; die "Android's admin dump doesn't keep the fixture app off mobile data" "meteredDisabledPackages=$(android_metered)"; }
+  echo "Android keeps it off mobile data: $(state | jq -c '.mobile_data | {wifi_only, android, asked, refused, report}')"
+
+  step "Phase 13: taking it off Wi-Fi only empties Android's list"
+  server_cli wifi-only "$phone" --remove "$FIXTURE_PKG"
+  wait_applied
+  wait_server '(.enforcement.mobile_data // null) == null' "the phone's report without Wi-Fi-only apps" 30
+  held="$(state | jq -c '.mobile_data.android')"
+  [ "$held" = "[]" ] || { diagnose; die "the phone's debug state still shows Android keeping apps off mobile data" "$held"; }
+  [ "$(android_metered)" = "[]" ] || { diagnose; die "Android's admin dump still keeps apps off mobile data" "meteredDisabledPackages=$(android_metered)"; }
+  adb uninstall "$FIXTURE_PKG" >/dev/null
+
+  step "Phase 13: measuring mobile data: a day reaches the server, and off leaves nothing unsent"
+  server_cli mobile-data "$phone" --measure on
+  wait_applied
+  wait_server '(.mobile_data_days | length) > 0' "a day of mobile data use" 60
+  echo "the server: $(server_status | jq -c '.phones[0].mobile_data_days[0] | {day, zone, complete, mobile_bytes, wifi_bytes, apps: (.apps | length)}')"
+  server_cli mobile-data "$phone" --measure off
+  wait_applied
+  kept="$(state | jq -c '.mobile_data | {measure, measuring_since, unsent}')"
+  [ "$(jq -r '.measure == false and .measuring_since == null and .unsent == 0' <<<"$kept")" = true ] || { diagnose; die "the phone still keeps mobile data use with measuring off" "$kept"; }
+  echo "the phone: $kept"
+elif [ -n "$E2E_SERVER" ]; then
+  echo "BELAY_E2E_CLI not given: the mobile data checks are skipped"
 fi
 
 # Phase 5, the fourth review's N1: before the first unlock after a restart Belay decides no calls

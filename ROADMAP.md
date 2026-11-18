@@ -142,15 +142,20 @@ phase's Pixel checklist is in `docs/`.
 - **Phase 12:** caregivers: limited, time-boxed access a parent gives a grandparent, a babysitter
   or a coach, which the kid's phone always lists (the phone's side tested on the JVM, not yet on
   the emulator).
+- **Phase 13:** mobile data: Wi-Fi-only apps the phone keeps off every metered network, and
+  opt-in mobile data use per app per day, never which websites or networks.
 - **Across phases:**
-  - three security reviews and two checks of their fixes, with their fixes in (the third's on
+  - three security reviews and three checks of their fixes, with their fixes in (the third's on
     the phone too: a spoofed caller ID is a stranger's, 911 and 988 go through with a caller-ID
     code, the callback window opens before the first unlock, and screen locks wait for a call
     to end; the first check's on the phone too: calls before the first unlock after a restart are
     recorded afterwards, only a call an app can't make up holds a screen lock off, a parent's
     number whose caller-ID check fails goes to voicemail, and only the codes that hide or show
     the number come off; the second's: a 911 or 988 callback still on at the unlock is never
-    sent, a lock now's result never tells of a call, and an app's own call holds no lock);
+    sent, a lock now's result never tells of a call, and an app's own call holds no lock; the
+    third's: every 911 call before the unlock keeps its own callback window, a phone that can't
+    lock says so for every lock, the clock and calls never bring a check-in early, the kid's
+    phone says what the AI app always reads, and a lock waits 2 minutes after a call);
   - an audit of how a kid could get around Belay on Android 17: a proxy and wireless debugging
     are reported, Chrome ignores proxies, and the time zone stays automatic;
   - limits on what an AI app can do to the kid's phone (checks, pauses, locks, and schedules
@@ -281,6 +286,23 @@ with a release build, ending in a reset from Settings.
 - The last stage, visible from the start: blocking stops, then collection stops, then the parent
   hands the phone over: restrictions and reset protection lifted, data backed up to the kid's own
   account, a reset from Settings, and the server's data deleted.
+
+### Phase 13: mobile data ([design](docs/design/phase13-mobile-data.md)) (built)
+
+Built, both off until a parent turns them on: Wi-Fi-only apps (the phone keeps them off every
+metered network with `setMeteredDataDisabledPackages`, never the apps it never blocks; adding one
+tightens, taking one off is a proposal), and mobile data use per app per day from
+`NetworkStatsManager`, with the day's Wi-Fi total, on a phone's Mobile data tab and over MCP
+(`get_mobile_data`, `change_wifi_only`). Run in CI's emulator job: the fixture app reaches
+Android's list for Belay and leaves it, and a day reaches the server. **Still open:**
+[docs/phase13-checklist.md](docs/phase13-checklist.md) on the Pixel, with a real SIM (an app
+actually losing mobile data, a parent's hotspot, Wi-Fi marked metered, an iPhone's hotspot, the
+download manager, the battery); the design's open questions (a kid's request for mobile data for
+one app, totals per billing cycle, a tethering lock).
+
+- A parent marks apps that may not use mobile data; the phone enforces it by itself, and the kid
+  sees which and why. Measuring shows where a capped plan's data goes, so the family can loosen
+  again later.
 
 ### Phase 12: caregivers ([design](docs/design/phase12-caregivers.md)) (built)
 

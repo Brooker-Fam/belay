@@ -247,6 +247,20 @@ data class NetworkCountRow(
 )
 
 /**
+ * Phase 13. One row while the policy lists Wi-Fi-only apps or measures mobile data (or Android
+ * still keeps apps off mobile data for Belay), written only by the agent thread: core's
+ * MobileDataState, as JSON (the Wi-Fi-only list as Belay last asked Android for it, with the uids
+ * and Android's refusals; the report; the uploads' state). Deleted once there's nothing of either.
+ * No mobile data days: Android keeps its own history, and each day Belay reads goes to the outbox.
+ */
+@Entity(tableName = "mobile_data")
+data class MobileDataRow(
+    @PrimaryKey val id: Int = 0,
+    val state: String,
+    @ColumnInfo(name = "updated_at") val updatedAt: Long,
+)
+
+/**
  * What waits to be sent, in the order it was made: [id] is AUTOINCREMENT, so it only ever
  * grows. Events are written in the same transaction as the baseline that found them.
  * Sent and dropped rows stay a while (OutboxPolicy.KEEP_FINISHED_MS) for the screen and for
@@ -258,7 +272,7 @@ data class NetworkCountRow(
 )
 data class OutboxRow(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    /** [TYPE_EVENT], [TYPE_SNAPSHOT], [TYPE_REQUEST], [TYPE_USAGE], [TYPE_FIX], [TYPE_PLACE_EVENT], [TYPE_CALL] or [TYPE_NETWORK]. */
+    /** [TYPE_EVENT], [TYPE_SNAPSHOT], [TYPE_REQUEST], [TYPE_USAGE], [TYPE_FIX], [TYPE_PLACE_EVENT], [TYPE_CALL], [TYPE_NETWORK] or [TYPE_MOBILE_DATA]. */
     val type: String,
     /**
      * The event's id or the snapshot's snapshot_id: the server de-duplicates on it. A request
@@ -266,7 +280,8 @@ data class OutboxRow(
      * Requests.itemId); the server de-duplicates on the request's own id. A usage day is
      * "usage:<day>:<zone>:<queued at>" (AgentStore.usageItemId): a newer one replaces it. A fix
      * or a place event is "fix:<id>" or "place_event:<id>"; a call record "call:<id>"; a network
-     * day "network:<day>:<queued at>" (AgentStore.networkItemId): a newer one replaces it.
+     * day "network:<day>:<queued at>" (AgentStore.networkItemId): a newer one replaces it; a mobile
+     * data day "mobile_data:<day>:<queued at>" (AgentStore.mobileDataPrefix), the same way.
      */
     @ColumnInfo(name = "item_id") val itemId: String,
     /** The event's or the request's package (null for snapshots, usage days, fixes and place events). */
@@ -299,6 +314,9 @@ data class OutboxRow(
 
         /** Phase 3, network logging: one day of lookups, for `POST /api/v1/network`. */
         const val TYPE_NETWORK = "network"
+
+        /** Phase 13: one day of mobile data use, for `POST /api/v1/mobile-data`. */
+        const val TYPE_MOBILE_DATA = "mobile_data"
         const val STATE_PENDING = "pending"
         const val STATE_SENT = "sent"
         const val STATE_DROPPED = "dropped"
@@ -389,10 +407,13 @@ interface OutboxDao {
     @Query("SELECT id, payload FROM outbox WHERE id IN (:ids) AND type = 'call' ORDER BY id")
     fun callPayloads(ids: List<Long>): List<PayloadRow>
 
-    /** Events and requests; a sent snapshot, usage day, fix, place event, call record or network day is deleted instead ([deleteSentLarge]). */
+    /**
+     * Events and requests; a sent snapshot, usage day, fix, place event, call record, network day or
+     * mobile data day is deleted instead ([deleteSentLarge]).
+     */
     @Query(
         "UPDATE outbox SET state = 'sent', finished_at = :at, last_error = NULL WHERE id IN (:ids) " +
-            "AND type NOT IN ('snapshot', 'usage', 'fix', 'place_event', 'call', 'network')",
+            "AND type NOT IN ('snapshot', 'usage', 'fix', 'place_event', 'call', 'network', 'mobile_data')",
     )
     fun markItemsSent(ids: List<Long>, at: Long)
 
@@ -400,19 +421,20 @@ interface OutboxDao {
      * Snapshots and usage days: large, and replaced by newer ones anyway. Fixes and place events
      * (Phase 4): where the phone was doesn't stay on the phone once the family's server has it. Call
      * records (Phase 5): the copy sent; Belay's own recent calls are in their own table. Network days
-     * (Phase 3): the copy sent; the day still being counted is in network_days.
+     * (Phase 3): the copy sent; the day still being counted is in network_days. Mobile data days
+     * (Phase 13): the copy sent; Android keeps its own history.
      */
-    @Query("DELETE FROM outbox WHERE id IN (:ids) AND type IN ('snapshot', 'usage', 'fix', 'place_event', 'call', 'network')")
+    @Query("DELETE FROM outbox WHERE id IN (:ids) AND type IN ('snapshot', 'usage', 'fix', 'place_event', 'call', 'network', 'mobile_data')")
     fun deleteSentLarge(ids: List<Long>)
 
     /**
      * A dropped snapshot keeps its row and reason, not its payload; so do a fix and a place event
-     * (Phase 4), a call record (Phase 5: it may hold someone's number) and a network day (Phase 3:
-     * which websites apps looked up).
+     * (Phase 4), a call record (Phase 5: it may hold someone's number), a network day (Phase 3:
+     * which websites apps looked up) and a mobile data day (Phase 13: which apps used it).
      */
     @Query(
         "UPDATE outbox SET state = 'dropped', finished_at = :at, last_error = :reason, " +
-            "payload = CASE WHEN type IN ('snapshot', 'fix', 'place_event', 'call', 'network') THEN '' ELSE payload END WHERE id = :id",
+            "payload = CASE WHEN type IN ('snapshot', 'fix', 'place_event', 'call', 'network', 'mobile_data') THEN '' ELSE payload END WHERE id = :id",
     )
     fun markDropped(id: Long, reason: String, at: Long)
 
@@ -534,6 +556,24 @@ interface OutboxDao {
 
     @Query("SELECT COUNT(*) FROM outbox WHERE state = 'pending' AND type = 'network'")
     fun pendingNetworkCount(): Int
+
+    /** Phase 13: an unsent earlier report of the same day (item ids starting [itemIdPrefix]): the newer one replaces it. */
+    @Query("DELETE FROM outbox WHERE type = 'mobile_data' AND state = 'pending' AND substr(item_id, 1, length(:itemIdPrefix)) = :itemIdPrefix")
+    fun deletePendingMobileData(itemIdPrefix: String)
+
+    /** Phase 13: keeps the newest [keep] unsent mobile data days. */
+    @Query(
+        "DELETE FROM outbox WHERE id IN " +
+            "(SELECT id FROM outbox WHERE type = 'mobile_data' AND state = 'pending' ORDER BY id DESC LIMIT -1 OFFSET :keep)",
+    )
+    fun capPendingMobileData(keep: Int)
+
+    /** Phase 13: every unsent mobile data day, when measuring goes off. */
+    @Query("DELETE FROM outbox WHERE type = 'mobile_data' AND state = 'pending'")
+    fun deleteAllPendingMobileData(): Int
+
+    @Query("SELECT COUNT(*) FROM outbox WHERE state = 'pending' AND type = 'mobile_data'")
+    fun pendingMobileDataCount(): Int
 
     @Query("SELECT state, COUNT(*) AS count FROM outbox GROUP BY state")
     fun countsByState(): List<StateCount>
@@ -664,6 +704,15 @@ interface EnforcementDao {
     /** The kid removed one from Belay's recent calls. */
     @Query("DELETE FROM calls WHERE id = :id")
     fun deleteCall(id: String): Int
+
+    @Query("SELECT * FROM mobile_data WHERE id = 0")
+    fun mobileData(): MobileDataRow?
+
+    @Upsert
+    fun setMobileData(row: MobileDataRow)
+
+    @Query("DELETE FROM mobile_data")
+    fun clearMobileData(): Int
 }
 
 /** Phase 3, network logging: its state, and the days Belay is still counting. Only the agent thread writes. */
@@ -725,8 +774,10 @@ interface NetworkDao {
  * Version 6 (Phase 5) adds calls_state, one row, and calls; the outbox gains "call", and the
  * requests the contact kind, without a schema change. Version 7 (Phase 3's network logging) adds
  * network_state, one row, network_days and network_counts; the outbox gains "network" without a
- * schema change. Room migrates each version to the next by itself from the exported schemas in
- * app/schemas/ (new tables only).
+ * schema change. Version 8 (Phase 13, mobile data) adds mobile_data, one row; the outbox gains
+ * "mobile_data" without a schema change. Room migrates each version to the next by itself from the
+ * exported schemas in app/schemas/ (new tables only); MigrationInstrumentedTest opens a version 7
+ * database made from 7.json with this one.
  */
 @Database(
     entities = [
@@ -735,12 +786,14 @@ interface NetworkDao {
         AgentUpdateRow::class, RecoveryRow::class, CommandsRow::class, PolicyFetchRow::class,
         ScreenTimeRow::class, LocationRow::class, ToldRow::class, CallsStateRow::class, CallRow::class,
         NetworkStateRow::class, NetworkDayRow::class, NetworkCountRow::class,
+        MobileDataRow::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = true,
     autoMigrations = [
         AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4),
         AutoMigration(from = 4, to = 5), AutoMigration(from = 5, to = 6), AutoMigration(from = 6, to = 7),
+        AutoMigration(from = 7, to = 8),
     ],
 )
 abstract class BelayDatabase : RoomDatabase() {

@@ -36,7 +36,7 @@ const width = (value: number, max: number) => `w${value <= 0 || max <= 0 ? 0 : M
 
 // ── Tabs ─────────────────────────────────────────────────────────────
 
-export const PhoneTabs: FC<{ view: View; device: DeviceView; current: "apps" | "usage" | "rules" | "agreement" | "location" | "calls" | "network" }> = ({
+export const PhoneTabs: FC<{ view: View; device: DeviceView; current: "apps" | "usage" | "rules" | "agreement" | "location" | "calls" | "network" | "mobile_data" }> = ({
   device,
   current,
 }) => (
@@ -65,6 +65,10 @@ export const PhoneTabs: FC<{ view: View; device: DeviceView; current: "apps" | "
         Network
       </a>
     )}
+    {/* Phase 13: always (Wi-Fi only works without measuring). */}
+    <a href={`/devices/${device.id}/mobile-data`} aria-current={current === "mobile_data" ? "page" : undefined}>
+      Mobile data
+    </a>
   </nav>
 );
 
@@ -333,12 +337,13 @@ export interface UsagePageData {
 
 /**
  * How a lock now went, the same words whatever the kid was doing, and no time beside them: the
- * phone reports one when it has it, during a call too, and locks once the call ends, so nothing
- * here says whether a call was on, or when one ended (the fifth review's F2).
+ * phone reports one when it has it, during a call too, and locks about 2 minutes after the call
+ * ends (the sixth review's I1), so nothing here says whether a call was on, or when one ended (the
+ * fifth review's F2).
  */
 const LOCK_WORDS: Record<Command["state"], string> = {
   waiting: "sent; waiting for the phone",
-  done: "the phone has it: its screen locks at once, or as soon as a call ends",
+  done: "the phone has it: its screen locks at once, or about 2 minutes after a call ends",
   failed: "the phone couldn't lock its screen",
   expired: "the phone got it too late, so it didn't lock",
   not_done: "the phone didn't get it in time",
@@ -378,7 +383,7 @@ const LockCard: FC<{ view: View; device: DeviceView; lastLock: Command | null }>
         </button>
       </form>
     )}
-    <p class="small muted">Calls, texts, 911 and 988 still work. The screen locks if the phone gets this within 10 minutes; during a call, as soon as the call ends.</p>
+    <p class="small muted">Calls, texts, 911 and 988 still work. The screen locks if the phone gets this within 10 minutes; during a call, about 2 minutes after the call ends.</p>
   </div>
 );
 

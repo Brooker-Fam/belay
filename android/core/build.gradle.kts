@@ -22,3 +22,10 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     testImplementation(libs.kotlin.test.junit)
 }
+
+// AiAlwaysTest reads docs/mcp.md's "Always included" list: a change there runs the tests again.
+tasks.test {
+    inputs.file(rootProject.layout.projectDirectory.file("../docs/mcp.md"))
+        .withPropertyName("mcpDoc")
+        .withPathSensitivity(PathSensitivity.NONE)
+}

@@ -30,6 +30,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import family.brooker.belay.R
+import family.brooker.belay.core.AiAlways
 import family.brooker.belay.core.AnsweredRequest
 import family.brooker.belay.core.DataCategories
 import family.brooker.belay.core.DataCategory
@@ -335,6 +336,11 @@ internal fun CanSeeCard(categories: List<DataCategory>, connection: Connection, 
         // Location, calls and network activity are read only while their collectors are on (listed above when they are).
         val unknown = (others - AGREEMENT_SCOPE - DataCategories.LOCATION_ID - DataCategories.CALLS_ID - DataCategories.NETWORK_ID).sorted()
         if (unknown.isNotEmpty()) Text(stringResource(R.string.can_see_ai_other, unknown.joinToString(", ")), style = MaterialTheme.typography.bodyMedium)
+        // What it reads with every category off too (core's AiAlways, docs/mcp.md's "Always included").
+        if (connection.connected) {
+            Text(stringResource(R.string.can_see_ai_always), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+            AiAlways.ITEMS.forEach { Text("• ${it.words}", style = MaterialTheme.typography.bodyMedium) }
+        }
         if (reads.isEmpty() && connection.connected) Text(stringResource(R.string.can_see_ai_none), style = MaterialTheme.typography.bodyMedium)
         val whereItGoes = when {
             connection.connected -> stringResource(R.string.data_sent_to_server, connection.host.orEmpty())

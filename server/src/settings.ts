@@ -5,7 +5,10 @@ import { isValidTimeZone } from "./time.js";
 /**
  * Data categories AI clients may read, decided on the Settings page. Their ids are the phone's
  * data categories (the policy's `ai_reads` lists the ones that are on, for the kid's screen). All
- * on by default except location, calls and network, which start off for every family.
+ * on by default except location, calls and network, which start off for every family. Phase 13's
+ * mobile data starts on, like screen time: it's the same kind of data with less in it (how much
+ * each app used, no hours of the day, no opens), and far less than network's (no names of the
+ * services the kid uses); finding the apps that use the family's data plan is the AI app's job.
  */
 export const AI_SCOPES = {
   apps: "Apps: installed apps, their permissions, app changes and reviews",
@@ -16,6 +19,7 @@ export const AI_SCOPES = {
   location: "Location: where the phone is (each check, and the fixes Belay shares), the family's places, and arrivals and departures",
   calls: "Calls: who the kid calls and who calls them, when and for how long, and the numbers of contacts and of callers who aren't one (never 911, 988 or private numbers)",
   network: "Network: which websites and online services each app looks up, by name, and how many times a day (never pages or what's typed, never 988's websites or a phone's private ones)",
+  mobile_data: "Mobile data: how much mobile data each app uses each day, and how much the phone uses on Wi-Fi (never which websites or networks)",
 } as const;
 export type AiScope = keyof typeof AI_SCOPES;
 
@@ -84,6 +88,8 @@ export interface Settings {
   callDays: number;
   /** Phase 3, network logging: how many days of network activity the server keeps; older ones are deleted. */
   networkDays: number;
+  /** Phase 13: how many days of mobile data use the server keeps; older ones are deleted. */
+  mobileDataDays: number;
   /** How many days of the activity log the server keeps; older entries are deleted. */
   activityDays: number;
 }
@@ -93,6 +99,8 @@ export const USAGE_MONTHS = { default: 13, min: 1, max: 36 } as const;
 export const CALL_DAYS = { default: 90, min: 1, max: 365 } as const;
 /** Phase 3, network logging: network days' retention, in days. */
 export const NETWORK_DAYS = { default: 30, min: 1, max: 90 } as const;
+/** Phase 13: mobile data days' retention, in days: three billing cycles by default. */
+export const MOBILE_DATA_DAYS = { default: 90, min: 1, max: 400 } as const;
 /**
  * The activity log's retention, in days: a year and a month by default, so this time last year is
  * still there. At least 30, so a parent can't make what they did vanish before the other parent
@@ -103,7 +111,7 @@ export const ACTIVITY_DAYS = { default: 400, min: 30, max: 3650 } as const;
 export const DEFAULT_SETTINGS: Settings = {
   timezone: "UTC",
   silentHours: 12,
-  aiScopes: { apps: true, device_status: true, requests: true, screen_time: true, agreement: true, location: false, calls: false, network: false },
+  aiScopes: { apps: true, device_status: true, requests: true, screen_time: true, agreement: true, location: false, calls: false, network: false, mobile_data: true },
   newAiScopes: [],
   usageMonths: USAGE_MONTHS.default,
   locationDays: { periodic: LOCATION_DAYS.periodic.default, checks: LOCATION_DAYS.checks.default, placeEvents: LOCATION_DAYS.placeEvents.default, lostAfter: LOCATION_DAYS.lostAfter.default },
@@ -111,6 +119,7 @@ export const DEFAULT_SETTINGS: Settings = {
   parentNumbers: [],
   callDays: CALL_DAYS.default,
   networkDays: NETWORK_DAYS.default,
+  mobileDataDays: MOBILE_DATA_DAYS.default,
   activityDays: ACTIVITY_DAYS.default,
 };
 
@@ -136,6 +145,7 @@ function write(db: DB, key: string, value: unknown): void {
 const validMonths = (n: unknown): n is number => typeof n === "number" && Number.isInteger(n) && n >= USAGE_MONTHS.min && n <= USAGE_MONTHS.max;
 const validCallDays = (n: unknown): n is number => typeof n === "number" && Number.isInteger(n) && n >= CALL_DAYS.min && n <= CALL_DAYS.max;
 const validNetworkDays = (n: unknown): n is number => typeof n === "number" && Number.isInteger(n) && n >= NETWORK_DAYS.min && n <= NETWORK_DAYS.max;
+const validMobileDataDays = (n: unknown): n is number => typeof n === "number" && Number.isInteger(n) && n >= MOBILE_DATA_DAYS.min && n <= MOBILE_DATA_DAYS.max;
 const validActivityDays = (n: unknown): n is number => typeof n === "number" && Number.isInteger(n) && n >= ACTIVITY_DAYS.min && n <= ACTIVITY_DAYS.max;
 const validDays = (key: keyof LocationRetention, n: unknown): n is number =>
   typeof n === "number" && Number.isInteger(n) && n >= LOCATION_DAYS[key].min && n <= LOCATION_DAYS[key].max;
@@ -171,6 +181,7 @@ export function getSettings(db: DB): Settings {
   const mapSite = read(db, "map_site");
   const callDays = read(db, "call_days");
   const networkDays = read(db, "network_days");
+  const mobileDataDays = read(db, "mobile_data_days");
   const activityDays = read(db, "activity_days");
   const days = locationDays && typeof locationDays === "object" ? (locationDays as Partial<Record<keyof LocationRetention, unknown>>) : {};
   const stored = read(db, "ai_scopes");
@@ -198,6 +209,7 @@ export function getSettings(db: DB): Settings {
     parentNumbers: parentNumbersFrom(read(db, "parent_numbers")),
     callDays: validCallDays(callDays) ? callDays : DEFAULT_SETTINGS.callDays,
     networkDays: validNetworkDays(networkDays) ? networkDays : DEFAULT_SETTINGS.networkDays,
+    mobileDataDays: validMobileDataDays(mobileDataDays) ? mobileDataDays : DEFAULT_SETTINGS.mobileDataDays,
     activityDays: validActivityDays(activityDays) ? activityDays : DEFAULT_SETTINGS.activityDays,
   };
 }
@@ -218,6 +230,7 @@ export interface SettingsChange {
   parentNumbers?: ParentNumber[];
   callDays?: number;
   networkDays?: number;
+  mobileDataDays?: number;
   activityDays?: number;
 }
 
@@ -248,6 +261,10 @@ export function updateSettings(db: DB, change: SettingsChange): Settings {
   if (change.networkDays !== undefined) {
     if (!validNetworkDays(change.networkDays)) throw new Error(`Keep network activity ${NETWORK_DAYS.min} to ${NETWORK_DAYS.max} days`);
     write(db, "network_days", change.networkDays);
+  }
+  if (change.mobileDataDays !== undefined) {
+    if (!validMobileDataDays(change.mobileDataDays)) throw new Error(`Keep mobile data use ${MOBILE_DATA_DAYS.min} to ${MOBILE_DATA_DAYS.max} days`);
+    write(db, "mobile_data_days", change.mobileDataDays);
   }
   if (change.activityDays !== undefined) {
     if (!validActivityDays(change.activityDays)) throw new Error(`Keep the activity log ${ACTIVITY_DAYS.min} to ${ACTIVITY_DAYS.max} days`);

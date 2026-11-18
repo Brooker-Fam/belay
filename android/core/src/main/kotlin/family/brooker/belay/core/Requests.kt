@@ -375,6 +375,9 @@ object KidRules {
 
         /** Phase 4: location is locked on (keep_on, or lost mode). */
         LOCATION_LOCKED_ON,
+
+        /** Phase 13: Android keeps some apps off mobile data for Belay (the policy's `mobile_data.wifi_only`). */
+        WIFI_ONLY,
         WEB_FILTER,
         NO_BROWSERS,
         CHROME_NO_INCOGNITO,
@@ -391,9 +394,11 @@ object KidRules {
 
     /**
      * [privateDns] is the host Belay has set, if any. Factory reset and debugging only show
-     * when Belay actually locked them (never on a debug build).
+     * when Belay actually locked them (never on a debug build). [wifiOnly] (Phase 13) are the apps
+     * Android keeps off mobile data for Belay now (core's WifiOnly.forKid): listed only while there
+     * are some.
      */
-    fun of(policy: WirePolicy?, plan: EnforcementPlan?, applied: Applied, privateDns: String?): List<Rule> {
+    fun of(policy: WirePolicy?, plan: EnforcementPlan?, applied: Applied, privateDns: String?, wifiOnly: List<String> = emptyList()): List<Rule> {
         if (policy == null || plan == null) return emptyList()
         val rules = mutableListOf<Rule>()
         if (policy.apps.newApps == WireNewApps.ASK) rules += Rule.NEW_APPS_WAIT
@@ -410,6 +415,7 @@ object KidRules {
         if (applied.playAccounts != null) rules += Rule.PLAY_ACCOUNTS
         if (Lock.SIM in locks) rules += Rule.NO_NEW_ESIM
         if (Lock.CONFIG_LOCATION in locks) rules += Rule.LOCATION_LOCKED_ON
+        if (wifiOnly.isNotEmpty()) rules += Rule.WIFI_ONLY
         if (Lock.FACTORY_RESET in locks) rules += Rule.NO_FACTORY_RESET
         if (applied.frpAccounts != null) rules += Rule.RESET_PROTECTION
         if (Lock.DEBUGGING in locks) rules += Rule.NO_DEBUGGING

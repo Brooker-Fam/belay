@@ -65,7 +65,7 @@ describe("screen time over MCP", () => {
   it("the instructions say screen time is a number, not a verdict", async () => {
     const { client } = await family();
     expect(client.getInstructions()).toContain("Screen time is a number, not a verdict about the kid. Report it plainly, don't guess why, and don't moralize.");
-    expect(client.getInstructions()).toContain("Whether Belay measures screen time at all is a parent's choice too");
+    expect(client.getInstructions()).toContain("Whether Belay measures screen time or mobile data is a parent's choice too: you can't turn either on or off.");
   });
 
   it("get_screen_time: the days the phone sent, the apps untrusted, gaps as gaps, and days not sent as unknown", async () => {
@@ -252,13 +252,13 @@ describe("screen time over MCP", () => {
       untrusted: { why_belay_on_the_phone_says: "Android lets Belay lock the screen only after the phone restarts once with this version of Belay." },
     });
     expect(policy().commands).toEqual([]);
-    // Done: the phone has it, and locks at once or once a call ends; no time comes with it.
+    // Done: the phone has it, and locks at once or about 2 minutes after a call ends; no time comes with it.
     await call("lock_phone", { device: "Alex's phone", minutes: 15 });
     const done = policy().commands[0]?.id ?? "";
     await deviceCall(t, phone.token, "checkin", { status: device({ enforcement: { policy_version: policy().version, commands: [{ id: done, result: "done", at: t.now() }] } }) });
     expect((await call("get_rules", { device: "Alex's phone" })).json.last_lock).toEqual({
       sent: "2026-11-16T10:00:00-05:00",
-      state: "done: the phone has it, and locks its screen at once, or as soon as a call ends",
+      state: "done: the phone has it, and locks its screen at once, or about 2 minutes after a call ends",
     });
     // Expired: the phone got it too late, in the same words for every one.
     await call("lock_phone", { device: "Alex's phone", minutes: 15 });

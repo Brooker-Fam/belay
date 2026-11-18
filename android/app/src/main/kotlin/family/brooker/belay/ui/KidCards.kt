@@ -18,6 +18,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -132,6 +133,24 @@ internal fun RulesCard(kid: KidView) {
     }
 }
 
+/**
+ * Phase 13: the apps Android keeps off mobile data for Belay now, each with why: only those (an app
+ * the policy lists that isn't installed, or that Belay can't restrict, isn't here). The rule above
+ * says what it means.
+ */
+@Composable
+internal fun WifiOnlyCard(kid: KidView) {
+    if (kid.wifiOnly.isEmpty()) return
+    KidSection(stringResource(R.string.section_wifi_only)) {
+        Text(stringResource(R.string.wifi_only_intro), style = MaterialTheme.typography.bodyMedium)
+        kid.wifiOnly.forEachIndexed { i, name ->
+            if (i > 0) HorizontalDivider()
+            AppName(kid.labels[name] ?: name, name)
+            Text(stringResource(R.string.wifi_only_app), style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
 @Composable
 private fun RuleText(rule: Rule, kid: KidView) {
     val (what, why) = when (rule) {
@@ -158,6 +177,9 @@ private fun RuleText(rule: Rule, kid: KidView) {
                 stringResource(R.string.rule_recovery_why)
         Rule.NO_BROWSERS -> stringResource(R.string.rule_no_browsers) to stringResource(R.string.rule_no_browsers_why)
         Rule.LOCATION_LOCKED_ON -> stringResource(R.string.rule_location) to stringResource(R.string.rule_location_why)
+        Rule.WIFI_ONLY ->
+            stringResource(R.string.rule_wifi_only) to
+                stringResource(R.string.rule_wifi_only_why, KidWords(LocalContext.current) { kid.labels[it] ?: it }.apps(kid.wifiOnly))
         else -> return
     }
     Column {

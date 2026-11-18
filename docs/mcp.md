@@ -115,6 +115,13 @@ provider's terms. Settings → "What AI apps may read" turns each category off:
   (the fifth security review's F4: deleting them shows); `get_policy`'s version moves with any
   change to the phone's rules, this one too (F5, kept: threat-model.md). The apps' names need the
   Apps category too: without it, each app is the package name the phone sent.
+- **Mobile data** (Phase 13), on by default, like screen time: for each day the server keeps, the
+  phone's mobile data and Wi-Fi totals and each app's bytes on mobile data, with Android, calls
+  and texting together on one line (never one by one), apps removed since, and other devices
+  through the phone's hotspot. Only while a parent measures it; never which websites or Wi-Fi
+  networks, or when in the day. The apps' names need the Apps category too. Which apps are Wi-Fi
+  only is one of the phone's rules: `get_policy` counts them, and names them with the Apps
+  category.
 
 Each category but Location, Calls and Network is on by default. One that a new version of Belay
 adds starts off for a family that had turned any category off, and Settings marks it "new" until
@@ -123,21 +130,30 @@ kid is, about other people (friends' numbers), and about which websites and serv
 apps use. The kid's phone shows which categories the AI app
 may read (the policy's `ai_reads`), under "What your parent can see".
 
-Always included: the phones' names, their status and problems ("silent for 14 hours",
-"the phone hasn't applied the rules changed 4 hours ago", or, first, that someone may be
-getting around Belay when the phone reports Android's own Parental Controls, another
-profile, a proxy on its network or wireless debugging), when they last checked in, and
-each phone's rules (protection, pause and its note, the locked settings, the web filter,
-Chrome's settings, maintenance mode, whether reset protection is set, whether the phone has a
-recovery key and when one was last used, and proposals waiting for a parent), and from
-Phase 3 its screen-time rules (measuring, limits, schedules, exempt apps, self-serve, extra
-time given today, the last "lock now" and how it went), and from Phase 4 whether it shares
-where it is (off, on demand, or how often), and whether it's in lost mode: never where it is.
-From Phase 5: whether calls are on and the call rules, and the contacts' names, whether each may
-call and text (texts aren't enforced yet) and whether they're a parent, and how many blocked and private numbers there
-are: never who called, a number (not even in a proposal waiting, which names no contact either),
-or which numbers are private. From Phase 3's network logging:
-that Android paused it, as one of the phone's problems; never what apps looked up. Blocked and
+**Always included**, with every category off too. The kid's phone lists these in plain words under
+"What your parent can see" (core's `AiAlways`, the sixth security review's G4: it used to say the
+AI app could read none of it; `AiAlwaysTest` holds this list to the phone's, and
+`sixth-review.test.ts` holds what the tools return with every category off to it):
+
+- **The phone:** the phones' names, their status and problems ("silent for 14 hours", "the phone
+  hasn't applied the rules changed 4 hours ago", or, first, that someone may be getting around
+  Belay when the phone reports Android's own Parental Controls, another profile, a proxy on its
+  network or wireless debugging; and the phone's own words, like how long it stayed locked after
+  a restart, or, from Phase 3's network logging, that Android paused it: never what apps looked
+  up), and when they last checked in.
+- **Its rules:** protection, pause and its note, the locked settings, the web filter, Chrome's
+  settings, maintenance mode, whether reset protection is set, whether the phone has a recovery
+  key and when one was last used, and proposals waiting for a parent.
+- **Screen time's rules** (Phase 3): measuring, limits, schedules, exempt apps, self-serve, extra
+  time given today, and the last "lock now" and how it went.
+- **Location's** (Phase 4): whether it shares where it is (off, on demand, or how often), and
+  whether it's in lost mode: never where it is.
+- **Calls'** (Phase 5): whether calls are on and the call rules, and the contacts' names, whether
+  each may call and text (texts aren't enforced yet) and whether they're a parent, and how many
+  blocked and private numbers there are: never who called, a number (not even in a proposal
+  waiting, which names no contact either), or which numbers are private.
+
+Blocked and
 waiting apps are listed only with the Apps category, and so are the apps under each screen-time
 rule (a limit's, a schedule's that stay open, the exempt ones): without it, `get_rules` only
 counts them, and so do the sentences about the next stage and proposals waiting, and what
@@ -183,7 +199,7 @@ reason.
 
 | Tool | What it does |
 |---|---|
-| `list_devices` | Phones with status and problems, last check-in, whether protection is on or the phone is paused, whether location and calls are on, and phones waiting to enroll; with Device status, model, Android version and patch age, and an update of Belay a parent offered and how it's going; with Apps, app counts; with Requests, requests waiting and help requests no parent has seen. |
+| `list_devices` | Phones with status and problems, last check-in (the phone checks in every 2 hours from its background work, and sooner when its report changes; never sooner for a call or the clock alone, so its times don't show a call: sixth security review, G3), whether protection is on or the phone is paused, whether location and calls are on, and phones waiting to enroll; with Device status, model, Android version and patch age, and an update of Belay a parent offered and how it's going; with Apps, app counts; with Requests, requests waiting and help requests no parent has seen. |
 | `get_device_status(device)` | Battery, storage, OS and patch level, last restart, Belay's health on the phone (with the update a parent offered and how it's going, and whether its signing certificate changed), other users or profiles on the phone, restrictions Belay didn't set, the last request to remove other users, sync times. Needs the Device status category. |
 | `get_installed_apps(device, include_system?, query?, permission?)` | The apps, with versions, dates, source, sensitive permissions, their rule (allowed, blocked, waiting for a parent, or runs) and review state. Needs the Apps category. |
 | `get_app_changes(device?, since?, until?, limit?, include_system?)` | The timeline: installed, updated, removed, reinstalled. Last 7 days by default. Needs the Apps category. |
@@ -199,16 +215,18 @@ reason.
 | `get_policy(device)` | What a phone enforces now, in words, with the rules' version and whether the phone has applied it; blocked and waiting apps; a line each on its screen time, location and calls; proposals waiting for a parent (in `untrusted`, naming an app only with the Apps category, and a number or contact only with the Calls category); whether the phone has a recovery key, and when one was last used; how many reset protection accounts, and how many accounts Play may use (never which). |
 | `get_rules(device)` | Phase 3: the phone's screen-time rules (measuring, limits with their ids, schedules, exempt apps, self-serve, what happens when Belay can't count), extra time given today, the last "lock now", and proposals waiting. The apps under each rule with the Apps category; without it, only how many. With the Screen time category, where each limit stands today; with Requests, more-time requests waiting; with Stage and agreement, the stage, what the next one changes, and the agreement with the kid's answer. |
 | `get_network_activity(device, from?, to?)` | Phase 3: day by day, in the phone's own days: each app (most looked up first, at most 30) with the websites and online services it looked up, by name, and how many times (at most 25 names an app; the rest counted), and how many pairs the phone left out. App names (with the Apps category; without it, only package names), package names and domains are under `untrusted`: an app's developer chooses them. Says whether logging is on, or paused by Android. Its description and reminder say Belay never notes 988's websites or the ones a parent made private for the phone, the same words for every phone. Only while a parent has network logging on; the last 7 days by default, at most 31. Needs the Network category. No tool turns network logging on or off, or proposes it, and none reads or changes the private websites. |
+| `get_mobile_data(device, from?, to?)` | Phase 13: day by day, in the phone's own days: the day's mobile data and Wi-Fi totals (bytes, and in words like "350 MB"), the top apps on mobile data (at most 10 a day; the rest counted), "Android, calls and texting" together (never one by one), apps removed since, and other devices through the phone's hotspot; totals for the period with the top apps; and the Wi-Fi-only apps, with any that still used mobile data on a day that began after it was added. A day the phone sent nothing for says so: unknown, not zero. App names (with the Apps category; without it, only package names) and package names are under `untrusted`. Never which websites or networks. Only while a parent measures it; the last 7 days by default, at most 31. Needs the Mobile data category. No tool turns measuring on or off, or proposes it. |
+| `change_wifi_only(device, change: {add?, remove?}, reason)` | Phase 13: makes apps Wi-Fi only (`add`): Android on the phone keeps them off mobile data and any other metered network, like another phone's hotspot. Adding only tightens, so it applies at once; anything that removes an app becomes a proposal for a parent. Refuses the apps the phone never blocks (the phone app, texting, the keyboard, the home screen, Android's own parts, Belay), so calls, texts, 911 and 988 always work, and apps the phone has never reported. At most 100 a phone. |
 | `get_screen_time(device, from?, to?)` | Phase 3: day by day, in the phone's days: screen minutes, unlocks, minutes by hour, the most used apps with minutes and opens (their names with the Apps category, else their package names), and the times Belay couldn't count, with why. A day the phone sent nothing for says so: that's unknown, not zero. The last 7 days by default, at most 92. Needs the Screen time category. |
 | `block_app(device, package, note?)` | Blocks an app at once (tightening). It refuses the apps the phone never blocks, so 911 and 988 always work: Belay itself, the dialer and the services that place calls, the texting app, the keyboard, the home screen, emergency and safety apps, System UI, Settings, and anything else the phone reports it never blocks. An app that isn't on the phone yet can be blocked ahead of time, but AI apps may have at most 50 of those per phone; a parent clears them on the phone's page. Needs the Apps category. |
 | `pause_phone(device, minutes?)` | Pauses the phone at once, for some minutes or until a parent resumes it. The kid's phone says so in Belay's own words ("Your parent paused this phone until 6:30 PM."): the AI app writes no note (a parent can, on the parent page). It can't shorten a pause already running, and against one at least as long it changes nothing; a longer one keeps a parent's note. At most 6 pauses and locks an hour per connection and phone. |
-| `lock_phone(device, minutes)` | Phase 3: pauses the phone for 5 to 240 minutes and locks its screen, if the phone gets it within 10 minutes (during a call, once the call ends), with no note, like `pause_phone`. Calls, texts, 911 and 988 still work. A phone that couldn't lock says why, word for word, under `untrusted` in `get_rules`. `get_rules`' `last_lock` says only when it was sent and whether the phone got it in time, in the same words whether or not a call was on, with no time of the phone's: the phone reports it when it has it, so nothing in it says the kid was on a call, or when one ended (fifth security review, F2). Counted with `pause_phone`'s pauses. |
+| `lock_phone(device, minutes)` | Phase 3: pauses the phone for 5 to 240 minutes and locks its screen, if the phone gets it within 10 minutes (during a call, about 2 minutes after the call ends), with no note, like `pause_phone`. Calls, texts, 911 and 988 still work. A phone that couldn't lock says why, word for word, under `untrusted` in `get_rules`. `get_rules`' `last_lock` says only when it was sent and whether the phone got it in time, in the same words whether or not a call was on, with no time of the phone's: the phone reports it when it has it, and a phone that can't lock (until it restarts after an update) fails every one in the same words, call or not, so nothing in it says the kid was on a call, or when one ended (fifth security review, F2; sixth, G2). Counted with `pause_phone`'s pauses. |
 | `change_screen_time(device, change, reason)` | Phase 3: limits (new, or changed by id), schedules, removing either, exempt apps, self-serve, what happens when Belay can't count, or `stage` (a stage's name, on its own, with the Stage and agreement category). The server decides: a change whose every part tightens applies at once; anything else, or a mix, becomes a proposal for a parent, and so does moving to another stage, always, and anything about a schedule that locks the screen (a new one, its lock turned on, or a change to one that locks). Each schedule it adds or changes runs at least 15 minutes, or it's refused. Belay names a limit or schedule it adds or renames (below): a `name` the AI app gives isn't used as written. |
 | `get_server_health` | The family's server itself: its problems (urgent first), the last backup and daily try, when a backup was last verified and the last restore drill, free disk space, the database's size, and whether its clock agrees with the phones'. No family data. |
 | `propose_change(device, change, reason)` | Proposes loosening a rule (`allow_app` with a package, which needs the Apps category, `resume`, `lift_restriction` with a restriction, `web_filter_off`, `new_apps_allow`) for a parent to approve on the parent page. It changes nothing itself. |
 
 The read tools are marked read-only; `block_app`, `pause_phone`, `lock_phone`,
-`change_screen_time` and `change_calls` are marked destructive (they change what the phone
+`change_screen_time`, `change_calls` and `change_wifi_only` are marked destructive (they change what the phone
 enforces, and only a parent can undo them), so a client may ask before calling them. `locate_now` isn't read-only
 (the phone gets a check, and the kid a notice) but changes no rule. Every call is in the
 activity log with the app's name. Times are in the family's timezone with their UTC offset;
@@ -275,6 +293,11 @@ too, since whoever holds a phone's token can send any text.
 - So is network logging (Phase 3): turning it on or off, and the phone's private websites,
   which it never notes, have no tool and no proposal, and no tool says which websites are
   private or whether a phone has any.
+- `change_wifi_only` (Phase 13) applies a change only when it only adds apps: an app made Wi-Fi
+  only can't use mobile data any more. Letting one use it again is a proposal, each part marked
+  tightens or loosens on the Proposals page; when a parent approves, the apps it takes off must
+  still be Wi-Fi only, or it's out of date and changes nothing. Measuring mobile data has no tool
+  and no proposal: only a parent turns it on or off.
 - `change_calls` (Phase 5) applies a change only when every part of it tightens: only contacts
   can call, a stricter rule for callers who aren't contacts or have no caller ID (ring, then
   voicemail, then refused), the kid calling only contacts, quiet times on, fewer contacts
@@ -325,7 +348,8 @@ too, since whoever holds a phone's token can send any text.
   places, as facts (never a `locate_now`); each app's top domains of the week, with
   `get_network_activity`'s reminder that a name looked up isn't a page visited (and that Belay
   never notes 988's websites or a parent's private ones, so nothing is read into one that isn't
-  there); and screen
+  there); the week's mobile data against the week before, with the top apps and any Wi-Fi-only
+  app that still used it, and Wi-Fi only only as a suggestion (Phase 13); and screen
   time against the limits, with anything Belay couldn't count. It never claims to have
   approved anything.
 - **`family_check_in(device)`** (Phase 3): a monthly talk with the kid in the room: what went
@@ -336,7 +360,9 @@ too, since whoever holds a phone's token can send any text.
   every day), only as suggestions; the kid's own requests and their answers, without judging
   the asking, and without reading out an "I need help" or a "Talk to my parent", which stay
   between the kid and the parent (one no parent has seen: look now); three open questions for
-  the kid; and changes the family might make, only as suggestions.
+  the kid; and changes the family might make, only as suggestions. With the Mobile data category
+  (Phase 13): which apps are Wi-Fi only, and whether one could use mobile data again, only as a
+  suggestion (a proposal a parent approves).
 - **`review_app(device, package)`:** the same review for one app.
 - **`review_request(device, package)`:** reviews an app the kid asked for, with their
   reason, and suggests how the parent might answer (approve, decline or let's talk, with a
@@ -379,6 +405,9 @@ the kid. Report it plainly, don't guess why, and don't moralize."
 - "Is anything urgent? Did Sam ask for help?"
 - With the Location category on: "Where's Sam's phone?", "Check where Sam's phone is now."
   (Sam gets a notice that names the app), "When did Sam get to school this week?"
+- With measuring on (Phase 13): "Which apps used the most mobile data on Sam's phone this month?",
+  "Make Video Tube Wi-Fi only on Sam's phone." (It applies at once; letting it use mobile data
+  again is a proposal.)
 - With network logging and the Network category on: "Which websites and services did the apps on
   Sam's phone look up this week? Is any of it worth a conversation?" (A name looked up isn't a
   page visited: apps look names up by themselves, for ads and updates.)

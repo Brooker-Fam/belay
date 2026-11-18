@@ -32,6 +32,7 @@ schemas in `server/src/device/schemas.ts`. Change all three together.
 | `POST /api/v1/locations` | 64 KB, at most 200 fixes and 200 place events (Phase 4) |
 | `POST /api/v1/calls` | 128 KB, at most 500 records (Phase 5) |
 | `POST /api/v1/network` | 512 KB, at most 31 days of at most 5000 entries (Phase 3, network logging) |
+| `POST /api/v1/mobile-data` | 256 KB, at most 31 days of at most 500 apps (Phase 13) |
 
 Errors: `{"error": "<code>", "error_description": "<words>"}` with
 
@@ -76,7 +77,12 @@ Enrollment attempts are rate-limited per client address.
 
 ## `POST /api/v1/checkin`
 
-Every 2 hours, and when the agent starts.
+Every 2 hours, and when the agent starts, and soon after what the phone reports changes. The
+2-hourly ones come from the phone's background work (its check-in worker, and its hourly check
+when one is due): a step that only a time passing or a call brought (the policy timer, which
+looks every minute while a screen lock waits for a call, screen time's minute, a call's end)
+never checks in just because one is due, so their times don't follow a call (the sixth security
+review's G3).
 
 ```json
 { "status": { …Device… } }
@@ -401,6 +407,89 @@ Also accepted and dropped: a day that isn't a real date, one the phone can't hav
 `accepted` counts every day in the call. The endpoint is rate limited per phone apart from the
 phone's other calls (30 a minute).
 
+## `POST /api/v1/mobile-data`
+
+Phase 13, mobile data use. How many bytes each app used on mobile data, one local day per entry,
+with the day's Wi-Fi total, only while the policy's `mobile_data.measure` is on (a parent's choice
+alone, off by default; never an AI client's, not even as a proposal).
+
+```json
+{ "days": [ { "day": "2026-11-17", "zone": "America/Los_Angeles", "from": 1794808800000,
+              "as_of": 1794867161711, "complete": false,
+              "mobile_bytes": 412000000, "wifi_bytes": 2100000000,
+              "apps": [ { "package": "com.example.video", "bytes": 350000000 } ],
+              "android_bytes": 52000000, "removed_bytes": 0, "hotspot_bytes": 0 } ] }
+```
+→ `200 {"server_time", "accepted"}`.
+
+**MobileDataDay**
+
+| Field | Type | |
+|---|---|---|
+| `day` | `"YYYY-MM-DD"` | in `zone` |
+| `zone` | string | IANA: the phone's own |
+| `from` | int | counted from: the day's start, or when measuring turned on that day |
+| `as_of` | int | counted up to: when the phone read it, or the day's end once `complete` |
+| `complete` | bool | the day is over, and Android's last bucket of it has closed |
+| `mobile_bytes` | int | everything on mobile data that day: every line below, and what's past the 500 apps |
+| `wifi_bytes` | int | everything on Wi-Fi that day, all apps together: one number, never per network |
+| `apps` | `[{package, bytes}]` | at most 500, most first; never an app the phone never blocks |
+| `android_bytes` | int | Android's own parts, shared uids, other users' and the apps the phone never blocks (the phone app, texting, the keyboard…), together |
+| `removed_bytes` | int | apps removed since: Android keeps their use as removed apps |
+| `hotspot_bytes` | int | what other devices used through this phone's own hotspot |
+
+Bytes are received plus sent, 0 to 10^14. Idempotent by `day`: a day sent again replaces the
+stored one, apps and all, so the phone always sends the whole day as it has it.
+
+What the phone does (Android 17's `NetworkStatsManager`, read as device owner; docs/platform-notes.md
+Q6 to Q8):
+
+- It reads `querySummary(TYPE_MOBILE, null, from, to)` (every app's uid on every mobile network,
+  metered ones) and `querySummaryForDevice(TYPE_WIFI, null, from, to)` (the Wi-Fi total; never per
+  network, which would need location). An SDK sandbox's bytes count as its app's; a uid several
+  packages share, Android's own uids and other users' go into `android_bytes`, with the apps it
+  never blocks (its `never_blocked`), so a call or a text to 988 never shows by itself.
+- Today about every hour, each past day once more 2.5 hours after it ends (Android's per-app
+  buckets are 2 hours, polled every 30 minutes), at most 7 days back, and never anything from
+  before measuring turned on (`from`): Android keeps 90 days, and none of it from before the kid's
+  screen said so is sent. Each day waits in an outbox lane of its own, a newer report replacing an
+  unsent one; with `measure` off it deletes its record and every unsent day.
+
+What the server keeps: a day only while the phone's `mobile_data.measure` is on; otherwise it's
+answered `200`, counted in `accepted`, dropped, and counted for the parent page. A never-blocked
+app's own line (the phone's `never_blocked`, and the well-known dialers, texting and emergency apps)
+is never kept: its bytes are added to `android_bytes`, so the day's total stays right. Also
+accepted and dropped: a day that isn't a real date, one the phone can't have counted yet (after
+tomorrow in its `zone`), and one older than the family keeps (90 days by default, 1 to 400).
+`accepted` counts every day in the call.
+
+## Wi-Fi-only apps (Phase 13, both sides)
+
+The policy's `mobile_data.wifi_only` (at most 100 package names, sorted): apps that may not use
+mobile data. The phone enforces it as device owner with
+`DevicePolicyManager.setMeteredDataDisabledPackages` (docs/platform-notes.md Q1 to Q5): Android
+keeps each one off every metered network (mobile data; Wi-Fi marked metered; another Android
+phone's hotspot), whether the app is in front or not, and Data Saver's exemptions, the app's own
+data switches, and resetting network settings or app preferences don't lift it.
+
+- **Never restricted**, whatever the list says: Belay, and every package the phone never blocks
+  (its `never_blocked`: the dialers, the texting app, emergency apps, the home screen, Settings,
+  the keyboard in use, and Android's own packages without a launcher icon, Carrier Services and
+  Play services among them), so calls, texts (RCS needs data), 911 and 988 always work; and any
+  package that shares its uid with another (Android restricts by uid). Each one the list names
+  that's on the phone is a problem in the report, in the parent's words.
+- **Waiting quietly:** a package that isn't installed (it's restricted once it is), and one Belay
+  hid (Android refuses a hidden app; it's restricted once it's unblocked).
+- Belay calls Android only when its list differs from what Android has, or an app on it was
+  installed again under a new uid (Android resolves a package to its uid when Belay calls). A
+  package Android refused is a problem, and isn't asked for again until something changes.
+- The report's `mobile_data.wifi_only` is what Android keeps off mobile data for Belay now; the
+  kid's rules screen lists those apps, never more.
+- On the server: adding an app tightens (a parent, or an AI client for an app the phone has
+  reported); taking one off loosens, so it's a parent's, or a parent approving an AI client's
+  proposal (kind `mobile_data`). The server refuses, for everyone, the apps it knows the phone
+  never blocks and Android's own parts the phone reported (system apps without a launcher icon).
+
 ## Calls rules (Phase 5, both sides)
 
 - **Off until a parent turns it on.** With `calls` null, Belay isn't the dialer and nothing
@@ -553,8 +642,8 @@ proposal), and the phone shows each step before it happens.
   notice, and Belay's screen lists them from the phone's own record.
 - **`keep_on`:** Belay keeps location on and sets `DISALLOW_CONFIG_LOCATION`.
 - **Lost mode** (`lost`, any mode): the parent's message on the lock screen, location kept
-  on, a fix every 5 minutes, and one screen lock (during a call Telecom has, once the call
-  ends; the audio mode alone never holds it off); everything goes back when it ends.
+  on, a fix every 5 minutes, and one screen lock (during a call Telecom has, about 2 minutes
+  after the call ends; the audio mode alone never holds it off); everything goes back when it ends.
 - **Only a parent** turns location on or off, changes places, `keep_on` or lost mode.
   An AI client may read fixes only with the `location` scope on (off by default), and may
   ask for `locate_now` only in `on_demand` or `periodic` mode; the kid's notice names it.
@@ -667,8 +756,8 @@ server decides whether a change tightens or loosens.
   Used up: its apps are suspended until the next day starts, or until extra time.
 - **Schedules:** from `start` to `end` on `days` (an `end` at or before `start` ends the
   next day), every app is suspended except the never-blocked ones, the `exempt` ones and
-  the schedule's `allow`; `lock` also locks the screen when it starts (during a call, once
-  the call ends, if the schedule is still on, as for `lock_now` below); `skip` names days it
+  the schedule's `allow`; `lock` also locks the screen when it starts (during a call, about 2
+  minutes after the call ends, if the schedule is still on, as for `lock_now` below); `skip` names days it
   doesn't start.
 - **Always open:** the never-blocked apps and `exempt`. Schedules and daily totals also
   leave the clock and the keyboard alone, as a pause does; a limit that names the clock
@@ -689,19 +778,37 @@ server decides whether a change tightens or loosens.
   calls, and calls through a calling account the user turned on, never an app's self-managed
   call); otherwise for a carrier call by the audio mode (`MODE_IN_CALL`, which no app can set),
   for at most 30 minutes. No other audio mode counts, so an app holding `MODE_IN_COMMUNICATION`
-  holds no lock off. The result doesn't wait (the fifth security review's F2): the phone
-  reports it at the step that first has it, `done` whether the screen locks then or, during a
-  call, once the call ends, however long that takes (a restart before then drops it: the
-  restart locked the screen), so no result says whether a call was on, or when one ended.
+  holds no lock off. A lock a call held off waits 2 minutes more once no call is on, counted on
+  the phone only (the sixth security review's I1: a kid whose 988 call dropped can call again
+  before the lock screen, whose emergency dialer takes only emergency numbers, asks for the PIN),
+  and a call in those 2 minutes holds it off again. The result doesn't wait (the fifth security
+  review's F2): the phone reports it at the step that first has it, `done` whether the screen
+  locks then or, during a call, about 2 minutes after the call ends, however long that takes (a
+  restart before then drops it: the restart locked the screen; a phone without Android's boot
+  count, `BOOT_COUNT`, platform notes K2, takes a clock moved 10 minutes or more for a restart
+  too, and drops it unlocked: the sixth review's I3), so no result says whether a call
+  was on, or when one ended. Once reported, the lock has nothing to do with the pause it came
+  with (I2): it still happens after that pause ended, or after a parent resumed the phone. The
+  build before that fix sent `waited_for_call` with an expired one; the server refuses that field
+  now, so a phone on that build had its check-ins refused until it updated (only CI's phones ran
+  it: the sixth review's I5).
   `expired` means only that the phone got it after `expires_at`, and `failed` that the lock
-  failed when the phone had it; a lock that waited and fails later is only in the phone's own
-  log. A phone updated to a Belay that can lock reads that permission at its next
-  restart (platform notes S5): until then the result is `failed`, "Android lets Belay lock the
-  screen only after the phone restarts once with this version of Belay." The server sends it
+  failed when the phone had it; a lock that waited and fails later (rare: Android refusing it
+  for another reason) is only in the phone's own log. Whether the phone can lock at all is
+  decided first, from what a call doesn't change (the sixth security review's G2): while Belay
+  isn't the device owner, or before a phone updated to a Belay that can lock reads that
+  permission at its next restart (platform notes S5: Android's record of Belay's policies,
+  `DevicePolicyManager.hasGrantedPolicy`, has no force-lock until then), every `lock_now` is
+  `failed` at once, call or not, nothing waits, and the phone doesn't try; for the restart,
+  "Android lets Belay lock the screen only after the phone restarts once with this version of
+  Belay.", which the phone also reports in `enforcement.problems` the whole time. The server sends it
   with `expires_at` 10 minutes on, and with a pause of 5 to 240 minutes when a parent or an AI
   client locks the phone (the command line's `lock-now` sends the lock alone, expiring after
   its `--minutes`); a new one replaces one still waiting. The parent sees a failed one's
-  `problem` word for word; the server shows no time of the phone's beside a lock's result.
+  `problem` word for word; the parent page, MCP and the activity log show no time of the phone's
+  beside a lock's result. Only the server's command line (`status --json`, for whoever runs the
+  server) prints each result's `at` as the phone sent it, which for a lock now is when the phone
+  had it, a call on or not (the sixth review's I6).
 - **The report:** `enforcement.screen_time` changes every minute the phone is used, but the
   phone checks in early only when something other than the minutes changed (a limit used up,
   a schedule starting, usage access, a self-serve take); the 2-hourly check-in carries the
@@ -832,6 +939,7 @@ server decides whether a change tightens or loosens.
 | `stage` | `{name, number, since, next?: {name, unlocks: string[], how?, screen_time?}}`? | Phase 3, for the kid's screen; `unlocks` and `how` are the family's words |
 | `agreement` | `{version, sections: [{title, text}], kid_agreed_at?, parents_agreed_at?}`? | Phase 3; at most 20 sections of 2000 characters |
 | `network_log` | `{enabled, private_domains}` | Phase 3: whether the phone logs which domains its apps look up (`POST /network`); off unless a parent turns it on, never an AI app. `private_domains`: the family's private websites, at most 100 registrable domains (lowercase hostnames, checked like a `network` entry's `domain`) the phone never keeps a lookup of, or of a name under one, like 988's websites; a parent's alone, sent whether logging is on or off. A phone that doesn't know it reads `{enabled}` as before |
+| `mobile_data` | `{wifi_only: string[], measure: bool}` | Phase 13, always sent: the Wi-Fi-only apps (above), at most 100 package names, sorted; `measure`: send `POST /mobile-data`. Both off by default; a phone that doesn't know it ignores it, and a phone that does reads a policy without it as both off |
 | `location` | Location? | Phase 4; null or `mode: off`: no location at all |
 | `ai_reads` | string[] | Phase 7: the data categories the AI app may read |
 | `help_seen` | `[{request_id, at, by?}]` | Phase 7: the last 30 days |
@@ -911,6 +1019,7 @@ The answers in `requests` gain `minutes?` (Phase 3: an approved `more_time`).
 | `network_log` | `{enabled, paused}`? | Phase 3: null while the policy's `network_log` is off and Android's logging is too; `enabled`: Android logs for Belay; `paused`: Android paused it, while another user or profile is on the phone |
 | `location` | `{permission, location_on, last_fix_at?, problem?}`? | Phase 4: null while location is off |
 | `calls` | `{dialer, problem?}`? | Phase 5: whether Belay is the default dialer |
+| `mobile_data` | `{wifi_only: string[]}`? | Phase 13: the packages Android keeps off mobile data for Belay now (`getMeteredDataDisabledPackages`), sorted, at most 100; null while the policy lists none and Android has none |
 
 **CallRecord** (phone → server, Phase 5): `{id, at, direction: "in"|"out", contact_id?, number?,
 duration_s, outcome: "answered"|"missed"|"rejected"|"voicemail"|"not_placed", reason?:

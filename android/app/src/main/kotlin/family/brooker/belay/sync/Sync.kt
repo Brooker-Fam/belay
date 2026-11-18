@@ -45,26 +45,37 @@ object Sync {
     @Volatile
     private var checkinWanted = false
 
+    @Volatile
+    private var dueWanted = false
+
     /** How one sync run ended. [checkinFailed]: a check-in was due or asked for, and didn't happen. */
     data class Report(val connected: Boolean, val checkinFailed: Boolean = false)
 
-    /** Asks for a sync soon. Requests made while one waits to start join it. */
-    fun request(context: Context, checkin: Boolean = false) {
+    /**
+     * Asks for a sync soon. Requests made while one waits to start join it. [checkin]: check in
+     * whether or not one is due; [dueToo]: check in when one is due (core's SyncPolicy.checkinNow),
+     * false for a step that only a time passing or a call brought (core's StepCause, the sixth
+     * review's G3), whose due check-ins are the workers' to send.
+     */
+    fun request(context: Context, checkin: Boolean = false, dueToo: Boolean = true) {
         val app = context.applicationContext
         if (checkin) checkinWanted = true
+        if (dueToo) dueWanted = true
         if (!queued.compareAndSet(false, true)) return
         executor.execute {
             queued.set(false)
             val checkinNow = checkinWanted
             checkinWanted = false
-            runSafely(app, checkinNow)
+            val due = dueWanted
+            dueWanted = false
+            runSafely(app, checkinNow, due)
         }
     }
 
-    /** For WorkManager: one run now, waiting for it. Null when it didn't finish in time. */
+    /** For WorkManager: one run now, waiting for it (a check-in when one is due, too). Null when it didn't finish in time. */
     fun runAndWait(context: Context, checkin: Boolean, timeoutMs: Long): Report? {
         val app = context.applicationContext
-        val run = executor.submit<Report> { runSafely(app, checkin) }
+        val run = executor.submit<Report> { runSafely(app, checkin, dueToo = true) }
         return try {
             run.get(timeoutMs, TimeUnit.MILLISECONDS)
         } catch (e: TimeoutException) {
@@ -95,8 +106,8 @@ object Sync {
         }
     }
 
-    private fun runSafely(app: Context, checkin: Boolean): Report = try {
-        SyncRun(app).run(checkin)
+    private fun runSafely(app: Context, checkin: Boolean, dueToo: Boolean): Report = try {
+        SyncRun(app).run(checkin, dueToo)
     } catch (t: Exception) {
         Log.e(Agent.TAG, "sync failed", t)
         Report(connected = true, checkinFailed = checkin)
@@ -173,11 +184,11 @@ object Sync {
     }
 }
 
-/** One pass: check in if due, then the outbox, oldest first. */
+/** One pass: check in if asked, or due ([dueToo]: core's SyncPolicy.checkinNow), then the outbox, oldest first. */
 private class SyncRun(private val app: Context) {
     private val store = AgentStore.get(app)
 
-    fun run(checkinWanted: Boolean): Sync.Report {
+    fun run(checkinWanted: Boolean, dueToo: Boolean): Sync.Report {
         val connection = ConnectionStore.read(app)
         if (!connection.connected) return Sync.Report(connected = false)
         val token = TokenVault.decrypt(connection.sealedToken ?: return Sync.Report(connected = false))
@@ -185,7 +196,7 @@ private class SyncRun(private val app: Context) {
             disconnect("the device token can't be read any more")
             return Sync.Report(connected = false)
         }
-        val checkinDue = checkinWanted || SyncPolicy.checkinDue(connection.lastCheckinAt, System.currentTimeMillis())
+        val checkinDue = SyncPolicy.checkinNow(checkinWanted, dueToo, connection.lastCheckinAt, System.currentTimeMillis())
         if (!Sync.online(app)) {
             // Not a failure: WorkManager runs the sync once there is a network.
             if (store.pendingCount() > 0) SyncWork.wake(app, 0)
@@ -249,10 +260,11 @@ private class SyncRun(private val app: Context) {
     /**
      * Sends what waits, strictly in order (OutboxDrain): the server applies events and
      * inventories as they arrive. Usage days (Phase 3) go in a lane of their own after it,
-     * fixes and place events (Phase 4) in a third, call records (Phase 5) in a fourth, and network
-     * days (Phase 3's network logging) in a fifth, so a server without `POST /usage`,
-     * `POST /locations`, `POST /calls` or `POST /network` yet (it answers 404, which waits and tries
-     * again) holds back nothing else. Returns false if the server disconnected the phone.
+     * fixes and place events (Phase 4) in a third, call records (Phase 5) in a fourth, network
+     * days (Phase 3's network logging) in a fifth, and mobile data days (Phase 13) in a sixth, so a
+     * server without `POST /usage`, `POST /locations`, `POST /calls`, `POST /network` or
+     * `POST /mobile-data` yet (it answers 404, which waits and tries again) holds back nothing
+     * else. Returns false if the server disconnected the phone.
      */
     private fun drain(api: DeviceApi, token: String): Boolean {
         val queue = store.queue()
@@ -299,6 +311,7 @@ private class SyncRun(private val app: Context) {
             OutboxType.FIX, OutboxType.PLACE_EVENT -> "fixes and place events"
             OutboxType.CALL -> "call records"
             OutboxType.NETWORK -> "network days"
+            OutboxType.MOBILE_DATA -> "mobile data days"
             else -> "items"
         }
         if (result.sent.isNotEmpty()) Log.i(Agent.TAG, "sent ${result.sent.size} $what in ${result.requests} requests")
@@ -318,7 +331,8 @@ private class SyncRun(private val app: Context) {
                 LaneOutcome.Disconnected
             }
             OutboxDrain.Stop.Budget -> {
-                Sync.request(app)
+                // The rest of this run's outbox: its check-in, if any, went out already.
+                Sync.request(app, dueToo = false)
                 LaneOutcome.Done
             }
         }
@@ -332,6 +346,7 @@ private class SyncRun(private val app: Context) {
         OutboxRow.TYPE_PLACE_EVENT -> OutboxType.PLACE_EVENT
         OutboxRow.TYPE_CALL -> OutboxType.CALL
         OutboxRow.TYPE_NETWORK -> OutboxType.NETWORK
+        OutboxRow.TYPE_MOBILE_DATA -> OutboxType.MOBILE_DATA
         else -> OutboxType.EVENT
     }
 
@@ -380,6 +395,12 @@ private class SyncRun(private val app: Context) {
                 val payloads = store.networkPayloads(ids).map { NetworkDigest.sendable(it, private) }
                 if (payloads.isEmpty()) return Verdict.Sent
                 api.network(token, payloads)
+            }
+            OutboxType.MOBILE_DATA -> {
+                // Phase 13. Gone when a newer report of the same day replaced it, or measuring went off, meanwhile.
+                val payloads = store.mobileDataPayloads(ids)
+                if (payloads.isEmpty()) return Verdict.Sent
+                api.mobileData(token, payloads)
             }
         }
         return when (answer) {

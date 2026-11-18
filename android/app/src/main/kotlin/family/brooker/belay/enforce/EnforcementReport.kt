@@ -12,7 +12,8 @@ import family.brooker.belay.store.AgentStore
  * of Belay keeps: what the agent step applied (with the packages never blocked and the
  * policy's offered update), the update thread's record, the recovery key's last use, the
  * commands' last results, (Phase 4) location's status, (Phase 5) whether Belay is the dialer and
- * (Phase 3) whether Android logs network lookups, as the last step saw them. DeviceStatus
+ * (Phase 3) whether Android logs network lookups and (Phase 13) which apps Android keeps off
+ * mobile data for Belay, as the last step saw them. DeviceStatus
  * sends it; the agent step compares it with the last one, so any change reaches the parent page
  * within seconds.
  */
@@ -27,5 +28,6 @@ object EnforcementReport {
             location = store.locationState()?.report,
             calls = store.callsState()?.report,
             networkLog = store.networkState()?.report,
+            mobileData = store.mobileDataState()?.report,
         )
 }

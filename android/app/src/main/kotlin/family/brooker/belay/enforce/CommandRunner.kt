@@ -30,8 +30,9 @@ import family.brooker.belay.service.ParentNotice
  * Phase 3, lock_now: [lockNow] locks the screen once for the commands a step has (ScreenLock),
  * after the step applied the rest, so a pause sent with it has suspended the apps first. Each is
  * reported at the step that first has it, a call on or not (core's ScreenLocks.lockNow, the fifth
- * review's F2): during a call it's done, and the lock is due until a step with no call on.
- * [run] leaves them out.
+ * review's F2): during a call it's done, and the lock is due until a step with no call on. When
+ * Belay can't lock the screen at all, it's failed in the same words, call or not (the sixth
+ * review's G2). [run] leaves them out.
  *
  * Phase 4, locate_now: the step's location part runs them (location/LocationStep.kt): a fix takes
  * up to a minute, so its result comes at a later step. [run] leaves them out too.
@@ -60,13 +61,22 @@ class CommandRunner(context: Context) {
 
     /**
      * Phase 3: [plan]'s lock_now commands and the lock [due] from an earlier step (core's
-     * ScreenLocks.lockNow): the screen locks once now unless the lock waits for a call ([waits],
-     * asked only when a lock is due; never while Belay isn't the device owner, which can't lock),
-     * and each new command is reported now, done (during a call too: then the lock stays due) or
-     * failed. A due lock that fails once the call is over is only logged.
+     * ScreenLocks.lockNow): when Belay can't lock the screen at all ([cannotLock]: not the device
+     * owner, or Android has no force-lock for it until the phone restarts, ScreenLock.cannotLock),
+     * each new command is failed in those words, a call on or not (the sixth review's G2), and no
+     * lock is due. Otherwise the screen locks once now unless the lock waits for a call ([waits],
+     * asked only when a lock is due), and each new command is reported now, done (during a call
+     * too: then the lock stays due) or failed. A due lock that fails once the call is over is only
+     * logged.
      */
-    fun lockNow(plan: CommandPlan, owner: Boolean, due: LockDue?, bootCount: Int?, bootAt: Long, waits: () -> Boolean = { false }): Locking {
-        val step = ScreenLocks.lockNow(plan, due, bootCount, bootAt) { owner && waits() }
+    fun lockNow(plan: CommandPlan, owner: Boolean, due: LockDue?, bootCount: Int?, bootAt: Long, cannotLock: String?, waits: () -> Boolean = { false }): Locking {
+        val step = ScreenLocks.lockNow(plan, due, bootCount, bootAt, cannotLock, waits)
+        step.problem?.let { problem ->
+            val now = System.currentTimeMillis()
+            if (due != null && step.report.isEmpty()) Log.w(Agent.TAG, "the screen lock that waited for a call didn't happen: $problem")
+            step.report.forEach { Log.i(Agent.TAG, "command ${it.id} (${it.kind}): failed: $problem") }
+            return Locking(step.report.map { CommandLog.failed(it, now, problem) }, due = null)
+        }
         if (!step.lock) {
             val now = System.currentTimeMillis()
             step.report.forEach { Log.i(Agent.TAG, "command ${it.id} (${it.kind}): done; the screen lock waits for a call to end") }

@@ -57,6 +57,11 @@ account names, phone numbers or serial numbers.
 
 1. With location on and the AI scopes "apps" and "screen time" on in Settings: "Where this phone
    is" is listed, and "Your parent's AI app can read this." shows under exactly those categories.
+   "Your parent's AI app can always read these:" lists five lines (the phone's name, problems and
+   when it last connected; the rules; time limits, schedules and the last screen lock; whether it
+   shares where it is; calls' rules and contacts' names); with every scope off they're still there, and
+   the last line says "Your parent hasn't let their AI app read anything else here." (the sixth
+   review's G4).
 2. The line about where it goes names the family's server.
 
 ## 6. Words and the largest font

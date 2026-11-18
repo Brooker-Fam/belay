@@ -13,9 +13,10 @@ import java.time.format.DateTimeParseException
  * a third lane, for the same reason (`POST /locations`, idempotent by each item's id); a place event
  * goes after the fix it names. Call records have a fourth (`POST /calls`, idempotent by id), so a
  * server from before Phase 5 (404, tried again later) holds back nothing else. Network days (Phase 3's
- * network logging) have a fifth (`POST /network`, each day replacing the server's).
+ * network logging) have a fifth (`POST /network`, each day replacing the server's), and mobile data
+ * days (Phase 13) a sixth (`POST /mobile-data`, each day replacing the server's).
  */
-enum class OutboxType { EVENT, SNAPSHOT, REQUEST, USAGE, FIX, PLACE_EVENT, CALL, NETWORK }
+enum class OutboxType { EVENT, SNAPSHOT, REQUEST, USAGE, FIX, PLACE_EVENT, CALL, NETWORK, MOBILE_DATA }
 
 /**
  * One item waiting to be sent. [id]s grow in the order the agent made the items, and
@@ -112,16 +113,30 @@ object OutboxPolicy {
     /** Unsent network days kept: one per day (a newer report of a day replaces it), the newest. */
     const val MAX_PENDING_NETWORK = 31
 
+    /** Phase 13: well under the server's 256 KB limit for `POST /api/v1/mobile-data`. */
+    const val MAX_MOBILE_DATA_BODY_BYTES = 192 * 1024
+
+    /** `{"days":[` and `]}` around the comma-separated days. */
+    const val MOBILE_DATA_WRAPPER_BYTES = 11
+
+    /** The server takes at most 31 days in one request. */
+    const val MAX_MOBILE_DATA_DAYS_PER_REQUEST = 31
+
+    /** Unsent mobile data days kept: one per day (a newer report of a day replaces it), the newest. */
+    const val MAX_PENDING_MOBILE_DATA = 31
+
     /**
      * The lanes the outbox is sent in: everything in order, then usage on its own (Phase 3), then
      * fixes and place events (Phase 4), then call records (Phase 5), then network days (Phase 3's
-     * network logging). A failure in one holds back only the rest of that lane.
+     * network logging), then mobile data days (Phase 13). A failure in one holds back only the rest
+     * of that lane.
      */
     fun lane(type: OutboxType): Int = when (type) {
         OutboxType.USAGE -> 1
         OutboxType.FIX, OutboxType.PLACE_EVENT -> 2
         OutboxType.CALL -> 3
         OutboxType.NETWORK -> 4
+        OutboxType.MOBILE_DATA -> 5
         else -> 0
     }
 
@@ -201,7 +216,7 @@ object OutboxPolicy {
     /**
      * How many items from [from] go in one request. A snapshot goes alone. Events go
      * together up to the server's count limit and [maxBytes], and so do requests, usage
-     * days, fixes with place events, call records and network days (each with their own limits); a batch never mixes kinds
+     * days, fixes with place events, call records, network days and mobile data days (each with their own limits); a batch never mixes kinds
      * (fixes and place events count as one) or passes a snapshot: always at least one item.
      */
     fun batchSize(queue: List<OutboxItem>, from: Int = 0, maxBytes: Int? = null): Int {
@@ -214,6 +229,7 @@ object OutboxPolicy {
             OutboxType.FIX -> MAX_LOCATIONS_PER_REQUEST
             OutboxType.CALL -> MAX_CALLS_PER_REQUEST
             OutboxType.NETWORK -> MAX_NETWORK_DAYS_PER_REQUEST
+            OutboxType.MOBILE_DATA -> MAX_MOBILE_DATA_DAYS_PER_REQUEST
             else -> WireLimits.MAX_REQUESTS_PER_REQUEST
         }
         val byteLimit = maxBytes ?: when (type) {
@@ -222,6 +238,7 @@ object OutboxPolicy {
             OutboxType.FIX -> MAX_LOCATIONS_BODY_BYTES
             OutboxType.CALL -> MAX_CALLS_BODY_BYTES
             OutboxType.NETWORK -> MAX_NETWORK_BODY_BYTES
+            OutboxType.MOBILE_DATA -> MAX_MOBILE_DATA_BODY_BYTES
             else -> MAX_REQUESTS_BODY_BYTES
         }
         var count = 0
@@ -231,6 +248,7 @@ object OutboxPolicy {
             OutboxType.FIX -> LOCATIONS_WRAPPER_BYTES
             OutboxType.CALL -> CALLS_WRAPPER_BYTES
             OutboxType.NETWORK -> NETWORK_WRAPPER_BYTES
+            OutboxType.MOBILE_DATA -> MOBILE_DATA_WRAPPER_BYTES
             else -> REQUESTS_WRAPPER_BYTES
         }.toLong()
         while (from + count < queue.size && count < maxCount) {
@@ -303,6 +321,30 @@ object OutboxDrain {
     }
 }
 
+/**
+ * What brought an agent step, as far as the sync after it goes (the app's Trigger says which, for
+ * each trigger). Only an [OTHER] step sends a check-in merely because one is due
+ * ([SyncPolicy.checkinNow]; the sixth review's G3).
+ */
+enum class StepCause {
+    /**
+     * Only a time passing: the policy timer (every minute while a lock waits for a call, and at a
+     * rule's boundary), screen time's minute while the screen is on, a location check's alarm, a
+     * retry's.
+     */
+    TIME,
+
+    /** A call came or ended, or a lock that waits for one looks again when Android's audio mode changes. */
+    CALL,
+
+    /** Anything else: something happened on the phone or the server, or the hourly check (one of the workers). */
+    OTHER,
+    ;
+
+    /** Whether the sync after the step checks in when one is due. */
+    val dueCheckin: Boolean get() = this == OTHER
+}
+
 object SyncPolicy {
     const val CHECKIN_INTERVAL_MS = 2L * 60 * 60 * 1000
 
@@ -311,6 +353,19 @@ object SyncPolicy {
 
     fun checkinDue(lastCheckinAt: Long?, now: Long): Boolean =
         lastCheckinAt == null || now < lastCheckinAt || now - lastCheckinAt >= CHECKIN_INTERVAL_MS - CHECKIN_EARLY_MS
+
+    /**
+     * Whether a sync run checks in: when it was asked to ([asked]: a trigger that checks in, a
+     * changed report, the 2-hourly check-in worker), else when one is due, unless only a time
+     * passing or a call brought it ([dueToo] false: [StepCause.dueCheckin], the sixth review's G3).
+     * While a lock waits for a call the policy timer steps every minute, so a check-in sent once
+     * due landed within a minute of 110 minutes after the last, all through the call, where the
+     * workers put them about 2 hours apart: a call's span, to the minute, in `last_check_in`. Those
+     * steps leave a due check-in to the workers' own schedule, and still send what waits in the
+     * outbox, and a report that changed (as [asked]).
+     */
+    fun checkinNow(asked: Boolean, dueToo: Boolean, lastCheckinAt: Long?, now: Long): Boolean =
+        asked || (dueToo && checkinDue(lastCheckinAt, now))
 
     /** The server's clock minus the phone's, taking the middle of the request as when the server answered. */
     fun clockSkewMs(serverTime: Long, sentAt: Long, receivedAt: Long): Long =

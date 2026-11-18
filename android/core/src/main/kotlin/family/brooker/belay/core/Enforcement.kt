@@ -3,6 +3,7 @@ package family.brooker.belay.core
 import family.brooker.belay.core.calls.WireCallsStatus
 import family.brooker.belay.core.location.LocationRules
 import family.brooker.belay.core.location.WireLocationStatus
+import family.brooker.belay.core.mobiledata.WireMobileDataStatus
 import family.brooker.belay.core.screentime.WireNetworkLogStatus
 import family.brooker.belay.core.screentime.WireScreenTimeStatus
 import kotlinx.serialization.Serializable
@@ -696,6 +697,7 @@ object Enforcement {
         location: WireLocationStatus? = null,
         calls: WireCallsStatus? = null,
         networkLog: WireNetworkLogStatus? = null,
+        mobileData: WireMobileDataStatus? = null,
     ): WireEnforcement? {
         val version = applied.policyVersion ?: return null
         return WireEnforcement(
@@ -714,6 +716,8 @@ object Enforcement {
             calls = calls,
             // Phase 3: whether Android logs (and paused it); null while network logging is off.
             networkLog = networkLog,
+            // Phase 13: the apps Android keeps off mobile data for Belay; null while there are none to keep.
+            mobileData = mobileData,
         )
     }
 }

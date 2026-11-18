@@ -178,7 +178,21 @@ class OutboxTest {
         assertTrue(OutboxPolicy.MAX_NETWORK_BODY_BYTES < 512 * 1024)
         assertEquals(1, OutboxPolicy.batchSize(listOf(network(1), usage(2), network(3))), "never with usage days")
         assertEquals(4, OutboxPolicy.lane(OutboxType.NETWORK))
-        assertEquals(5, OutboxType.entries.map(OutboxPolicy::lane).toSet().size, "each lane apart")
+        assertEquals(6, OutboxType.entries.map(OutboxPolicy::lane).toSet().size, "each lane apart")
+    }
+
+    @Test
+    fun `mobile data days go together up to 31, under 192 KB, in a lane of their own`() {
+        val days = (1L..40L).map { OutboxItem(it, OutboxType.MOBILE_DATA, 2000) }
+        assertEquals(31, OutboxPolicy.batchSize(days))
+        assertEquals(OutboxPolicy.MAX_MOBILE_DATA_DAYS_PER_REQUEST, OutboxPolicy.batchSize(days))
+        // A day of 500 apps is about 30 KB: six go in one request, well under the server's 256 KB.
+        val big = (1L..10L).map { OutboxItem(it, OutboxType.MOBILE_DATA, 30 * 1024) }
+        assertEquals(6, OutboxPolicy.batchSize(big))
+        assertTrue(OutboxPolicy.MAX_MOBILE_DATA_BODY_BYTES < 256 * 1024)
+        assertEquals(1, OutboxPolicy.batchSize(listOf(OutboxItem(1, OutboxType.MOBILE_DATA, 2000), network(2))), "never with network days")
+        assertEquals(5, OutboxPolicy.lane(OutboxType.MOBILE_DATA))
+        assertTrue(5 !in (OutboxType.entries - OutboxType.MOBILE_DATA).map(OutboxPolicy::lane), "no other kind shares it")
     }
 
     @Test

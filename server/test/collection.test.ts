@@ -71,10 +71,11 @@ async function family() {
 describe("what the server keeps about a phone", () => {
   it("lists exactly what each category's stop deletes, and what stays", async () => {
     const { t, phone } = await family();
-    const [apps, screen, location, calls, network, requests] = keptAbout(t.deps.db, phone.deviceId, t.now());
-    // Calls and network logging were never turned on for this phone: nothing to stop.
+    const [apps, screen, location, calls, network, mobileData, requests] = keptAbout(t.deps.db, phone.deviceId, t.now());
+    // Calls, network logging and measuring mobile data were never turned on for this phone: nothing to stop.
     expect(calls).toMatchObject({ category: "calls", goes: [], stays: [], anything: false });
     expect(network).toMatchObject({ category: "network", goes: [], stays: [], anything: false });
+    expect(mobileData).toMatchObject({ category: "mobile_data", goes: [], stays: [], anything: false });
     expect(apps).toMatchObject({
       category: "apps",
       goes: [

@@ -391,7 +391,9 @@ Location, Calls and Network start off for every family: they're about where your
 other people who never agreed to Belay (their friends' numbers), and about which websites and
 services your kid's apps use. Turn one on only if you want Claude's help with it. A category a
 new version of Belay adds starts off if you had turned any off, marked "new" until you save. The
-kid's phone shows which ones are on: "Your parent's AI app can read this."
+kid's phone shows which ones are on: "Your parent's AI app can read this.", and, with every
+category off too, what Claude can always read: the phone's name, how it's doing and its problems,
+when it last checked in, and its rules (the call rules and contacts' names among them).
 
 **What Claude can do:** read those categories, mark apps reviewed, and tighten at once: block an
 app, pause or lock the phone, tighten screen time or the call rules. **Anything that loosens**
@@ -655,6 +657,41 @@ decision for your family ([threat-model.md](threat-model.md#the-kid-and-network-
 
 **Not yet checked on a Pixel:** Android's notice, and a real browser's lookups
 ([phase3-checklist.md](phase3-checklist.md), section 7).
+
+### Mobile data, off by default
+
+For a family plan with a data cap, the phone's **Mobile data** tab has two parts, both off until
+you turn them on ([server.md](server.md#mobile-data-phase-13)).
+
+- **Wi-Fi only:** pick apps that may not use mobile data, like video and game apps. Android on
+  the phone keeps them off mobile data, and off any other Wi-Fi it counts as metered, like
+  another phone's hotspot; on your home Wi-Fi they work as usual. Your kid sees which apps and
+  why, under This phone's rules. Belay never does this to the phone app, texting, the keyboard,
+  the home screen or Android's own parts, so calls, texts, 911 and 988 always work. It doesn't
+  cover a download an app hands to Android's download manager, or app updates through Play:
+  make Google Play Wi-Fi only too, or set Play's own download preference. Claude can add an app
+  when you ask; letting one use mobile data again is a proposal you approve.
+- **Measure mobile data:** the phone sends how much mobile data each app used each day, with the
+  day's Wi-Fi total: never which websites or networks. Only a parent turns it on or off. Claude
+  reads it with its Mobile data category, which starts on, like screen time. Kept 90 days by
+  default.
+
+Decisions for your family, with what we'd suggest:
+
+1. **Which apps.** Measure for a week or two first, then make the top few video, game and social
+   apps Wi-Fi only. Not Maps: a kid who's lost needs it.
+2. **The browser.** 988's chat on the web needs data (calling and texting 988 always work). We'd
+   leave the browser off the list.
+3. **Play.** If updates eat the plan, make Google Play Wi-Fi only too, or use Play's own
+   download preference.
+4. **Measuring.** Off by default; we'd turn it on for the first weeks, to see where the data goes.
+5. **What Claude may read.** On by default, like screen time; turn the Mobile data category off
+   in Settings if you'd rather not.
+6. **How long to keep it.** 90 days, three billing cycles, unless you choose otherwise.
+7. **The phone's own hotspot.** Belay doesn't lock it: talk about it, and watch the hotspot line.
+
+**Not yet checked on a Pixel:** a real SIM's mobile data, a parent's hotspot, Wi-Fi marked metered,
+and the battery ([phase13-checklist.md](phase13-checklist.md)).
 
 ### The kid's help button and emergency card
 

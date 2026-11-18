@@ -87,6 +87,12 @@ android {
         abortOnError = true
         checkDependencies = true
     }
+
+    // MigrationInstrumentedTest makes a database from an exported schema: the test APK carries
+    // app/schemas as assets (the app itself doesn't).
+    sourceSets {
+        getByName("androidTest").assets.srcDir(layout.projectDirectory.dir("schemas"))
+    }
 }
 
 // Room writes each schema version here (checked in), for future migrations.

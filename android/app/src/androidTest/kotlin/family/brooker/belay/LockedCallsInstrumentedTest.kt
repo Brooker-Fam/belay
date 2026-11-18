@@ -38,16 +38,29 @@ class LockedCallsInstrumentedTest {
     }
 
     @Test
-    fun theTimeIsKeptInDeviceProtectedStorageAndOnlyTheNewest() {
+    fun everyTimeIsKeptInDeviceProtectedStorageUntilItsWindowIsOver() {
         LockedCalls.forget(context)
         assertNull(LockedCalls.emergencyContactAt(context))
         val now = System.currentTimeMillis()
+        val hour = 60 * 60_000L
+        // Two calls to 911 from the lock screen hours apart: both kept (the sixth review's G1), each
+        // once, oldest first; the window now goes by the newest.
+        LockedCalls.record(context, now - 3 * hour)
         LockedCalls.record(context, now - 60_000)
-        LockedCalls.record(context, now - 120_000)
+        LockedCalls.record(context, now - 60_000)
+        assertEquals(listOf(now - 3 * hour, now - 60_000), LockedCalls.emergencyContactsAt(context))
         assertEquals(now - 60_000, LockedCalls.emergencyContactAt(context))
         val file = File(context.createDeviceProtectedStorageContext().noBackupFilesDir, "calls-before-unlock")
         assertTrue("not in device-protected storage", file.exists())
-        assertEquals("only the time", (now - 60_000).toString(), file.readText().trim())
+        assertEquals("only the times", listOf(now - 3 * hour, now - 60_000).joinToString("\n"), file.readText().trim())
+        // Once a step has them, only those whose window is still open stay; none: the file goes.
+        LockedCalls.keepOpen(context, now)
+        assertEquals(listOf(now - 60_000), LockedCalls.emergencyContactsAt(context))
+        LockedCalls.keepOpen(context, now + 3 * hour)
+        assertTrue("nothing open, nothing kept", !file.exists())
+        // A file an older Belay wrote holds one time.
+        file.writeText((now - 60_000).toString())
+        assertEquals(listOf(now - 60_000), LockedCalls.emergencyContactsAt(context))
         LockedCalls.forget(context)
         assertNull(LockedCalls.emergencyContactAt(context))
     }

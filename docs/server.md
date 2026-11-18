@@ -99,7 +99,7 @@ home network; see docs/platform-notes.md.)
 | `BELAY_DEMO_BANNER` | off | Only `npm run demo` sets it ([demo.md](demo.md)): `1` puts "Demo: a made-up family. Nothing here is real." on every page. It changes nothing else. |
 
 The family's timezone, the silent threshold, what AI apps may read, how long screen time,
-where the phone was, call records, network activity and the activity log are kept (the activity
+where the phone was, call records, network activity, mobile data use and the activity log are kept (the activity
 log 400 days by default, at least 30), which map site "Open in a map" goes to, the numbers on
 the kid's emergency card, notifications and the daily summary are set on the Settings page, not
 here.
@@ -230,6 +230,8 @@ docker compose exec belay node dist/cli.js lock-now "Sam's phone"               
 docker compose exec belay node dist/cli.js screen-time "Sam's phone" --measure on    # or off: whether the phone sends how long apps are used
 docker compose exec belay node dist/cli.js network "Sam's phone" --on                # or --off: whether the phone notes which websites and services its apps look up
 docker compose exec belay node dist/cli.js private-website "Sam's phone" example.org   # never noted, with the names under it; --remove <website> to undo
+docker compose exec belay node dist/cli.js wifi-only "Sam's phone" com.example.video    # kept off mobile data; --remove <package> to undo
+docker compose exec belay node dist/cli.js mobile-data "Sam's phone" --measure on        # or off: whether the phone sends how much mobile data each app uses
 docker compose exec belay node dist/cli.js answer "Sam's phone" <request id> approve --minutes 15   # or decline, or talk; --note "…"
 ```
 
@@ -288,7 +290,8 @@ as it sent it, or `null`), `requests` (`[{id, kind, package, status, reason}]`, 
 agreement), `agent_version_code` and `agent_signing_sha256` (as the phone reported them),
 `agent_update` (the offer, and what the phone said about it), `recovery` (`{version,
 last_used}`: the key version the policy carries, or `null`), `commands` (the latest, with
-their results), `screen_time` (the policy's screen-time rules, or `null` while the phone has
+their results and the phone's time for each, which for a lock now is when the phone had it,
+a call on or not), `screen_time` (the policy's screen-time rules, or `null` while the phone has
 none) and `usage` (the days the phone sent, newest first, at most 31: `[{day, zone, as_of,
 screen_minutes, apps: [{package, minutes, opens}]}]`). Phase 4 adds `location` (the policy's,
 `null` until a parent first sets it), `fixes` (newest first, at most 50: `[{id, at, lat, lng,
@@ -307,7 +310,10 @@ adds `handover` (`{at, by, version}` or `null`: when, as the policy has it in mi
 the epoch, the parent's name or `null` from the CLI, and the rules version that carried it).
 Network logging adds `network_log` (the policy's: `{enabled, private_domains}`) and `network` (the days the phone
 sent, newest first, at most 31: `[{day, zone, as_of, entries: [{package, domain, lookups}],
-dropped}]`, `as_of` as the phone sent it).
+dropped}]`, `as_of` as the phone sent it). Phase 13 adds `mobile_data` (the policy's:
+`{wifi_only, measure}`) and `mobile_data_days` (the days the phone sent, newest first, at most 31:
+`[{day, zone, from, as_of, complete, mobile_bytes, wifi_bytes, apps: [{package, bytes}],
+android_bytes, removed_bytes, hotspot_bytes}]`, times as the phone sent them).
 Hardening (factory reset, debugging, reset protection, and the accounts Play may use) can only
 be turned on on the parent page; `handover` lifts it, as the phone page's "Hand this phone over"
 does.
@@ -414,7 +420,7 @@ itself, offline too; the server keeps the rules and what the phone reports.
 - **Screen time** (a phone's Screen time tab): a day by the hour and the last seven days,
   with the apps that took the time and the times Belay couldn't count, each chart with a table
   of the same numbers; **Lock now**, a pause of 15 minutes to 4 hours and the screen locked
-  once if the phone gets it within 10 minutes (during a call, once it ends; how the last one
+  once if the phone gets it within 10 minutes (during a call, about 2 minutes after it ends; how the last one
   went says whether the phone got it in time, never whether a call was on); and the kid's
   requests for more time,
   answered with 15, 30 or 60 minutes, "Let's talk" or "No". Approving gives the minutes for
@@ -492,6 +498,36 @@ websites stay: they're the phone's rules). Days sent while it's off aren't kept,
 Whether Belay should also carry a built-in list of child-safety helplines' websites, never noted
 like 988's, is an open family decision: [threat-model.md](threat-model.md#the-kid-and-network-logging-phase-3)
 has the recommendation.
+
+## Mobile data (Phase 13)
+
+Two parts on a phone's **Mobile data** tab, always there, both off until a parent turns them on.
+
+- **Wi-Fi only:** apps that may not use mobile data (or `wifi-only "<phone>" <package>`). The phone
+  keeps each one off every metered network as device owner, offline too: mobile data, another
+  Android phone's hotspot, and Wi-Fi marked metered; on other Wi-Fi it works as usual. Each app
+  says what the phone does with it (on the phone; not installed, so it applies once it is;
+  waiting for the phone), who added it and when, and has "Let it use mobile data again". The Add
+  form offers the phone's apps that can be, and takes any package by name for an app not
+  installed yet. Belay never makes the phone app, texting, the keyboard, the home screen, Belay or
+  Android's own parts Wi-Fi only: the server refuses them, and so does the phone. It doesn't cover
+  a download an app hands to Android's download manager, or app updates through Play (make Google
+  Play Wi-Fi only too, or set Play's download preference). Adding an app tightens, so an AI app may
+  (`change_wifi_only`, for an app the phone reported); taking one off is a parent's, or a parent
+  approving an AI app's proposal. At most 100 a phone. The kid's phone lists them under This
+  phone's rules.
+- **Measuring** (or `mobile-data "<phone>" --measure on`): the phone sends, about hourly, how much
+  mobile data each app used each day, with the day's Wi-Fi total, Android, calls and texting
+  together on one line, apps removed since, and other devices through the phone's hotspot; never
+  which websites or networks. Only a parent turns it on or off: AI apps can't, and can't propose
+  it. The days show as bars with a table of the same numbers (mobile data, Wi-Fi, the top app),
+  and a chosen day's apps the same way, each with "Make it Wi-Fi only"; a Wi-Fi-only app that used
+  mobile data on a day that began after it was added is flagged. With Settings' "Mobile data"
+  category on (it starts on, like screen time), an AI app reads it with `get_mobile_data`
+  ([mcp.md](mcp.md)). **Kept** (Settings, "Keep mobile data use"): 90 days by default (1 to 400),
+  then deleted by the hourly clean-up; turning it off keeps what's there until then, and Off
+  belay's Stop collecting deletes it now (the Wi-Fi-only apps stay: they're the phone's rules).
+  Days sent while it's off aren't kept, and are counted.
 
 ## Location and the kid's side (Phases 4 and 7)
 
@@ -617,7 +653,7 @@ The end of the rules, for when the kid outgrows Belay: each step is a parent's, 
 - **Stop collecting** (a phone's page, "What the server keeps about this phone"): per kind of data,
   a confirmation lists exactly what goes and what stays, then the server deletes it at once and
   turns off the phone's switch where it has one (measuring; location, lost mode and keeping
-  location on; recording calls; network logging). The app list and the kid's requests keep coming while Belay is on the phone;
+  location on; recording calls; network logging; measuring mobile data). The app list and the kid's requests keep coming while Belay is on the phone;
   [privacy.md](privacy.md) has exactly what each stop deletes.
 - **Hand this phone over** (a phone's page, after typing its name): lifts the locks on factory
   reset, debugging and accounts and clears reset protection and the accounts Play may use, and
@@ -709,6 +745,9 @@ phone can send anything a phone may. Whatever it sends, the server keeps at most
   (sent again, it replaces the stored one), for dates the phone can have counted and no longer
   than the family keeps it, at most 5000 entries a day; `POST /network` is limited to 30 calls a
   minute per phone, apart from its other calls.
+- **Mobile data use** (Phase 13): only while a parent measures, one day per date (sent again, it
+  replaces the stored one), for dates the phone can have counted and no longer than the family
+  keeps it, at most 500 apps a day, never a never-blocked app's own line.
 
 Past an hour's limit the phone is answered `429` with `Retry-After`, and sends the rest later
 (app changes aside, as above); every device call is limited to 120 a minute per phone too. Disconnecting a phone stops its
@@ -961,7 +1000,8 @@ records its rules didn't ask for, or more app changes than the server keeps, and
 a phone sent a call record Belay never keeps (an emergency number, 988 or a private number),
 without the number, the phone or the time of the call, since the phone shouldn't; and,
 likewise, days of network activity sent while network logging was off (how many), and network
-activity naming 988's websites (only that it happened). Never tokens, passwords, passphrases,
+activity naming 988's websites (only that it happened), and days of mobile data use sent while
+measuring was off (how many). Never tokens, passwords, passphrases,
 browsers' push addresses, app names, domains, phone numbers or request bodies. The activity log
 on the parent page is where parents see who did what, for as long as the family keeps it (400
 days by default; the hourly clean-up deletes older entries).

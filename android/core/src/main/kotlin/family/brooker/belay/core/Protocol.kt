@@ -6,6 +6,8 @@ import family.brooker.belay.core.calls.WireContact
 import family.brooker.belay.core.location.WireFix
 import family.brooker.belay.core.location.WireLocation
 import family.brooker.belay.core.location.WireLocationStatus
+import family.brooker.belay.core.mobiledata.WireMobileData
+import family.brooker.belay.core.mobiledata.WireMobileDataStatus
 import family.brooker.belay.core.screentime.WireAgreement
 import family.brooker.belay.core.screentime.WireAgreementAnswer
 import family.brooker.belay.core.screentime.WireNetworkLog
@@ -176,6 +178,8 @@ data class WireEnforcement(
     @SerialName("screen_time") val screenTime: WireScreenTimeStatus? = null,
     /** Phase 3: network logging, if the policy turned it on. */
     @SerialName("network_log") val networkLog: WireNetworkLogStatus? = null,
+    /** Phase 13: the apps Android keeps off mobile data for Belay now; null while there are none and the policy lists none. */
+    @SerialName("mobile_data") val mobileData: WireMobileDataStatus? = null,
     /** Phase 4: whether Belay can take a fix; null while location is off. */
     val location: WireLocationStatus? = null,
     /** Phase 5: whether Belay is the default dialer; null while the policy's calls is null. */
@@ -216,7 +220,8 @@ data class WireRecoveryUse(
 enum class WireCommandOutcome {
     /**
      * It ran. A lock_now is done when the phone has it, whether it locks the screen then or, during
-     * a call, once the call ends (core's ScreenLocks.lockNow), so its result never tells of a call.
+     * a call, about 2 minutes after the call ends (core's ScreenLocks.lockNow and waits), so its
+     * result never tells of a call; a phone that can't lock fails every one, call or not.
      */
     @SerialName("done") DONE,
     @SerialName("failed") FAILED,
@@ -459,6 +464,8 @@ data class WirePolicy(
     val agreement: WireAgreement? = null,
     /** Phase 3: off unless a parent turns it on; with the family's private websites, never noted, sent either way. */
     @SerialName("network_log") val networkLog: WireNetworkLog = WireNetworkLog(),
+    /** Phase 13: the Wi-Fi-only apps, and whether the phone sends how much mobile data each app uses; both off by default. */
+    @SerialName("mobile_data") val mobileData: WireMobileData = WireMobileData(),
     /** Phase 4: null, or mode off: no location at all. */
     val location: WireLocation? = null,
     /** Phase 7: the data categories the parents' AI app may read, for "What your parent can see". */

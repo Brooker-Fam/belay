@@ -16,7 +16,12 @@ kid's real apps or times.
 
 1. Update Belay to the Phase 3 version (the parent page's update, or `provision.sh` in
    maintenance mode), then **restart the phone once**. Android reads Belay's new permission to
-   lock the screen (`force-lock`) only when the phone starts (platform notes S5).
+   lock the screen (`force-lock`) only when the phone starts (platform notes S5). Before that
+   restart (the sixth review's G2): the phone's page says "Belay on the phone says: Android lets
+   Belay lock the screen only after the phone restarts once with this version of Belay.", and
+   "lock now" says the phone couldn't lock, in those words, also when you tap it during a call
+   (call a contact first); the screen doesn't lock when that call ends. After the restart the
+   problem is gone.
 2. With adb (maintenance mode): `adb shell dumpsys device_policy` lists `force-lock` under
    Belay's admin, below `policies:`.
 3. Write down whether this Android has the flag that makes the restart unnecessary:
@@ -64,12 +69,13 @@ kid's real apps or times.
    lock (PIN) set on the phone. Write down what happens without one (the screen only turns off).
 4. A lock waits for a call (platform notes T20). Call a contact from the phone app, and during the
    call tap "lock now" on the parent page: within seconds the page says "the phone has it: its
-   screen locks at once, or as soon as a call ends", the same words as without a call, and no
-   time beside them (the fifth review's F2), and the screen doesn't lock while the call is on.
-   Keep the call on past the 10 minutes, then end it: the screen locks within a minute, and the
-   page still says the same. Do it once more with a bedtime schedule (with "lock" on) that
-   starts during a call: the apps pause at the start, and the screen locks only once the call
-   ends. If calls aren't on
+   screen locks at once, or about 2 minutes after a call ends", the same words as without a call,
+   and no time beside them (the fifth review's F2), and the screen doesn't lock while the call is
+   on. Keep the call on past the 10 minutes, then end it: the screen stays unlocked for about 2
+   minutes (the sixth review's I1; call the contact again within them and it waits for that call
+   too), then locks, within 3 minutes of the end, and the page still says the same. Do it once
+   more with a bedtime schedule (with "lock" on) that starts during a call: the apps pause at the
+   start, and the screen locks only about 2 minutes after the call ends. If calls aren't on
    for this phone, the call goes through Google's Phone app, and Belay sees it by the audio mode
    (`MODE_IN_CALL`): write down which it was. Without calls on, the wait lasts at most 30 minutes:
    a call that goes on longer is locked behind the lock screen then, and carries on.
@@ -162,6 +168,7 @@ kid's real apps or times.
 
 | Step | Check | Result | Android build |
 |---|---|---|---|
+| 0.1 | Before the restart: the problem in the phone's status, and lock now "couldn't lock" in its words, during a call too | pending | |
 | 0.2 | `force-lock` under Belay's admin after the restart | pending | |
 | 0.3 | `lock_now_coexistence` and the other flags | pending | |
 | 1.2 | Minutes match a stopwatch | pending | |
@@ -174,7 +181,7 @@ kid's real apps or times.
 | 3.1 | Bedtime warning and notice words; screen locks at the start | pending | |
 | 3.2 | What works during bedtime; the alarm rings | pending | |
 | 3.3 | Lock now, with and without a PIN | pending | |
-| 3.4 | Lock now and a bedtime's lock during a call: done at once in the usual words, no time; no lock until the call ends, past 10 minutes too; Belay's call or Google's Phone app | pending | |
+| 3.4 | Lock now and a bedtime's lock during a call: done at once in the usual words, no time; no lock until about 2 minutes after the call ends, past 10 minutes too, and a second call in those 2 minutes holds it; Belay's call or Google's Phone app | pending | |
 | 3.5 | Lock now during an app's call: does `dumpsys telecom` list it; locks at once either way, and the app's call goes on | pending | |
 | 4.1 | Usage access off: noticed within seconds, limited apps paused | pending | |
 | 4.2 | "Turn usage access back on" opens Belay's switch or the list | pending | |
