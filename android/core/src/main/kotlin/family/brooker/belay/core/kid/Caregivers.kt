@@ -1,6 +1,9 @@
 package family.brooker.belay.core.kid
 
 import family.brooker.belay.core.WireCaregiver
+import family.brooker.belay.core.WireCommand
+import family.brooker.belay.core.WireCommandOutcome
+import family.brooker.belay.core.WireCommandResult
 import family.brooker.belay.core.WirePolicy
 import family.brooker.belay.core.location.LocationRules
 
@@ -28,9 +31,16 @@ enum class CaregiverCan(val wire: String) {
 data class ShownCaregiver(val name: String, val until: Long, val can: List<CaregiverCan>)
 
 /**
+ * A lock_now a caregiver sent, which the phone did, for the kid's notice: "Grandma locked the
+ * screen (8:15 PM)" ([by], cleaned; [at], when the phone had it), and whether the screen locks
+ * only once a call is over ([afterCall]).
+ */
+data class CaregiverLock(val commandId: String, val by: String, val at: Long, val afterCall: Boolean)
+
+/**
  * Phase 12: the caregivers a parent gave some access to this phone (a grandparent for a weekend, a
  * babysitter, a coach on a trip), from the policy's `caregivers`, for the kid's screens: "What your
- * parent can see" (DataCategories.caregiver), Home, Help, a caregiver's pause and a caregiver's
+ * parent can see" (DataCategories.caregiver), Home, Help, a caregiver's pause, lock and
  * check (principle 4: the kid always sees who has access). A caregiver is listed only until their
  * `until`, by the phone's own clock, even before a new policy comes. Each name is a parent's words:
  * shown as plain text, on one line, at most 40 characters. Pure.
@@ -98,4 +108,19 @@ object Caregivers {
 
     /** The caregivers who get the kid's "I need help" too, for the Help screen. */
     fun gettingHelp(shown: List<ShownCaregiver>): List<ShownCaregiver> = shown.filter { CaregiverCan.HELP in it.can }
+
+    /**
+     * The kid's notices for a step's new lock_now commands ([commands], as the step reported them
+     * in [results]): one for each that a caregiver sent (commands[].caregiver, by their name: [who])
+     * and the phone did, "Grandma locked the screen (8:15 PM)", saying when the screen waits for a
+     * call to end ([waits]). Under a parent's longer pause, a caregiver's lock leaves the pause the
+     * parent's ("Paused by your parent"), so this is what names them for it (the seventh review's
+     * H2). A parent's or an AI app's lock names no one, as their pause doesn't; a failed one locked
+     * nothing, so it says nothing.
+     */
+    fun locks(commands: List<WireCommand>, results: List<WireCommandResult>, waits: Boolean): List<CaregiverLock> =
+        commands.filter { it.kind == WireCommand.LOCK_NOW && it.via == null }.mapNotNull { command ->
+            val done = results.firstOrNull { it.id == command.id && it.result == WireCommandOutcome.DONE } ?: return@mapNotNull null
+            who(command.caregiver)?.let { CaregiverLock(command.id, it, done.at, afterCall = waits) }
+        }
 }

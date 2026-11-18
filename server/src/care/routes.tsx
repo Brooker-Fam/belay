@@ -30,7 +30,7 @@ import {
 } from "../auth/caregivers.js";
 import { passwordProblem, usernameProblem } from "../auth/parents.js";
 import type { Deps } from "../deps.js";
-import { CARE_PAUSE_MINUTES, careActor, careCounted, careLimited, careLocate, carePause } from "../family/caregivers/changes.js";
+import { CARE_PAUSE_MINUTES, careActor, careCounted, careLimited, careLocate, carePause, careSaved } from "../family/caregivers/changes.js";
 import { listCareSubscriptions, removeCareSubscription, saveCareSubscription, sendToCaregiver } from "../family/caregivers/push.js";
 import { type Caregiver, HELP_WINDOW_MS, ONLINE_MS, accessCurrent, careAccess, getsHelpAsked, helpAskedAt } from "../family/caregivers/store.js";
 import { LOCATE_NOW_MS } from "../family/commands.js";
@@ -58,10 +58,17 @@ const NAME_MAX = 60;
 /** A caregiver's check shows its answer this long after they asked: it's about where the phone is now, never where it was. */
 const CHECK_SHOWN_MS = 15 * 60_000;
 
+/** Each true in every case it's given for (careSaved): a lock always names them on the phone, a pause only while it's theirs. */
 const SAVED: Record<string, string> = {
   paused: "Paused. The phone gets it within seconds if it's online, and shows your name.",
   locked: "Paused, and the screen locks (during a call, about 2 minutes after the call ends). The phone gets it within seconds if it's online, and shows your name.",
   kept: "The phone was paused at least that long already, so nothing changed.",
+  locked_kept:
+    "The screen locks (during a call, about 2 minutes after the call ends), and the phone says you locked it. It was paused at least that long already, so that pause stays as it was. The phone gets it within seconds if it's online.",
+  paused_any:
+    "The phone is paused for at least that long now. It gets it within seconds if it's online. If a longer pause was on already, that one stays as it was, with its own words on the phone.",
+  locked_any:
+    "The screen locks (during a call, about 2 minutes after the call ends), and the phone says you locked it. The phone is paused for at least that long now. It gets it within seconds if it's online.",
   push_on: "Notifications are on for this browser.",
   push_off: "Notifications are off for this browser.",
 };
@@ -306,8 +313,10 @@ export function careRoutes(deps: Deps, assets: Assets): Hono<CareEnv> {
     const limited = careLimited(deps, caregiver, action, device);
     if (limited) return home(c, { error: limited }, 429);
     const done = carePause(ctx(), caregiver, device.id, minutes, lock);
-    if (done.changed) careCounted(deps, caregiver, action, device.id);
-    return c.redirect(`/care?saved=${done.result.kept && !lock ? "kept" : lock ? "locked" : "paused"}#phone-${device.id}`);
+    // Without Status, a pause that changed nothing counts too: the limit mustn't tell them the phone was paused (J7).
+    const sees = careAccess(caregiver, device.id, "status", deps.now());
+    if (done.changed || !sees) careCounted(deps, caregiver, action, device.id);
+    return c.redirect(`/care?saved=${careSaved(sees, lock, done.result.kept)}#phone-${device.id}`);
   });
 
   /**

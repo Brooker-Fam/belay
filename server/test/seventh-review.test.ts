@@ -18,7 +18,7 @@ import { loadMigrations, migrate } from "../src/db.js";
 import { Policy } from "../src/device/schemas.js";
 import { getCaregiver, listCaregivers } from "../src/family/caregivers/store.js";
 import { wifiOnlyApps } from "../src/family/mobiledata/store.js";
-import { buildPolicy, type PolicyContext } from "../src/family/policy.js";
+import { buildPolicy, pausePhone, resumePhone, type PolicyContext } from "../src/family/policy.js";
 import { createPersonalToken } from "../src/oauth/store.js";
 import { AI_SCOPES, type AiScope, getSettings, updateSettings } from "../src/settings.js";
 import { browserFor, deviceCall, enrollPhone, fix, get, PASSWORD, pkg, postForm, signIn, snapshot, testServer, T0 } from "./helpers.js";
@@ -342,5 +342,78 @@ describe("J5: a caregiver's name keeps no invisible or format character, so two 
     expect(p.caregivers.map((c) => c.name)).toEqual(["Grandma"]);
     expect(p.pause?.caregiver).toBe("Grandma");
     expect(p.commands.map((c) => c.caregiver)).toEqual(["Grandma"]);
+  });
+});
+
+/** What the caregiver's page says after a pause or a lock: where it sends them, and its words there. */
+async function pauseAs(care: Awaited<ReturnType<typeof join>>, deviceId: string, minutes: string, lock: boolean) {
+  const res = await care.form(`/care/phones/${deviceId}/pause`, { minutes, lock: lock ? "1" : "0" });
+  expect(res.status, await res.clone().text()).toBe(302);
+  const location = res.headers.get("location") ?? "";
+  const html = await care.html(location);
+  const notice = /<div class="notice[^"]*"[^>]*>(.*?)<\/div>/s.exec(html)?.[1];
+  expect(notice, html).toBeDefined();
+  return { saved: new URL(location, "https://x.example").searchParams.get("saved"), notice };
+}
+
+describe("H2: a caregiver's lock under a parent's longer pause", () => {
+  it("leaves the pause the parent's and names her on the lock alone, which the phone shows; her page says so", async () => {
+    const f = await family();
+    const { token } = await add(f);
+    const care = await join(f, token);
+    // A parent's pause until they resume it.
+    pausePhone(f.ctx(), f.phone.deviceId, { minutes: null }, { kind: "parent", parentId: f.sam.parent.id });
+    expect(f.policy().pause).toEqual({ until: null, note: null });
+    const locked = await pauseAs(care, f.phone.deviceId, "15", true);
+    const p = f.policy();
+    // The pause the kid reads stays the parent's; the lock_now names her (the phone's kid.Caregivers.locks posts
+    // "Grandma locked the screen", core's SeventhReviewTest).
+    expect(p.pause).toEqual({ until: null, note: null });
+    expect(p.commands.map((c) => ({ kind: c.kind, caregiver: c.caregiver }))).toEqual([{ kind: "lock_now", caregiver: "Grandma" }]);
+    // Her page doesn't say it paused the phone or showed her name on the pause: the lock did, and the pause stayed as it was.
+    expect(locked.saved).toBe("locked_kept");
+    expect(locked.notice).toContain("the phone says you locked it");
+    expect(locked.notice).toContain("so that pause stays as it was");
+    expect(locked.notice).not.toContain("shows your name");
+    // With nothing longer on, her pause and her lock both name her, as the page says.
+    resumePhone(f.ctx(), f.phone.deviceId, { kind: "parent", parentId: f.sam.parent.id });
+    const fresh = await pauseAs(care, f.phone.deviceId, "30", true);
+    expect(fresh.saved).toBe("locked");
+    expect(f.policy().pause).toMatchObject({ caregiver: "Grandma" });
+    expect(await care.html()).toContain("The kid&#39;s phone names you for your pause and for each lock.");
+  });
+});
+
+describe("J7: a caregiver with Pause but not Status gets the same confirmation, paused already or not", () => {
+  it("the same words, and the same count against the hourly limit, whether a longer pause was on", async () => {
+    const f = await family();
+    const { token } = await add(f, { can: ["pause"] });
+    const care = await join(f, token);
+    const first = await pauseAs(care, f.phone.deviceId, "30", false);
+    expect(f.policy().pause).toMatchObject({ caregiver: "Grandma" });
+    // Now one longer is on (hers): a shorter pause changes nothing, and she's told just the same.
+    const again = await pauseAs(care, f.phone.deviceId, "15", false);
+    expect(again).toEqual(first);
+    expect(first.saved).toBe("paused_any");
+    expect(first.notice).not.toContain("nothing changed");
+    // A parent's longer pause, then a lock: the same words as a lock with nothing on.
+    pausePhone(f.ctx(), f.phone.deviceId, { minutes: null }, { kind: "parent", parentId: f.sam.parent.id });
+    const underParent = await pauseAs(care, f.phone.deviceId, "15", true);
+    resumePhone(f.ctx(), f.phone.deviceId, { kind: "parent", parentId: f.sam.parent.id });
+    const alone = await pauseAs(care, f.phone.deviceId, "15", true);
+    expect(underParent).toEqual(alone);
+    expect(alone.saved).toBe("locked_any");
+    // Each of those four counted, kept or not: two more, then the limit, as for any caregiver.
+    for (let i = 0; i < 2; i++) await pauseAs(care, f.phone.deviceId, "15", false);
+    const res = await care.form(`/care/phones/${f.phone.deviceId}/pause`, { minutes: "15", lock: "0" });
+    expect(res.status).toBe(429);
+  });
+
+  it("with Status, a pause that changed nothing still says so, and isn't counted", async () => {
+    const f = await family();
+    const { token } = await add(f);
+    const care = await join(f, token);
+    expect((await pauseAs(care, f.phone.deviceId, "240", false)).saved).toBe("paused");
+    for (let i = 0; i < 8; i++) expect((await pauseAs(care, f.phone.deviceId, "15", false)).saved).toBe("kept");
   });
 });

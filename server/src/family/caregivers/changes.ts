@@ -301,6 +301,23 @@ export function carePause(ctx: PolicyContext, c: Caregiver, deviceId: string, mi
   return lock ? lockPhone(ctx, deviceId, { minutes }, careActor(c)) : pausePhone(ctx, deviceId, { minutes }, careActor(c));
 }
 
+/** What a caregiver's page says after their pause or lock (care/routes.tsx's words for each). */
+export type CareSaved = "paused" | "kept" | "locked" | "locked_kept" | "paused_any" | "locked_any";
+
+/**
+ * Which words a caregiver's page answers their pause or lock with, true in every case: the kid's
+ * phone names them for their pause while it's the one in force, and for every lock (its notice:
+ * the seventh review's H2). With Status (`sees`), as the page shows anyway, whether a pause at
+ * least as long was on already (`kept`): then their pause changed nothing, and a lock comes with
+ * that pause as it was. Without Status, the same words either way (`paused_any`, `locked_any`),
+ * since "kept" would tell them the phone was paused (J7).
+ */
+export function careSaved(sees: boolean, lock: boolean, kept: boolean): CareSaved {
+  if (!sees) return lock ? "locked_any" : "paused_any";
+  if (lock) return kept ? "locked_kept" : "locked";
+  return kept ? "kept" : "paused";
+}
+
 /** A caregiver checks where the phone is now: the locate_now a parent's "Check now" sends, naming them for the kid. */
 export function careLocate(ctx: PolicyContext, c: Caregiver, deviceId: string): Changed<{ command: string; expiresAt: number }> {
   if (!careAccess(c, deviceId, "locate", ctx.now)) throw new CareRefused("Checking where this phone is isn't something you can do now.");

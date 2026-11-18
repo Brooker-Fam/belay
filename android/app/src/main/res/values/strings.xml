@@ -587,6 +587,11 @@
     <string name="pause_notice_by_until">%1$s paused this phone until %2$s. Calls and texts still work, and so do 911 and 988.</string>
     <string name="pause_notice_by">%1$s paused this phone. Calls and texts still work, and so do 911 and 988.</string>
     <string name="location_checked_by">%1$s checked where this phone is (%2$s).</string>
+    <!-- A caregiver's "Pause and lock the screen now" (the seventh review's H2): the pause may stay
+         a parent's longer one, so this notice is what names them for the lock. %2$s is a time. -->
+    <string name="lock_notice_title_by">Screen locked by %1$s</string>
+    <string name="lock_notice_by">%1$s locked the screen (%2$s). Calls and texts still work, to 911 and 988 too.</string>
+    <string name="lock_notice_by_after_call">%1$s locked the screen (%2$s). It doesn\'t lock during your call: it locks about 2 minutes after the call ends. Calls and texts still work, to 911 and 988 too.</string>
     <string name="told_check_by">%1$s checked where this phone is.</string>
     <string name="told_check_by_not_sent">%1$s asked where this phone is. Belay didn\'t send it.</string>
     <plurals name="location_checks_caregivers">

@@ -38,10 +38,12 @@ import family.brooker.belay.core.WireEnforcement
 import family.brooker.belay.core.WirePolicy
 import family.brooker.belay.core.WireRequestKind
 import family.brooker.belay.core.Workarounds
+import family.brooker.belay.core.kid.Caregivers
 import family.brooker.belay.core.location.WireLocationStatus
 import family.brooker.belay.core.mobiledata.WifiOnly
 import family.brooker.belay.core.screentime.Decision
 import family.brooker.belay.core.screentime.KidArg
+import family.brooker.belay.core.screentime.LocalTimes
 import family.brooker.belay.core.screentime.Notices
 import family.brooker.belay.core.screentime.ScreenTimeEnforcement
 import family.brooker.belay.core.screentime.ScreenTimeState
@@ -57,6 +59,7 @@ import family.brooker.belay.service.ScreenTimeNotice
 import family.brooker.belay.service.WaitingNotice
 import family.brooker.belay.store.AgentStore
 import family.brooker.belay.ui.KidWords
+import java.time.ZoneId
 import java.util.UUID
 
 /** What the kid's screens show, from the agent's last step. */
@@ -335,8 +338,13 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
         try {
             located?.let(locationStep::after)
             PauseNotice.apply(app, plan.pause, plan.pause?.until?.let { words(inventory).until(it, now) }, now)
+            // Phase 12: each lock a caregiver sent names them, once, whoever's pause it came with
+            // (core's kid.Caregivers.locks, the seventh review's H2).
+            Caregivers.locks(commandPlan.lockNow, lockResults, waits = lockNowWaits).forEach { lock ->
+                PauseNotice.locked(app, lock, words(inventory).time(LocalTimes.local(lock.at, ZoneId.systemDefault()).toLocalTime()))
+            }
         } catch (e: RuntimeException) {
-            Log.w(Agent.TAG, "location's or the pause's notices not shown", e)
+            Log.w(Agent.TAG, "location's, the pause's or a lock's notices not shown", e)
         }
 
         val sent = sentAgain.associateBy { it.id }

@@ -12,6 +12,7 @@ import androidx.core.app.NotificationManagerCompat
 import family.brooker.belay.Agent
 import family.brooker.belay.R
 import family.brooker.belay.core.WirePause
+import family.brooker.belay.core.kid.CaregiverLock
 import family.brooker.belay.core.kid.Caregivers
 import family.brooker.belay.ui.Screen
 import family.brooker.belay.ui.Screens
@@ -20,9 +21,35 @@ import family.brooker.belay.ui.Screens
  * Phase 7: while a parent (or Phase 12's caregiver, named) has the phone paused, a quiet notice
  * says so, with until when, and "I need help" (the help screen is never blocked). Shown once per pause (its end and note), taken
  * away when the pause ends; Android also takes it away at the pause's end (setTimeoutAfter).
+ * Phase 12: a caregiver's lock of the screen gets a notice of its own, naming them ([locked]).
  */
 object PauseNotice {
     private const val NOTIFICATION_ID = 8
+    private const val LOCK_ID = 9
+
+    /**
+     * "Grandma locked the screen (8:15 PM).", one notice per lock ([CaregiverLock.commandId]), with
+     * [at] in the kid's words (core's kid.Caregivers.locks, the seventh review's H2): under a
+     * parent's longer pause the pause stays the parent's, so this is what names the caregiver.
+     */
+    fun locked(context: Context, lock: CaregiverLock, at: String) {
+        if (context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
+        ScreenTimeNotice.ensureChannel(context)
+        val text = context.getString(if (lock.afterCall) R.string.lock_notice_by_after_call else R.string.lock_notice_by, lock.by, at)
+        val notice = NotificationCompat.Builder(context, ScreenTimeNotice.CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(context.getString(R.string.lock_notice_title_by, lock.by))
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setContentIntent(open(context, Screen.HOME, 2))
+            .setAutoCancel(true)
+            .build()
+        try {
+            NotificationManagerCompat.from(context).notify(lock.commandId, LOCK_ID, notice)
+        } catch (e: SecurityException) {
+            Log.w(Agent.TAG, "lock notice not shown", e)
+        }
+    }
 
     @Volatile
     private var shownFor: String? = null
