@@ -76,9 +76,11 @@ export const SettingsPage: FC<{
   push: { publicKey: string; browsers: PushSubscription[] };
   /** The daily summary's form (web/pages/server.tsx). */
   digest?: Child;
+  /** Bringing back Getting started, once this parent hid it (web/pages/start.tsx). */
+  start?: Child;
   message?: string;
   error?: string;
-}> = ({ view, settings, parents, meId, grants, mcpUrl, push, digest, message, error }) => {
+}> = ({ view, settings, parents, meId, grants, mcpUrl, push, digest, start, message, error }) => {
   const apps = grants.filter((g) => g.kind === "oauth");
   const tokens = grants.filter((g) => g.kind === "pat");
   return (
@@ -154,7 +156,7 @@ export const SettingsPage: FC<{
         <input id="mobile-data-days" type="number" name="mobile_data_days" min={MOBILE_DATA_DAYS.min} max={MOBILE_DATA_DAYS.max} required value={String(settings.mobileDataDays)} />
         <label for="activity-days">Keep the activity log for this many days, then delete older entries ({ACTIVITY_DAYS.min} at least)</label>
         <input id="activity-days" type="number" name="activity_days" min={ACTIVITY_DAYS.min} max={ACTIVITY_DAYS.max} required value={String(settings.activityDays)} />
-        <fieldset>
+        <fieldset id="ai-reads">
           <legend>
             <strong>What AI apps may read</strong>
           </legend>
@@ -282,6 +284,7 @@ export const SettingsPage: FC<{
       </div>
 
       <h2 id="account">Your account</h2>
+      {start}
       <div class="card">
         <ChangePasswordForm view={view} />
       </div>

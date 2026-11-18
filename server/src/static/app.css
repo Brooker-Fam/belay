@@ -275,3 +275,28 @@ a.button.call { background: var(--bad-fill); border-color: var(--bad-fill); colo
 .numbers .row input[type=text] { min-width: 0; flex: 1 1 10rem; }
 /* npm run demo (docs/demo.md): on every page, so a screenshot can't pass for a real family's. The same colors in the dark. */
 .demo-banner { background: #ffe08a; color: #1d2521; border-bottom: 2px solid #a35d00; padding: 8px 16px; text-align: center; font-weight: 700; }
+/* The Phones page's Getting started card. Each step's state is in words, in a chip; the ring beside
+   it, with a tick once it's done, only decorates them, drawn with borders so nothing reads it out.
+   role="list" keeps the list a list for VoiceOver, which drops it without list-style. */
+.start-steps { list-style: none; margin: 12px 0 0; padding: 0; }
+.start-steps > li.step { position: relative; padding: 0 0 10px 2.1rem; margin: 0 0 10px; border-bottom: 1px solid var(--line); }
+.start-steps > li.step:last-child { border-bottom: none; margin-bottom: 0; }
+.start-steps li p { margin: 0 0 4px; }
+.start-steps ul { margin: 2px 0 4px; padding-left: 18px; }
+.step::before { content: ""; position: absolute; left: 0; top: 0.1rem; width: 1.35rem; height: 1.35rem; border: 2px solid var(--field); border-radius: 50%; }
+.step.done::before { background: var(--ok); border-color: var(--ok); }
+.step.done::after { content: ""; position: absolute; left: 0.5rem; top: 0.33rem; width: 0.36rem; height: 0.7rem; border: solid var(--card); border-width: 0 0.16rem 0.16rem 0; transform: rotate(45deg); }
+.step.waiting::before { border-color: var(--warn); border-style: dashed; }
+.step.open::before { border-style: dotted; }
+.chip.state.done { background: #dcefe3; color: #14532d; font-weight: 600; }
+.chip.state.waiting { background: #fde7c8; color: #6b3d00; }
+@media (prefers-color-scheme: dark) {
+  .chip.state.done { background: #1d3a29; color: #b5ecc8; }
+  .chip.state.waiting { background: #4a3413; color: #ffd9a1; }
+}
+/* A step's links, each 44px tall, in a row that wraps on a phone. */
+.start-steps .links { display: flex; flex-wrap: wrap; gap: 0 18px; margin: 0; }
+.start-steps .links a { display: inline-flex; align-items: center; min-height: var(--tap); }
+.start .later { padding-left: 20px; }
+.start .later a { display: inline-block; padding: 8px 0; }
+.start form.row { margin-top: 8px; }

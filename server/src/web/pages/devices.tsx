@@ -206,11 +206,22 @@ const Facts: FC<{ device: DeviceView; view: View }> = ({ device, view }) => {
   );
 };
 
-export const DevicesPage: FC<{ view: View; devices: DeviceSummary[]; pending: PendingCode[]; server?: Child; help?: Child }> = ({ view, devices, pending, server, help }) => (
+/**
+ * The Phones page: help no parent has seen first, then the phones, then Getting started while this
+ * parent has it (web/pages/start.tsx: for a new family, all there is), then the server's health.
+ */
+export const DevicesPage: FC<{ view: View; devices: DeviceSummary[]; pending: PendingCode[]; server?: Child; help?: Child; start?: Child }> = ({
+  view,
+  devices,
+  pending,
+  server,
+  help,
+  start,
+}) => (
   <Layout view={view} title="Phones">
     <h1>Phones</h1>
     {help}
-    {devices.length === 0 && pending.length === 0 && (
+    {devices.length === 0 && pending.length === 0 && !start && (
       <Notice>
         No phones yet. <a href="/add">Add a phone</a> to start.
       </Notice>
@@ -246,6 +257,7 @@ export const DevicesPage: FC<{ view: View; devices: DeviceSummary[]; pending: Pe
         </div>
       ))}
     </div>
+    {start}
     {server}
   </Layout>
 );
