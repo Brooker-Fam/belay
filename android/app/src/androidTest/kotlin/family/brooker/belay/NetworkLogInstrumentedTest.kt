@@ -4,9 +4,14 @@ import android.app.admin.DevicePolicyManager
 import android.os.ParcelFileDescriptor
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import family.brooker.belay.core.DataCategories
 import family.brooker.belay.core.WirePolicy
+import family.brooker.belay.core.network.NetworkDay
+import family.brooker.belay.core.network.NetworkDigest
+import family.brooker.belay.core.network.NetworkKey
 import family.brooker.belay.core.screentime.WireNetworkLog
 import family.brooker.belay.enforce.EnforcementReport
+import family.brooker.belay.inventory.Collectors
 import family.brooker.belay.store.AgentStore
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -20,6 +25,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.net.InetAddress
 import java.net.UnknownHostException
+import java.time.Instant
+import java.time.ZoneId
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -28,7 +35,9 @@ import java.util.concurrent.TimeUnit
  * server's (DebugTools.policyOverride): a step turns Android's network logging on (and reports it);
  * `dpm force-network-logs` hands Belay a batch, which it takes (Belay's own lookup in it is never
  * kept: Belay is never blocked); a step with logging off turns Android's off and deletes what Belay
- * counted. The test puts the phone back as it was: the override cleared, and a step.
+ * counted. A website the family makes private leaves the days Belay kept at the next step, and
+ * "What your parent can see" says other websites are never noted, without naming one. The test
+ * puts the phone back as it was: the override cleared, and a step.
  */
 @RunWith(AndroidJUnit4::class)
 class NetworkLogInstrumentedTest {
@@ -99,6 +108,39 @@ class NetworkLogInstrumentedTest {
         assertNull(EnforcementReport.of(store)?.networkLog)
     }
 
+    @Test
+    fun aWebsiteMadePrivateLeavesTheDaysKeptAndIsNeverNamedToTheKid() {
+        val real = store.policy() ?: WirePolicy(version = 0)
+        val on = real.copy(version = real.version + VERSION_OFFSET, networkLog = WireNetworkLog(enabled = true))
+        DebugTools.policyOverride = on
+        agentStep()
+        val state = store.networkState()
+        assertNotNull("no network state", state)
+        assertNull("a private websites' digest with none listed", state!!.privateDigest)
+        // A day Belay counted before the family made example.org private: made-up apps and names.
+        val zone = ZoneId.systemDefault()
+        val now = System.currentTimeMillis()
+        val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate().toString()
+        val day = NetworkDay(today, zone.id, now, mapOf(NetworkKey(CHAT, "example.org") to 3, NetworkKey(CHAT, "chat.example.org") to 1, NetworkKey(CHAT, "example.com") to 2))
+        store.commitNetwork(listOf(day), listOf(NetworkDigest.wire(day)), state, NetworkDigest.keepFrom(zone, now), now)
+        assertTrue(Collectors.categories(on).single { it.id == DataCategories.NETWORK_ID }.details.none { "private" in it })
+
+        val private = on.copy(version = on.version + 1, networkLog = WireNetworkLog(enabled = true, privateDomains = listOf("example.org")))
+        DebugTools.policyOverride = private
+        agentStep()
+        assertEquals(mapOf(NetworkKey(CHAT, "example.com") to 2), store.networkDays(listOf(today)).getValue(today).counts)
+        val digest = store.networkState()?.privateDigest
+        assertNotNull("the step didn't note the private websites it cleared", digest)
+        // The same step again changes nothing.
+        agentStep()
+        assertEquals(digest, store.networkState()?.privateDigest)
+        assertEquals(mapOf(NetworkKey(CHAT, "example.com") to 2), store.networkDays(listOf(today)).getValue(today).counts)
+        // What your parent can see says other websites are never noted, and never which.
+        val shown = Collectors.categories(private).single { it.id == DataCategories.NETWORK_ID }.details
+        assertTrue(shown.joinToString("\n"), shown.any { "made private" in it })
+        assertTrue(shown.none { "example.org" in it })
+    }
+
     private fun waitFor(seconds: Int, check: () -> Boolean): Boolean {
         repeat(seconds * 2) {
             if (check()) return true
@@ -121,5 +163,8 @@ class NetworkLogInstrumentedTest {
     private companion object {
         /** Test policies get versions of their own, well past the server's. */
         const val VERSION_OFFSET = 2_000_000
+
+        /** A made-up app, for days the test counts itself. */
+        const val CHAT = "com.example.chat"
     }
 }

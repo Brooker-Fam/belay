@@ -340,6 +340,9 @@ The endpoint is rate limited per phone apart from the phone's other calls (30 a 
 
 Phase 3, network logging. How many times each app looked up each domain, one local day per
 entry, only while the policy's `network_log` is on (a parent's choice alone, off by default).
+Its `private_domains` are the family's private websites, a parent's alone too (never an AI
+client's, not even as a proposal, and never shown to one): the server keeps what a parent types
+as the registrable domain the phone keeps, so `www.example.org/help` is `example.org`.
 
 ```json
 { "days": [ { "day": "2026-11-17", "zone": "America/Los_Angeles", "as_of": 1794867161711,
@@ -369,19 +372,30 @@ device owner only; docs/platform-notes.md W1, W6 to W9):
   texting app, the keyboard, the home screen, Android's own packages), by uids Android names
   `name:uid` (a shared user id: Android's own processes, Play services, the shell), and of 988's
   websites (`988lifeline.org`, `988lineadevida.org`, `suicidepreventionlifeline.org`, `988.ca`,
-  `veteranscrisisline.net`, and any name under them); IP addresses, reverse lookups (`in-addr.arpa`,
+  `veteranscrisisline.net`, and any name under them), and of the family's private websites (the
+  policy's `network_log.private_domains`, and any name under them), checked against the whole
+  name before it's reduced; IP addresses, reverse lookups (`in-addr.arpa`,
   `ip6.arpa`, and the `null` Android logs for one that found nothing) and names that never leave
-  the phone or the home network (`local`, `localhost`, `internal`, `invalid`, `arpa`).
+  the phone or the home network (`local`, `localhost`, `internal`, `invalid`, `arpa`). Belay's own
+  log says only how many lookups it didn't keep, for every reason together, never why or which;
+  nothing it sends counts them (a day's `dropped` doesn't).
 - It keeps today and the two days before (at most 10,000 entries a day), sends each day that a
   batch changed (it waits in an outbox lane of its own, a newer report of a day replacing an
-  unsent one), and deletes all of it when `network_log` goes off.
+  unsent one), and deletes all of it when `network_log` goes off. When `private_domains` changes,
+  it deletes what it counted of the private ones from the days it keeps, and sends each day that
+  changed again, in place of an unsent report; one sent before that, from the policy it has,
+  goes without them.
 
 What the server keeps: a day only while the phone's `network_log` is on; otherwise it's answered
 `200`, counted in `accepted`, dropped, and counted for the parent page. It never keeps the
 entries of an app it never blocks (the phone's `never_blocked`, and the well-known dialers,
-texting apps and emergency apps), and never an entry naming one of 988's websites: it takes
-those out before it checks the body (so one written some other way costs the rest of its day
-nothing), counts them for no one, and logs only that it happened, without the name or the phone.
+texting apps and emergency apps), and never an entry naming one of 988's websites or one of the
+phone's private websites, or a name under one: it takes those out before it checks the body (so
+one written some other way costs the rest of its day nothing) and counts them for no one. For
+988's it logs only that it happened, without the name or the phone (a phone that sends one has a
+bug); a private one it drops without a word, since a Belay from before private websites sends
+them as a matter of course, and a log line's time would say when one was used. Making a website
+private deletes what the server kept of it, and of the names under it.
 Also accepted and dropped: a day that isn't a real date, one the phone can't have counted yet
 (after tomorrow in its `zone`), and one older than the family keeps (30 days by default).
 `accepted` counts every day in the call. The endpoint is rate limited per phone apart from the
@@ -751,7 +765,7 @@ server decides whether a change tightens or loosens.
 | `screen_time` | ScreenTime? | Phase 3; null measures nothing and limits nothing |
 | `stage` | `{name, number, since, next?: {name, unlocks: string[], how?, screen_time?}}`? | Phase 3, for the kid's screen; `unlocks` and `how` are the family's words |
 | `agreement` | `{version, sections: [{title, text}], kid_agreed_at?, parents_agreed_at?}`? | Phase 3; at most 20 sections of 2000 characters |
-| `network_log` | `{enabled}` | Phase 3: whether the phone logs which domains its apps look up (`POST /network`); off unless a parent turns it on, never an AI app |
+| `network_log` | `{enabled, private_domains}` | Phase 3: whether the phone logs which domains its apps look up (`POST /network`); off unless a parent turns it on, never an AI app. `private_domains`: the family's private websites, at most 100 registrable domains (lowercase hostnames, checked like a `network` entry's `domain`) the phone never keeps a lookup of, or of a name under one, like 988's websites; a parent's alone, sent whether logging is on or off. A phone that doesn't know it reads `{enabled}` as before |
 | `location` | Location? | Phase 4; null or `mode: off`: no location at all |
 | `ai_reads` | string[] | Phase 7: the data categories the AI app may read |
 | `help_seen` | `[{request_id, at, by?}]` | Phase 7: the last 30 days |

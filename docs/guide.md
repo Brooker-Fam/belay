@@ -632,6 +632,15 @@ Android shows the kid its own notice that the phone "may monitor network traffic
 explains what that means. A name looked up isn't a page visited: apps look names up by
 themselves.
 
+Below the switch, **Private websites** lists websites Belay never notes, with any name under
+them, like 988's: a helpline's or a counselor's site your kid might use privately. Type a name
+or paste a link (Belay keeps the main name, so `www.example.org/help` makes all of `example.org`
+private); adding one also deletes what the server kept of it. Your kid's phone says some
+websites are never noted, without naming them, so tell your kid which ones yourself if they
+should know. Claude can't see them, or whether there are any, and can't change them. Whether
+Belay should also carry a built-in list of child-safety helplines' websites is an open
+decision for your family ([threat-model.md](threat-model.md#the-kid-and-network-logging-phase-3)).
+
 **Not yet checked on a Pixel:** Android's notice, and a real browser's lookups
 ([phase3-checklist.md](phase3-checklist.md), section 7).
 

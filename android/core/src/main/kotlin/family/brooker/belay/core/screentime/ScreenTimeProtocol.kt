@@ -199,7 +199,17 @@ data class WireAgreement(
  * (`POST /api/v1/network`, core's network package).
  */
 @Serializable
-data class WireNetworkLog(val enabled: Boolean = false)
+data class WireNetworkLog(
+    val enabled: Boolean = false,
+    /**
+     * The family's private websites (a parent's alone): registrable domains, lowercase hostnames
+     * like a [family.brooker.belay.core.network.WireNetworkEntry]'s domain, that Belay never keeps a
+     * lookup of, or of a name under one, like 988's websites (core's Domains.neverKept). Sent
+     * whether logging is on or off; at most 100. Empty from a server older than private websites.
+     * Never in Belay's log or its debug state, and never named on the kid's screens.
+     */
+    @SerialName("private_domains") val privateDomains: List<String> = emptyList(),
+)
 
 // ── What the phone reports: enforcement additions, in Device ──
 

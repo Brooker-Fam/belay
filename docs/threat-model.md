@@ -101,6 +101,7 @@ names each app looks up, per day, and sends only that. It's a record, not a guar
 | Use an app with its own DNS (DNS over HTTPS, a DNS library) or a fixed address | Not logged as a lookup: Android logs only lookups through the system's resolver, and no UDP (platform notes W1). Network logging is a record, not a filter; such apps still wait for a parent like any app, and VPN apps are blocked by Phase 2. |
 | Look things up in the phone app's, the texting app's or another always-on app's browser | Never logged: Belay keeps no lookups of the apps it never blocks, so a call or text to 988 never shows. Those apps' own browsers are rare; Phase 2's DNS filter still applies. |
 | Visit 988's websites, or chat with the Lifeline | Never kept, by design: Belay drops lookups of 988's websites on the phone, and the server drops any it gets, counted for no one. If the chat loads from another company's domain, that name would show for the browser; the Pixel checklist looks (Phase 3, §7). |
+| Use a helpline's or a counselor's website the family made private | Never kept, by design, like 988's: the phone drops lookups of it and of any name under it before counting (checked against the whole name, so a private `help.example.org` never counts as `example.org`), and takes what it counted before the website was private out of the days it keeps; Belay's own log says only how many lookups it didn't keep, for every reason together, never why or which, and nothing the phone sends counts them. The server drops any it gets without a word in its log, and adding one deletes what it kept of it. As for 988's, a chat or page it loads from another company's domain shows that name, unless the family makes that website private too. |
 | Add another user or profile, or set up Android's own Parental Controls, to stop the log | Android pauses logging while one exists and hands Belay nothing; the phone reports it paused, the parent page and the daily summary say so, and Phase 10's tampering report names the other user or profile. |
 | Make an app look up names to fill the log | A day keeps at most 10,000 app-and-name pairs on the phone and sends the 5000 most looked up; the rest are only counted. |
 | Name a domain to steer the parent's AI ("ignore-previous-instructions.example") | Domains are app developers' text: hostname characters only, and `untrusted` for AI clients (principle 3). |
@@ -108,9 +109,32 @@ names each app looks up, per day, and sends only that. It's a record, not a guar
 | Who | Risk | What Belay does |
 |---|---|---|
 | The parent's AI app, steered by a prompt injection | Turning network logging on (more collection) or off. | No tool and no proposal turns it on or off, in either direction: it's a parent's alone, on the parent page or the server's CLI, and in the activity log. |
+| The parent's AI app, or its provider | Learning which websites the family made private (a helpline's, a counselor's), or taking one off so it's noted again. | No tool reads, counts or changes them, and no proposal does. The server never keeps them, so what an AI app reads of a phone is the same whether its private websites were dropped or never looked up; its words say Belay never notes 988's websites or a parent's private ones, the same for every phone, so they don't say whether a phone has any. |
 | The AI provider | Learning which websites and services the kid's apps use. | Nothing while the `network` scope is off (the default for every family). With it on, only what the server keeps: names per app per day, never pages or times. |
-| An unsafe adult in the home | Learning that the kid visited 988's websites. | Never kept on the phone or the server, and the server's log names no site or phone when it drops one. |
+| An unsafe adult in the home | Learning that the kid visited 988's websites, or a website the family made private. | Never kept on the phone or the server. The server's log names no site or phone when it drops one of 988's, and says nothing when it drops a private one: an older Belay sends them as a matter of course, and a log line's time would say when one was used. The kid's phone never names the private websites, even on "What your parent can see", where an adult may see the screen; the activity log says a website was made private, never which. |
+| A parent who wouldn't list a helpline | The kid's visits to a child-abuse hotline's or a youth crisis line's website show on the Network tab. | Only 988's websites are built in; anything else is private only if a parent lists it. Whether Belay should carry a built-in list of child-safety helplines' websites is an open family decision (below). |
 | Whoever gets a phone's token | Made-up network activity, or a flood of it. | Kept only while a parent has logging on; at most 31 days of at most 5000 entries in 512 KB a call, rate limited per phone apart from its other calls, one day per date (sent again, it replaces the stored one), only dates the phone can have counted and the family keeps (30 days by default), and never the apps it never blocks. Domains are checked as hostnames. |
+
+**Decided:** the kid's phone says that other websites the parent made private are never noted,
+while there are any, and never which, with no family option to name them. The kid should know
+some websites are private (principle 4), but "What your parent can see" is a screen a parent, a
+sibling or a friend may see over the kid's shoulder, and the name of a counselor's or a
+helpline's site there would say what the kid may be dealing with (principle 8). The parent page
+suggests telling the kid out loud, and the phone tells the kid to ask.
+
+**Open family decision: a built-in list of child-safety helplines' websites.** Belay builds in
+only 988's websites; any other helpline's is private only if a parent lists it. It could carry a
+short list too, never noted like 988's on every phone: a national child-abuse hotline's, a youth
+crisis text line's, and the like. **Recommended: yes**, as a short list for the countries 988's
+list covers (the US and Canada), kept beside `CRISIS_988` in core's `Domains.kt`
+and the server's `family/network/store.ts`, each site checked against the service's own website
+when it's added and at each release (sites move: 988's earlier one did), and named in the docs
+and on the kid's phone, where a list that's the same for every family says nothing about this
+kid and tells every kid those sites are safe to use. Why: the families where it matters most are
+the ones where no parent would list such a site, and its visits are exactly what the kid needs
+private. Against: it's one more list to keep true, it can never be complete (a stale entry gives
+false comfort), and parents see less on the Network tab. The family's own list stays for
+everything else (a local helpline, a counselor). Not built: it needs the family's yes.
 
 ## The kid and location (Phase 4)
 

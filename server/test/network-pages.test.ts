@@ -40,7 +40,7 @@ describe("network logging on the parent pages", () => {
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toContain("/login");
     expect((await form(`${base}/network`, { on: "maybe" })).status).toBe(400);
-    expect(policy().network_log).toEqual({ enabled: false });
+    expect(policy().network_log).toEqual({ enabled: false, private_domains: [] });
   });
 
   it("is off until a parent turns it on on the phone's page, under Web; then the Network tab shows, and the policy follows", async () => {
@@ -56,7 +56,7 @@ describe("network logging on the parent pages", () => {
     const on = await form(`${base}/network`, { on: "1" });
     expect(on.status).toBe(302);
     expect(on.headers.get("location")).toBe(`${base}?saved=network_on#network`);
-    expect(policy().network_log).toEqual({ enabled: true });
+    expect(policy().network_log).toEqual({ enabled: true, private_domains: [] });
     expect(listAudit(t.deps.db, { limit: 1, includeReads: false })[0]).toMatchObject({ actor: "parent", action: "network.on" });
     ({ html } = await page(`${base}?saved=network_on`));
     expect(html).toContain("Network logging is on. The phone starts noting which websites and services its apps look up");
@@ -66,7 +66,7 @@ describe("network logging on the parent pages", () => {
     expect(html).toContain("Turn network logging off</button>");
     const off = await form(`${base}/network`, { on: "0" });
     expect(off.headers.get("location")).toBe(`${base}?saved=network_off#network`);
-    expect(policy().network_log).toEqual({ enabled: false });
+    expect(policy().network_log).toEqual({ enabled: false, private_domains: [] });
     ({ html } = await page("/activity"));
     expect(html).toContain("turned on network logging (which websites and services apps look up) (Alex&#39;s phone)");
     expect(html).toContain("turned off network logging (which websites and services apps look up) (Alex&#39;s phone)");

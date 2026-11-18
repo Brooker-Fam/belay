@@ -693,6 +693,10 @@ interface NetworkDao {
     @Upsert
     fun upsertCounts(rows: List<NetworkCountRow>)
 
+    /** One day's counts, before they're written as they are now. In a transaction. */
+    @Query("DELETE FROM network_counts WHERE day = :day")
+    fun clearDayCounts(day: String): Int
+
     /** Days older than [before] ("YYYY-MM-DD"): their counts, then the days. In a transaction. */
     @Query("DELETE FROM network_counts WHERE day < :before")
     fun pruneCounts(before: String): Int

@@ -144,6 +144,13 @@ function what(e: AuditEntry): string {
     case "network.on":
     case "network.off":
       return `${e.action === "network.on" ? "turned on" : "turned off"} network logging (which websites and services apps look up)${device}`;
+    case "network.private_added":
+    case "network.private_removed": {
+      // A count, never a name: the activity log never says which websites are private.
+      const n = typeof d.count === "number" && Number.isInteger(d.count) && d.count > 1 ? d.count : 1;
+      const which = n === 1 ? "a website" : `${n} websites`;
+      return e.action === "network.private_added" ? `made ${which} private: network logging never notes ${n === 1 ? "it" : "them"}${device}` : `took ${which} off the private websites${device}`;
+    }
     case "screen_time.settings":
       return `changed which time zone the phone's days follow, or when they start${device}`;
     case "stage.moved":

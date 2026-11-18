@@ -16,6 +16,8 @@ import family.brooker.belay.core.PolicyTooLarge
 import family.brooker.belay.core.SyncPolicy
 import family.brooker.belay.core.Verdict
 import family.brooker.belay.core.WirePolicy
+import family.brooker.belay.core.network.Domains
+import family.brooker.belay.core.network.NetworkDigest
 import family.brooker.belay.enroll.Enroller
 import family.brooker.belay.health.DeviceStatus
 import family.brooker.belay.health.HealthReader
@@ -373,7 +375,9 @@ private class SyncRun(private val app: Context) {
             }
             OutboxType.NETWORK -> {
                 // Gone when a newer report of the same day replaced it, or network logging went off, meanwhile.
-                val payloads = store.networkPayloads(ids)
+                // One queued before a website was made private goes without it, before a step takes it out of the day.
+                val private = Domains.privateSet(store.policy()?.networkLog?.privateDomains.orEmpty())
+                val payloads = store.networkPayloads(ids).map { NetworkDigest.sendable(it, private) }
                 if (payloads.isEmpty()) return Verdict.Sent
                 api.network(token, payloads)
             }

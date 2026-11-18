@@ -4,9 +4,10 @@
  * how many times each app looked up each domain, one local day at a time, reduced on the phone
  * from Android's DNS lookups. A day sent again replaces the stored one, so the phone can always
  * send again. Kept only while the phone's switch is on, never for the apps the phone never blocks
- * (the phone app, texting, Belay…), and never for 988's websites; kept for the family's
- * `networkDays` setting (30 by default), then deleted by the hourly clean-up. A domain is the app
- * developer's choice: untrusted text, under `untrusted` over MCP.
+ * (the phone app, texting, Belay…), and never for 988's websites or the family's private ones (a
+ * parent's list per phone, like its private numbers; an AI app never sees it); kept for the
+ * family's `networkDays` setting (30 by default), then deleted by the hourly clean-up. A domain is
+ * the app developer's choice: untrusted text, under `untrusted` over MCP.
  */
 import type { DB } from "../../db.js";
 import type { NetworkDay, Policy } from "../../device/schemas.js";
@@ -52,9 +53,49 @@ export function networkSettings(db: DB, deviceId: string): NetworkSettings | nul
   return row ? { enabled: row.enabled === 1, enabledAt: row.enabled_at, changedAt: row.changed_at, dropped: row.dropped, droppedAt: row.dropped_at } : null;
 }
 
-/** The policy's `network_log`. */
+/**
+ * The phone's private websites, sorted: registrable domains (family/network/domains.ts) Belay never
+ * keeps a lookup of, or of a name under one, like 988's. A parent's; never shown to an AI app.
+ */
+export function privateDomainsOf(db: DB, deviceId: string): string[] {
+  return db
+    .prepare<[string], { domain: string }>("SELECT domain FROM network_private_domains WHERE device_id = ? ORDER BY domain")
+    .all(deviceId)
+    .map((r) => r.domain);
+}
+
+export interface PrivateWebsite {
+  domain: string;
+  addedAt: number;
+  /** The parent who added it; null from the server's CLI, or a parent since removed. */
+  addedBy: string | null;
+}
+
+/** The phone's private websites for the parent page: when each was added, and by whom. */
+export function listPrivateWebsites(db: DB, deviceId: string): PrivateWebsite[] {
+  return db
+    .prepare<[string], { domain: string; added_at: number; added_by: string | null }>(
+      `SELECT d.domain, d.added_at, p.name AS added_by FROM network_private_domains d LEFT JOIN parents p ON p.id = d.added_by
+       WHERE d.device_id = ? ORDER BY d.domain`,
+    )
+    .all(deviceId)
+    .map((r) => ({ domain: r.domain, addedAt: r.added_at, addedBy: r.added_by }));
+}
+
+/** One of `privateDomains` (the phone's private websites), or a name under one, however it's written. */
+export function isPrivateWebsite(domain: string, privateDomains: readonly string[]): boolean {
+  const d = domain.trim().toLowerCase().replace(/\.$/, "");
+  return privateDomains.some((p) => d === p || d.endsWith(`.${p}`));
+}
+
+/** A name Belay never keeps: one of 988's websites or of the phone's private ones, or a name under one. */
+export function neverKept(domain: string, privateDomains: readonly string[]): boolean {
+  return isCrisis(domain) || isPrivateWebsite(domain, privateDomains);
+}
+
+/** The policy's `network_log`: the switch, and the private websites, sent whether logging is on or off. */
 export function networkLogFor(db: DB, deviceId: string): Policy["network_log"] {
-  return { enabled: networkSettings(db, deviceId)?.enabled === true };
+  return { enabled: networkSettings(db, deviceId)?.enabled === true, private_domains: privateDomainsOf(db, deviceId) };
 }
 
 /** The oldest day kept with `days` days of retention: older ones are deleted. */
@@ -63,24 +104,30 @@ export function networkCutoff(now: number, days: number): string {
 }
 
 /**
- * Takes out of a body, before it's checked, every entry naming one of 988's websites, in any form:
- * it's never kept, and one the phone shouldn't have sent mustn't cost the rest of its day. How
- * many it took out.
+ * Takes out of a body, before it's checked, every entry naming one of 988's websites or one of the
+ * phone's private websites (`privateDomains`), or a name under one, in any form: it's never kept,
+ * and one the phone shouldn't have sent mustn't cost the rest of its day. `crisis` is how many
+ * named 988's, for the server's log (a phone that sends one has a bug). The private ones go
+ * uncounted: a Belay from before private websites sends them as a matter of course, and a log
+ * line's time would say when the kid used one.
  */
-export function withoutCrisis(body: unknown): { body: unknown; neverKept: number } {
-  if (!body || typeof body !== "object" || !Array.isArray((body as { days?: unknown }).days)) return { body, neverKept: 0 };
-  let neverKept = 0;
+export function withoutNeverKept(body: unknown, privateDomains: readonly string[]): { body: unknown; crisis: number } {
+  if (!body || typeof body !== "object" || !Array.isArray((body as { days?: unknown }).days)) return { body, crisis: 0 };
+  let crisis = 0;
   const days = (body as { days: unknown[] }).days.map((d) => {
     if (!d || typeof d !== "object" || !Array.isArray((d as { entries?: unknown }).entries)) return d;
     const entries = (d as { entries: unknown[] }).entries.filter((e) => {
       const domain = e && typeof e === "object" ? (e as { domain?: unknown }).domain : undefined;
-      const crisis = typeof domain === "string" && isCrisis(domain);
-      if (crisis) neverKept++;
-      return !crisis;
+      if (typeof domain !== "string") return true;
+      if (isCrisis(domain)) {
+        crisis++;
+        return false;
+      }
+      return !isPrivateWebsite(domain, privateDomains);
     });
     return { ...d, entries };
   });
-  return { body: { ...body, days }, neverKept };
+  return { body: { ...body, days }, crisis };
 }
 
 export interface SavedNetwork {
@@ -93,7 +140,8 @@ export interface SavedNetwork {
 }
 
 /**
- * Saves the days a phone sent (checked, 988 already taken out). `keep` says whether an app's
+ * Saves the days a phone sent (checked, 988's websites and the private ones already taken out,
+ * and checked again here). `keep` says whether an app's
  * lookups may be kept (never-blocked apps' aren't). With the switch off, nothing is kept: the
  * days are counted and dropped. A day that isn't a real date, one the phone can't have counted
  * yet (after tomorrow in its zone), and one older than the family keeps (before `oldest`) are
@@ -115,11 +163,12 @@ export function saveNetworkDays(db: DB, deviceId: string, days: NetworkDay[], no
     );
     const clear = db.prepare("DELETE FROM network_lookups WHERE device_id = ? AND day = ?");
     const add = db.prepare("INSERT OR REPLACE INTO network_lookups (device_id, day, package, domain, lookups) VALUES (?, ?, ?, ?, ?)");
+    const privateDomains = privateDomainsOf(db, deviceId);
     for (const d of days) {
       if (!validDay(d.day) || d.day > latestUsageDay(now, d.zone) || d.day < opts.oldest) continue;
       upsert.run(deviceId, d.day, d.zone, d.as_of, d.dropped, now);
       clear.run(deviceId, d.day);
-      for (const e of d.entries) if (opts.keep(e.package) && !isCrisis(e.domain)) add.run(deviceId, d.day, e.package, e.domain, e.lookups);
+      for (const e of d.entries) if (opts.keep(e.package) && !neverKept(e.domain, privateDomains)) add.run(deviceId, d.day, e.package, e.domain, e.lookups);
       out.stored++;
     }
     return out;

@@ -189,7 +189,7 @@ describe("the CLI's network command and status", () => {
 
   it("status --json has each phone's network_log and the days of network activity it sent, newest first", async () => {
     const { t, send } = await family();
-    expect(await status(t)).toMatchObject({ network_log: { enabled: false }, network: [] });
+    expect(await status(t)).toMatchObject({ network_log: { enabled: false, private_domains: [] }, network: [] });
     await cli(t, "network", "CI phone", "--on");
     await send(day("2026-11-15", [{ package: "com.example.chat", domain: "example.org", lookups: 1 }]), day(TODAY, [{ package: "com.example.chat", domain: "example.com", lookups: 3 }], { dropped: 2 }));
     expect((await status(t)).network).toEqual([

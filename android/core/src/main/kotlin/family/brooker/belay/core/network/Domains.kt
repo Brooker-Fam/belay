@@ -8,7 +8,8 @@ import java.util.Locale
  * lowercase, in Punycode ("Chat-7.CDN.Example.com." → "example.com"), or null for a name Belay
  * never keeps: an IP address, a reverse lookup (Android logs one with the name it found, or
  * "null"), a name that never leaves the phone or the home network, or anything that isn't a
- * hostname. Lookups of 988's websites are never kept either ([crisis]).
+ * hostname. Lookups of 988's websites, and of the family's private websites, are never kept
+ * either ([neverKept]).
  *
  * Decision (the design's open question): no Public Suffix List. Belay keeps a name's last two
  * labels, or three when the last is a country code and the one before is a second level many
@@ -84,7 +85,28 @@ object Domains {
     fun of(raw: String?): String? = hostname(raw)?.let(::registrable)
 
     /** One of 988's websites, or a name under one. */
-    fun crisis(domain: String): Boolean = CRISIS_988.any { domain == it || domain.endsWith(".$it") }
+    fun crisis(domain: String): Boolean = under(domain, CRISIS_988)
+
+    /**
+     * The family's private websites as the phone checks them: the policy's
+     * `network_log.private_domains` (the server sends registrable domains, like a helpline's), each
+     * as a [hostname], anything that isn't one left out, at most
+     * [NetworkWireLimits.MAX_PRIVATE_DOMAINS]. Never logged, never in the debug state.
+     */
+    fun privateSet(domains: List<String>): Set<String> =
+        domains.asSequence().take(NetworkWireLimits.MAX_PRIVATE_DOMAINS).mapNotNull(::hostname).toSet()
+
+    /**
+     * A name Belay never keeps a lookup of, whatever the policy says about logging, like a call to
+     * 988 or to a private number: one of 988's websites or of the family's [private] ones (from
+     * [privateSet]), or a name under one. [name] is a [hostname], as the app looked it up, or its
+     * [registrable] part. The registrable part ends the hostname, so a hostname matches whenever its
+     * registrable part does, and also when the family listed a name under it ("help.example.org").
+     */
+    fun neverKept(name: String, private: Set<String>): Boolean = crisis(name) || under(name, private)
+
+    /** [name] is one of [list], or a name under one ("chat.example.org" is under "example.org"). */
+    private fun under(name: String, list: Collection<String>): Boolean = list.any { name == it || name.endsWith(".$it") }
 
     /** Longer than any hostname, in any form IDN could shorten. */
     private const val MAX_RAW = 1024

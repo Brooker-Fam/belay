@@ -56,6 +56,8 @@
  *   private-number "<phone>" <E.164>, or private-number "<phone>" --remove <E.164>
  *                                                 a number Belay never records
  *   network "<phone>" --on|--off                  whether the phone notes which websites and services its apps look up (Phase 3)
+ *   private-website "<phone>" <website>, or private-website "<phone>" --remove <website>
+ *                                                 a website network logging never notes, with the names under it
  *   handover "<phone>"                            hands the phone over to the kid (Phase 11); prints one sentence
  *
  * Changes are logged as the server's (the activity log's "The server"). A running server sees
@@ -86,7 +88,7 @@ import { type CallsSettingsChange, blockNumber, putContact, removeContact, setCa
 import { listCallRecords } from "./family/calls/records.js";
 import { callSettings, callsFor, contactsFor, listContacts, numbersOf } from "./family/calls/store.js";
 import { callsSummary } from "./family/calls/words.js";
-import { setNetworkLog } from "./family/network/changes.js";
+import { setNetworkLog, setPrivateWebsite } from "./family/network/changes.js";
 import { networkDays, networkKept, networkLogFor, networkSettings } from "./family/network/store.js";
 import { handOver } from "./family/offbelay/changes.js";
 import { handoverOf } from "./family/offbelay/store.js";
@@ -195,6 +197,8 @@ const USAGE = `Commands:
   private-number "<phone>" <E.164>
   private-number "<phone>" --remove <E.164>
   network "<phone>" --on|--off
+  private-website "<phone>" <website>
+  private-website "<phone>" --remove <website>
   handover "<phone>"`;
 
 /** How many of the newest call records status --json lists per phone. */
@@ -415,7 +419,7 @@ async function run(argv: string[], io: CliIO): Promise<void> {
           })),
           /** Phase 11: the hand-over, as the policy carries it (at: milliseconds since the epoch), with the rules version that carried it; null: none. */
           handover: handoverStatus(db, d.id),
-          /** Phase 3: the policy's network_log, and the days of network activity the phone sent, newest first (as_of as the phone sent it). */
+          /** Phase 3: the policy's network_log (with the private websites), and the days of network activity the phone sent, newest first (as_of as the phone sent it). */
           network_log: networkLogFor(db, d.id),
           network: networkDays(db, d.id, { limit: STATUS_NETWORK_DAYS }).map((n) => ({
             day: n.day,
@@ -456,7 +460,13 @@ async function run(argv: string[], io: CliIO): Promise<void> {
         if (cs) io.out(`  calls: ${callsSummary(cs)}; ${p.contacts.length} contact${p.contacts.length === 1 ? "" : "s"}, ${p.blocked_numbers.length} blocked`);
         const ns = networkSettings(db, id);
         const kept = networkKept(db, id);
-        if (ns || kept.days) io.out(`  network logging: ${ns?.enabled ? "on" : "off"}; ${kept.days} day${kept.days === 1 ? "" : "s"} of network activity kept`);
+        const privateSites = p.network_log.private_domains.length;
+        if (ns || kept.days || privateSites) {
+          io.out(
+            `  network logging: ${ns?.enabled ? "on" : "off"}; ${kept.days} day${kept.days === 1 ? "" : "s"} of network activity kept` +
+              (privateSites ? `; ${privateSites} private website${privateSites === 1 ? "" : "s"}, never noted` : ""),
+          );
+        }
         for (const c of p.recent_changes.slice(0, 5)) io.out(`  ${c.at ?? ""} ${c.kind} ${c.package}`);
       }
       return;
@@ -478,6 +488,27 @@ async function run(argv: string[], io: CliIO): Promise<void> {
                 ? "The phone notes which websites and services its apps look up, by name and how many times a day, and sends that."
                 : `The phone stops noting which websites and services its apps look up. What the server kept stays until it's ${getSettings(db).networkDays} days old; Stop collecting, on the phone's page, deletes it now.`),
       );
+      return;
+    }
+    case "private-website": {
+      // Phase 3: what the phone page's private websites do: a parent's choice, never an AI app's.
+      const row = phone();
+      const remove = flags.get("remove");
+      const website = typeof remove === "string" ? remove : (positional[1] ?? "");
+      if (!website || remove === true || (remove === undefined && flags.size) || positional.length > (remove === undefined ? 2 : 1)) {
+        throw new CliError(`Usage: private-website "<phone>" <website>, or private-website "<phone>" --remove <website>`);
+      }
+      const done = setPrivateWebsite(ctx, row.id, website, remove === undefined, server);
+      const { domain, already } = done.result;
+      if (remove === undefined) {
+        io.out(
+          already
+            ? `${row.name}: ${domain} was private already.`
+            : `${row.name}: network logging never notes ${domain}, or any name under it (rules version ${done.version}). What the server kept of it is deleted.`,
+        );
+      } else {
+        io.out(already ? `${row.name}: ${domain} wasn't a private website.` : `${row.name}: ${domain} isn't a private website any more (rules version ${done.version}).`);
+      }
       return;
     }
     case "handover": {

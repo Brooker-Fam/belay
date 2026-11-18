@@ -1,6 +1,7 @@
 package family.brooker.belay.core.network
 
 import family.brooker.belay.core.Applied
+import family.brooker.belay.core.DataCategories
 import family.brooker.belay.core.Enforcement
 import family.brooker.belay.core.PolicyResponse
 import family.brooker.belay.core.Wire
@@ -82,11 +83,53 @@ class NetworkLogTest {
     }
 
     @Test
+    fun `the private websites' digest says whether the list changed, never which names are on it`() {
+        assertNull(NetworkLog.digest(emptySet()))
+        val one = NetworkLog.digest(setOf("example.org", "example.net"))
+        assertEquals(one, NetworkLog.digest(linkedSetOf("example.net", "example.org")))
+        assertTrue(one != null && Regex("^[0-9a-f]{64}$").matches(one), one)
+        assertTrue(one != NetworkLog.digest(setOf("example.org")))
+        assertTrue(one != NetworkLog.digest(setOf("example.org", "example.net", "example.com")))
+        // It's state the phone keeps, without the names.
+        val state = NetworkLogState(enabledAt = 1, privateDigest = one)
+        val json = Json.encodeToString(NetworkLogState.serializer(), state)
+        assertFalse("example" in json)
+        assertEquals(state, Json.decodeFromString(NetworkLogState.serializer(), json))
+        // Kept from before private websites: none cleared yet.
+        assertNull(Json.decodeFromString(NetworkLogState.serializer(), """{"enabledAt":1}""").privateDigest)
+    }
+
+    @Test
+    fun `what your parent can see says other websites are never noted when the family made some private, never which`() {
+        val plain = DataCategories.network(privateSites = false)
+        val private = DataCategories.network(privateSites = true)
+        assertEquals(DataCategories.NETWORK_ID, private.id)
+        assertEquals(plain.title, private.title)
+        assertEquals(plain.details, private.details.dropLast(1))
+        assertEquals(
+            "Never the other websites your parent made private. Belay doesn't name them here, so no one who sees this " +
+                "screen can tell which they are. Ask your parent if you want to know.",
+            private.details.last(),
+        )
+        assertTrue(plain.details.none { "private" in it })
+        assertTrue(plain.details.any { "988's websites" in it })
+    }
+
+    @Test
     fun `the policy's network_log is off unless it says on, and the report carries enabled and paused`() {
         val old = Wire.json.decodeFromString(PolicyResponse.serializer(), """{"server_time":1,"policy":{"version":3}}""").policy
         assertFalse(old.networkLog.enabled)
         val on = Wire.json.decodeFromString(PolicyResponse.serializer(), """{"server_time":1,"policy":{"version":4,"network_log":{"enabled":true}}}""").policy
         assertTrue(on.networkLog.enabled)
+        // A server from before private websites sends no list: none.
+        assertEquals(emptyList(), on.networkLog.privateDomains)
+        assertEquals(emptyList(), old.networkLog.privateDomains)
+        val listed = Wire.json.decodeFromString(
+            PolicyResponse.serializer(),
+            """{"server_time":1,"policy":{"version":5,"network_log":{"enabled":false,"private_domains":["example.org","example.net"],"later":1}}}""",
+        ).policy
+        assertFalse(listed.networkLog.enabled)
+        assertEquals(listOf("example.org", "example.net"), listed.networkLog.privateDomains)
         val report = Enforcement.report(Applied(policyVersion = 4), networkLog = WireNetworkLogStatus(enabled = true, paused = false))
         val json = obj(Wire.json.encodeToString(WireEnforcement.serializer(), report!!))
         assertEquals("""{"enabled":true,"paused":false}""", json["network_log"].toString())

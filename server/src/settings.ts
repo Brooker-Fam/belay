@@ -15,7 +15,7 @@ export const AI_SCOPES = {
   agreement: "Stage and agreement: the phone's stage, the family agreement, and the kid's answers to it",
   location: "Location: where the phone is (each check, and the fixes Belay shares), the family's places, and arrivals and departures",
   calls: "Calls: who the kid calls and who calls them, when and for how long, and the numbers of contacts and of callers who aren't one (never 911, 988 or private numbers)",
-  network: "Network: which websites and online services each app looks up, by name, and how many times a day (never pages or what's typed, never 988's websites)",
+  network: "Network: which websites and online services each app looks up, by name, and how many times a day (never pages or what's typed, never 988's websites or a phone's private ones)",
 } as const;
 export type AiScope = keyof typeof AI_SCOPES;
 
