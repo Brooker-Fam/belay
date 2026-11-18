@@ -53,10 +53,15 @@ class CallsStep(context: Context, private val store: AgentStore) {
         val calls = policy.calls
         val self = app.packageName
         val android = AndroidCalls.emergencyNumbers(app)
-        // The callback window: Belay's own record, and Android's call log for a call its dialer didn't see.
-        val seen = if (calls != null) CallRecords.lastEmergencyContact(AndroidCalls.log(app, now - CallsWireLimits.EMERGENCY_CALLBACK_MS, limit = 50), android, now) else null
+        // The callback window: Belay's own record, the time kept before the first unlock after a
+        // restart, and Android's call log for a call its dialer didn't see.
+        val beforeUnlock = LockedCalls.emergencyContactAt(app)
+        val fromLog = if (calls != null) CallRecords.lastEmergencyContact(AndroidCalls.log(app, now - CallsWireLimits.EMERGENCY_CALLBACK_MS, limit = 50), android, now) else null
+        val seen = listOfNotNull(fromLog, beforeUnlock.takeIf { calls != null }).maxOrNull()
         state = state.copy(lastEmergencyContactAt = CallsPlan.emergencyContact(state.lastEmergencyContactAt, seen, now))
         val window = CallRules.callbackWindow(state.lastEmergencyContactAt, null, now)
+        // Kept in the store from now on: the copy before the unlock goes once its window is over.
+        if (beforeUnlock != null && (calls == null || !CallRules.callbackWindow(beforeUnlock, null, now))) LockedCalls.forget(app)
 
         if (calls == null) return off(before, state, owner, protected, inventory, now)
 
@@ -124,7 +129,8 @@ class CallsStep(context: Context, private val store: AgentStore) {
         if (changes.none) return state.copy(blockedByBelay = changes.mine, blockListCheckedAt = now)
         val added = changes.add.filterTo(HashSet()) { BlockList.add(app, it) }
         val removed = changes.remove.filterTo(HashSet()) { BlockList.remove(app, it) }
-        Log.i(Agent.TAG, "calls: block list: ${added.size} added, ${removed.size} taken off (Belay's own entries only)")
+        // No counts: all of them coming off, then going back on 2 hours later, would show the callback window.
+        Log.i(Agent.TAG, "calls: block list updated (Belay's own entries only)")
         val mine = changes.mine - (changes.add - added) + (changes.remove - removed)
         return state.copy(blockedByBelay = mine, blockListCheckedAt = now)
     }

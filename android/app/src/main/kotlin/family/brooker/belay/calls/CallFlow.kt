@@ -13,6 +13,7 @@ import androidx.annotation.VisibleForTesting
 import family.brooker.belay.Agent
 import family.brooker.belay.R
 import family.brooker.belay.Trigger
+import family.brooker.belay.core.calls.CallRules
 import family.brooker.belay.core.calls.IncomingCall
 import family.brooker.belay.core.calls.IncomingDecision
 import family.brooker.belay.core.calls.OutgoingDecision
@@ -39,8 +40,10 @@ data class EndedCall(
     val durationS: Int,
     val outcome: WireCallOutcome,
     val reason: WireCallReason?,
-    /** It rang only because of the 2-hour callback window: kept on the phone, never sent (core's CallRecords). */
+    /** It rang only because of an emergency (the 2-hour window, or Telecom's mark): kept on the phone, never sent (core's CallRecords). */
     val callback: Boolean = false,
+    /** The network's check of the caller id failed: a stranger's call, whatever number it shows (core's CallRecords). */
+    val unverified: Boolean = false,
 )
 
 /**
@@ -50,14 +53,17 @@ data class EndedCall(
  *   payphone callers never reach screening, and a call screening app the kid chose replaces
  *   Belay's). "Ring" starts Belay's own ringer and the incoming-call notification; "reject" and
  *   "voicemail" end it at once (as unwanted, or as declined toward voicemail), so it never rings
- *   and Telecom doesn't count it as missed.
+ *   and Telecom doesn't count it as missed. A decision that takes longer than 2 seconds
+ *   (CallRules.DECIDE_WITHIN_MS) lets the call ring, and only names it when it comes. A call
+ *   Telecom marks as part of an emergency (emergency callback mode, T18) always rings.
  * - Outgoing: a call Belay didn't place (another app's dial pad) is decided too, and ended before it
- *   connects when the family's rules don't allow the number. A call to 911 or 988 opens the 2-hour
- *   callback window.
+ *   connects when the family's rules don't allow the number. A call to 911 or 988 (with a caller-id
+ *   code before it or not) opens the 2-hour callback window.
  * - Every call that ends becomes an EndedCall (Agent.recordCall keeps it unless it's with an
  *   emergency number, 988 or a private number), and the agent takes a step (debug builds write
  *   their state for CI then).
- * If anything goes wrong deciding, the call rings or goes through: calls fail open.
+ * If anything goes wrong deciding, the call rings or goes through: calls fail open. The log says
+ * what Belay did with a call, never why (why is in the debug state, only in debug builds).
  */
 object CallFlow {
     /** What the call screen shows for one call. */
@@ -77,8 +83,21 @@ object CallFlow {
     /** The call's audio, from the InCallService. */
     data class AudioUi(val muted: Boolean = false, val speaker: Boolean = false, val bluetooth: Boolean = false, val canBluetooth: Boolean = false)
 
-    /** An incoming call as decided, for the debug state: no numbers. */
-    data class Decided(val at: Long, val action: Ring, val because: RingBecause?, val reason: WireCallReason?, val contactId: String?, val rang: Boolean, val screened: Boolean)
+    /**
+     * An incoming call as decided, for the debug state: no numbers. [late]: the decision took longer
+     * than CallRules.DECIDE_WITHIN_MS, so the call rang whatever it said.
+     */
+    data class Decided(
+        val at: Long,
+        val action: Ring,
+        val because: RingBecause?,
+        val reason: WireCallReason?,
+        val contactId: String?,
+        val rang: Boolean,
+        val screened: Boolean,
+        val unverified: Boolean = false,
+        val late: Boolean = false,
+    )
 
     private class Tracked(val port: CallPort, val addedAt: Long) {
         var key: String? = null
@@ -91,6 +110,9 @@ object CallFlow {
 
         /** Belay started ringing for it (once: a volume key that silenced it isn't undone). */
         var rang = false
+
+        /** Its decision took too long, so it rang whatever the decision says when it comes. */
+        var late = false
         var connectedAt: Long? = null
         var declinedByKid = false
         var notPlaced = false
@@ -171,10 +193,13 @@ object CallFlow {
             else -> Verification.NOT_VERIFIED
         }
         val callbackAt = port.lastEmergencyCallAt
+        val emergency = port.emergency
+        // Calls fail open: if the decision isn't here in 2 seconds, the call rings anyway.
+        main.postDelayed({ late(app, t) }, CallRules.DECIDE_WITHIN_MS)
         worker.execute {
             val decision = try {
                 val key = if (presentation == Presentation.NUMBER) AndroidCalls.key(app, raw) else null
-                key to incomingRules(app, IncomingCall(key, presentation, verification, callbackAt), t.addedAt)
+                key to incomingRules(app, IncomingCall(key, presentation, verification, callbackAt, emergency), t.addedAt)
             } catch (e: RuntimeException) {
                 Log.e(Agent.TAG, "calls: deciding an incoming call failed, so it rings", e)
                 null to IncomingDecision(Ring.RING, because = RingBecause.CALLS_OFF)
@@ -183,12 +208,23 @@ object CallFlow {
         }
     }
 
+    /** The decision didn't come in time: the call rings, as if the rules let it. */
+    private fun late(app: Context, t: Tracked) {
+        if (t.incoming != null || t.late || tracked[t.port.id] !== t || t.port.state == Call.STATE_DISCONNECTED) return
+        t.late = true
+        t.shown = true
+        if (t.port.state == Call.STATE_RINGING) ring(app, t)
+        Log.w(Agent.TAG, "calls: deciding an incoming call took too long, so it rings")
+        publish()
+    }
+
     private fun applyIncoming(app: Context, t: Tracked, key: String?, decision: IncomingDecision) {
         t.key = key
         t.contact = decision.contact
         t.incoming = decision
         val live = tracked[t.port.id] === t && t.port.state != Call.STATE_DISCONNECTED
-        if (live) {
+        // A late decision only names the call: it already rings, and a call that rings isn't refused.
+        if (live && !t.late) {
             when (decision.action) {
                 Ring.RING -> {
                     t.shown = true
@@ -198,10 +234,11 @@ object CallFlow {
                 Ring.VOICEMAIL -> t.port.reject(unwanted = false)
             }
         }
-        remember(Decided(t.addedAt, decision.action, decision.because, decision.reason, decision.contact?.id, t.rang, screened = false))
+        remember(Decided(t.addedAt, decision.action, decision.because, decision.reason, decision.contact?.id, t.rang, screened = false, decision.unverified, t.late))
         // It ended while it was being decided: recorded now, with what the decision knows.
         if (t.endedAt != null) recordOnce(app, t)
-        Log.i(Agent.TAG, "calls: incoming call: ${decision.action.name.lowercase()} (${(decision.because ?: decision.reason)?.name?.lowercase()})")
+        // What Belay did, never why: the reason would say that the kid called 911 or 988.
+        Log.i(Agent.TAG, "calls: incoming call: ${if (t.late) "rang (decided late)" else decision.action.name.lowercase()}")
         publish()
         stepAfter(app)
     }
@@ -291,9 +328,9 @@ object CallFlow {
     /** A call Belay's screening service refused, which never reached the InCallService: recorded here. */
     fun screened(context: Context, at: Long, key: String?, decision: IncomingDecision) {
         val app = context.applicationContext
-        remember(Decided(at, decision.action, decision.because, decision.reason, decision.contact?.id, rang = false, screened = true))
+        remember(Decided(at, decision.action, decision.because, decision.reason, decision.contact?.id, rang = false, screened = true, decision.unverified))
         val outcome = if (decision.action == Ring.REJECT) WireCallOutcome.REJECTED else WireCallOutcome.VOICEMAIL
-        record(app, EndedCall(at, WireCallDirection.IN, key, decision.contact, 0, outcome, decision.reason))
+        record(app, EndedCall(at, WireCallDirection.IN, key, decision.contact, 0, outcome, decision.reason, unverified = decision.unverified))
         stepAfter(app)
     }
 
@@ -310,7 +347,8 @@ object CallFlow {
         val duration = t.connectedAt?.let { ((now - it) / 1000).toInt() } ?: 0
         val answered = t.connectedAt != null
         val (outcome, reason) = if (t.port.incoming) {
-            val d = t.incoming
+            // A late decision didn't refuse the call: it rang.
+            val d = t.incoming?.takeUnless { t.late }
             when {
                 d?.action == Ring.REJECT -> WireCallOutcome.REJECTED to d.reason
                 d?.action == Ring.VOICEMAIL -> WireCallOutcome.VOICEMAIL to d.reason
@@ -326,8 +364,9 @@ object CallFlow {
             }
         }
         val direction = if (t.port.incoming) WireCallDirection.IN else WireCallDirection.OUT
-        val callback = t.port.incoming && t.incoming?.because == RingBecause.EMERGENCY_CALLBACK
-        return EndedCall(t.addedAt, direction, t.key, t.contact, duration, outcome, reason, callback)
+        val callback = t.port.incoming && t.incoming?.callback == true
+        val unverified = t.port.incoming && t.incoming?.unverified == true
+        return EndedCall(t.addedAt, direction, t.key, t.contact, duration, outcome, reason, callback, unverified)
     }
 
     // What the kid does, from the call screen and the notifications.
@@ -411,7 +450,17 @@ object CallFlow {
     /** For the debug state: the calls on now, without numbers (as the main thread last published them). */
     fun summary(): List<Map<String, String?>> = summaryNow
 
+    @Volatile
+    private var callOnNow = false
+
+    /**
+     * A call is on in Belay's own in-call service: ringing, being placed or going on (as the main
+     * thread last published it, so any thread may ask). A screen lock waits for it (enforce/InCall.kt).
+     */
+    val callOn: Boolean get() = callOnNow
+
     private fun publish() {
+        callOnNow = tracked.values.any { it.port.state != Call.STATE_DISCONNECTED }
         summaryNow = tracked.values.map { t ->
             mapOf(
                 "direction" to if (t.port.incoming) "in" else "out",

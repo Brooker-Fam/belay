@@ -7,6 +7,7 @@ import android.telecom.CallScreeningService
 import android.telecom.Connection
 import android.util.Log
 import family.brooker.belay.Agent
+import family.brooker.belay.core.calls.CallRules
 import family.brooker.belay.core.calls.IncomingCall
 import family.brooker.belay.core.calls.IncomingDecision
 import family.brooker.belay.core.calls.Presentation
@@ -23,7 +24,10 @@ import java.util.concurrent.atomic.AtomicBoolean
  * service (a Bluetooth car's either): "reject" ends it, "voicemail" leaves it unanswered for the
  * network to send to voicemail; neither shows a notification. Withheld, unknown and payphone callers
  * never get here: Belay's InCallService decides those, and every other call again (CallFlow). If the
- * decision isn't ready in 4 seconds, the call is let through to the InCallService.
+ * decision isn't ready in 2 seconds (core's CallRules.DECIDE_WITHIN_MS), the call is let through to
+ * the InCallService. A call that shows 911 or another emergency number is screening's alone: once
+ * Telecom lets one through, it hands it to the preloaded dialer (platform notes T17), so a spoofed one
+ * (its caller id failed the network's check) is refused here or not at all.
  */
 class BelayCallScreeningService : CallScreeningService() {
     private val main = Handler(Looper.getMainLooper())
@@ -41,18 +45,21 @@ class BelayCallScreeningService : CallScreeningService() {
             Connection.VERIFICATION_STATUS_FAILED -> Verification.FAILED
             else -> Verification.NOT_VERIFIED
         }
+        // Telecom skips screening for these itself (T18); read in case that ever changes.
+        val emergency = callDetails.hasProperty(Call.Details.PROPERTY_EMERGENCY_CALLBACK_MODE) ||
+            callDetails.hasProperty(Call.Details.PROPERTY_NETWORK_IDENTIFIED_EMERGENCY_CALL)
         val answered = AtomicBoolean(false)
         main.postDelayed({
             if (answered.compareAndSet(false, true)) {
                 Log.w(Agent.TAG, "calls: screening took too long; the in-call service decides")
                 respondToCall(callDetails, CallResponse.Builder().build())
             }
-        }, TIMEOUT_MS)
+        }, CallRules.DECIDE_WITHIN_MS)
         worker.execute {
             val (key, decision) = try {
                 val key = AndroidCalls.key(app, raw)
                 val presentation = if (key == null) Presentation.WITHHELD else Presentation.NUMBER
-                key to CallsGate.incoming(app, IncomingCall(key, presentation, verification), at)
+                key to CallsGate.incoming(app, IncomingCall(key, presentation, verification, emergency = emergency), at)
             } catch (e: RuntimeException) {
                 Log.e(Agent.TAG, "calls: screening failed; the in-call service decides", e)
                 null to IncomingDecision(Ring.RING, because = RingBecause.CALLS_OFF)
@@ -65,14 +72,14 @@ class BelayCallScreeningService : CallScreeningService() {
             }
             respondToCall(callDetails, response)
             if (decision.action != Ring.RING) {
-                Log.i(Agent.TAG, "calls: screened out an incoming call: ${decision.action.name.lowercase()} (${decision.reason?.name?.lowercase()})")
+                // What Belay did, never why (the debug state has why, in debug builds only).
+                Log.i(Agent.TAG, "calls: screened out an incoming call: ${decision.action.name.lowercase()}")
                 main.post { CallFlow.screened(app, at, key, decision) }
             }
         }
     }
 
     private companion object {
-        const val TIMEOUT_MS = 4_000L
         val worker = Executors.newSingleThreadExecutor { r -> Thread(r, "belay-screening") }
     }
 }

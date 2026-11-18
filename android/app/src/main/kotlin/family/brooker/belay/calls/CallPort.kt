@@ -31,6 +31,12 @@ interface CallPort {
     /** Telecom's time of the last emergency call, when it put one on this call. */
     val lastEmergencyCallAt: Long?
 
+    /**
+     * Telecom marked this call as part of an emergency: the phone is in emergency callback mode, or
+     * the network identified it as an emergency call (docs/platform-notes.md T18).
+     */
+    val emergency: Boolean
+
     /** Another call screening app asked for this call not to ring. */
     val silentRingingRequested: Boolean
 
@@ -68,6 +74,9 @@ class TelecomCallPort(private val call: Call) : CallPort {
     override val verification: Int get() = call.details.callerNumberVerificationStatus
     override val lastEmergencyCallAt: Long?
         get() = call.details.extras?.getLong(Call.EXTRA_LAST_EMERGENCY_CALLBACK_TIME_MILLIS, 0L)?.takeIf { it > 0 }
+    override val emergency: Boolean
+        get() = call.details.hasProperty(Call.Details.PROPERTY_EMERGENCY_CALLBACK_MODE) ||
+            call.details.hasProperty(Call.Details.PROPERTY_NETWORK_IDENTIFIED_EMERGENCY_CALL)
     override val silentRingingRequested: Boolean get() = call.details.extras?.getBoolean(Call.EXTRA_SILENT_RINGING_REQUESTED, false) == true
     override val connectTimeMillis: Long get() = call.details.connectTimeMillis
     override val canHold: Boolean get() = call.details.can(Call.Details.CAPABILITY_HOLD)

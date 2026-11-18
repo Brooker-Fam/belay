@@ -228,6 +228,8 @@ object Agent {
         val started = System.nanoTime()
         Log.i(TAG, "step: ${trigger.label}" + if (packages.isEmpty()) "" else " $packages")
         try {
+            // Started before the first unlock (BelayApp): the watchers begin with the first step after it.
+            BelayApp.watch(app)
             val store = AgentStore.get(app)
             val connection = ConnectionStore.read(app)
             if (trigger.setup) {
