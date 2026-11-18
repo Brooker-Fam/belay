@@ -110,7 +110,8 @@ checked on a real Pixel yet. Phase 9 (more families) isn't built either.
   phone is first unlocked: then Belay records those calls from Android's call log, by the same
   rules, and the parents see how long the phone stayed locked.
 - **`server/`: the family's server.** Node and SQLite in one Docker image. The device API,
-  the parent pages (phones and their health, apps with "new" badges and reviews, the
+  the parent pages (phones and their health, a Getting started card that ticks off a new
+  family's setup steps from what the server sees, apps with "new" badges and reviews, the
   timeline, adding a phone, settings, the activity log), and OAuth 2.1 plus MCP for Claude.
   **Phase 2:** each phone's rules (protection in one step, new apps ask or allow, allow or
   block per app, pause, web filter and Chrome, locked settings, maintenance, hardening), the

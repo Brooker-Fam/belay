@@ -234,6 +234,17 @@ home, follow [Option 2](server.md#option-2-a-computer-at-home-behind-a-tunnel) i
    browser's, so check it. The times Belay shows you, on the parent page and in Claude, are in
    this timezone, with its offset (Settings changes it later); schedules and screen-time days
    follow the phone's own time zone, unless you pick another for them.
+
+   Belay then opens the **Phones** page, with a **Getting started** card: the steps in this
+   guide that the server can see, each ticked off once it sees them done (the phone enrolled,
+   its first rules applied, notifications on in one of your browsers, what AI apps may read
+   saved once, Claude connected, the backup passphrase set), with why each matters and a link
+   to where it's done. Looking over the phone's rules has no tick, since Belay can't tell when
+   you have. Below them, **When you're ready** lists the parts that are off until you turn them
+   on: calls, location, network logging, mobile data, caregivers and the family agreement. The
+   card hides by itself once the essential steps (the phone, its rules, notifications and the
+   backup passphrase) are done, or choose **Hide Getting started**: that's only for you, and
+   Settings, under Your account, brings it back.
 7. **The second parent:** in **Settings**, under Parents, choose **Invite another parent**.
    The link is shown once and works once, for 7 days: send it, and they make their own account.
    Each parent signs in, connects Claude and gets notifications on their own.

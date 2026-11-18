@@ -46,7 +46,10 @@ Any small Linux VPS with Docker works (1 GB of memory is plenty).
    docker compose logs belay
    ```
 5. Open the link (it works once, for 24 hours) and create the first parent account. You
-   can invite a second parent from Settings.
+   can invite a second parent from Settings. The Phones page's **Getting started** card then
+   lists the steps after this one ([guide.md](guide.md#3-set-up-the-server)), each ticked off
+   from what the server sees, until the essential ones are done or a parent hides it (for
+   themselves: Settings brings it back).
 
 Caddy gets and renews the certificate on its own. `Caddyfile` and `.env` stay out of git:
 they name your server. **Don't edit `docker-compose.yml`:** your own changes (the backup
@@ -818,7 +821,8 @@ sudo chown 1000 backup-passphrase.txt && sudo chmod 600 backup-passphrase.txt
 
 A passphrase that's set but unusable (shorter than 15 characters, or a file that can't be
 read) fails the backup, with the reason on the parent page; Belay never falls back to an
-unencrypted one. A new passphrase applies to new backups; older ones keep the one they were
+unencrypted one. Until a usable one is set, the Phones page's Getting started card lists it as
+a step left, with that reason. A new passphrase applies to new backups; older ones keep the one they were
 made with. After turning encryption on, the unencrypted ones age out within 14 days, or
 delete them.
 

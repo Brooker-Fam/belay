@@ -162,6 +162,7 @@ phase's Pixel checklist is in `docs/`.
     that lock);
   - Play's `allowed_accounts`;
   - the parent page reworked for phones and screen readers;
+  - a Getting started card on the Phones page, its steps ticked off from what the server sees;
   - MCP prompts (`weekly_review`, `family_check_in`) that cover every phase, each part only when
     the family lets AI apps read it;
   - [docs/guide.md](docs/guide.md), one guide for parents;
