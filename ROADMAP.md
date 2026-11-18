@@ -167,8 +167,16 @@ phase's Pixel checklist is in `docs/`.
     name none, the texts test reads only one message's URI and `unprovision.sh` stops it first, a
     check is answered only by itself or a check that took its place, and a caregiver's page says
     a lock names them only if the phone can lock);
-  - an audit of how a kid could get around Belay on Android 17: a proxy and wireless debugging
-    are reported, Chrome ignores proxies, and the time zone stays automatic;
+  - two audits of how a kid could get around Belay on Android 17. The first's: a proxy and
+    wireless debugging are reported, Chrome ignores proxies, and the time zone stays automatic.
+    The second found nothing the kid can do alone on the phone, but a parent's password typed
+    into the kid's phone signed in unseen: now every sign-in, a caregiver's too, goes to every
+    parent at once with the kind of browser, the activity log says it, and Settings lists each
+    parent's signed-in browsers with Sign out. The Network tab marks the day of a restart
+    (Android loses the lookups it hadn't handed over), `unprovision.sh` checks an unanswered stop
+    of the texts test, and the docs say what Belay can't close: Gemini inside Google Messages
+    (no setting Google documents turns it off), the callback window lifting blocked numbers for
+    its 2 hours, the captive portal during a pause, and Wi-Fi only's edges;
   - limits on what an AI app can do to the kid's phone (checks, pauses, locks, and schedules
     that lock);
   - Play's `allowed_accounts`;
