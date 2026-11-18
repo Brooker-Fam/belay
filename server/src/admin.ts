@@ -62,6 +62,11 @@
  *   wifi-only "<phone>" <package>, or wifi-only "<phone>" --remove <package>
  *                                                 an app the phone keeps off mobile data (Phase 13)
  *   mobile-data "<phone>" --measure on|off        whether the phone sends how much mobile data each app uses (Phase 13)
+ *   caregiver-add "<phone>" ["<phone>" ...] --name <words> --until <time> [--can status,pause,help,locate]
+ *                                                 a caregiver for those phones (Phase 12), as the Caregivers page adds one; prints only the one-time link
+ *   caregivers [--json]                           each caregiver: until when, their phones, what they may do, whether they joined
+ *   caregiver-renew "<name>" --until <time>       a new end, at most 30 days away; for one whose access ended, access again from now
+ *   caregiver-end "<name>"                        ends their access now, as the Caregivers page's "End access now"
  *
  * Changes are logged as the server's (the activity log's "The server"). A running server sees
  * them within a second or two and passes them to the phone's long-poll. Hardening (factory
@@ -74,6 +79,8 @@ import type { Config } from "./config.js";
 import type { DB } from "./db.js";
 import { createEnrollmentCode } from "./device/enroll.js";
 import { packageName, sha256Hex } from "./device/schemas.js";
+import { addCaregiver, endCaregiver, endProblem, renewCaregiver } from "./family/caregivers/changes.js";
+import { CAREGIVER_CAN, type Caregiver, type CaregiverCan, DEFAULT_CAN, LINK_TTL_MS, SUGGESTED_ACCESS_MS, accessCurrent, listCaregivers } from "./family/caregivers/store.js";
 import { AgentFileError, type Offer, addAgentFile, currentOffer, offerAgent, versionWords } from "./family/agent.js";
 import { type RecoveryState, makePhoneRecoveryKey, recoveryState, usableKey } from "./family/recovery.js";
 import { issueCommand, listCommands } from "./family/commands.js";
@@ -102,10 +109,10 @@ import { WEEKDAYS, type Weekday, clockMinutes } from "./family/screentime/days.j
 import { newRuleId, phoneLabels, phoneRules, screenTimeFor } from "./family/screentime/rules.js";
 import { usageDays } from "./family/screentime/usage.js";
 import { duration } from "./family/screentime/words.js";
-import { oneLine } from "./text.js";
+import { oneLine, sameName } from "./text.js";
 import { runOpsCommand } from "./ops/cli.js";
 import { aiReads, getSettings } from "./settings.js";
-import { formatAgo, isoInZone } from "./time.js";
+import { formatAgo, isoInZone, parseWhen } from "./time.js";
 
 export interface CliIO {
   db: DB;
@@ -207,7 +214,11 @@ const USAGE = `Commands:
   handover "<phone>"
   wifi-only "<phone>" <package>
   wifi-only "<phone>" --remove <package>
-  mobile-data "<phone>" --measure on|off`;
+  mobile-data "<phone>" --measure on|off
+  caregiver-add "<phone>" ["<phone>" ...] --name <words> --until <time> [--can status,pause,help,locate]
+  caregivers [--json]
+  caregiver-renew "<name>" --until <time>
+  caregiver-end "<name>"`;
 
 /** How many of the newest call records status --json lists per phone. */
 const STATUS_CALLS = 50;
@@ -286,6 +297,35 @@ async function run(argv: string[], io: CliIO): Promise<void> {
     const names = listDevices(db, getSettings(db), now).map((d) => `"${d.name}"`);
     throw new CliError(names.length ? `No phone is called "${name}". The phones are: ${names.join(", ")}.` : "No phones are enrolled yet.");
   };
+
+  // Phase 12: what the caregiver commands share.
+  /** The caregiver named first (case, spaces and curly quotes don't count), ended ones too. */
+  const caregiverNamed = (): Caregiver => {
+    const typed = positional[0]?.trim();
+    if (!typed) throw new CliError(`Name the caregiver first, in quotes, like "Grandma".\n\n${USAGE}`);
+    const all = listCaregivers(db);
+    const found = all.find((c) => c.name === typed) ?? all.find((c) => sameName(typed, c.name));
+    if (found) return found;
+    throw new CliError(all.length ? `No caregiver is called "${typed}". The caregivers are: ${all.map((c) => `"${c.name}"`).join(", ")}.` : "There are no caregivers yet.");
+  };
+  /** --until, read as the Caregivers page reads its field; one it can't read gets the page's words, and how to write one here. */
+  const untilFlag = (): number => {
+    const tz = getSettings(db).timezone;
+    const typed = flags.get("until");
+    const at = typeof typed === "string" ? parseWhen(typed, tz) : null;
+    if (at !== null) return at;
+    const example = Math.ceil((now + SUGGESTED_ACCESS_MS) / 3_600_000) * 3_600_000;
+    throw new CliError(
+      `${endProblem(null, now) ?? ""} --until is a date and time in the family's timezone (${tz}), like ${isoInZone(example, tz).slice(0, 16)}, or one with its offset, like ${new Date(example).toISOString().slice(0, 16)}Z.`,
+    );
+  };
+  /** A caregiver's phones by name, as the Caregivers page lists them. */
+  const phoneNames = (c: Caregiver): string[] => {
+    const names = new Map(listDevices(db, getSettings(db), now).map((d) => [d.id, d.name]));
+    return c.phones.map((id) => names.get(id) ?? "a phone");
+  };
+  /** What a caregiver may do, in --can's words. */
+  const canWords = (c: Caregiver): string => CAREGIVER_CAN.filter((k) => c.can[k]).join(", ") || "nothing";
 
   switch (command) {
     case "setup-link": {
@@ -1080,6 +1120,94 @@ async function run(argv: string[], io: CliIO): Promise<void> {
       if (done.result.notNewerThan !== null) {
         io.err(`The phone runs version ${done.result.notNewerThan}, which isn't older: Android won't install this one over it, so the phone won't get it.`);
       }
+      return;
+    }
+    // Phase 12: caregivers, as the parent page's Caregivers page adds, lists, renews and ends them,
+    // through the same functions, with the same choices and limits, refused in its words.
+    case "caregiver-add": {
+      // Its only line on stdout is the one-time link, for scripts: it's shown only now.
+      const usage = `Usage: caregiver-add "<phone>" ["<phone>" ...] --name <words> --until <time> [--can ${CAREGIVER_CAN.join(",")}]`;
+      const canFlag = flags.get("can");
+      if (!positional.length || canFlag === true || [...flags.keys()].some((k) => k !== "name" && k !== "until" && k !== "can")) {
+        throw new CliError(`Name the phones first, in quotes, like "Sam's phone", then who and until when.\n\n${usage}`);
+      }
+      const rows = positional.map((typed): DeviceRow => {
+        const row = findDeviceByName(db, typed);
+        if (row) return row;
+        throw new CliError(`No phone is called "${typed.trim()}". The phones are: ${listDevices(db, getSettings(db), now).map((d) => `"${d.name}"`).join(", ")}.`);
+      });
+      const words = canFlag === undefined ? CAREGIVER_CAN.filter((k) => DEFAULT_CAN[k]) : canFlag.split(",").map((w) => w.trim()).filter(Boolean);
+      if (words.some((w) => !(CAREGIVER_CAN as readonly string[]).includes(w))) {
+        throw new CliError(`${usage}. --can is any of ${CAREGIVER_CAN.join(", ")}, comma separated: ${CAREGIVER_CAN.filter((k) => DEFAULT_CAN[k]).join(",")} if left out.`);
+      }
+      const endsAt = untilFlag();
+      const name = flags.get("name");
+      const can = Object.fromEntries(CAREGIVER_CAN.map((k) => [k, words.includes(k)])) as Record<CaregiverCan, boolean>;
+      const made = addCaregiver(ctx, { name: typeof name === "string" ? name : "", phones: rows.map((r) => r.id), can, endsAt }, server);
+      const c = made.caregiver;
+      io.out(`${config.publicUrl}/care/join/${made.link}`);
+      io.err(
+        `${c.name} has access to ${phoneNames(c).join(", ")} until ${iso(c.endsAt) ?? ""}, to: ${canWords(c)}. Their phones list them within seconds if they're online. ` +
+          `The link is shown only now: send it to ${c.name} in a message only they read. It works once, until ${iso(Math.min(now + LINK_TTL_MS, c.endsAt)) ?? ""}, ` +
+          `and whoever opens it first becomes ${c.name} here. Afterwards they sign in at ${config.publicUrl}/care.`,
+      );
+      return;
+    }
+    case "caregivers": {
+      if (positional.length || [...flags.keys()].some((k) => k !== "json")) throw new CliError("Usage: caregivers [--json]");
+      // Those with access first, the soonest end first; then those whose access ended, the latest first.
+      const all = listCaregivers(db);
+      if (flags.has("json")) {
+        const shown = all.map((c) => ({
+          name: c.name,
+          /** "current" until access ends: at its end time, or when a parent (or caregiver-end) ends it. */
+          access: accessCurrent(c, now) ? "current" : "ended",
+          until: iso(c.endsAt),
+          ended_at: accessCurrent(c, now) ? null : iso(c.endedAt ?? c.endsAt),
+          phones: phoneNames(c),
+          can: CAREGIVER_CAN.filter((k) => c.can[k]),
+          joined: c.joined,
+          joined_at: iso(c.joinedAt),
+          last_signed_in_at: iso(c.lastSignedInAt),
+        }));
+        io.out(JSON.stringify({ caregivers: shown }, null, 2));
+        return;
+      }
+      if (!all.length) io.out("No caregivers yet.");
+      for (const c of all) {
+        io.out(
+          `${c.name}: ${accessCurrent(c, now) ? `until ${iso(c.endsAt) ?? ""}` : `ended ${iso(c.endedAt ?? c.endsAt) ?? ""}`}, for ${phoneNames(c).join(", ") || "no phone"}: ${canWords(c)}. ` +
+            (c.joined ? `Joined; last signed in ${c.lastSignedInAt === null ? "never" : formatAgo(c.lastSignedInAt, now)}.` : "Hasn't used their link yet."),
+        );
+      }
+      return;
+    }
+    case "caregiver-renew": {
+      const c = caregiverNamed();
+      if (positional.length > 1 || [...flags.keys()].some((k) => k !== "until")) throw new CliError(`Usage: caregiver-renew "<name>" --until <time>`);
+      const again = !accessCurrent(c, now);
+      const renewed = renewCaregiver(ctx, c.id, untilFlag(), server);
+      const until = iso(renewed.endsAt) ?? "";
+      io.out(
+        again
+          ? `${renewed.name} has access again, until ${until}, from now: the help requests from before don't show to them. Their phones list them within seconds if they're online. ` +
+              (renewed.joined ? "They sign in with the password they chose." : "They never joined, and their link went when their access ended: make them a new one on the Caregivers page.")
+          : `${renewed.name}'s access is renewed, until ${until}. Their phones show the new end within seconds if they're online.`,
+      );
+      return;
+    }
+    case "caregiver-end": {
+      const c = caregiverNamed();
+      if (positional.length > 1 || flags.size) throw new CliError(`Usage: caregiver-end "<name>"`);
+      // Once its time came, the hourly clean-up does the rest: they're signed out already, and the phones stop listing them by their own clocks.
+      if (!accessCurrent(c, now) || !endCaregiver(ctx, c.id, server)) {
+        io.out(`${c.name}'s access had ended already, at ${iso(c.endedAt ?? c.endsAt) ?? ""}.`);
+        return;
+      }
+      io.out(
+        `${c.name}'s access ended: they're signed out, their notifications stopped, and their phones stop listing them within seconds if they're online. ` +
+          `A pause they set stays until its end; resume "<phone>" ends it early.`,
+      );
       return;
     }
     default:

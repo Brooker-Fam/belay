@@ -3,9 +3,11 @@
  * (docs/design/phase12-caregivers.md).
  *
  * A parent adds, changes, renews, ends and removes a caregiver on the parent page; never an AI app,
- * not even as a proposal: giving someone access to the kid's phone is a parent's decision. Each
- * change gives the phones it touches a new policy (the kid's screen lists who has access, with what
- * and until when), and is in the activity log. The hourly clean-up ends access whose time came.
+ * not even as a proposal: giving someone access to the kid's phone is a parent's decision. The
+ * server's command line (admin.ts) adds, renews and ends one too, through the same functions,
+ * logged as the server's, like its other changes. Each change gives the phones it touches a new
+ * policy (the kid's screen lists who has access, with what and until when), and is in the activity
+ * log. The hourly clean-up ends access whose time came.
  *
  * A caregiver only pauses or locks a phone (only ever tighter, never "until a parent resumes it",
  * and with no note: the kid's phone says their name) and checks where it is, while their access
@@ -20,7 +22,7 @@ import type { Deps } from "../../deps.js";
 import { CARE_PER_HOUR } from "../../ratelimit.js";
 import { oneLine } from "../../text.js";
 import { locateNow } from "../location/changes.js";
-import { type CaregiverActor, type Changed, type PolicyContext, RuleRefused, changePolicies, lockPhone, pausePhone } from "../policy.js";
+import { type CaregiverActor, type Changed, type Person, type PolicyContext, RuleRefused, changePolicies, lockPhone, pausePhone } from "../policy.js";
 import {
   CAREGIVER_CAN,
   type Caregiver,
@@ -36,6 +38,9 @@ import {
 } from "./store.js";
 
 type Parent = { kind: "parent"; parentId: string };
+
+/** The parent who did it, as a caregiver's row and link keep them; null for the server's command line. */
+const parentOf = (who: Person): string | null => (who.kind === "parent" ? who.parentId : null);
 
 /** How long a caregiver may pause the phone for, in minutes: 15 minutes to 4 hours. */
 export const CARE_PAUSE_MINUTES = [15, 30, 60, 120, 240] as const;
@@ -95,10 +100,10 @@ function mustGet(db: DB, id: string): Caregiver {
 
 /**
  * Adds a caregiver whose access ends at `endsAt` (at most 30 days away), with a one-time link to
- * choose a username and password, which the parent page shows once. Their phones' policies list
- * them from now.
+ * choose a username and password, which the parent page (or the command line) shows once. Their
+ * phones' policies list them from now.
  */
-export function addCaregiver(ctx: PolicyContext, input: CaregiverInput & { endsAt: number }, who: Parent): { caregiver: Caregiver; link: string } {
+export function addCaregiver(ctx: PolicyContext, input: CaregiverInput & { endsAt: number }, who: Person): { caregiver: Caregiver; link: string } {
   const { db, now } = ctx;
   const problem =
     caregiverProblem(db, input) ??
@@ -112,10 +117,10 @@ export function addCaregiver(ctx: PolicyContext, input: CaregiverInput & { endsA
     db.prepare(
       `INSERT INTO caregivers (id, name, can_status, can_pause, can_help, can_locate, access_from, ends_at, created_by, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(id, name, input.can.status ? 1 : 0, input.can.pause ? 1 : 0, input.can.help ? 1 : 0, input.can.locate ? 1 : 0, now, input.endsAt, who.parentId, now, now);
+    ).run(id, name, input.can.status ? 1 : 0, input.can.pause ? 1 : 0, input.can.help ? 1 : 0, input.can.locate ? 1 : 0, now, input.endsAt, parentOf(who), now, now);
     setPhones(db, id, phones);
     log("caregiver.added", { caregiver: name, phones: phoneNames(db, phones), can: canList(input.can), until: input.endsAt });
-    return createCareLink(db, now, id, input.endsAt, who.parentId);
+    return createCareLink(db, now, id, input.endsAt, parentOf(who));
   });
   return { caregiver: mustGet(db, id), link };
 }
@@ -148,7 +153,7 @@ export function changeCaregiver(ctx: PolicyContext, id: string, input: Caregiver
  * Renews a caregiver's access to end at `endsAt`, at most 30 days away. For one whose access
  * ended, it's access again from now: the help requests from between don't show.
  */
-export function renewCaregiver(ctx: PolicyContext, id: string, endsAt: number, who: Parent): Caregiver {
+export function renewCaregiver(ctx: PolicyContext, id: string, endsAt: number, who: Person): Caregiver {
   const { db, now } = ctx;
   const before = mustGet(db, id);
   const problem = endProblem(endsAt, now);
@@ -175,23 +180,20 @@ function forgetAccess(db: DB, id: string): void {
 }
 
 /**
- * Ends a caregiver's access: a parent's "End access now", or the hourly clean-up once its time
- * came (`server`, recorded as ended at its end time). Their sessions, browsers and unused link go
- * at once, and their phones' policies stop listing them. False when it had ended already.
+ * Ends a caregiver's access: a parent's "End access now" (or the command line's `caregiver-end`),
+ * or, `atItsEnd`, the hourly clean-up once its time came (the server's, recorded as ended at its
+ * end time). Their sessions, browsers and unused link go at once, and their phones' policies stop
+ * listing them. False when it had ended already.
  */
-export function endCaregiver(ctx: PolicyContext, id: string, who: Parent | { kind: "server" }): boolean {
+export function endCaregiver(ctx: PolicyContext, id: string, who: Person, opts: { atItsEnd?: boolean } = {}): boolean {
   const { db, now } = ctx;
   const before = mustGet(db, id);
   if (before.endedAt !== null) return false;
+  const atItsEnd = opts.atItsEnd === true;
   changePolicies(ctx, before.phones, who, (log) => {
-    db.prepare("UPDATE caregivers SET ended_at = ?, ended_by = ?, updated_at = ? WHERE id = ?").run(
-      who.kind === "server" ? Math.min(before.endsAt, now) : now,
-      who.kind === "parent" ? who.parentId : null,
-      now,
-      id,
-    );
+    db.prepare("UPDATE caregivers SET ended_at = ?, ended_by = ?, updated_at = ? WHERE id = ?").run(atItsEnd ? Math.min(before.endsAt, now) : now, parentOf(who), now, id);
     forgetAccess(db, id);
-    log(who.kind === "server" ? "caregiver.access_ended" : "caregiver.ended", { caregiver: before.name });
+    log(atItsEnd ? "caregiver.access_ended" : "caregiver.ended", { caregiver: before.name });
   });
   return true;
 }
@@ -223,7 +225,7 @@ export function newCaregiverLink(ctx: PolicyContext, id: string, who: Parent): s
 /** The hourly clean-up: ends every caregiver's access whose time came. Their phones get new policies. */
 export function endExpiredCaregivers(ctx: PolicyContext): number {
   const due = ctx.db.prepare<[number], { id: string }>("SELECT id FROM caregivers WHERE ended_at IS NULL AND ends_at <= ?").all(ctx.now);
-  return due.filter((r) => endCaregiver(ctx, r.id, { kind: "server" })).length;
+  return due.filter((r) => endCaregiver(ctx, r.id, { kind: "server" }, { atItsEnd: true })).length;
 }
 
 // ── What a caregiver does ────────────────────────────────────────────
