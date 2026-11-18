@@ -94,8 +94,8 @@ phone's side the way Belay's agent does on a real phone, with no Android behind 
 What it can't do, it says in its own words, as Belay on a real phone reports what it couldn't do:
 
 - **Location:** it has no GPS. With location on, the phone's Location page shows what it says, and
-  a check ("Check now") fails with it. The page waits its minute for an answer first, as it would
-  for a real phone that can't find where it is.
+  a check ("Check now") fails with it: the page shows its words as soon as it answers, within a
+  few seconds, as it would for a real phone that can't find where it is.
 - **Network logging:** it can't note which websites its apps look up, so it sends nothing: the
   phone's page shows that as a problem from the phone.
 - **Mobile data:** it has none, so measuring it sends nothing: the phone's page shows that as a

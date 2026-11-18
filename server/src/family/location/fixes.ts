@@ -205,6 +205,32 @@ export function checkAnswer(db: DB, deviceId: string, commandId: string, opts: {
   return row ? toFix(row) : null;
 }
 
+/**
+ * How the phone answered a check, either way: the fix that answers it (as checkAnswer finds it), or
+ * its report that it couldn't find where it is (`failed`, with Belay on the phone's words: they
+ * come from the kid's phone, so untrusted) or got the check too late, by its own clock, to run it
+ * (`expired`). A newer check that took this one's place answers it too, within `withinMs` as
+ * checkAnswer, since the phone runs only the newest. A fix comes first. Null while the phone hasn't
+ * answered: a "done" with no fix yet isn't an answer, since the fix itself is on its way.
+ */
+export type CheckOutcome = { kind: "fix"; fix: FixView } | { kind: "failed"; problem: string | null } | { kind: "expired" };
+
+export function checkOutcome(db: DB, deviceId: string, commandId: string, opts: { withinMs?: number } = {}): CheckOutcome | null {
+  const fix = checkAnswer(db, deviceId, commandId, opts);
+  if (fix) return { kind: "fix", fix };
+  const row = db
+    .prepare<[string, string, string, number, string, string], { result: "failed" | "expired"; problem: string | null }>(
+      `SELECT c.result, c.problem FROM commands c
+       WHERE c.device_id = ? AND c.kind = 'locate_now' AND c.result IN ('failed', 'expired')
+         AND c.issued_at >= (SELECT issued_at FROM commands WHERE device_id = ? AND id = ?)
+         AND c.issued_at <= ? + (SELECT issued_at FROM commands WHERE device_id = ? AND id = ?)
+       ORDER BY c.issued_at DESC, c.rowid DESC LIMIT 1`,
+    )
+    .get(deviceId, deviceId, commandId, opts.withinMs ?? Number.MAX_SAFE_INTEGER, deviceId, commandId);
+  if (!row) return null;
+  return row.result === "failed" ? { kind: "failed", problem: row.problem } : { kind: "expired" };
+}
+
 /** A parent's check (or their AI app's), with the fix that answered it. */
 export interface Check {
   command: Command;

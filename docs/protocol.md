@@ -300,8 +300,10 @@ mode, or a help request's shared fix, which goes in the request instead).
 ```
 
 Idempotent by each item's `id`. A `locate_now` command waits on the server up to 60 seconds
-for the fix that names it in `command_id`; a fix that fails is reported in
-`enforcement.commands` with its problem.
+for the phone's answer, whichever comes first: the fix that names it in `command_id`, or its
+result in `enforcement.commands` (a fix that fails is reported there, `failed` with its problem,
+and a check that arrived after `expires_at` as `expired`). A `done` there is no answer by
+itself: the fix is.
 
 What the server keeps (it rounds coordinates to 5 decimal places): a `periodic` or `place`
 fix only while the policy's mode is `periodic`, and only within `hours` (in the phone's zone

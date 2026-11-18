@@ -17,7 +17,11 @@ export type Tell = { kind: "update_failed"; version: string } | { kind: "recover
 /** The phone's words, kept as the phone said them, less what hides or reorders text: untrusted. */
 const phoneWords = (text: string | null | undefined): string | null => (text ? cleanText(text, LIMITS.maxProblem) || null : null);
 
-export function receiveReport(ctx: PolicyContext, deviceId: string, device: Device): Changed<{ tell: Tell[] }> {
+/**
+ * `checks`: the checks of where the phone is (locate_now) that got their result in this report, so
+ * whoever waits on one ("Check now", a caregiver's check, MCP's locate_now) stops at once.
+ */
+export function receiveReport(ctx: PolicyContext, deviceId: string, device: Device): Changed<{ tell: Tell[]; checks: string[] }> {
   const { db, now } = ctx;
   return changePolicy(ctx, deviceId, { kind: "phone", deviceId }, (log) => {
     db.prepare("UPDATE devices SET facts = ?, facts_at = ?, last_seen_at = ? WHERE id = ?").run(JSON.stringify(device), now, now, deviceId);
@@ -28,8 +32,8 @@ export function receiveReport(ctx: PolicyContext, deviceId: string, device: Devi
     const tell: Tell[] = [];
     noteUpdate(ctx, deviceId, device, log, tell);
     noteRecovery(ctx, deviceId, device, log, tell);
-    noteCommands(ctx, deviceId, device, log);
-    return { tell };
+    const checks = noteCommands(ctx, deviceId, device, log);
+    return { tell, checks };
   });
 }
 
@@ -38,17 +42,21 @@ export function receiveReport(ctx: PolicyContext, deviceId: string, device: Devi
  * server sent this phone gets its first result, and leaves the policy. Results for ids the server
  * never sent this phone (a test's own command, say) are ignored. Nothing in a result says whether
  * a call was on: the phone reports a lock_now when it has it, during a call too (the fifth
- * review's F2).
+ * review's F2). Returns the locate_now commands that got their result now.
  */
-function noteCommands(ctx: PolicyContext, deviceId: string, device: Device, log: Log): void {
+function noteCommands(ctx: PolicyContext, deviceId: string, device: Device, log: Log): string[] {
   const { db, now } = ctx;
   const record = db.prepare("UPDATE commands SET result = ?, result_at = ?, problem = ?, reported_at = ? WHERE device_id = ? AND id = ? AND result IS NULL");
   const kindOf = db.prepare<[string, string], { kind: string }>("SELECT kind FROM commands WHERE device_id = ? AND id = ?");
+  const checks: string[] = [];
   for (const r of device.enforcement?.commands ?? []) {
     if (record.run(r.result, r.at, phoneWords(r.problem), now, deviceId, r.id).changes === 1) {
-      log(`command.${r.result}`, { kind: kindOf.get(deviceId, r.id)?.kind, command: r.id });
+      const kind = kindOf.get(deviceId, r.id)?.kind;
+      log(`command.${r.result}`, { kind, command: r.id });
+      if (kind === "locate_now") checks.push(r.id);
     }
   }
+  return checks;
 }
 
 /**

@@ -12,7 +12,7 @@ import { phoneHelp } from "../family/kidside.js";
 import { markHelpSeen, setKidNumber, setPhoneParentNumbers } from "../family/kidside-changes.js";
 import { type LocationChange, locateNow, removePlace, savePlace, setLost, setLocation } from "../family/location/changes.js";
 import { describeFix, mapLink } from "../family/location/describe.js";
-import { checkAnswer, latestFix, listChecks, listPlaceEvents } from "../family/location/fixes.js";
+import { checkOutcome, latestFix, listChecks, listPlaceEvents } from "../family/location/fixes.js";
 import { type Notify, listPlaces, locationSettings } from "../family/location/store.js";
 import { type PolicyContext, RuleRefused } from "../family/policy.js";
 import { unseenHelp } from "../family/requests.js";
@@ -84,7 +84,7 @@ export function locationWebRoutes(deps: Deps, h: LocationWebHelpers): Hono<WebEn
     const device = getDevice(db, deviceId, getSettings(db), now);
     if (!device) return noPhone(c);
     const checkedId = extra.checked ?? c.req.query("check");
-    const checked = checkedId ? { command: checkedId, fix: checkAnswer(db, device.id, checkedId) } : null;
+    const checked = checkedId ? { command: checkedId, outcome: checkOutcome(db, device.id, checkedId) } : null;
     return render(
       c,
       <LocationPage
@@ -158,7 +158,11 @@ export function locationWebRoutes(deps: Deps, h: LocationWebHelpers): Hono<WebEn
     ),
   );
 
-  /** Check now: the phone gets a check within seconds; this waits up to a minute for its fix, then shows it. */
+  /**
+   * Check now: the phone gets a check within seconds; this waits up to a minute for its answer,
+   * the fix or its word that it couldn't (or got the check too late), and stops as soon as either
+   * comes. Then the page shows it.
+   */
   app.post("/devices/:id/location/check", async (c) => {
     const device = deviceOf(c);
     if (!device) return noPhone(c);
@@ -170,7 +174,7 @@ export function locationWebRoutes(deps: Deps, h: LocationWebHelpers): Hono<WebEn
       if (error instanceof RuleRefused) return page(c, device.id, { error: error.message }, 400);
       throw error;
     }
-    await deps.fixWaiters.wait(device.id, () => checkAnswer(db, device.id, command) !== null, deps.locateWaitMs, c.req.raw.signal);
+    await deps.fixWaiters.wait(device.id, () => checkOutcome(db, device.id, command) !== null, deps.locateWaitMs, c.req.raw.signal);
     return c.redirect(`/devices/${device.id}/location?check=${encodeURIComponent(command)}#where`);
   });
 

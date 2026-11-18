@@ -8,7 +8,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { Policy } from "../src/device/schemas.js";
 import { locateNow, savePlace, setLocation, setLost } from "../src/family/location/changes.js";
-import { checkAnswer, listFixes, listPlaceEvents } from "../src/family/location/fixes.js";
+import { createFixWaiters } from "../src/device/fixwaiters.js";
+import { checkAnswer, checkOutcome, listFixes, listPlaceEvents } from "../src/family/location/fixes.js";
 import { locationSettings } from "../src/family/location/store.js";
 import { buildPolicy, type PolicyContext } from "../src/family/policy.js";
 import { updateSettings } from "../src/settings.js";
@@ -93,6 +94,48 @@ describe("POST /api/v1/locations", () => {
     await locations({ fixes: [answer], place_events: [] });
     expect(await waiting).toBe(true);
     expect(checkAnswer(t.deps.db, phone.deviceId, check)).toMatchObject({ id: answer.id, commandId: check, reason: "on_demand" });
+  });
+
+  it("a check the phone couldn't do, or got too late, is answered by its check-in, which wakes whoever waits; a newer check's answer counts, a fix first", async () => {
+    const { t, phone, ctx, parent, locations } = await family();
+    setLocation(ctx(), phone.deviceId, { mode: "on_demand" }, parent);
+    const checkin = (commands: { id: string; result: "done" | "failed" | "expired"; problem?: string }[]) =>
+      deviceCall(t, phone.token, "checkin", { status: device({ enforcement: { policy_version: 1, commands: commands.map((c) => ({ at: t.now(), ...c })) } }) });
+    // Waiting with a poll of an hour: only the check-in's wake can end this wait in time.
+    t.deps.fixWaiters = createFixWaiters({ pollMs: 3_600_000 });
+    const first = locateNow(ctx(), phone.deviceId, parent).result.command;
+    expect(checkOutcome(t.deps.db, phone.deviceId, first)).toBeNull();
+    const waiting = t.deps.fixWaiters.wait(phone.deviceId, () => checkOutcome(t.deps.db, phone.deviceId, first) !== null, 60_000);
+    // A second parent checks too: theirs takes the first one's place, and the phone runs only that one.
+    const second = locateNow(ctx(), phone.deviceId, parent).result.command;
+    // "Done" with no fix yet isn't an answer: the fix is on its way.
+    expect((await checkin([{ id: second, result: "done" }])).status).toBe(200);
+    expect(checkOutcome(t.deps.db, phone.deviceId, second)).toBeNull();
+    expect(t.deps.fixWaiters.size).toBe(1);
+    t.advance(1000);
+    const third = locateNow(ctx(), phone.deviceId, parent).result.command;
+    const started = Date.now();
+    expect((await checkin([{ id: third, result: "failed", problem: "No GPS fix in 60 seconds.‮" }])).status).toBe(200);
+    // The newest word about where the phone is now answers the earlier checks too; the phone's words, less what reorders text.
+    expect(await waiting).toBe(true);
+    expect(Date.now() - started).toBeLessThan(1000);
+    for (const check of [first, second, third]) expect(checkOutcome(t.deps.db, phone.deviceId, check), check).toEqual({ kind: "failed", problem: "No GPS fix in 60 seconds." });
+    // Got too late, by the phone's clock.
+    t.advance(1000);
+    const fourth = locateNow(ctx(), phone.deviceId, parent).result.command;
+    await checkin([{ id: fourth, result: "expired" }]);
+    expect(checkOutcome(t.deps.db, phone.deviceId, fourth)).toEqual({ kind: "expired" });
+    expect(checkOutcome(t.deps.db, phone.deviceId, third)).toEqual({ kind: "expired" });
+    // Within a window (a caregiver's check), a check issued later than that never answers it.
+    expect(checkOutcome(t.deps.db, phone.deviceId, first, { withinMs: 500 })).toBeNull();
+    // A fix comes first: a later check's fix answers the earlier ones, failed or not.
+    t.advance(1000);
+    const fifth = locateNow(ctx(), phone.deviceId, parent).result.command;
+    await locations({ fixes: [fix({ reason: "on_demand", command_id: fifth })], place_events: [] });
+    expect(checkOutcome(t.deps.db, phone.deviceId, third)).toMatchObject({ kind: "fix", fix: { commandId: fifth } });
+    // An id that's no check of this phone's has no answer.
+    expect(checkOutcome(t.deps.db, phone.deviceId, "no-such-check")).toBeNull();
+    t.deps.fixWaiters.close();
   });
 
   it("a check the server never issued (the phone's own test) is fine: its result is ignored, and its fix dropped and counted, never a 400", async () => {

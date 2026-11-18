@@ -551,7 +551,8 @@ Only a parent changes any of it, there or with the CLI; AI apps can't, and can't
   location on, its own words for a fix that failed) is there too, and a phone that should share
   where it is but can't is flagged on the phone's page and in the daily summary.
 - **Check now** sends a check (`locate_now`, which lasts 2 minutes) and waits up to a minute
-  for the phone's fix, then shows it. **Checks** lists every one of the last 30 days, a
+  for the phone's answer: its fix, or its own words for why it couldn't (or that it got the
+  check too late), shown as soon as either comes. **Checks** lists every one of the last 30 days, a
   parent's or their AI app's: the same list the kid sees on the phone, where each check also
   posts a notice.
 - **Places** (at most 20): a name the kid sees (at most 40 characters), a center from
