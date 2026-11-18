@@ -84,6 +84,7 @@ import { getDigest } from "../ops/notify.js";
 import { opsWebRoutes } from "../ops/web.js";
 import { browserName, listSubscriptions, removeSubscription, saveSubscription, sendNotice, subscriptionProblem, vapidKeys } from "../push.js";
 import { ACTIVITY_DAYS, AI_SCOPES, type AiScope, CALL_DAYS, LOCATION_DAYS, type LocationRetention, MAP_SITES, type MapSite, NETWORK_DAYS, USAGE_MONTHS, getSettings, updateSettings } from "../settings.js";
+import { sameName } from "../text.js";
 import { isValidTimeZone } from "../time.js";
 import type { Assets } from "./assets.js";
 import { callsWebRoutes } from "./calls.js";
@@ -683,7 +684,7 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
       (factoryReset && !rules.restrictions.factory_reset) ||
       (debugging && !rules.restrictions.debugging) ||
       (accounts.ids.length > 0 && JSON.stringify(accounts.ids) !== JSON.stringify(rules.frpAccounts));
-    if (tightens && first(body, "confirm").toLowerCase() !== device.name.trim().toLowerCase()) {
+    if (tightens && !sameName(first(body, "confirm"), device.name)) {
       return showDevice(c, device, { error: `These can lock the phone for good. To turn them on, type the phone's name, ${device.name}, in the box.` }, 400);
     }
     // Phase 6: turning on a lock that can strand the phone makes its recovery key, in the same request, if it has none to use.
@@ -1209,7 +1210,7 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
   });
 
   // Recording a restore drill, and the daily summary's settings (ops/web.ts).
-  app.route("/", opsWebRoutes(deps));
+  app.route("/", opsWebRoutes(deps, (c, error) => settingsPage(c, { error }, 400)));
   // Phase 3: screen time, its rules, stages and the family agreement (web/screentime.tsx).
   app.route("/", screenTimeWebRoutes(deps, { view, message }));
   // Phases 4 and 7: a phone's Location and help tab, and marking a help request seen (web/location.tsx).

@@ -3,7 +3,7 @@
  * summary's settings. Mounted inside the parent pages (web/routes.tsx), after the sign-in and
  * CSRF checks; both are audited.
  */
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { z } from "zod";
 import { audit } from "../audit.js";
 import type { Deps } from "../deps.js";
@@ -20,7 +20,10 @@ const DigestForm = z.object({
     .pipe(z.int().min(0).max(23)),
 });
 
-export function opsWebRoutes(deps: Deps): Hono<WebEnv> {
+/**
+ * `refused` shows the Settings page again with a form's problem, as the other settings forms do.
+ */
+export function opsWebRoutes(deps: Deps, refused: (c: Context<WebEnv>, error: string) => Response | Promise<Response>): Hono<WebEnv> {
   const { db } = deps;
   const app = new Hono<WebEnv>();
 
@@ -39,7 +42,7 @@ export function opsWebRoutes(deps: Deps): Hono<WebEnv> {
 
   app.post("/settings/digest", async (c) => {
     const form = DigestForm.safeParse(await c.req.parseBody());
-    if (!form.success) return c.text("Pick an hour from the list, then save again.", 400);
+    if (!form.success) return refused(c, "Pick an hour from the list, then save again.");
     const id = parentId(c.var.session);
     const on = form.data.on === "1";
     setDigest(db, id, on, form.data.hour);

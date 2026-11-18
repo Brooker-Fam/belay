@@ -185,6 +185,8 @@ details.jump { margin: 0 0 4px; }
 details.jump nav { display: flex; flex-wrap: wrap; gap: 0 18px; padding-bottom: 8px; }
 details.jump nav a { display: inline-flex; align-items: center; min-height: var(--tap); }
 .card[id], form[id] { scroll-margin-top: 4rem; }
+/* The request a tapped notice is about (/requests#request-…): marked, so it's the one you see. */
+.card:target { outline: 3px solid var(--accent); outline-offset: 2px; }
 @media (max-width: 560px) {
   header.top .brand { flex: 1; }
   header.top nav { order: 3; flex-basis: 100%; }

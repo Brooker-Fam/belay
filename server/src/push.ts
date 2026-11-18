@@ -264,7 +264,8 @@ export function browserName(userAgent: string | undefined, endpoint: string): st
 export interface Notice {
   title: string;
   body: string;
-  url: "/" | "/requests" | "/requests#help" | "/proposals" | "/settings" | `/devices/${string}`;
+  /** A tapped notice opens this page: one request's own card (`#request-<id>`) when it's about one. */
+  url: "/" | "/requests" | "/requests#help" | `/requests#request-${string}` | "/proposals" | "/settings" | `/devices/${string}`;
   urgent?: boolean;
 }
 
@@ -338,16 +339,24 @@ export function notifyParents(deps: Deps, notice: Notice): void {
   });
 }
 
-/** `Sam's phone: "Chatter Box" is waiting for you`. App names come from their developers: cleaned and capped. */
-export function requestNotice(deviceName: string, labels: string[]): Notice {
+/**
+ * `Sam's phone: "Chatter Box" is waiting for you`. App names come from their developers: cleaned and capped.
+ * With the request's `id` (one request), a tap opens its own card on the Requests page.
+ */
+export function requestNotice(deviceName: string, labels: string[], id?: string): Notice {
   const phone = oneLine(deviceName, 60);
   const [only] = labels;
   const body = labels.length === 1 && only !== undefined ? `${phone}: "${oneLine(only, 60) || "an app"}" is waiting for you` : `${phone}: ${labels.length} apps are waiting for you`;
-  return { title: "Belay", body, url: "/requests" };
+  return { title: "Belay", body, url: requestsPage(labels.length === 1 ? id : undefined) };
 }
+
+/** The Requests page, at one request's card when there's one: request ids are the phone's, letters, digits, - and _ (schemas.ts). */
+const requestsPage = (id: string | undefined): Notice["url"] => (id && /^[A-Za-z0-9_-]{1,64}$/.test(id) ? `/requests#request-${id}` : "/requests");
 
 /** A request as requestsNotice reads it (help requests have helpNotice). */
 export interface NewRequest {
+  /** The request's id, from the phone: a tap on a notice about this one request opens its card. */
+  id?: string;
   kind: "app" | "more_time" | "agreement" | "talk" | "contact";
   label: string | null;
   limitId?: string;
@@ -369,20 +378,21 @@ export function requestsNotice(deviceName: string, requests: NewRequest[], limit
   const phone = oneLine(deviceName, 60);
   const kinds = new Set(requests.map((r) => r.kind));
   const [first] = requests;
-  if (kinds.size === 1 && first?.kind === "app") return requestNotice(deviceName, requests.map((r) => r.label ?? "an app"));
+  const one = requestsPage(requests.length === 1 ? first?.id : undefined);
+  if (kinds.size === 1 && first?.kind === "app") return requestNotice(deviceName, requests.map((r) => r.label ?? "an app"), first.id);
   const why = (r: NewRequest) => (r.reason ? `: "${oneLine(r.reason, 80)}"` : "");
   if (requests.length === 1 && first?.kind === "more_time") {
     const limit = first.limitId === "*" ? "screen time" : oneLine(limitName(first.limitId ?? "") ?? "a limit", 40);
-    return { title: "Belay", body: `${phone} asks for ${first.minutes ?? 0} more minutes for ${limit}${why(first)}`, url: "/requests" };
+    return { title: "Belay", body: `${phone} asks for ${first.minutes ?? 0} more minutes for ${limit}${why(first)}`, url: one };
   }
   if (requests.length === 1 && first?.kind === "agreement") {
     const body = first.answer === "agree" ? `${phone}: the kid agreed to the family agreement` : `${phone}: the kid wants to talk about the family agreement${why(first)}`;
-    return { title: "Belay", body, url: "/requests" };
+    return { title: "Belay", body, url: one };
   }
-  if (requests.length === 1 && first?.kind === "talk") return { title: "Belay", body: `${phone}: the kid would like to talk${why(first)}`, url: "/requests" };
+  if (requests.length === 1 && first?.kind === "talk") return { title: "Belay", body: `${phone}: the kid would like to talk${why(first)}`, url: one };
   // Phase 5: the kid's name for the contact; never the number, which waits on the Requests page.
   if (requests.length === 1 && first?.kind === "contact") {
-    return { title: "Belay", body: `${phone} asks to add a contact: "${oneLine(first.contactName ?? "", 60) || "a number"}"${why(first)}`, url: "/requests" };
+    return { title: "Belay", body: `${phone} asks to add a contact: "${oneLine(first.contactName ?? "", 60) || "a number"}"${why(first)}`, url: one };
   }
   return { title: "Belay", body: `${phone}: ${requests.length} requests are waiting for you`, url: "/requests" };
 }

@@ -56,7 +56,7 @@ describe("Please add this contact", () => {
     await vi.waitFor(() => {
       expect(fetch).toHaveBeenCalledTimes(1);
     });
-    expect(browser.notices()).toEqual([{ title: "Belay", body: 'Alex\'s phone asks to add a contact: "Coach Lee the best": "Practice moved to 5"', url: "/requests", urgency: "normal" }]);
+    expect(browser.notices()).toEqual([{ title: "Belay", body: 'Alex\'s phone asks to add a contact: "Coach Lee the best": "Practice moved to 5"', url: "/requests#request-request-0001", urgency: "normal" }]);
     expect(browser.notices()[0]?.body).not.toContain("555");
     expect(listAudit(t.deps.db, { limit: 1, includeReads: false })[0]).toMatchObject({ actor: "phone", action: "request.made", detail: { kind: "contact", contact: "Coach Lee the best" } });
   });

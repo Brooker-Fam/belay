@@ -27,8 +27,10 @@ self.addEventListener("push", (event) => {
   const path = pagePath(notice.url);
   // An urgent notice (the kid's "I need help") stays on the screen until the parent acts on it.
   const requireInteraction = notice.urgent === true;
-  // Browsers require a visible notification for every push; one per page, replaced by the newest.
-  event.waitUntil(self.registration.showNotification(title, { body, tag: path, renotify: true, requireInteraction, data: { path } }));
+  // Browsers require a visible notification for every push; one per page, replaced by the newest
+  // (a request's own card, "/requests#request-…", is still the Requests page; "#help" stays apart).
+  const tag = path.replace(/#request-[\w-]+$/, "");
+  event.waitUntil(self.registration.showNotification(title, { body, tag, renotify: true, requireInteraction, data: { path } }));
 });
 
 self.addEventListener("notificationclick", (event) => {

@@ -127,7 +127,12 @@ describe("the daily summary, in Settings", () => {
   it("refuses an hour that isn't one", async () => {
     const { t, sam } = await family();
     for (const hour of ["24", "-1", "7.5", "seven", ""]) {
-      expect((await postForm(t, "/settings/digest", { _csrf: sam.csrf, on: "1", hour }, { cookie: sam.cookie })).status).toBe(400);
+      const res = await postForm(t, "/settings/digest", { _csrf: sam.csrf, on: "1", hour }, { cookie: sam.cookie });
+      expect(res.status).toBe(400);
+      // The Settings page again, with the problem on it, as the other settings forms answer.
+      const html = await res.text();
+      expect(html).toContain("<h1");
+      expect(html).toContain("Pick an hour from the list, then save again.");
     }
     expect(getDigest(t.deps.db)).toEqual({ hour: 19, parents: [] });
   });

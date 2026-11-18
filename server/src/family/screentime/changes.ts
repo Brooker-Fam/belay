@@ -327,7 +327,8 @@ export function saveAgreement(ctx: PolicyContext, deviceId: string, sections: Se
   const { db, now } = ctx;
   return changePolicy(ctx, deviceId, who, (log) => {
     const version = insertAgreement(db, deviceId, clean, now, who.kind === "parent" ? who.parentId : null);
-    log("agreement.saved", { version, sections: clean.length });
+    // `agreement_version`, as the kid's answers say it: the activity log adds the rules' own `version`.
+    log("agreement.saved", { agreement_version: version, sections: clean.length });
     return { version };
   });
 }

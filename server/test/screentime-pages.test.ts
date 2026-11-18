@@ -235,6 +235,10 @@ describe("the family agreement", () => {
     await form(path, { title: ["Phones at dinner", "Bedtime"], text: ["In the basket.", "Phones charge in the kitchen."] });
     expect(policy().agreement).toMatchObject({ version: 2, sections: [{ title: "Phones at dinner" }, { title: "Bedtime" }] });
     expect((await page(path)).html).toContain("Earlier versions");
+    // The activity log names the agreement's own version, not the rules' version beside it.
+    const activity = (await page("/activity")).html;
+    expect(activity).toContain("wrote version 2 of the family agreement");
+    expect(activity).toContain("wrote version 1 of the family agreement");
     expect((await form(path, { title: [""], text: [""] })).status).toBe(400);
   });
 });
