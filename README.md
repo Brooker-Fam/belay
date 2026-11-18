@@ -21,6 +21,10 @@ before it's safe to hand over, and [ROADMAP.md](ROADMAP.md) has what comes next.
 a parent who has never used adb, from a used Pixel 8 to a phone your kid uses, and the years
 after.
 
+**Try it without a phone:** with Node 24, `cd server && npm ci --ignore-scripts && npm run demo`
+starts the parent page on your own computer with a made-up family and a simulated phone, ready
+for Claude Code ([docs/demo.md](docs/demo.md)).
+
 ## What Belay is for
 
 The model is Gabb's: parent-approved apps, approved contacts, no open web, and location.

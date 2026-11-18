@@ -95,6 +95,11 @@ list. In short, a kid can:
   from anywhere, on cellular too (Tailscale Funnel gives you a name without buying one).
 - A few hours the first time, and a first day with your kid.
 
+**Look first, before you buy anything:** [demo.md](demo.md) runs the parent page on your own
+computer (it needs Node 24) with a made-up family and a simulated phone: no phone, and no server
+to set up. Claude Code connects to it too. You can approve a request, pause the phone or ask
+Claude what was installed this week, and see what the rest of this guide sets up.
+
 ## 2. Before you start
 
 ### The phone

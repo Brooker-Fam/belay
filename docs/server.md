@@ -5,7 +5,9 @@ MCP interface. One server is for one family. It's a single Docker image with a S
 database in `/data`.
 
 Setting Belay up for the first time? [guide.md](guide.md) is the whole path for a parent, from
-a used Pixel 8 to the first day and the years after, and links back here for the details.
+a used Pixel 8 to the first day and the years after, and links back here for the details. Just
+looking, or working on Belay? [demo.md](demo.md) runs this server on your own computer with a
+made-up family and a simulated phone: no phone, and no HTTPS address.
 
 It needs a **public HTTPS address**:
 
@@ -920,6 +922,7 @@ npm ci --ignore-scripts
 npm test                 # Vitest: device API, the policy and its long-poll, snapshots, login, CSRF, OAuth, Web Push, every MCP tool, the CLI, backups and the server's health
 npm run typecheck && npm run lint
 BELAY_PUBLIC_URL=http://localhost:8080 npm run dev
+npm run demo             # the server with a made-up family and a simulated phone (demo.md)
 ```
 
 With `BELAY_PUBLIC_URL=http://10.0.2.2:8080` and `BELAY_HOST=0.0.0.0`, a debug build on
