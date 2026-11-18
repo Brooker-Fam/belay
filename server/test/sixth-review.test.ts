@@ -23,12 +23,13 @@ import { Policy } from "../src/device/schemas.js";
 import { setCalls } from "../src/family/calls/changes.js";
 import { buildPolicy } from "../src/family/policy.js";
 import { createPersonalToken } from "../src/oauth/store.js";
-import { updateSettings } from "../src/settings.js";
+import { AI_SCOPES, type AiScope, updateSettings } from "../src/settings.js";
 import { device, deviceCall, enrollPhone, signIn, testServer, T0 } from "./helpers.js";
 
 const MCP = "https://belay.example.org/mcp";
 const MIN = 60_000;
-const NO_SCOPES = { apps: false, device_status: false, requests: false, screen_time: false, agreement: false, location: false, calls: false, network: false };
+/** Every AI category off, those added later included (Phase 13's mobile data starts on). */
+const NO_SCOPES = Object.fromEntries(Object.keys(AI_SCOPES).map((key) => [key, false])) as Record<AiScope, boolean>;
 /** ScreenLock.NEEDS_RESTART on the phone, word for word: platform notes S5. */
 const NEEDS_RESTART = "Android lets Belay lock the screen only after the phone restarts once with this version of Belay.";
 const RESTART_NOTE =

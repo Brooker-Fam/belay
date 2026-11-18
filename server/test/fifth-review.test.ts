@@ -20,12 +20,13 @@ import { setNetworkLog, setPrivateWebsite } from "../src/family/network/changes.
 import { networkDays } from "../src/family/network/store.js";
 import { buildPolicy, type PolicyContext } from "../src/family/policy.js";
 import { createPersonalToken } from "../src/oauth/store.js";
-import { updateSettings } from "../src/settings.js";
+import { AI_SCOPES, type AiScope, updateSettings } from "../src/settings.js";
 import { device, deviceCall, enrollPhone, get, signIn, testServer, T0 } from "./helpers.js";
 
 const MCP = "https://belay.example.org/mcp";
 const MIN = 60_000;
-const NO_SCOPES = { apps: false, device_status: false, requests: false, screen_time: false, agreement: false, location: false, calls: false, network: false };
+/** Every AI category off, those added later included (Phase 13's mobile data starts on). */
+const NO_SCOPES = Object.fromEntries(Object.keys(AI_SCOPES).map((key) => [key, false])) as Record<AiScope, boolean>;
 const ALL_SCOPES = { apps: true, device_status: true, requests: true, screen_time: true, agreement: true, location: true, calls: true, network: true };
 
 /** One parent, one phone, and an AI app on a personal access token, with the AI categories given. */
