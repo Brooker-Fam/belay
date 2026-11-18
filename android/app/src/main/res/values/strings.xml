@@ -587,6 +587,10 @@
     <string name="location_checked_by">%1$s checked where this phone is (%2$s).</string>
     <string name="told_check_by">%1$s checked where this phone is.</string>
     <string name="told_check_by_not_sent">%1$s asked where this phone is. Belay didn\'t send it.</string>
+    <plurals name="location_checks_caregivers">
+        <item quantity="one">Caregivers your parent added checked %d time in the last 30 days.</item>
+        <item quantity="other">Caregivers your parent added checked %d times in the last 30 days.</item>
+    </plurals>
     <string name="section_caregivers">Caregivers your parent added</string>
     <string name="caregivers_intro">Your parent can give someone who looks after you for a while, like a grandparent or a babysitter, some access to this phone until a time your parent chooses. Here is each one, with what they can see and do.</string>
     <string name="home_caregiver">Your parent gave %1$s some access to this phone until %2$s.</string>

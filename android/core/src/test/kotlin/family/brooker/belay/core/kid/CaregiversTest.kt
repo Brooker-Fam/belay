@@ -158,6 +158,11 @@ class CaregiversTest {
         assertEquals("Claude" to null, both.via to both.caregiver)
         // A parent's check names no one.
         assertNull(LocationWork.commands(checks, listOf(WireCommand("command-4", WireCommand.LOCATE_NOW, T0)), owner, T0).wants.single().caregiver)
+        // The Location card counts a caregiver's checks apart from a parent's.
+        val parents = LocationWork.commands(WireLocation(), listOf(WireCommand("command-5", WireCommand.LOCATE_NOW, T0)), owner, T0).told
+        val list = Told.list(recorded.told + refused + parents, T0 + HOUR)
+        assertEquals(listOf("command-5"), Told.checks(list).map { it.id })
+        assertEquals(setOf("command-1", "command-2"), Told.caregiverChecks(list).map { it.id }.toSet())
     }
 
     @Test

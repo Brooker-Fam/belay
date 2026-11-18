@@ -24,6 +24,9 @@ object Told {
     /** Entries older than this are deleted from the phone. */
     fun keepFrom(now: Long): Long = now - KEEP_MS
 
-    /** The checks a parent (or their AI app) asked for in the list, for the Location card's count. */
-    fun checks(entries: List<ToldEntry>): List<ToldEntry> = entries.filter { it.kind == ToldKind.CHECK }
+    /** The checks a parent (or their AI app) asked for in the list, for the Location card's count; a caregiver's aren't theirs. */
+    fun checks(entries: List<ToldEntry>): List<ToldEntry> = entries.filter { it.kind == ToldKind.CHECK && it.caregiver == null }
+
+    /** Phase 12: the checks caregivers asked for in the list, counted apart on the Location card. */
+    fun caregiverChecks(entries: List<ToldEntry>): List<ToldEntry> = entries.filter { it.kind == ToldKind.CHECK && it.caregiver != null }
 }

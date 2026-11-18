@@ -382,6 +382,9 @@ internal fun LocationCard(kid: KidView, told: List<ToldEntry>, words: KidWords, 
             if (checks == 0) stringResource(R.string.location_checks_none) else pluralStringResource(R.plurals.location_checks, checks, checks),
             style = MaterialTheme.typography.bodyMedium,
         )
+        // Phase 12: a caregiver's checks aren't the parent's.
+        val byCaregivers = Told.caregiverChecks(told).size
+        if (byCaregivers > 0) Text(pluralStringResource(R.plurals.location_checks_caregivers, byCaregivers, byCaregivers), style = MaterialTheme.typography.bodyMedium)
         Text(stringResource(R.string.location_android_says), style = MaterialTheme.typography.bodySmall)
         TextButton(onClick = onTold) { Text(stringResource(R.string.screen_told)) }
     }
