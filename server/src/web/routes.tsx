@@ -84,6 +84,7 @@ import { serverHealth } from "../ops/health.js";
 import { getDigest } from "../ops/notify.js";
 import { opsWebRoutes } from "../ops/web.js";
 import { browserName, listSubscriptions, removeSubscription, saveSubscription, sendNotice, subscriptionProblem, vapidKeys } from "../push.js";
+import { testNoticeLimited } from "../ratelimit.js";
 import {
   ACTIVITY_DAYS,
   AI_SCOPES,
@@ -1307,6 +1308,9 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
   });
 
   app.post("/settings/push/test", async (c) => {
+    // A few an hour, as a caregiver's (the seventh review's J9).
+    const limited = testNoticeLimited(deps.limits, `parent:${me(c).parent.id}`);
+    if (limited) return settingsPage(c, { error: limited }, 429);
     const result = await sendNotice(deps, { title: "Belay", body: "A test notice from Belay's Settings page.", url: "/settings" }, { parentId: me(c).parent.id });
     const message =
       result.sent > 0

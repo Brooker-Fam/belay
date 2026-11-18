@@ -150,6 +150,23 @@ export interface Limiters {
   careLocks: RateLimiter;
   /** One "too many" line in the activity log per caregiver, phone and kind an hour. */
   careLimitedLog: RateLimiter;
+  /**
+   * Test notices, per person: a parent's (Settings, `parent:<id>`) and a caregiver's (their page,
+   * `care:<id>`), TEST_NOTICES_PER_HOUR each, so a stolen session can't make the server push to
+   * its browsers as often as it likes with the family's keys (the seventh review's J9).
+   */
+  testNotices: RateLimiter;
+}
+
+/** Test notices a parent, or a caregiver, may send their own browsers an hour. */
+export const TEST_NOTICES_PER_HOUR = 5;
+
+/** Counts a test notice for `key` (Limiters.testNotices): null when it may go, else why not, and when to try again. */
+export function testNoticeLimited(limits: Pick<Limiters, "testNotices">, key: string): string | null {
+  const verdict = limits.testNotices.hit(key);
+  if (verdict.ok) return null;
+  const minutes = Math.max(1, Math.ceil(verdict.retryAfterSeconds / 60));
+  return `You can send at most ${TEST_NOTICES_PER_HOUR} test notices an hour. Try again in ${minutes} minute${minutes === 1 ? "" : "s"}.`;
 }
 
 export function createLimiters(now: () => number): Limiters {
@@ -180,5 +197,6 @@ export function createLimiters(now: () => number): Limiters {
     careChecks: new RateLimiter(CARE_PER_HOUR.checks, 60 * MIN, now),
     careLocks: new RateLimiter(CARE_PER_HOUR.locks, 60 * MIN, now),
     careLimitedLog: new RateLimiter(1, 60 * MIN, now),
+    testNotices: new RateLimiter(TEST_NOTICES_PER_HOUR, 60 * MIN, now),
   };
 }

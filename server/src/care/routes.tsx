@@ -42,6 +42,7 @@ import { type PolicyContext, RuleRefused, activePause, getRules } from "../famil
 import { type HelpView, listRequests } from "../family/requests.js";
 import { phoneRules } from "../family/screentime/rules.js";
 import { type Bindings, clientAddress } from "../http.js";
+import { testNoticeLimited } from "../ratelimit.js";
 import { browserName, subscriptionProblem, vapidKeys } from "../push.js";
 import { getSettings } from "../settings.js";
 import type { Assets } from "../web/assets.js";
@@ -388,6 +389,9 @@ export function careRoutes(deps: Deps, assets: Assets): Hono<CareEnv> {
   app.post("/push/test", async (c) => {
     const { caregiver } = me(c);
     if (!getsHelp(caregiver)) return notChosen(c);
+    // A few an hour, as a parent's (the seventh review's J9).
+    const limited = testNoticeLimited(deps.limits, `care:${caregiver.id}`);
+    if (limited) return home(c, { error: limited }, 429);
     const result = await sendToCaregiver(deps, caregiver.id, { title: "Belay", body: "A test notice from Belay's caregiver page.", url: "/care" });
     if (result.sent > 0) return home(c, { message: `Sent a test notice to ${result.sent} browser${result.sent === 1 ? "" : "s"}.` });
     return home(c, { error: result.removed > 0 ? "That browser's push service no longer knows it, so it was removed. Turn notifications on again there." : "The test notice didn't go out. Try again in a minute." }, 502);

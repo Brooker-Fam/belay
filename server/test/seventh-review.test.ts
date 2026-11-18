@@ -417,3 +417,28 @@ describe("J7: a caregiver with Pause but not Status gets the same confirmation, 
     for (let i = 0; i < 8; i++) expect((await pauseAs(care, f.phone.deviceId, "15", false)).saved).toBe("kept");
   });
 });
+
+describe("J9: test notices are limited, a caregiver's and a parent's", () => {
+  it("at most 5 an hour each, to their own browsers; then again an hour later", async () => {
+    const f = await family();
+    const { token, id } = await add(f);
+    const care = await join(f, token);
+    browserFor(f.t, id, () => f.fetch.mock.calls, "caregiver");
+    browserFor(f.t, f.sam.parent.id, () => f.fetch.mock.calls);
+    for (let i = 0; i < 5; i++) {
+      expect((await care.form("/care/push/test")).status).toBe(200);
+      expect((await f.form("/settings/push/test")).status).toBe(200);
+    }
+    f.fetch.mockClear();
+    const careLimited = await care.form("/care/push/test");
+    expect(careLimited.status).toBe(429);
+    expect(await careLimited.text()).toContain("You can send at most 5 test notices an hour. Try again in 60 minutes.");
+    const parentLimited = await f.form("/settings/push/test");
+    expect(parentLimited.status).toBe(429);
+    expect(await parentLimited.text()).toContain("You can send at most 5 test notices an hour.");
+    expect(f.fetch).not.toHaveBeenCalled();
+    f.t.advance(HOUR);
+    expect((await care.form("/care/push/test")).status).toBe(200);
+    expect((await f.form("/settings/push/test")).status).toBe(200);
+  });
+});
