@@ -138,7 +138,7 @@ describe("POST /api/v1/mobile-data", () => {
     expect(before).toMatchObject({
       goes: ["1 day of mobile data use: how much mobile data each app used, and how much the phone used on Wi-Fi"],
       stopping: "Measuring mobile data turns off: the phone stops sending how much mobile data each app uses.",
-      stays: ["The 1 Wi-Fi-only app: it's this phone's rules, and collect nothing."],
+      stays: ["The 1 Wi-Fi-only app: it's one of this phone's rules, and collects nothing."],
       anything: true,
     });
     const done = stopCollecting(ctx(), phone.deviceId, "mobile_data", parent, before.fingerprint);

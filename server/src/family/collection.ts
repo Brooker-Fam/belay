@@ -241,7 +241,9 @@ function mobileDataKept(db: DB, deviceId: string): Omit<Kept, "fingerprint"> {
     stopping: on
       ? "Measuring mobile data turns off: the phone stops sending how much mobile data each app uses."
       : "Measuring mobile data is off: the phone doesn't send how much mobile data apps use.",
-    stays: wifiOnly ? [`The ${plural(wifiOnly, "Wi-Fi-only app")}: ${wifiOnly === 1 ? "it's" : "they're"} this phone's rules, and collect nothing.`] : [],
+    stays: wifiOnly
+      ? [`The ${plural(wifiOnly, "Wi-Fi-only app")}: ${wifiOnly === 1 ? "it's one of this phone's rules, and collects" : "they're this phone's rules, and collect"} nothing.`]
+      : [],
     anything: days > 0 || on,
   };
 }
