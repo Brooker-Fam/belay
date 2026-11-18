@@ -17,6 +17,7 @@ import { handoverOf } from "../family/offbelay/store.js";
 import { activePause, currentDecisions, getRules, type PolicyContext, RuleRefused } from "../family/policy.js";
 import { offBelayStage, phoneRules } from "../family/screentime/rules.js";
 import { getSettings } from "../settings.js";
+import { sameName } from "../text.js";
 import { CollectionPage, type OffBelayData } from "./pages/offbelay.js";
 import { first, render, type WebEnv } from "./routes.js";
 import type { View } from "./ui.js";
@@ -107,7 +108,7 @@ export function offBelayWebRoutes(deps: Deps, h: OffBelayWebHelpers): Hono<WebEn
     const device = deviceOf(c);
     if (!device) return noPhone(c);
     const typed = first(await c.req.parseBody({ all: true }), "confirm");
-    if (typed.toLowerCase() !== device.name.trim().toLowerCase()) {
+    if (!sameName(typed, device.name)) {
       throw new RuleRefused(`Handing a phone over lifts its locks and clears reset protection. To do it, type the phone's name, ${device.name}, in the box.`);
     }
     handOver(ctx(), device.id, asParent(c));

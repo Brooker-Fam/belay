@@ -131,7 +131,8 @@ describe("handing a phone over", () => {
     expect(wrong.status).toBe(400);
     expect(await wrong.text()).toContain("type the phone&#39;s name, Alex&#39;s phone, in the box");
     expect(policy().handover).toBeNull();
-    const done = await form(`/devices/${phone.deviceId}/handover`, { confirm: " alex's PHONE " });
+    // A phone's keyboard types a curly apostrophe, and extra spaces and capitals don't count either.
+    const done = await form(`/devices/${phone.deviceId}/handover`, { confirm: " alex\u2019s  PHONE " });
     expect(done.status).toBe(302);
     expect(done.headers.get("location")).toBe(`/devices/${phone.deviceId}?saved=handed_over#handover`);
     expect(policy().handover).toEqual({ at: t.now(), by: "Sam" });
