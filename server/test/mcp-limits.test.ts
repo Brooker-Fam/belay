@@ -8,8 +8,12 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { describe, expect, it } from "vitest";
 import { listAudit } from "../src/audit.js";
+import { Policy } from "../src/device/schemas.js";
 import { setLocation } from "../src/family/location/changes.js";
-import type { PolicyContext } from "../src/family/policy.js";
+import { buildPolicy, type PolicyContext, RuleRefused } from "../src/family/policy.js";
+import { approveProposal, listProposals } from "../src/family/proposals.js";
+import { setPhoneRules } from "../src/family/screentime/changes.js";
+import { NO_RULES, phoneRules, type Schedule } from "../src/family/screentime/rules.js";
 import { createPersonalToken } from "../src/oauth/store.js";
 import { AI_PER_HOUR } from "../src/ratelimit.js";
 import { updateSettings } from "../src/settings.js";
@@ -53,9 +57,9 @@ async function family() {
   const commands = (deviceId: string, kind: string) =>
     (t.deps.db.prepare("SELECT COUNT(*) AS n FROM commands WHERE device_id = ? AND kind = ?").get(deviceId, kind) as { n: number }).n;
   const limited = () => listAudit(t.deps.db, { limit: 500, includeReads: false }).filter((e) => e.action === "ai.limited");
-  const form = (path: string, fields: Record<string, string>) => postForm(t, path, { _csrf: sam.csrf, ...fields }, { cookie: sam.cookie });
+  const form = (path: string, fields: Record<string, string | string[]>) => postForm(t, path, { _csrf: sam.csrf, ...fields }, { cookie: sam.cookie });
   const activity = async () => (await get(t, "/activity", sam.cookie)).text();
-  return { t, sam, alex, jo, claude, commands, limited, form, activity };
+  return { t, sam, alex, jo, ctx, person, claude, commands, limited, form, activity };
 }
 
 describe("an AI app's checks of where the phone is", () => {
@@ -159,5 +163,96 @@ describe("an AI app's pauses and locks", () => {
       expect((await form(`/devices/${alex.deviceId}/lock`, { minutes: "15" })).status).toBe(302);
     }
     expect(commands(alex.deviceId, "lock_now")).toBe(AI_PER_HOUR.locks * 2);
+  });
+});
+
+describe("an AI app's schedules can't lock the screen past the limit", () => {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const at = (minutes: number) => `${pad(Math.floor(minutes / 60) % 24)}:${pad(minutes % 60)}`;
+  /** `count` schedules every 3 minutes from 15:00, each `length` minutes long, every day. */
+  const every3 = (count: number, length: number, lock: boolean) =>
+    Array.from({ length: count }, (_, i) => ({ start: at(15 * 60 + 3 * i), end: at(15 * 60 + 3 * i + length), lock }));
+  const schedules = (t: TestServer, deviceId: string) => Policy.parse(buildPolicy(t.deps.db, deviceId, t.now())).screen_time?.schedules ?? [];
+  const bedtime: Schedule = { id: "s-bed", kind: "bedtime", name: "Bedtime", days: ["sun", "mon", "tue", "wed", "thu"], start: "21:00", end: "07:00", allow: [], lock: true, skip: [] };
+
+  it("after lock_phone is refused, twenty one-minute locking schedules are refused too, not even proposed, and the activity log says so once", async () => {
+    const { t, alex, claude, activity } = await family();
+    for (let i = 0; i < AI_PER_HOUR.locks; i++) expect((await claude("lock_phone", { device: "Alex's phone", minutes: 5 })).isError).toBe(false);
+    expect((await claude("lock_phone", { device: "Alex's phone", minutes: 5 })).text).toContain(`at most ${AI_PER_HOUR.locks} times an hour`);
+    // The third review's way around it: one change_screen_time, twenty schedules that lock the screen as each starts.
+    for (const lock of [true, false]) {
+      const res = await claude("change_screen_time", { device: "Alex's phone", change: { schedules: every3(20, 1, lock) }, reason: "Homework hour" });
+      expect(res.isError).toBe(true);
+      expect(res.text).toBe(
+        "Not changed: a schedule an AI app adds or changes runs at least 15 minutes, and 3:00 pm to 3:01 pm is 1 minute. A parent can make a shorter one on the parent page.",
+      );
+    }
+    expect(schedules(t, alex.deviceId)).toEqual([]);
+    expect(listProposals(t.deps.db, { status: "pending" })).toEqual([]);
+    // However often it tries, one line an hour, naming no rule.
+    const refused = () => listAudit(t.deps.db, { limit: 50, includeReads: false }).filter((e) => e.action === "ai.refused");
+    expect(refused()).toHaveLength(1);
+    expect(refused()[0]).toMatchObject({ actor: "ai", clientName: "Claude", deviceName: "Alex's phone", detail: { tool: "change_screen_time", why: "short_schedule" } });
+    expect(await activity()).toContain("was refused: it tried to add or change a schedule shorter than 15 minutes (Alex");
+    // An hour on, a schedule just short of 15 minutes is refused the same way, and logged again.
+    t.advance(61 * MINUTE);
+    const fourteen = await claude("change_screen_time", { device: "Alex's phone", change: { schedules: [{ start: "15:00", end: "15:14" }] }, reason: "x" });
+    expect(fourteen.text).toContain("3:00 pm to 3:14 pm is 14 minutes");
+    expect(refused()).toHaveLength(2);
+  });
+
+  it("a schedule that locks the screen is a proposal, even one that only tightens: new, lock turned on, or a locking one changed", async () => {
+    const { t, sam, alex, ctx, person, claude } = await family();
+    const call = async (change: Record<string, unknown>) => {
+      const res = await claude("change_screen_time", { device: "Alex's phone", change, reason: "The parent asked." });
+      return JSON.parse(res.text) as { status: string; why?: string; changes: { effect: string; untrusted: { change: string } }[] };
+    };
+    // Fifteen minutes is long enough, but each of these locks: a parent decides.
+    const many = await call({ schedules: every3(20, 15, true) });
+    expect(many.status).toBe("proposed: waiting for a parent to approve or reject it");
+    expect(many.why).toBe("A schedule that locks the screen is a parent's to approve, even one that only tightens: an AI app locks the phone only with lock_phone, at most 6 times an hour.");
+    expect(many.changes).toHaveLength(20);
+    expect(many.changes.every((c) => c.effect === "tightens")).toBe(true);
+    expect(many.changes[0]?.untrusted.change).toBe("New: Schedule from 3:00 pm to 3:15 pm, every day, locking the screen when it starts");
+    expect(schedules(t, alex.deviceId)).toEqual([]);
+    // A parent's bedtime that locks: moving its start earlier, or adding a day, is a new start the phone would lock for.
+    setPhoneRules(ctx(), alex.deviceId, { ...NO_RULES, schedules: [bedtime, { ...bedtime, id: "s-school", kind: "school", name: "School", start: "08:00", end: "15:00", lock: false }] }, person);
+    for (const change of [{ id: "s-bed", start: "20:30" }, { id: "s-bed", days: ["sun", "mon", "tue", "wed", "thu", "fri"] }, { id: "s-school", lock: true }]) {
+      const res = await call({ schedules: [change] });
+      expect(res.status, JSON.stringify(change)).toBe("proposed: waiting for a parent to approve or reject it");
+    }
+    expect(phoneRules(t.deps.db, alex.deviceId).rules.schedules.map((s) => [s.id, s.start, s.days.length, s.lock])).toEqual([
+      ["s-bed", "21:00", 5, true],
+      ["s-school", "08:00", 5, false],
+    ]);
+    // What doesn't lock still tightens at once: a longer school day, a new schedule that doesn't lock.
+    expect((await call({ schedules: [{ id: "s-school", end: "16:00" }] })).status).toBe("done: it only tightens, so it applies at once");
+    expect((await call({ schedules: every3(1, 15, false) })).status).toBe("done: it only tightens, so it applies at once");
+    expect(schedules(t, alex.deviceId).map((s) => [s.start, s.end, s.lock])).toEqual([
+      ["21:00", "07:00", true],
+      ["08:00", "16:00", false],
+      ["15:00", "15:15", false],
+    ]);
+    // A parent approves the earlier bedtime: it applies, in their name.
+    const earlier = listProposals(t.deps.db, { status: "pending" }).find((p) => p.change.kind === "screen_time" && p.change.patch.schedules[0]?.after?.start === "20:30");
+    expect(approveProposal(ctx(), earlier?.id ?? "", sam.parent.id)).toMatchObject({ ok: true });
+    expect(schedules(t, alex.deviceId)[0]).toMatchObject({ id: "s-bed", start: "20:30", lock: true });
+  });
+
+  it("checked again where the change is made: an AI app's locking or short schedule never applies", async () => {
+    const { t, sam, alex, ctx } = await family();
+    const ai = { kind: "ai", parentId: sam.parent.id, clientName: "Claude" } as const;
+    const custom = (over: Partial<Schedule>): Schedule => ({ id: "s-x", kind: "custom", name: "Schedule", days: ["mon"], start: "15:00", end: "16:00", allow: [], lock: false, skip: [], ...over });
+    expect(() => setPhoneRules(ctx(), alex.deviceId, { ...NO_RULES, schedules: [custom({ lock: true })] }, ai)).toThrow("An AI app can't make a schedule lock the screen");
+    expect(() => setPhoneRules(ctx(), alex.deviceId, { ...NO_RULES, schedules: [custom({ end: "15:05" })] }, ai)).toThrow(RuleRefused);
+    expect(schedules(t, alex.deviceId)).toEqual([]);
+    expect(setPhoneRules(ctx(), alex.deviceId, { ...NO_RULES, schedules: [custom({})] }, ai).changed).toBe(true);
+  });
+
+  it("a parent isn't limited: a one-minute schedule that locks, from the parent page", async () => {
+    const { t, alex, form } = await family();
+    const res = await form(`/devices/${alex.deviceId}/screen-time/rules/schedules`, { kind: "custom", name: "Look up", days: ["mon", "tue"], start: "15:00", end: "15:01", lock: "1" });
+    expect(res.status).toBe(302);
+    expect(schedules(t, alex.deviceId)).toMatchObject([{ name: "Look up", start: "15:00", end: "15:01", lock: true }]);
   });
 });

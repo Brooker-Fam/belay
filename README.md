@@ -112,9 +112,10 @@ checked on a real Pixel yet. Phase 9 (more families) isn't built either.
   screen time by the hour and by day, drawn on the server with a table beside each chart.
   Usage is kept 13 months by default. Over MCP, an AI client reads screen time, locks the
   phone (pauses and locks at most 6 times an hour per connection) and tightens the rules; the
-  server decides whether a change only tightens, and anything else, or a move to another stage,
-  is a proposal. Network logging is off until a parent turns it on, under Web on the phone's
-  page (never an AI app, not even a proposal); while it's on, the phone's Network tab lists each
+  server decides whether a change only tightens, and anything else, a schedule that locks the
+  screen, or a move to another stage, is a proposal. Network logging is off until a parent
+  turns it on, under Web on the phone's page (never an AI app, not even a proposal); while
+  it's on, the phone's Network tab lists each
   day's apps and the names they looked up, kept 30 days by default, and an AI client reads it
   only if a parent turns that on too (it starts off for every family).
 - **Phases 4 and 7 on the server: location, and the kid's side.** Location is off until a

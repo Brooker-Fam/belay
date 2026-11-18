@@ -121,24 +121,37 @@ changes, tests and the family's decisions. Build order: Phase 2; then Phase 10's
 and Phase 6's self-update and recovery key; then Phase 3 with Phase 7's core; Phase 4;
 Phase 5 (calls, then texts); Phases 8, 9 and 11 when they're needed.
 
-**Built since Phase 2** (on `main`, checked end to end in CI on the Android 17 emulator): Phase 3's
-screen time (limits, schedules, lock now, measuring, more time, stages and the agreement), Phase
-6's self-update, recovery key, backups and health checks, Phase 10's removal of another user or
-profile, and the fixes from a security review of the Phase 2 server. The contracts are in
-[docs/protocol.md](docs/protocol.md); each phase's Pixel checklist is in `docs/`. Phase 8's setup kit is
-built too: one provisioning plan that `provision.sh` and the kit both run, the kit's page and
-runner, and its container; CI provisions the emulator with the kit's runner. Phase 7 (the kid's side:
-Home, help, the emergency card, talk) and Phase 4 (location, off by default) are built and run end
-to end too. Phase 5's calls (Belay as the
-phone app when a parent turns calls on: approved contacts, who rings, call records; 911,
-emergency numbers and 988 always allowed in code) and Phase 11 (off belay: the last stage,
-stopping collection with deletion, the hand-over) are built and run end to end too, after a
-second security review whose fixes are in; an AI app's checks of where a phone is, and its pauses
-and locks, are limited to a few an hour per connection, what a phone can make the server keep
-of its apps is capped, and the activity log is kept as long as the family chooses (400 days by
-default); Play's `allowed_accounts` is built too. Phase 3's last part, opt-in network logging, is
-built and runs end to end too. **Next:** Phase 5's texts wait for a Pixel test of Google
-Messages' archival hook.
+**Built since Phase 2** (on `main`, run end to end in CI on two Android 17 emulator images; none
+of it yet on a real Pixel). The contracts are in [docs/protocol.md](docs/protocol.md), and each
+phase's Pixel checklist is in `docs/`.
+
+- **Phase 3:** screen time (limits, schedules, lock now, measuring, more time, stages and the
+  agreement), and opt-in network logging.
+- **Phase 4:** location, off by default.
+- **Phase 5:** calls, with Belay as the phone app when a parent turns calls on: approved
+  contacts, who rings, call records. 911, emergency numbers and 988 are always allowed, in code.
+- **Phase 6:** self-update, the recovery key, encrypted backups and health checks. CI restores an
+  encrypted backup onto a new machine, and builds and runs the server's image on amd64 and arm64.
+- **Phase 7:** the kid's side: Home, "I need help", the emergency card, "talk to my parent".
+- **Phase 8:** the setup kit. One provisioning plan runs in `provision.sh` and in the kit, and CI
+  provisions the emulator with the kit's runner.
+- **Phase 10:** another user or profile is reported, and removed when a parent asks.
+- **Phase 11:** off belay: the last stage, stopping collection with deletion, the hand-over.
+- **Across phases:**
+  - three security reviews, with their fixes in (the third's fixes to call handling on the phone are
+    still being made);
+  - an audit of how a kid could get around Belay on Android 17: a proxy and wireless debugging
+    are reported, Chrome ignores proxies, and the time zone stays automatic;
+  - limits on what an AI app can do to the kid's phone (checks, pauses, locks, and schedules
+    that lock);
+  - Play's `allowed_accounts`;
+  - the parent page reworked for phones and screen readers;
+  - [docs/guide.md](docs/guide.md), one guide for parents.
+
+**Next:**
+- the Pixel checklists, starting with [Phase 0's](docs/phase0-checklist.md);
+- Phase 5's texts, after the Pixel test of Google Messages' archival hook;
+- Phase 9, when another family needs it.
 
 ### Phase 3: screen time, schedules and stages ([design](docs/design/phase3-screen-time.md)) (built)
 

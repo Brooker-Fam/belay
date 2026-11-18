@@ -122,7 +122,8 @@ export function changeSentence(change: RuleChange, audience: Audience): string {
       case "schedule_no_longer_locks":
         return `${name(change.name)} no longer locks the screen`;
       case "schedule_added":
-        return `New: ${name(change.name)} from ${clock(change.start)} to ${clock(change.end)}, ${days(change.days)}`;
+        // The kid's words follow KidText's draft; a parent deciding on a proposal needs to know it locks.
+        return `New: ${name(change.name)} from ${clock(change.start)} to ${clock(change.end)}, ${days(change.days)}${!kid && change.lock ? ", locking the screen when it starts" : ""}`;
       case "schedule_removed":
         return `No more ${name(change.name)}`;
       case "exempt_added":

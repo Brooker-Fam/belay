@@ -9,10 +9,11 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { describe, expect, it } from "vitest";
-import { createParent } from "../src/auth/parents.js";
+import { createParent, createSession } from "../src/auth/parents.js";
 import { listAudit } from "../src/audit.js";
 import { Policy } from "../src/device/schemas.js";
 import { blockNumber, saveContact, setCalls, setPrivateNumber } from "../src/family/calls/changes.js";
+import { callSettings } from "../src/family/calls/store.js";
 import { buildPolicy, type PolicyContext } from "../src/family/policy.js";
 import { approveProposal, listProposals } from "../src/family/proposals.js";
 import { createPersonalToken } from "../src/oauth/store.js";
@@ -138,23 +139,52 @@ describe("calls over MCP", () => {
   it("change_calls: a change that only tightens applies at once, as the AI app, in the activity log", async () => {
     const { t, call, policy, callsOn } = await family();
     const { coach } = callsOn();
+    // Naming a number needs the Calls category (below, without it).
+    updateSettings(t.deps.db, { aiScopes: { calls: true } });
     const v = policy().version;
     const { json, isError } = await call("change_calls", {
       device: "Alex's phone",
-      change: { unknown: "reject", quiet: true, outgoing: "contacts", change_contacts: [{ id: coach.id, texts: false }], block_numbers: ["+1 555 555 0199"] },
+      change: { unknown: "reject", quiet: true, outgoing: "contacts", change_contacts: [{ id: coach.id, calls: false }], block_numbers: ["+1 555 555 0199"] },
       reason: "The parent asked for quieter evenings",
     });
     expect(isError).toBe(false);
     expect(json).toMatchObject({ status: "done: it only tightens, so it applies at once", version: v + 1 });
     expect(json.changes.map((c: { effect: string }) => c.effect)).toEqual(["tightens", "tightens", "tightens", "tightens", "tightens"]);
     expect(policy()).toMatchObject({ calls: { unknown: "reject", quiet: true, outgoing: "contacts" }, blocked_numbers: [STRANGER] });
-    expect(policy().contacts.find((c) => c.id === coach.id)?.texts).toBe(false);
+    expect(policy().contacts.find((c) => c.id === coach.id)?.calls).toBe(false);
     expect(listAudit(t.deps.db, { limit: 1, includeReads: false })[0]).toMatchObject({ actor: "ai", clientName: "Claude", action: "calls.changed" });
+  });
+
+  it("texts aren't enforced yet: get_contacts says so, and change_calls refuses a contact's texts rather than call it done", async () => {
+    const { t, call, policy, callsOn } = await family();
+    const { coach } = callsOn();
+    updateSettings(t.deps.db, { aiScopes: { calls: true } });
+    const contacts = await call("get_contacts", { device: "Alex's phone" });
+    expect(contacts.json.texts).toBe("Not enforced yet: Belay doesn't manage texts yet, so texting works with anyone, whatever each contact's can_text says. It's kept for when Belay does.");
+    const before = policy();
+    for (const change of [
+      { change_contacts: [{ id: coach.id, texts: false }] },
+      { quiet: true, change_contacts: [{ id: coach.id, calls: false, texts: false }] },
+      { add_contacts: [{ name: "Grandma", numbers: ["+15555550123"], texts: true }] },
+    ]) {
+      const res = await call("change_calls", { device: "Alex's phone", change, reason: "No more texts from the coach" });
+      expect(res.isError, JSON.stringify(change)).toBe(true);
+      expect(res.text).toBe(
+        "Nothing changed: Belay doesn't manage texts yet (for now, texting works with anyone, whatever a contact's texts says), so leave texts out. Blocking a number stops both its calls and its texts.",
+      );
+    }
+    expect(policy()).toEqual(before);
+    expect(listAudit(t.deps.db, { limit: 50, includeReads: false }).filter((e) => e.action === "ai.refused").map((e) => e.detail?.why)).toEqual(["texts"]);
+    const { tools } = await (await family()).client.listTools();
+    const description = tools.find((x) => x.name === "change_calls")?.description ?? "";
+    expect(description).toContain("Belay doesn't manage texts yet (for now, texting works with anyone)");
+    expect(tools.find((x) => x.name === "get_contacts")?.description).toContain("whether they may text (not enforced yet: for now, texting works with anyone)");
   });
 
   it("change_calls: anything that loosens, or takes from a parent contact, is a proposal a parent approves", async () => {
     const { t, parent, phone, ctx, call, policy, callsOn } = await family();
     const { mom } = callsOn();
+    updateSettings(t.deps.db, { aiScopes: { calls: true } });
     const before = policy();
     const add = await call("change_calls", {
       device: "Alex's phone",
@@ -180,7 +210,7 @@ describe("calls over MCP", () => {
   });
 
   it("change_calls refuses on or off, recording, private numbers, blocking 911 or 988, and anything while calls are off", async () => {
-    const { phone, ctx, sam, call, policy, callsOn } = await family();
+    const { t, phone, ctx, sam, call, policy, callsOn } = await family();
     const off = await call("change_calls", { device: "Alex's phone", change: { mode: "contacts" }, reason: "x" });
     expect(off.isError).toBe(true);
     expect(off.text).toContain("Calls are off for Alex's phone");
@@ -190,6 +220,8 @@ describe("calls over MCP", () => {
       expect(res.isError, JSON.stringify(change)).toBe(true);
       expect(res.text).toBe("Only a parent turns calls on or off, decides whether calls are recorded, or which numbers are private, on the phone's Calls tab: you can't, and can't propose it.");
     }
+    // With the Calls category on, a refusal may say why about a number.
+    updateSettings(t.deps.db, { aiScopes: { calls: true } });
     for (const n of ["911", "+1 988", "112", "+18002738255"]) {
       const res = await call("change_calls", { device: "Alex's phone", change: { block_numbers: [n] }, reason: "x" });
       expect(res.isError, n).toBe(true);
@@ -234,5 +266,161 @@ describe("calls over MCP", () => {
     expect(json.summary).toContain(
       "Calls: on: only contacts can call, the kid can call any number, calls recorded (get_contacts has the rules and contacts). 911, 988 and emergency numbers always work.",
     );
+  });
+});
+
+describe("with the Calls category off (its default), nothing says anything about a number", () => {
+  const THERAPIST = "+15555550150";
+  const AUNT = "+15555550160";
+  const NUMBERS_OFF =
+    'Not done: a parent turned off AI access to calls in Belay\'s settings (it starts off), so change_calls takes no phone numbers: none to block or unblock, and no contact\'s numbers. You can still change the call rules, and change or remove contacts by id without their numbers. A parent can block a number or add a contact on the phone\'s Calls tab, or tick "Calls" in Settings to let AI apps see calls.';
+
+  /** The third review's family: a counselor among the contacts, an aunt on the emergency card, a blocked stranger. */
+  async function withCalls() {
+    const f = await family();
+    const { mom, coach } = f.callsOn();
+    const therapist = saveContact(f.ctx(), f.phone.deviceId, { name: "Dr. Lee (counselor)", numbers: [THERAPIST], calls: true, texts: false, parent: false }, f.sam).result.contact;
+    updateSettings(f.t.deps.db, { parentNumbers: [{ name: "Aunt Jo", number: AUNT }] });
+    blockNumber(f.ctx(), f.phone.deviceId, STRANGER, f.sam);
+    const refused = () => listAudit(f.t.deps.db, { limit: 100, includeReads: false }).filter((e) => e.action === "ai.refused");
+    return { ...f, mom, coach, therapist, refused };
+  }
+
+  it("change_calls answers a change that names a number the same way, whoever's it is, and the activity log says so once", async () => {
+    const { t, phone, sam, call, policy, coach, refused } = await withCalls();
+    const before = policy();
+    const guesses = [
+      { block_numbers: [THERAPIST] }, // a contact's: it used to say whose
+      { block_numbers: [AUNT] }, // on the emergency card
+      { block_numbers: ["+15555550197"] }, // no one's
+      { unblock_numbers: [STRANGER] }, // blocked: it used to become a proposal
+      { unblock_numbers: ["+15555550198"] }, // not blocked: "Nothing to change"
+      { add_contacts: [{ name: "Jordan", numbers: [COACH] }] }, // already Coach's
+      { change_contacts: [{ id: coach.id, numbers: [THERAPIST] }] },
+      { quiet: true, block_numbers: ["911"] },
+    ];
+    for (const change of guesses) {
+      const res = await call("change_calls", { device: "Alex's phone", change, reason: "check" });
+      expect(res.isError, JSON.stringify(change)).toBe(true);
+      expect(res.text, JSON.stringify(change)).toBe(NUMBERS_OFF);
+    }
+    expect(policy()).toEqual(before);
+    expect(listProposals(t.deps.db, { deviceId: phone.deviceId, status: "pending" })).toEqual([]);
+    // One line in the activity log, however often it tries, naming no number or contact.
+    expect(refused()).toHaveLength(1);
+    expect(refused()[0]).toMatchObject({ actor: "ai", clientName: "Claude", deviceName: "Alex's phone", detail: { tool: "change_calls", why: "numbers" } });
+    expect(JSON.stringify(refused())).not.toMatch(/555|Lee|Jo|Jordan/);
+    // Without a number it works as before: the rules, and a contact by id.
+    const done = await call("change_calls", { device: "Alex's phone", change: { quiet: true, change_contacts: [{ id: coach.id, calls: false }] }, reason: "The parent asked" });
+    expect(done.json.status).toBe("done: it only tightens, so it applies at once");
+    expect(done.text).not.toContain("555");
+    // Only a parent's alone, refused and logged for its own reason.
+    expect((await call("change_calls", { device: "Alex's phone", change: { log: false }, reason: "x" })).isError).toBe(true);
+    expect(refused().map((e) => e.detail?.why)).toEqual(["parents_only", "numbers"]);
+    const session = createSession(t.deps.db, t.now(), sam.parentId);
+    const page = await (await t.app.request("/activity", { headers: { cookie: `__Host-belay=${session.cookie}` } })).text();
+    expect(page).toContain("was refused: it tried to change calls with phone numbers while AI access to calls is off (Alex");
+    expect(page).toContain("was refused: it tried to turn calls on or off, record them or choose private numbers, which only a parent does (Alex");
+    // With the Calls category on, a refusal may say why, as before.
+    updateSettings(t.deps.db, { aiScopes: { calls: true } });
+    expect((await call("change_calls", { device: "Alex's phone", change: { block_numbers: [THERAPIST] }, reason: "x" })).text).toBe(
+      "Nothing changed. +15555550150 is Dr. Lee (counselor)'s number, a contact: take it off the contact first, then block it.",
+    );
+  });
+
+  it("proposals waiting name no number or contact, in get_contacts and get_policy, whichever connection made them", async () => {
+    const { t, parent, call } = await withCalls();
+    // One AI app, with the Calls category on for a moment, proposes a contact and unblocking a number.
+    updateSettings(t.deps.db, { aiScopes: { calls: true } });
+    const proposed = await call("change_calls", {
+      device: "Alex's phone",
+      change: { add_contacts: [{ name: "Jordan", numbers: ["+15555550133"] }], unblock_numbers: [STRANGER] },
+      reason: "Alex asked",
+    });
+    expect(proposed.json.status).toContain("proposed");
+    updateSettings(t.deps.db, { aiScopes: { calls: false } });
+    // Another AI app, through another connection.
+    const { token } = createPersonalToken(t.deps.db, t.now(), parent.id, "Other AI app", MCP);
+    const other = new Client({ name: "belay-test-other", version: "1.0.0" });
+    await other.connect(
+      new StreamableHTTPClientTransport(new URL(MCP), {
+        fetch: (url, init) => Promise.resolve(t.app.request(String(url), init)),
+        requestInit: { headers: { authorization: `Bearer ${token}` } },
+      }),
+    );
+    const read = async (name: string) => JSON.parse(((await other.callTool({ name, arguments: { device: "Alex's phone" } })).content as { text: string }[])[0]?.text ?? "{}") as Record<string, any>;
+    const contacts = await read("get_contacts");
+    expect(contacts.note).toContain("So are the numbers and contacts in proposals waiting");
+    expect(contacts.proposals_waiting).toEqual([
+      { proposed: "2026-11-16T10:00:00-05:00", by: "Claude", untrusted: { change: "Change calls: add a contact, who can call and text (and 1 more change)" } },
+    ]);
+    const rules = await read("get_policy");
+    expect(rules.proposals_waiting).toEqual([
+      { proposed: "2026-11-16T10:00:00-05:00", by: "Claude", untrusted: { change: "Change calls: add a contact, who can call and text (and 1 more change)" } },
+    ]);
+    for (const json of [contacts, rules]) expect(JSON.stringify(json)).not.toMatch(/555|Jordan/);
+    // With the category on, they say it all.
+    updateSettings(t.deps.db, { aiScopes: { calls: true } });
+    expect((await read("get_contacts")).proposals_waiting[0].untrusted.change).toBe('Change calls: add "Jordan" (+15555550133) as a contact, who can call and text (and 1 more change)');
+  });
+});
+
+describe("private numbers", () => {
+  const THERAPIST = "+15555550150";
+  const HELPLINE = "+15555550177";
+
+  it("an AI app can't block one (a helpline the family keeps private), and is told the same as for a number on the emergency card", async () => {
+    const { t, phone, ctx, sam, call, policy, callsOn } = await family();
+    callsOn();
+    setPrivateNumber(ctx(), phone.deviceId, HELPLINE, true, sam);
+    updateSettings(t.deps.db, { parentNumbers: [{ name: "Aunt Jo", number: "+15555550160" }], aiScopes: { calls: true } });
+    const helpline = await call("change_calls", { device: "Alex's phone", change: { block_numbers: [HELPLINE] }, reason: "Unknown number calling late" });
+    expect(helpline.isError).toBe(true);
+    expect(helpline.text).toBe(`Nothing changed. Belay doesn't let an AI app block ${HELPLINE}: only a parent decides about that number, on the phone's Calls tab.`);
+    const card = await call("change_calls", { device: "Alex's phone", change: { block_numbers: ["+15555550160"] }, reason: "x" });
+    expect(card.text).toBe(helpline.text.replace(HELPLINE, "+15555550160"));
+    expect(policy()).toMatchObject({ private_numbers: [HELPLINE], blocked_numbers: [] });
+    // A number no one has still blocks at once.
+    expect((await call("change_calls", { device: "Alex's phone", change: { block_numbers: [STRANGER] }, reason: "x" })).json.status).toBe("done: it only tightens, so it applies at once");
+  });
+
+  it("making a contact's number private deletes the contact's call records, and the server keeps none about them after, counted nowhere", async () => {
+    const { t, phone, ctx, sam, call, callsOn } = await family();
+    const { mom, coach } = callsOn();
+    const therapist = saveContact(ctx(), phone.deviceId, { name: "Dr. Lee (counselor)", numbers: [THERAPIST, "+15555550151"], calls: true, texts: false, parent: false }, sam).result.contact;
+    const kept = (contactId: string) => (t.deps.db.prepare("SELECT COUNT(*) AS n FROM call_records WHERE device_id = ? AND contact_id = ?").get(phone.deviceId, contactId) as { n: number }).n;
+    const record = (id: string, contactId: string, at: number) => ({ id, at, direction: "out", contact_id: contactId, duration_s: 600, outcome: "answered" });
+    await deviceCall(t, phone.token, "calls", {
+      calls: [
+        record("call-00000001", therapist.id, T0 - 7_200_000),
+        record("call-00000002", therapist.id, T0 - 3_600_000),
+        record("call-00000003", mom.id, T0 - 3_000_000),
+        record("call-00000004", coach.id, T0 - 2_000_000),
+        { id: "call-00000005", at: T0 - 1_000_000, direction: "in", number: STRANGER, duration_s: 0, outcome: "rejected", reason: "unknown" },
+      ],
+    });
+    expect(kept(therapist.id)).toBe(2);
+    // "Making a number private deletes the records already kept of it": the counselor's are of it.
+    setPrivateNumber(ctx(), phone.deviceId, THERAPIST, true, sam);
+    expect(kept(therapist.id)).toBe(0);
+    expect([kept(mom.id), kept(coach.id)]).toEqual([1, 1]);
+    // A phone that hasn't the new rules yet sends one more (the counselor's other number, which the
+    // phone doesn't know is theirs to keep private): accepted, not kept, and counted nowhere.
+    const late = await deviceCall(t, phone.token, "calls", { calls: [record("call-00000006", therapist.id, T0 - 60_000)] });
+    expect(late.status).toBe(200);
+    expect(await late.json()).toMatchObject({ accepted: 1 });
+    expect(kept(therapist.id)).toBe(0);
+    expect(callSettings(t.deps.db, phone.deviceId)?.dropped).toBe(0);
+    expect(t.logs.join("\n")).not.toContain("never keeps");
+    // With the Calls category on, get_calls has the others, and nothing of the counselor.
+    updateSettings(t.deps.db, { aiScopes: { calls: true } });
+    const read = await call("get_calls", { device: "Alex's phone" });
+    expect(read.json.records).toHaveLength(3);
+    expect(JSON.stringify(read.json.records)).not.toContain("Dr. Lee");
+    // Whichever comes first: a contact who gains a number that's private loses their records too.
+    setPrivateNumber(ctx(), phone.deviceId, HELPLINE, true, sam);
+    saveContact(ctx(), phone.deviceId, { id: coach.id, name: coach.name, numbers: [COACH, HELPLINE], calls: true, texts: true, parent: false }, sam);
+    expect(kept(coach.id)).toBe(0);
+    expect(kept(mom.id)).toBe(1);
   });
 });

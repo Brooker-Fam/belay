@@ -423,7 +423,13 @@ describe("rules over MCP", () => {
     const [proposal] = listProposals(t.deps.db, { status: "pending" });
     expect(proposal).toMatchObject({ clientName: "Claude", parentName: "Sam", reason: "It's the class's homework chat.", change: { kind: "allow_app", package: "com.example.chat" } });
     expect(listAudit(t.deps.db, { limit: 1, includeReads: false })[0]).toMatchObject({ actor: "ai", action: "proposal.created", detail: { change: 'Allow "Chatter Box"' } });
-    expect((await call(client, "get_policy", { device: "Sam's phone" })).json.proposals_waiting).toEqual([{ change: 'Allow "Chatter Box"', proposed: "2026-11-17T10:00:00-05:00", by: "Claude" }]);
+    // The app's name is its developer's words: untrusted, and only with the Apps category.
+    expect((await call(client, "get_policy", { device: "Sam's phone" })).json.proposals_waiting).toEqual([
+      { proposed: "2026-11-17T10:00:00-05:00", by: "Claude", untrusted: { change: 'Allow "Chatter Box"' } },
+    ]);
+    updateSettings(t.deps.db, { aiScopes: { apps: false } });
+    expect((await call(client, "get_policy", { device: "Sam's phone" })).json.proposals_waiting[0].untrusted).toEqual({ change: "Allow an app" });
+    updateSettings(t.deps.db, { aiScopes: { apps: true } });
 
     // A parent approves it on the parent page: then it applies, in their name.
     expect(approveProposal(parentContext(t), proposal?.id ?? "", parent.id).ok).toBe(true);

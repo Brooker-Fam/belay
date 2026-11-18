@@ -4,7 +4,8 @@
  * each pause or lock stops their apps (a lock locks the screen too). Past a few an hour, the tool
  * refuses in plain words and says when to try again, and the activity log says so, once an hour
  * however often the app tries. Only MCP's tools come through here: a parent, on the parent page
- * or with the CLI, isn't limited.
+ * or with the CLI, isn't limited. An AI app's refused changes are in the activity log the same
+ * way, once an hour (aiRefused).
  */
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { audit } from "../audit.js";
@@ -49,4 +50,25 @@ export function aiLimited(deps: Deps, caller: Caller, action: AiAction, phone: {
 /** Counts an action that reached the phone, against this connection's limit for it. */
 export function aiCounted(deps: Deps, caller: Caller, action: AiAction, deviceId: string): void {
   limiter(deps, action).hit(key(caller, deviceId));
+}
+
+/** The tools whose refusals the activity log keeps (aiRefused). */
+export type RefusingTool = "change_calls" | "change_screen_time";
+
+/**
+ * Why the server refused an AI app's change, for the activity log (web/pages/activity.tsx words
+ * each): it named phone numbers while a parent keeps calls from AI apps (`numbers`), it was a
+ * parent's alone (`parents_only`), it was about texts, which Belay doesn't manage yet (`texts`), a
+ * schedule was too short (`short_schedule`), or anything else Belay doesn't allow it (`other`).
+ */
+export type RefusedWhy = "numbers" | "parents_only" | "texts" | "short_schedule" | "other";
+
+/**
+ * Puts an AI app's refused change in the activity log (`ai.refused`), so a parent sees what it
+ * tried: once an hour per connection, phone, tool and reason, however often it tries, like
+ * ai.limited. The entry names no number, contact, app or rule: only the tool and the kind of reason.
+ */
+export function aiRefused(deps: Deps, caller: Caller, tool: RefusingTool, deviceId: string, why: RefusedWhy): void {
+  if (!deps.limits.aiRefusedLog.hit(`${key(caller, deviceId)} ${tool} ${why}`).ok) return;
+  audit(deps.db, deps.now(), { kind: "ai", parentId: caller.parentId, clientName: caller.clientName }, "ai.refused", { deviceId, detail: { tool, why } });
 }

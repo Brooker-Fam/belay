@@ -220,6 +220,10 @@ describe("the words", () => {
     const labels = (p: string) => ({ "com.example.blocks": "Block Party" })[p] ?? p;
     const parent = classifyScreenTimeChange({ self_serve: null }, { self_serve: { minutes: 10, times: 1 } }).changes.map((c) => changeSentence(c, { for: "parent", label: labels }));
     expect(parent).toEqual(["The kid can take 10 more minutes, once a day, without asking (self-serve)"]);
+    // A parent deciding on a new schedule is told it locks; the kid's words are KidText's draft.
+    const locking = classifyScreenTimeChange({}, { schedules: [bedtime({ lock: true })] }).changes;
+    expect(locking.map((c) => changeSentence(c, { for: "parent", label: labels }))).toEqual(["New: Bedtime from 9:00 pm to 7:00 am, Sunday to Thursday, locking the screen when it starts"]);
+    expect(locking.map((c) => changeSentence(c, kid))).toEqual(["New: Bedtime from 9:00 pm to 7:00 am, Sunday to Thursday"]);
     const apps = classifyScreenTimeChange({ limits: [games({ packages: ["com.example.racer"] })] }, { limits: [games()] }).changes.map((c) => changeSentence(c, { for: "kid", label: labels }));
     expect(apps).toEqual(["Block Party now counts toward Games"]);
   });

@@ -36,7 +36,7 @@ const SAVED: Record<string, string> = {
   contact_removed: "Removed.",
   blocked: "Blocked. The phone gets it within seconds if it's online.",
   unblocked: "Unblocked.",
-  private: "Saved: Belay never records calls with that number.",
+  private: "Saved: Belay never records calls with that number, or with a contact who has it.",
   private_removed: "Removed from the private numbers.",
 };
 

@@ -18,7 +18,7 @@ import { type Changer, LOCK_MINUTES, LOCK_NOW_MS, RuleRefused, lockPhone, type P
 import { MAX_PENDING_PROPOSALS, changeWords, createProposal, listProposals, screenTimeWords } from "../family/proposals.js";
 import { recentRequests } from "../family/requests.js";
 import { currentAgreement } from "../family/screentime/agreement.js";
-import { setPhoneRules } from "../family/screentime/changes.js";
+import { AI_MIN_SCHEDULE_MINUTES, aiScheduleProblem, locksTouched, setPhoneRules } from "../family/screentime/changes.js";
 import { classifyScreenTimeChange } from "../family/screentime/classify.js";
 import { WEEKDAYS, addDays, validDay, weekdayOf } from "../family/screentime/days.js";
 import { NAME_MAX, SCHEDULE_NAMES, appNamesOn, limitName } from "../family/screentime/names.js";
@@ -46,7 +46,7 @@ import { AI_PER_HOUR } from "../ratelimit.js";
 import { type AiScope, AI_SCOPES, getSettings } from "../settings.js";
 import { oneLine } from "../text.js";
 import { isValidTimeZone, isoInZone } from "../time.js";
-import { aiCounted, aiLimited } from "./limits.js";
+import { aiCounted, aiLimited, aiRefused } from "./limits.js";
 import type { Caller } from "./server.js";
 
 const READ = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
@@ -249,7 +249,7 @@ export function registerScreenTimeTools(server: McpServer, deps: Deps, caller: C
               }
             : {})(listCommands(db, row.id, now, { kind: "lock_now", limit: 5 }).find((x) => x.state !== "replaced")),
         proposals_waiting: proposals.map((x) => ({ proposed: iso(x.createdAt), by: x.clientName, untrusted: { change: changeWords(x.change, x.label, label).title } })),
-        how_to_change: `change_screen_time applies a change at once only when it only tightens; anything else becomes a proposal a parent approves on the parent page (${parentsPage("/proposals")}). lock_phone pauses and locks the phone now.`,
+        how_to_change: `change_screen_time applies a change at once only when it only tightens; anything else, and any schedule that locks the screen, becomes a proposal a parent approves on the parent page (${parentsPage("/proposals")}). lock_phone pauses and locks the phone now.`,
       });
     },
   );
@@ -349,10 +349,10 @@ export function registerScreenTimeTools(server: McpServer, deps: Deps, caller: C
       .optional()
       .describe("Not shown as you write it: Belay names a schedule you add by its kind (School, Bedtime, Schedule). A name unlike the schedule's asks to rename it, to Belay's name: a proposal"),
     days: z.array(weekday).max(7).optional().describe('Like ["mon","tue","wed","thu","fri"]; a new one: every day'),
-    start: hhmm.optional().describe("Like 21:00, the phone's time"),
+    start: hhmm.optional().describe(`Like 21:00, the phone's time; at least ${AI_MIN_SCHEDULE_MINUTES} minutes before end`),
     end: hhmm.optional().describe("Like 07:00; at or before start: the next day"),
     allow: z.array(packageName).max(500).optional().describe("Apps that stay open during it (the whole list)"),
-    lock: z.boolean().optional().describe("Lock the screen when it starts"),
+    lock: z.boolean().optional().describe("Lock the screen when it starts: always a proposal for a parent, never applied at once"),
     skip: z.array(day).max(366).optional().describe("Days it doesn't start (the whole list)"),
   });
 
@@ -361,7 +361,7 @@ export function registerScreenTimeTools(server: McpServer, deps: Deps, caller: C
     {
       title: "Change screen time",
       description:
-        "Changes one phone's screen-time rules: add or change limits (by id from get_rules) and schedules, remove them, add or remove exempt apps, set self-serve, or what happens when Belay can't count. The server decides: a change that only tightens (a lower or new limit, more apps under a limit, a schedule that starts earlier, ends later or runs on more days, fewer apps left open or exempt, less self-serve, pausing apps when Belay can't count) applies at once, within seconds when the phone is online; use it only when the parent asks. Anything else, or a mix, becomes a proposal a parent approves or rejects on the parent page: then say it's waiting for them, never that it's done. Moving the phone to another stage (stage, alone) is always a proposal, and to Off belay, the last stage, not even that: only a parent moves a phone there. Measuring isn't something you can change. The kid sees each limit's and schedule's name, so Belay writes the name of one you add or rename, never in your words: a limit is named after its apps (\"Chess Club and Puzzle Pop\"; a daily total is \"Screen time\"), a schedule after its kind (School, Bedtime, Schedule). Only a parent gives one a name of their own, on the parent page.",
+        `Changes one phone's screen-time rules: add or change limits (by id from get_rules) and schedules, remove them, add or remove exempt apps, set self-serve, or what happens when Belay can't count. The server decides: a change that only tightens (a lower or new limit, more apps under a limit, a schedule that starts earlier, ends later or runs on more days, fewer apps left open or exempt, less self-serve, pausing apps when Belay can't count) applies at once, within seconds when the phone is online; use it only when the parent asks. A schedule that locks the screen is a parent's: adding one, turning on a schedule's lock, or changing a schedule that locks is always a proposal (lock_phone locks the phone now, a few times an hour). Each schedule you add or change runs at least ${AI_MIN_SCHEDULE_MINUTES} minutes. Anything else, or a mix, becomes a proposal a parent approves or rejects on the parent page: then say it's waiting for them, never that it's done. Moving the phone to another stage (stage, alone) is always a proposal, and to Off belay, the last stage, not even that: only a parent moves a phone there. Measuring isn't something you can change. The kid sees each limit's and schedule's name, so Belay writes the name of one you add or rename, never in your words: a limit is named after its apps ("Chess Club and Puzzle Pop"; a daily total is "Screen time"), a schedule after its kind (School, Bedtime, Schedule). Only a parent gives one a name of their own, on the parent page.`,
       inputSchema: {
         device: deviceParam,
         change: z
@@ -504,11 +504,19 @@ export function registerScreenTimeTools(server: McpServer, deps: Deps, caller: C
       if (change.if_unmeasured !== undefined) wanted.if_unmeasured = change.if_unmeasured;
 
       if (canonical(wanted) === canonical(p.rules)) return refusal(`Nothing to change: ${row.name}'s rules are already like that.`);
+      // Not even as a proposal: twenty one-minute schedules would pause the phone twenty times an hour.
+      const short = aiScheduleProblem(p.rules, wanted);
+      if (short) {
+        aiRefused(deps, caller, "change_screen_time", row.id, "short_schedule");
+        return refusal(short);
+      }
       const classification = classifyScreenTimeChange(sideOf(p.settings, p.rules), sideOf(p.settings, wanted));
       const names = new Map(p.rules.limits.map((l) => [l.id, l.name]));
       const changes = classification.changes.map((c) => ({ effect: c.effect, untrusted: { change: changeSentence(c, { for: "parent", label: said, limitName: (id) => names.get(id) ?? null }) } }));
+      // A schedule that locks the screen is a parent's, even one that only tightens: lock_phone is an AI app's way to lock, a few times an hour.
+      const locks = locksTouched(p.rules, wanted).length > 0;
 
-      if (classification.onlyTightens) {
+      if (classification.onlyTightens && !locks) {
         try {
           const done = setPhoneRules(ctx(), row.id, wanted, ai);
           return result({
@@ -532,7 +540,12 @@ export function registerScreenTimeTools(server: McpServer, deps: Deps, caller: C
       return result({
         phone: row.name,
         status: "proposed: waiting for a parent to approve or reject it",
-        why: classification.effect === "loosens" ? "Part of it loosens the rules, so a parent decides." : "It doesn't only tighten the rules, so a parent decides.",
+        why:
+          classification.effect === "loosens"
+            ? "Part of it loosens the rules, so a parent decides."
+            : locks
+              ? `A schedule that locks the screen is a parent's to approve, even one that only tightens: an AI app locks the phone only with lock_phone, at most ${AI_PER_HOUR.locks} times an hour.`
+              : "It doesn't only tighten the rules, so a parent decides.",
         changes: screenTimeWords({ kind: "screen_time", patch: patchOf(p.rules, wanted) }, said).map((c) => ({ effect: c.effect, untrusted: { change: c.words } })),
         ...(made.duplicate ? { note: "The same change was already proposed, and is still waiting." } : {}),
         where: parentsPage("/proposals"),

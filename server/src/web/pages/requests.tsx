@@ -1,5 +1,6 @@
 /** The kid's requests on every phone, and what AI apps proposed: the two things that wait for a parent. */
 import type { FC } from "hono/jsx";
+import { TEXTS_NOT_ENFORCED } from "../../family/calls/words.js";
 import { LIMITS, MORE_TIME_CHOICES } from "../../family/policy.js";
 import { changeWords, type Proposal } from "../../family/proposals.js";
 import { STATUS_WORDS, type AgreementAnswerView, type AppRequestView, type ContactRequestView, type MoreTimeView, type RequestView, type TalkView, needsHelp } from "../../family/requests.js";
@@ -97,7 +98,7 @@ const OpenContact: FC<{ view: View; request: ContactRequestView; showDevice: boo
                 <input type="checkbox" name="contact_calls" value="1" checked /> Can call and be called
               </label>
               <label class="check">
-                <input type="checkbox" name="contact_texts" value="1" checked /> Can text
+                <input type="checkbox" name="contact_texts" value="1" checked /> Can text ({TEXTS_NOT_ENFORCED})
               </label>
             </div>
             <input type="hidden" name="contact_form" value="1" />

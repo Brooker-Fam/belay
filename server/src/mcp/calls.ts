@@ -5,7 +5,12 @@
  * a parent turns it on; and change_calls, which applies a change only when every part of it
  * tightens, and otherwise records a proposal a parent approves. No tool turns calls on or off,
  * changes whether they're recorded or the private numbers, or answers the kid's contact request:
- * those are a parent's. Every call is in the activity log.
+ * those are a parent's. Every call is in the activity log, and so is each change refused (once an
+ * hour per reason).
+ *
+ * With the scope off, nothing here says anything about a number: change_calls takes none (its
+ * answer about a guessed number would say whose it is: a contact's, on the emergency card, blocked),
+ * and the proposals waiting name no number or contact.
  */
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -28,6 +33,7 @@ import { recentRequests } from "../family/requests.js";
 import { notifyParents, proposalNotice } from "../push.js";
 import { AI_SCOPES, getSettings } from "../settings.js";
 import { durations, formatDuration, isoInZone, parseWhen } from "../time.js";
+import { type RefusedWhy, aiRefused } from "./limits.js";
 import type { Caller } from "./server.js";
 
 const READ = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
@@ -42,6 +48,21 @@ const action = z.enum(["reject", "voicemail", "ring"]);
 const MAX_DAYS = 92;
 
 export const ALWAYS = "911, 988 and every emergency number always work, in and out, in Belay's own code on the phone, whatever these rules say, and Belay never records them.";
+
+/** The Calls category's name in Settings. */
+const CALLS = AI_SCOPES.calls.split(":")[0] ?? "Calls";
+
+/**
+ * change_calls' one answer to a change that names a number while the Calls category is off: the
+ * same whatever the number, since anything else (whose it is, on the emergency card, blocked or
+ * not) would tell an AI app what a parent keeps from it.
+ */
+/** A contact's `texts`, over MCP: kept for Phase 5's texts, and the phone ignores it today. */
+const TEXTS = `Not enforced yet: Belay doesn't manage texts yet, so texting works with anyone, whatever each contact's can_text says. It's kept for when Belay does.`;
+const TEXTS_REFUSED =
+  "Nothing changed: Belay doesn't manage texts yet (for now, texting works with anyone, whatever a contact's texts says), so leave texts out. Blocking a number stops both its calls and its texts.";
+
+const NUMBERS_OFF = `Not done: a parent turned off AI access to calls in Belay's settings (it starts off), so change_calls takes no phone numbers: none to block or unblock, and no contact's numbers. You can still change the call rules, and change or remove contacts by id without their numbers. A parent can block a number or add a contact on the phone's Calls tab, or tick "${CALLS}" in Settings to let AI apps see calls.`;
 
 export function registerCallsTools(server: McpServer, deps: Deps, caller: Caller): void {
   const { db } = deps;
@@ -60,7 +81,7 @@ export function registerCallsTools(server: McpServer, deps: Deps, caller: Caller
     scopeOn()
       ? null
       : refusal(
-          `A parent turned off AI access to calls in Belay's settings (it starts off), so this isn't available. You can still see a phone's call rules and contacts' names, with get_contacts. To change it, a parent ticks "${AI_SCOPES.calls.split(":")[0] ?? "Calls"}" in Settings.`,
+          `A parent turned off AI access to calls in Belay's settings (it starts off), so this isn't available. You can still see a phone's call rules and contacts' names, with get_contacts. To change it, a parent ticks "${CALLS}" in Settings.`,
         );
   const logRead = (what: string, deviceId: string) => {
     audit(db, deps.now(), ai, "ai.read", { deviceId, detail: { what } });
@@ -81,7 +102,7 @@ export function registerCallsTools(server: McpServer, deps: Deps, caller: Caller
     {
       title: "A phone's call rules and contacts",
       description:
-        "One phone's calls: whether Belay is its phone app (calls on or off), who may call the kid and whom the kid may call, quiet times, whether calls are recorded, the approved contacts (with ids, for change_calls: each one's name, whether they may call or text, and whether they're a parent, who always rings and is on the kid's emergency card), the blocked numbers, how many private numbers there are, and changes AI apps proposed that wait for a parent. Contacts' and blocked numbers need the Calls category. 911, 988 and emergency numbers always work, whatever the rules.",
+        "One phone's calls: whether Belay is its phone app (calls on or off), who may call the kid and whom the kid may call, quiet times, whether calls are recorded, the approved contacts (with ids, for change_calls: each one's name, whether they may call, whether they may text (not enforced yet: for now, texting works with anyone), and whether they're a parent, who always rings and is on the kid's emergency card), the blocked numbers, how many private numbers there are, and changes AI apps proposed that wait for a parent. Contacts' and blocked numbers need the Calls category. 911, 988 and emergency numbers always work, whatever the rules.",
       inputSchema: { device: deviceParam },
       annotations: READ,
     },
@@ -100,6 +121,7 @@ export function registerCallsTools(server: McpServer, deps: Deps, caller: Caller
         calls: callsSummary(s),
         ...(s?.enabled ? { rules: rulesInWords(s) } : { rules: "Calls are off: Belay isn't the phone app on this phone, so it doesn't decide who rings. Only a parent turns calls on, on the phone's Calls tab." }),
         always: ALWAYS,
+        texts: TEXTS,
         contacts: contacts.map((c) => ({
           id: c.id,
           can_call: c.calls,
@@ -108,14 +130,18 @@ export function registerCallsTools(server: McpServer, deps: Deps, caller: Caller
           ...(numbers ? {} : { numbers: c.numbers.length }),
           untrusted: { name: c.name, ...(numbers ? { numbers: c.numbers } : {}) },
         })),
-        ...(numbers ? {} : { note: "Contacts' numbers and blocked numbers are hidden: a parent turned off AI access to calls (it starts off)." }),
+        ...(numbers
+          ? {}
+          : {
+              note: "Contacts' numbers and blocked numbers are hidden: a parent turned off AI access to calls (it starts off). So are the numbers and contacts in proposals waiting, and change_calls takes no numbers.",
+            }),
         blocked_numbers: numbers ? blocked.map((b) => ({ number: b.number, blocked: iso(b.addedAt), by: b.clientName ? `${b.clientName}, through ${b.addedBy ?? "a parent"}'s connection` : (b.addedBy ?? "the server's admin command") })) : blocked.length,
         private_numbers: `${listNumbers(db, row.id, "private").length} (Belay never records them; only a parent sees which)`,
         ...(card.length ? { emergency_card: `${card.length} number${card.length === 1 ? "" : "s"} from the family's emergency card, besides the parent contacts` } : {}),
         ...(requests !== null ? { contact_requests_waiting: requests } : {}),
         proposals_waiting: listProposals(db, { deviceId: row.id, status: "pending" })
           .filter((p) => p.change.kind === "calls")
-          .map((p) => ({ proposed: iso(p.createdAt), by: p.clientName, untrusted: { change: changeWords(p.change, p.label).title } })),
+          .map((p) => ({ proposed: iso(p.createdAt), by: p.clientName, untrusted: { change: changeWords(p.change, p.label, undefined, { numbers }).title } })),
         how_to_change: `change_calls applies a change at once only when it only tightens; anything else becomes a proposal a parent approves on the parent page (${parentsPage("/proposals")}). Only a parent turns calls on or off, decides whether they're recorded, or which numbers are private, and only a parent answers the kid's contact requests.`,
       });
     },
@@ -128,7 +154,7 @@ export function registerCallsTools(server: McpServer, deps: Deps, caller: Caller
     {
       title: "Calls",
       description:
-        "A phone's calls, newest first: when, incoming or outgoing, what happened (answered, missed, refused, voicemail, or not placed because Belay didn't allow it) and why, how long, and the contact (or the number, for someone who isn't one). Never what was said, and never calls with 911, 988, an emergency number or a private number: Belay doesn't record those. Only while the phone records calls. Times may be a date (2026-11-10, midnight in the family's timezone) or a date and time; the last 7 days by default, at most 92. Needs the Calls category, which is off until a parent turns it on.",
+        "A phone's calls, newest first: when, incoming or outgoing, what happened (answered, missed, refused, voicemail, or not placed because Belay didn't allow it) and why, how long, and the contact (or the number, for someone who isn't one). Never what was said, and never calls with 911, 988, an emergency number or a private number, or with a contact who has a private number: Belay doesn't record those. Only while the phone records calls. Times may be a date (2026-11-10, midnight in the family's timezone) or a date and time; the last 7 days by default, at most 92. Needs the Calls category, which is off until a parent turns it on.",
       inputSchema: {
         device: deviceParam,
         from: z.string().max(40).optional().describe("Start, like 2026-11-10 or 2026-11-10T15:00. Default: 7 days ago."),
@@ -182,7 +208,7 @@ export function registerCallsTools(server: McpServer, deps: Deps, caller: Caller
     name: z.string().min(1).max(CALL_LIMITS.contactName).describe("The family's name for them, like Grandma: the kid sees it"),
     numbers: z.array(e164).min(1).max(CALL_LIMITS.numbersPerContact).describe("E.164, like +15555550100"),
     calls: z.boolean().optional().describe("May call and be called. Default true."),
-    texts: z.boolean().optional().describe("May text. Default true."),
+    texts: z.boolean().optional().describe("Leave it out: texts aren't enforced yet (for now, texting works with anyone), so it's refused"),
     parent: z.boolean().optional().describe("A parent: always rings, and on the kid's emergency card. Default false."),
   });
   const contactChange = z.strictObject({
@@ -190,7 +216,7 @@ export function registerCallsTools(server: McpServer, deps: Deps, caller: Caller
     name: z.string().min(1).max(CALL_LIMITS.contactName).optional(),
     numbers: z.array(e164).min(1).max(CALL_LIMITS.numbersPerContact).optional().describe("The whole list"),
     calls: z.boolean().optional(),
-    texts: z.boolean().optional(),
+    texts: z.boolean().optional().describe("Leave it out: texts aren't enforced yet (for now, texting works with anyone), so it's refused"),
     parent: z.boolean().optional(),
   });
 
@@ -199,7 +225,7 @@ export function registerCallsTools(server: McpServer, deps: Deps, caller: Caller
     {
       title: "Change calls",
       description:
-        "Changes who may call the kid and whom the kid may call, on a phone whose calls are on: only contacts or anyone (mode), what happens to callers who aren't contacts (unknown) or have no caller ID (withheld): ring, voicemail or reject; whom the kid can call (outgoing: contacts or any); quiet times (quiet: only parents ring at bedtime and school times); add, change or remove contacts (by id from get_contacts); block or unblock numbers. The server decides: a change that only tightens (only contacts, a stricter rule for unknown or withheld callers, outgoing to contacts only, quiet on, fewer contacts allowed to call, blocking a number) applies at once, within seconds when the phone is online; use it only when the parent asks. Anything else, or a mix, or anything that takes from a parent contact, becomes a proposal a parent approves or rejects on the parent page: then say it's waiting for them, never that it's done. Turning calls on or off, recording them and private numbers are a parent's alone. 911, 988 and emergency numbers can't be blocked: they always work.",
+        "Changes who may call the kid and whom the kid may call, on a phone whose calls are on: only contacts or anyone (mode), what happens to callers who aren't contacts (unknown) or have no caller ID (withheld): ring, voicemail or reject; whom the kid can call (outgoing: contacts or any); quiet times (quiet: only parents ring at bedtime and school times); add, change or remove contacts (by id from get_contacts); block or unblock numbers. The server decides: a change that only tightens (only contacts, a stricter rule for unknown or withheld callers, outgoing to contacts only, quiet on, fewer contacts allowed to call, blocking a number) applies at once, within seconds when the phone is online; use it only when the parent asks. Anything else, or a mix, or anything that takes from a parent contact, becomes a proposal a parent approves or rejects on the parent page: then say it's waiting for them, never that it's done. Turning calls on or off, recording them and private numbers are a parent's alone. 911, 988 and emergency numbers can't be blocked: they always work. Nor can a contact's number, or a number Belay doesn't let an AI app block (a parent decides about those). With the Calls category off (it starts off), it takes no phone numbers: blocking, unblocking and a contact's numbers need that category; the rules, and contacts by id without their numbers, don't. Belay doesn't manage texts yet (for now, texting works with anyone), so a contact's texts isn't something it changes. A change it refuses is in the activity log.",
       inputSchema: {
         device: deviceParam,
         change: z
@@ -209,11 +235,11 @@ export function registerCallsTools(server: McpServer, deps: Deps, caller: Caller
             withheld: action.optional().describe("Callers with no caller ID"),
             outgoing: z.enum(["contacts", "any"]).optional().describe("Whom the kid can call: only contacts, or any number"),
             quiet: z.boolean().optional().describe("At bedtime and school times, only parents (and emergency numbers) ring"),
-            add_contacts: z.array(contactInput).max(50).optional(),
-            change_contacts: z.array(contactChange).max(50).optional(),
+            add_contacts: z.array(contactInput).max(50).optional().describe("Needs the Calls category: their numbers"),
+            change_contacts: z.array(contactChange).max(50).optional().describe("A contact's numbers need the Calls category"),
             remove_contacts: z.array(ruleId).max(50).optional().describe("Ids of contacts to remove"),
-            block_numbers: z.array(z.string().min(1).max(40)).max(50).optional().describe("Numbers to block, E.164"),
-            unblock_numbers: z.array(z.string().min(1).max(40)).max(50).optional().describe("Numbers to unblock"),
+            block_numbers: z.array(z.string().min(1).max(40)).max(50).optional().describe("Numbers to block, E.164; needs the Calls category"),
+            unblock_numbers: z.array(z.string().min(1).max(40)).max(50).optional().describe("Numbers to unblock; needs the Calls category"),
             on: z.boolean().optional().describe("Not yours to change: only a parent turns calls on or off"),
             log: z.boolean().optional().describe("Not yours to change: only a parent decides whether calls are recorded"),
             private_numbers: z.array(z.string().max(40)).max(50).optional().describe("Not yours to change: only a parent chooses private numbers"),
@@ -226,22 +252,35 @@ export function registerCallsTools(server: McpServer, deps: Deps, caller: Caller
     ({ device, change, reason }) => {
       const row = phone(device);
       if (isRefusal(row)) return row;
-      if (row.revoked_at !== null) return refusal(`${row.name} is disconnected, so Belay can't change anything on it.`);
+      // What the server refuses is in the activity log, once an hour per reason: a parent sees what an AI app tried.
+      const refused = (why: RefusedWhy, text: string): CallToolResult => {
+        aiRefused(deps, caller, "change_calls", row.id, why);
+        return refusal(text);
+      };
+      if (row.revoked_at !== null) return refused("other", `${row.name} is disconnected, so Belay can't change anything on it.`);
       if (change.on !== undefined || change.log !== undefined || change.private_numbers !== undefined) {
-        return refusal("Only a parent turns calls on or off, decides whether calls are recorded, or which numbers are private, on the phone's Calls tab: you can't, and can't propose it.");
+        return refused("parents_only", "Only a parent turns calls on or off, decides whether calls are recorded, or which numbers are private, on the phone's Calls tab: you can't, and can't propose it.");
       }
+      // Before anything looks at a number: the answer is the same whatever it is.
+      const namesNumbers = !!(change.block_numbers?.length || change.unblock_numbers?.length || change.add_contacts?.length || change.change_contacts?.some((c) => c.numbers !== undefined));
+      if (namesNumbers && !scopeOn()) return refused("numbers", NUMBERS_OFF);
+      // Never "done" for something the phone ignores: texts aren't built yet.
+      if ([...(change.add_contacts ?? []), ...(change.change_contacts ?? [])].some((c) => c.texts !== undefined)) return refused("texts", TEXTS_REFUSED);
       const s = callSettings(db, row.id);
       if (!s?.enabled) {
-        return refusal(`Calls are off for ${row.name}: Belay isn't its phone app, so it doesn't decide who rings or block numbers. Only a parent turns calls on, on the phone's Calls tab; you can't, and can't propose it.`);
+        return refused(
+          "other",
+          `Calls are off for ${row.name}: Belay isn't its phone app, so it doesn't decide who rings or block numbers. Only a parent turns calls on, on the phone's Calls tab; you can't, and can't propose it.`,
+        );
       }
       const now = deps.now();
       const current = sideOf(db, row.id);
       const ops: CallsOps = change;
       const wanted = applyOps(current, ops, (contact) => proposedContactId(row.id, contact.name, contact.numbers));
-      if ("problem" in wanted) return refusal(wanted.problem);
+      if ("problem" in wanted) return refused("other", wanted.problem);
       const { side } = settle(current, wanted.side);
-      const problem = sideProblem(current, side, { emergencyCard: parentNumbersFor(db, row.id).map((p) => p.number) });
-      if (problem) return refusal(`Nothing changed. ${problem}`);
+      const problem = sideProblem(current, side, { emergencyCard: parentNumbersFor(db, row.id).map((p) => p.number), ai: true });
+      if (problem) return refused("other", `Nothing changed. ${problem}`);
       const classification = classifyCallsChange(current, side);
       const patch = patchOf(current, side);
       if (classification.none) return refusal(`Nothing to change: ${row.name}'s calls are already like that.`);
@@ -259,12 +298,12 @@ export function registerCallsTools(server: McpServer, deps: Deps, caller: Caller
             reminder: "Only a parent can loosen it again, on the parent page. To suggest that, use change_calls: it becomes a proposal.",
           });
         } catch (error) {
-          if (error instanceof RuleRefused) return refusal(error.message);
+          if (error instanceof RuleRefused) return refused("other", error.message);
           throw error;
         }
       }
       if (listProposals(db, { deviceId: row.id, status: "pending", limit: MAX_PENDING_PROPOSALS }).length >= MAX_PENDING_PROPOSALS) {
-        return refusal(`${MAX_PENDING_PROPOSALS} proposals for ${row.name} are already waiting. Ask the parent to look at them on the Proposals page first.`);
+        return refused("other", `${MAX_PENDING_PROPOSALS} proposals for ${row.name} are already waiting. Ask the parent to look at them on the Proposals page first.`);
       }
       const made = createProposal(db, now, row.id, { kind: "calls", patch }, reason, { parentId: caller.parentId, clientName: caller.clientName });
       const words = changeWords(made.proposal.change, null);

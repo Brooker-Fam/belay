@@ -59,7 +59,7 @@ export type RuleChange = Base &
     | { kind: "schedule_days_added" | "schedule_days_removed"; name: string; days: Weekday[] }
     | { kind: "schedule_allows" | "schedule_no_longer_allows"; name: string; apps: string[] }
     | { kind: "schedule_locks" | "schedule_no_longer_locks"; name: string }
-    | { kind: "schedule_added"; name: string; start: string; end: string; days: Weekday[] }
+    | { kind: "schedule_added"; name: string; start: string; end: string; days: Weekday[]; lock: boolean }
     | { kind: "schedule_removed"; name: string }
     | { kind: "exempt_added" | "exempt_removed"; apps: string[] }
     | { kind: "self_serve"; to: SelfServe | null }
@@ -276,7 +276,16 @@ function schedules(from: Schedule[], to: Schedule[]): { stage: RuleChange[]; res
     if (skipsRemoved.length) rest.push({ kind: "schedule_skips_removed", effect: "tightens", about, name, dates: skipsRemoved });
   }
   for (const now of added) {
-    stage.push({ kind: "schedule_added", effect: "tightens", about: now.wire.id, name: now.wire.name, start: now.wire.start, end: now.wire.end, days: ordered(now.days) });
+    stage.push({
+      kind: "schedule_added",
+      effect: "tightens",
+      about: now.wire.id,
+      name: now.wire.name,
+      start: now.wire.start,
+      end: now.wire.end,
+      days: ordered(now.days),
+      lock: now.wire.lock,
+    });
   }
   for (const old of removed) stage.push({ kind: "schedule_removed", effect: "loosens", about: old.wire.id, name: old.wire.name });
   return { stage, rest };

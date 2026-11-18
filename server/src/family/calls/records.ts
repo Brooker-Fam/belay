@@ -8,6 +8,7 @@
  * never records those calls. If one arrives anyway, the server drops it before anything else, even
  * one whose number isn't E.164 (911 can't be), keeps no count a parent sees (a count would say a
  * kid called 988), and says only that it did, in its own log, without the number (`neverKept`).
+ * Nor does it keep a record about a contact who has a private number (saveCallRecords).
  */
 import type { DB } from "../../db.js";
 import type { CallRecord } from "../../device/schemas.js";
@@ -45,15 +46,20 @@ export function withoutAlwaysAllowed(body: unknown): { body: unknown; neverKept:
 
 /**
  * Saves the phone's call records (checked). A record that names a private number is dropped like
- * one with an emergency number (`neverKept`). One for a contact keeps the contact's name as it is
- * now, so a contact removed later still reads; a number with a contact's id is never kept.
+ * one with an emergency number (`neverKept`). So is one about a contact who has a private number,
+ * counted nowhere: it names the contact, not the number, and a call with them may have been with
+ * it (the phone checks only the number it called, so it sends the others). One for a contact
+ * keeps the contact's name as it is now, so a contact removed later still reads; a number with a
+ * contact's id is never kept.
  */
 export function saveCallRecords(db: DB, deviceId: string, calls: CallRecord[], now: number): SavedCalls & { neverKept: number } {
   return db.transaction(() => {
     const s = callSettings(db, deviceId);
     const recording = s?.enabled === true && s.log;
     const privateNumbers = new Set(numbersOf(db, deviceId, "private"));
-    const names = new Map(listContacts(db, deviceId).map((c) => [c.id, c.name]));
+    const contacts = listContacts(db, deviceId);
+    const names = new Map(contacts.map((c) => [c.id, c.name]));
+    const privateContacts = new Set(contacts.filter((c) => c.numbers.some((n) => privateNumbers.has(n))).map((c) => c.id));
     const known = db.prepare("SELECT 1 FROM call_records WHERE device_id = ? AND id = ?");
     const insert = db.prepare(
       `INSERT INTO call_records (device_id, id, at, direction, contact_id, contact_name, number, duration_s, outcome, reason, received_at)
@@ -67,6 +73,7 @@ export function saveCallRecords(db: DB, deviceId: string, calls: CallRecord[], n
         out.neverKept++;
         continue;
       }
+      if (r.contact_id && privateContacts.has(r.contact_id)) continue;
       if (known.get(deviceId, r.id)) continue;
       if (!recording || today >= MAX_RECORDS_PER_DAY) {
         out.dropped++;

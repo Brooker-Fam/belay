@@ -176,10 +176,13 @@ function payloadFor(change: ProposalChange): string | null {
   return null;
 }
 
-/** Phase 5: a calls proposal's changes in the parents' words, with their effect. */
-export function callsWords(change: Extract<ProposalChange, { kind: "calls" }>): { effect: "tightens" | "loosens" | "neither"; words: string }[] {
+/**
+ * Phase 5: a calls proposal's changes in the parents' words, with their effect. With `numbers`
+ * false (an AI app without the Calls category), they name no number and no contact.
+ */
+export function callsWords(change: Extract<ProposalChange, { kind: "calls" }>, opts: { numbers?: boolean } = {}): { effect: "tightens" | "loosens" | "neither"; words: string }[] {
   const { before, after } = callsPatchSides(change.patch);
-  return classifyCallsChange(before, after).changes.map((c) => ({ effect: c.effect, words: callChangeSentence(c) }));
+  return classifyCallsChange(before, after).changes.map((c) => ({ effect: c.effect, words: callChangeSentence(c, opts) }));
 }
 
 /** A screen-time proposal's changes, as classifyScreenTimeChange finds them in its parts. */
@@ -219,8 +222,18 @@ const SELECT = `SELECT x.id, x.device_id, d.name AS device_name, x.kind, x.packa
   FROM proposals x JOIN devices d ON d.id = x.device_id
   LEFT JOIN parents p ON p.id = x.parent_id LEFT JOIN parents q ON q.id = x.decided_by`;
 
-/** "Allow "Chatter Box"", and "allowing "Chatter Box"" for a sentence. */
-export function changeWords(change: ProposalChange, label: string | null, labels: Labels | null = packageNames): { title: string; gerund: string } {
+/**
+ * "Allow "Chatter Box"", and "allowing "Chatter Box"" for a sentence. For an AI app, the words
+ * follow what a parent lets AI apps read: `labels` null names no app (the Apps category off: "Allow
+ * an app", and screen time's apps counted), and `numbers` false no number or contact (the Calls
+ * category off).
+ */
+export function changeWords(
+  change: ProposalChange,
+  label: string | null,
+  labels: Labels | null = packageNames,
+  opts: { numbers?: boolean } = {},
+): { title: string; gerund: string } {
   switch (change.kind) {
     case "screen_time": {
       const words = screenTimeWords(change, labels).map((c) => c.words);
@@ -233,14 +246,14 @@ export function changeWords(change: ProposalChange, label: string | null, labels
       return { title: `Move to the stage ${name}`, gerund: `moving the phone to the stage ${name}` };
     }
     case "calls": {
-      const words = callsWords(change).map((c) => c.words);
+      const words = callsWords(change, opts).map((c) => c.words);
       const first = oneLine(words[0] ?? "a change", 120);
       const lower = first.charAt(0).toLowerCase() + first.slice(1);
       const more = words.length > 1 ? ` (and ${words.length - 1} more change${words.length === 2 ? "" : "s"})` : "";
       return { title: `Change calls: ${lower}${more}`, gerund: `changing calls: ${lower}${more}` };
     }
     case "allow_app": {
-      const name = label ? `"${oneLine(label, 60)}"` : change.package;
+      const name = labels === null ? "an app" : label ? `"${oneLine(label, 60)}"` : change.package;
       return { title: `Allow ${name}`, gerund: `allowing ${name}` };
     }
     case "resume":

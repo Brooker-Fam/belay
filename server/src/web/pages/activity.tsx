@@ -1,5 +1,6 @@
 import type { FC } from "hono/jsx";
 import type { AuditEntry } from "../../audit.js";
+import { AI_MIN_SCHEDULE_MINUTES } from "../../family/screentime/changes.js";
 import { hourLabel } from "../../ops/words.js";
 import { dayKey, formatDayKey, formatTime } from "../../time.js";
 import { Layout, Time, type View } from "../ui.js";
@@ -18,6 +19,23 @@ function who(e: AuditEntry): string {
 }
 
 const str = (v: unknown): string => (typeof v === "string" || typeof v === "number" ? String(v) : "");
+
+/** What an AI app tried that the server refused (mcp/limits.ts's aiRefused), after "it tried". */
+function refusedWords(tool: string, why: string): string {
+  if (tool === "change_screen_time") {
+    return why === "short_schedule" ? `to add or change a schedule shorter than ${AI_MIN_SCHEDULE_MINUTES} minutes` : "a change to screen time that Belay doesn't allow an AI app";
+  }
+  switch (why) {
+    case "numbers":
+      return "to change calls with phone numbers while AI access to calls is off";
+    case "parents_only":
+      return "to turn calls on or off, record them or choose private numbers, which only a parent does";
+    case "texts":
+      return "to change who may text, which Belay doesn't manage yet";
+    default:
+      return "a change to calls that Belay doesn't allow an AI app";
+  }
+}
 
 /** "0.4.0 (version 4)" from an entry's version_name and version_code. */
 const version = (d: Record<string, unknown>): string => (str(d.version_name) ? `${str(d.version_name)} (version ${str(d.version_code)})` : `version ${str(d.version_code)}`);
@@ -76,6 +94,8 @@ function what(e: AuditEntry): string {
       return `disconnected ${str(d.client) || "an AI app"}`;
     case "ai.limited":
       return `was refused: it tried to ${d.what === "checks" ? "check where the phone is" : "pause or lock the phone"} more than ${str(d.limit)} times in an hour${device}`;
+    case "ai.refused":
+      return `was refused: it tried ${refusedWords(str(d.tool), str(d.why))}${device}`;
     case "token.created":
       return `made a personal access token, "${str(d.name)}"`;
     case "token.revoked":

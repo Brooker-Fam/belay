@@ -271,7 +271,8 @@ emergency card isn't a contact, since with only contacts that parent's calls wou
 `--unknown`. `contact` with a name the phone already has adds the number to that contact,
 keeping its id; calls and texts are on unless turned off, and a parent only with `--parent`.
 Numbers are E.164 (`+`, the country code, the number). `block-number` refuses 911, 988 and
-every emergency number, a contact's number and one on the emergency card, with why.
+every emergency number, a contact's number, one on the emergency card and a private one, with
+why.
 
 They're logged as the server's ("The server" on the Activity page), and a running server
 passes them to the phone within a second or two. `status --json` gives each phone's
@@ -403,8 +404,9 @@ itself, offline too; the server keeps the rules and what the phone reports.
   or "I want to talk about it" with their reason, which waits on the Requests page.
 
 Every change gives the phone a new rules version and is in the activity log. AI apps can
-tighten screen time and lock the phone directly; anything that loosens, or moves the phone to
-another stage, is a proposal ([mcp.md](mcp.md)). They can't turn measuring on or off, or
+tighten screen time and lock the phone directly; anything that loosens, any schedule that locks
+the screen, or a move to another stage, is a proposal ([mcp.md](mcp.md)), and each schedule an
+AI app adds or changes runs at least 15 minutes. They can't turn measuring on or off, or
 answer the kid, and what the kid reads is never their words: Belay names a limit or schedule an
 AI app adds or renames after what it is (a limit after its apps, a schedule after its kind), and
 an AI app's pause or lock has no note. Every name and note the kid sees, whoever wrote it, goes
@@ -523,11 +525,15 @@ rules are kept for next time.
   in its own storage on the phone; it never writes them into Android's Contacts.
 - **Blocked numbers** (at most 500): Belay, as the phone app, puts them on Android's block list,
   which blocks their texts too. Never 911, 988 or an emergency number (in any form, 988's full
-  number included), a contact's number, or one on the emergency card: the server refuses, with
-  why. Adding a blocked number as a contact unblocks it.
+  number included), a contact's number, one on the emergency card, or a private number: the
+  server refuses, with why. A private number is a helpline the kid may call; blocking it would
+  cut the kid off from its calls, so a parent takes it off the private numbers first, a choice
+  of its own in the activity log (unmarking it as part of the block would start recording the
+  kid's calls with it unasked). Adding a blocked number as a contact unblocks it.
 - **Private numbers** (at most 50): numbers Belay never records, like a helpline, besides 911,
   988 and emergency numbers, which it never records anyway. Making a number private deletes the
-  records already kept of it.
+  records already kept of it, and of the contact who has it: the server keeps no record about a
+  contact with a private number.
 - **Recent calls** (only while Belay records calls): the last 30 days, with **Add as contact**
   and **Block** beside someone who isn't a contact.
 - **The kid's contact requests** come to the Requests page with their name for the contact, the
