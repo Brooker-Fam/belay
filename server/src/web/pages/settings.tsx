@@ -91,11 +91,11 @@ const SignedInBrowsers: FC<{ view: View; browsers: SignedInBrowser[]; current: s
         </span>
         {b.id === current ? (
           <PostButton view={view} action="/logout" kind="quiet">
-            Sign out
+            Sign out<span class="sr-only"> this browser</span>
           </PostButton>
         ) : (
           <PostButton view={view} action={`/settings/browsers/${b.id}/sign-out`} kind="danger" confirm={`Sign out ${b.browser ?? "that browser"}?`}>
-            Sign out
+            Sign out<span class="sr-only"> {b.browser ?? "that browser"}</span>
           </PostButton>
         )}
       </div>
