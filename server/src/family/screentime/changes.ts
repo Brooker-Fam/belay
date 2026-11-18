@@ -5,7 +5,10 @@
  *
  * - An AI app may change a phone's limits, schedules, exempt apps, self-serve and "can't count"
  *   rule only when the change only tightens (classifyScreenTimeChange); anything else is a
- *   proposal for a parent (family/proposals.ts).
+ *   proposal for a parent (family/proposals.ts). A schedule that locks the screen is a parent's
+ *   too (locksTouched), and each schedule an AI app adds or changes runs at least 15 minutes
+ *   (aiScheduleProblem): otherwise schedules would lock or pause the phone past the few times an
+ *   hour mcp/limits.ts lets an AI app. Parents aren't limited.
  * - Measuring, the zone and when days start, stages (a phone's and their rules), extra time and
  *   the family agreement are a person's: a parent on the parent page, or the server's CLI.
  *   Measuring is a choice about collecting, so an AI app can't even propose it.
@@ -25,6 +28,7 @@ import {
   NO_RULES,
   type PhoneSettings,
   type RuleSet,
+  type Schedule,
   canonical,
   familyLabels,
   getStage,
@@ -41,7 +45,7 @@ import {
   sideOf,
   type StageView,
 } from "./rules.js";
-import { type Labels, changeSentence } from "./words.js";
+import { type Labels, changeSentence, clock } from "./words.js";
 
 /** The types already say so; this keeps it true at run time too. */
 function onlyPeople(who: Changer): void {
@@ -90,11 +94,57 @@ export function checkRuleSet(rules: RuleSet, never: (pkg: string) => string | nu
 /** Why the phone never pauses an app, for a stage (no phone in particular): the well-known ones. */
 const neverAnywhere = (pkg: string): string | null => (NEVER_BLOCKED.has(pkg) ? "The phone never pauses it, so 911 and 988 always work." : null);
 
+/** The shortest schedule an AI app may add, or leave when it changes one, in minutes. A parent's may be shorter. */
+export const AI_MIN_SCHEDULE_MINUTES = 15;
+
+/** How long a schedule runs each time, in minutes: to its end, the next day when that's at or before its start; null when a time doesn't read. */
+export function scheduleMinutes(s: Pick<Schedule, "start" | "end">): number | null {
+  const start = clockMinutes(s.start);
+  const end = clockMinutes(s.end);
+  if (start === null || end === null) return null;
+  return end > start ? end - start : end + 24 * 60 - start;
+}
+
+/** The schedules `after` adds, or changes from `before` (by id), as they'd be; a new name alone doesn't count (Belay writes it). */
+function touchedSchedules(before: RuleSet, after: RuleSet): Schedule[] {
+  const key = (s: Schedule) => canonical({ ...s, name: null });
+  const was = new Map(before.schedules.map((s) => [s.id, key(s)]));
+  return after.schedules.filter((s) => was.get(s.id) !== key(s));
+}
+
+/**
+ * The schedules a change would leave locking the screen that it adds or changes: a new one that
+ * locks, one whose lock goes on, or a change to one that locks (the phone locks once each time a
+ * schedule starts, and one that starts at another time or on another day is a start it locks for
+ * again: core/screentime/Schedules.kt's Occurrence.key). An AI app locks the phone only with
+ * lock_phone, a few times an hour (mcp/limits.ts), so for an AI app these make the change a
+ * proposal: a parent decides. Parents aren't limited.
+ */
+export function locksTouched(before: RuleSet, after: RuleSet): Schedule[] {
+  return touchedSchedules(before, after).filter((s) => s.lock);
+}
+
+/**
+ * Why an AI app can't make this change at all, in words, or null: a schedule it adds or changes
+ * would run less than 15 minutes. Twenty one-minute schedules would otherwise pause the phone twenty
+ * times an hour. Parents aren't limited.
+ */
+export function aiScheduleProblem(before: RuleSet, after: RuleSet): string | null {
+  for (const s of touchedSchedules(before, after)) {
+    const minutes = scheduleMinutes(s);
+    if (minutes !== null && minutes < AI_MIN_SCHEDULE_MINUTES) {
+      return `Not changed: a schedule an AI app adds or changes runs at least ${AI_MIN_SCHEDULE_MINUTES} minutes, and ${clock(s.start)} to ${clock(s.end)} is ${minutes} minute${minutes === 1 ? "" : "s"}. A parent can make a shorter one on the parent page.`;
+    }
+  }
+  return null;
+}
+
 /**
  * Sets the phone's rules to `rules` (what a stage bundles: limits, schedules, exempt apps,
  * self-serve, "can't count", warnings), keeping its stage: what differs from the stage's is the
- * phone's own. An AI app may only make a change that only tightens. Every name is tidied, and the
- * names Belay wrote follow what they name (names.ts): the kid sees them.
+ * phone's own. An AI app may only make a change that only tightens, touches no schedule that locks
+ * the screen, and leaves each schedule it adds or changes at least 15 minutes long. Every name is
+ * tidied, and the names Belay wrote follow what they name (names.ts): the kid sees them.
  */
 export function setPhoneRules(
   ctx: PolicyContext,
@@ -110,7 +160,12 @@ export function setPhoneRules(
   return changePolicy(ctx, deviceId, who, (log) => {
     const current = phoneRules(db, deviceId);
     const classification = classifyScreenTimeChange(sideOf(current.settings, current.rules), sideOf(current.settings, wanted));
-    if (who.kind === "ai" && !classification.onlyTightens) throw new Error("An AI app can only tighten screen time: anything else is a proposal for a parent");
+    if (who.kind === "ai") {
+      if (!classification.onlyTightens) throw new Error("An AI app can only tighten screen time: anything else is a proposal for a parent");
+      const short = aiScheduleProblem(current.rules, wanted);
+      if (short) throw new RuleRefused(short);
+      if (locksTouched(current.rules, wanted).length) throw new Error("An AI app can't make a schedule lock the screen: that's a proposal for a parent");
+    }
     if (classification.none) return { classification };
     // A name Belay wrote follows the change, as no change of its own: the words say what changed.
     savePhoneRow(db, deviceId, current.settings, ownFor(current.stage?.stage.rules ?? null, followNames(current.rules, wanted, appNames)), ctx.now);

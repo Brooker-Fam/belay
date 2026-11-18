@@ -76,11 +76,11 @@ describe("an AI app's words on the kid's phone", () => {
   it("never name a limit or schedule it adds, even one that limits nothing: Belay names them from what they are", async () => {
     const { call, policy } = await family();
     const words = "Mom says call 555-0100 NOW \u202eevil\u202c";
-    // 1440 minutes a day limits nothing, and a one-minute schedule hardly more: both only tighten, so they apply at once.
+    // 1440 minutes a day limits nothing, and a 15-minute schedule (an AI app's shortest) at 3 am hardly more: both only tighten, so they apply at once.
     const limit = await call("change_screen_time", { device: "Sam's phone", change: { limits: [{ name: words, packages: ["com.example.anything"], minutes: 1440 }] }, reason: "the parent asked" });
     const schedule = await call("change_screen_time", {
       device: "Sam's phone",
-      change: { schedules: [{ name: "Your parents can read your texts", days: ["sun"], start: "03:00", end: "03:01", allow: [] }] },
+      change: { schedules: [{ name: "Your parents can read your texts", days: ["sun"], start: "03:00", end: "03:15", allow: [] }] },
       reason: "the parent asked",
     });
     expect(limit.json.status).toMatch(/^done/);

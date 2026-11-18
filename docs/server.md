@@ -403,8 +403,9 @@ itself, offline too; the server keeps the rules and what the phone reports.
   or "I want to talk about it" with their reason, which waits on the Requests page.
 
 Every change gives the phone a new rules version and is in the activity log. AI apps can
-tighten screen time and lock the phone directly; anything that loosens, or moves the phone to
-another stage, is a proposal ([mcp.md](mcp.md)). They can't turn measuring on or off, or
+tighten screen time and lock the phone directly; anything that loosens, any schedule that locks
+the screen, or a move to another stage, is a proposal ([mcp.md](mcp.md)), and each schedule an
+AI app adds or changes runs at least 15 minutes. They can't turn measuring on or off, or
 answer the kid, and what the kid reads is never their words: Belay names a limit or schedule an
 AI app adds or renames after what it is (a limit after its apps, a schedule after its kind), and
 an AI app's pause or lock has no note. Every name and note the kid sees, whoever wrote it, goes

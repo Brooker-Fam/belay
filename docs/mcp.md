@@ -5,7 +5,8 @@ any MCP client, can then answer questions like "what did Sam install this week, 
 OK?" from what the family's server knows. The parent page is the fallback.
 
 The AI can read, mark apps reviewed, and **tighten** a phone's rules directly: block an app,
-pause or lock the phone, or tighten its screen time (a lower limit, a longer bedtime). The
+pause or lock the phone, or tighten its screen time (a lower limit, a longer bedtime; a
+schedule that locks the screen is a proposal). The
 phone gets it within seconds if it's online. **Anything that loosens** (allowing or
 unblocking an app, resuming a paused phone, lifting a lock, turning off the web filter,
 letting new apps run without asking, a higher limit or a shorter schedule, moving the phone
@@ -153,7 +154,14 @@ most 20, and each message in it counts. What reaches the kid is limited too, per
 phone: 6 checks of where the phone is an hour (`locate_now`: each posts a notice on the kid's
 phone), and 6 pauses and locks an hour (`pause_phone` and `lock_phone` together; a pause that
 changes nothing doesn't count). Past that, the tool says when to try again, and the activity log
-says so, once an hour. A parent, on the parent page or with the CLI, isn't limited.
+says so, once an hour. Schedules don't get around it: one that locks the screen is a parent's
+(an AI app's new one, its turning on a schedule's lock, and its change to a schedule that locks
+are proposals, since the phone locks again for a schedule that starts at another time or on
+another day), and each schedule an AI app adds or changes runs at least 15 minutes, or
+`change_screen_time` refuses it, not even proposing it. A parent, on the parent page or with
+the CLI, isn't limited. A refusal like that is in the activity log too ("was refused: it tried
+to add or change a schedule shorter than 15 minutes"), once an hour per connection, phone and
+reason.
 
 ## Tools
 
@@ -179,7 +187,7 @@ says so, once an hour. A parent, on the parent page or with the CLI, isn't limit
 | `block_app(device, package, note?)` | Blocks an app at once (tightening). It refuses the apps the phone never blocks, so 911 and 988 always work: Belay itself, the dialer and the services that place calls, the texting app, the keyboard, the home screen, emergency and safety apps, System UI, Settings, and anything else the phone reports it never blocks. An app that isn't on the phone yet can be blocked ahead of time, but AI apps may have at most 50 of those per phone; a parent clears them on the phone's page. |
 | `pause_phone(device, minutes?)` | Pauses the phone at once, for some minutes or until a parent resumes it. The kid's phone says so in Belay's own words ("Your parent paused this phone until 6:30 PM."): the AI app writes no note (a parent can, on the parent page). It can't shorten a pause already running, and against one at least as long it changes nothing; a longer one keeps a parent's note. At most 6 pauses and locks an hour per connection and phone. |
 | `lock_phone(device, minutes)` | Phase 3: pauses the phone for 5 to 240 minutes and locks its screen, if the phone gets it within 10 minutes, with no note, like `pause_phone`. Calls, texts, 911 and 988 still work. A phone that couldn't lock says why, word for word, under `untrusted` in `get_rules`. Counted with `pause_phone`'s pauses. |
-| `change_screen_time(device, change, reason)` | Phase 3: limits (new, or changed by id), schedules, removing either, exempt apps, self-serve, what happens when Belay can't count, or `stage` (a stage's name, on its own). The server decides: a change whose every part tightens applies at once; anything else, or a mix, becomes a proposal for a parent, and so does moving to another stage, always. Belay names a limit or schedule it adds or renames (below): a `name` the AI app gives isn't used as written. |
+| `change_screen_time(device, change, reason)` | Phase 3: limits (new, or changed by id), schedules, removing either, exempt apps, self-serve, what happens when Belay can't count, or `stage` (a stage's name, on its own). The server decides: a change whose every part tightens applies at once; anything else, or a mix, becomes a proposal for a parent, and so does moving to another stage, always, and anything about a schedule that locks the screen (a new one, its lock turned on, or a change to one that locks). Each schedule it adds or changes runs at least 15 minutes, or it's refused. Belay names a limit or schedule it adds or renames (below): a `name` the AI app gives isn't used as written. |
 | `get_server_health` | The family's server itself: its problems (urgent first), the last backup and daily try, when a backup was last verified and the last restore drill, free disk space, the database's size, and whether its clock agrees with the phones'. No family data. |
 | `propose_change(device, change, reason)` | Proposes loosening a rule (`allow_app` with a package, `resume`, `lift_restriction` with a restriction, `web_filter_off`, `new_apps_allow`) for a parent to approve on the parent page. It changes nothing itself. |
 
@@ -219,6 +227,11 @@ too, since whoever holds a phone's token can send any text.
   the server's classifier (the same rules as the phone's) decides: a lower or new limit, more
   apps under one, a schedule that starts earlier, ends later or runs on more days, fewer apps
   left open or exempt, less self-serve, pausing the apps with a limit when Belay can't count.
+  A schedule that locks the screen is the exception: adding one, turning on a schedule's lock,
+  or changing a schedule that locks is a proposal even when it only tightens (an AI app locks
+  the phone only with `lock_phone`, at most 6 times an hour), and the Proposals page says the
+  new schedule locks. Each schedule an AI app adds or changes runs at least 15 minutes:
+  `change_screen_time` refuses a shorter one, in plain words. A parent's may be any length.
   Anything else, or a mix, becomes a proposal with every change listed, each marked tightens
   or loosens on the Proposals page; when a parent approves, each part is checked against the
   rules as they are then, and one whose subject changed since makes it out of date. Moving a

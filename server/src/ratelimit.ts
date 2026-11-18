@@ -137,6 +137,8 @@ export interface Limiters {
   aiLocks: RateLimiter;
   /** One "too many" line in the activity log per connection, phone and kind an hour, however often an AI app tries. */
   aiLimitedLog: RateLimiter;
+  /** One "was refused" line in the activity log per connection, phone, tool and reason an hour (mcp/limits.ts's aiRefused). */
+  aiRefusedLog: RateLimiter;
 }
 
 export function createLimiters(now: () => number): Limiters {
@@ -163,5 +165,6 @@ export function createLimiters(now: () => number): Limiters {
     aiChecks: new RateLimiter(AI_PER_HOUR.checks, 60 * MIN, now),
     aiLocks: new RateLimiter(AI_PER_HOUR.locks, 60 * MIN, now),
     aiLimitedLog: new RateLimiter(1, 60 * MIN, now),
+    aiRefusedLog: new RateLimiter(1, 60 * MIN, now),
   };
 }
