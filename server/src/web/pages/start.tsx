@@ -228,6 +228,13 @@ const LATER: { name: string; what: string; page: (phone: StartPhone | null) => s
   { name: "The family agreement", what: "your rules in your words, which your kid can agree to or ask to talk about.", page: (p) => p && `/devices/${p.id}/agreement`, guide: "talk-about-it" },
 ];
 
+/** Where "When you're ready" sends a phone's own parts: its pages, once there's a phone, and which one when there are several. */
+function laterWhere(start: GettingStarted): string {
+  const phones = start.steps.find((s) => s.id === "phone")?.phones.length ?? 0;
+  if (!start.phone) return " A phone's own parts are on its pages, once it's added.";
+  return phones > 1 ? ` A phone's own parts link to ${start.phone.name}'s pages: each phone has its own.` : "";
+}
+
 export const GettingStartedCard: FC<{ view: View; start: GettingStarted }> = ({ view, start }) => (
   <section class="card start" id="start" aria-labelledby="start-title">
     <h2 id="start-title" class="in-card">
@@ -243,9 +250,7 @@ export const GettingStartedCard: FC<{ view: View; start: GettingStarted }> = ({ 
       ))}
     </ol>
     <h3>When you're ready</h3>
-    <p class="small muted">
-      Each is off until you turn it on.{start.phone ? "" : " A phone's own parts are on its pages, once it's added."}
-    </p>
+    <p class="small muted">Each is off until you turn it on.{laterWhere(start)}</p>
     <ul class="later small">
       {LATER.map((part) => {
         const page = part.page(start.phone);

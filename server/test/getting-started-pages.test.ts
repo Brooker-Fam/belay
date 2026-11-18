@@ -136,6 +136,31 @@ describe("Getting started on the Phones page", () => {
     expect((await f.page(`/devices/${phone.deviceId}`)).html).toContain('id="network-logging"');
   });
 
+  it("waits for the phone in words, and with several phones says which one each line and link is about", async () => {
+    const f = await family();
+    // A code made, not used yet: the phone's turn.
+    expect((await f.form("/add", { name: "Alex's phone" })).status).toBe(200);
+    let steps = stepsOn((await f.page()).html);
+    expect(steps[0]?.state).toBe("Waiting for the phone");
+    expect(textOf(steps[0]!.item).replace(/\s+/g, " ")).toContain("An enrollment code for Alex's phone is waiting to be used, for 30 minutes more.");
+    // Two phones: one with its rules applied, one with none yet.
+    const phone = await enrollPhone(f.t, "Alex's phone");
+    const tablet = await enrollPhone(f.t, "Jamie's tablet");
+    await f.form(`/devices/${phone.deviceId}/protect`);
+    await f.applied(phone);
+    const { html } = await f.page();
+    expect(structureProblems(html)).toEqual([]);
+    steps = stepsOn(html);
+    expect(steps.slice(0, 2).map((s) => s.state)).toEqual(["Done", "Not yet"]);
+    const rules = elements(steps[1]!.item).filter((e) => e.tag === "li");
+    expect(rules.map((li) => textOf(li).replace(/\s+/g, " ").trim())).toEqual([
+      "Alex's phone applied its rules.",
+      "Jamie's tablet has no rules yet: Belay reports what happens on it, and blocks nothing. Turn protection on for Jamie's tablet",
+    ]);
+    expect(hrefs(steps[1]!.item)).toEqual([`/devices/${tablet.deviceId}#rules`]);
+    expect(html).toContain("A phone&#39;s own parts link to Alex&#39;s phone&#39;s pages: each phone has its own.");
+  });
+
   it("a parent hides it for themselves, kept on the server and in the activity log; Settings brings it back; it hides by itself once the essentials are done", async () => {
     const f = await family();
     expect((await f.page()).html).toContain("Getting started");
