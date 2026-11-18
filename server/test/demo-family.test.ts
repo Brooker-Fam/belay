@@ -128,6 +128,7 @@ describe("the demo's family", () => {
       ["Location and help", `${base}/location`],
       ["Calls", `${base}/calls`],
       ["Network", `${base}/network`],
+      ["Mobile data", `${base}/mobile-data`],
       ["what's kept of a data category", `${base}/collection/apps`],
       ["Requests", "/requests"],
       ["Proposals", "/proposals"],

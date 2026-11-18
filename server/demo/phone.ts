@@ -33,6 +33,7 @@ export const SAYS = {
   noGps: "This is a simulated phone (Belay's demo): it has no GPS, so it can't share where it is.",
   noNetworkLog: "This is a simulated phone (Belay's demo): it can't note which websites its apps look up, so network logging sends nothing.",
   noUpdate: "This is a simulated phone (Belay's demo): it can't install a new version of Belay.",
+  noMobileData: "This is a simulated phone (Belay's demo): it has no mobile data, so it can't count what its apps use on it.",
   unknownCommand: "This version of Belay doesn't know that command.",
 } as const;
 
@@ -396,6 +397,7 @@ export class SimPhone {
     const before = this.held?.suspended ?? (this.state.policy ? this.enforced(now).suspended : new Map<string, Why>());
     const first = this.state.policy === null;
     const was = this.state.policy;
+    const offBefore = was ? (this.keptOffMobileData(was)?.wifi_only ?? []) : [];
     this.state.policy = policy;
     this.state.appliedAt = now;
     const ran = this.runCommands(policy, now);
@@ -412,7 +414,7 @@ export class SimPhone {
     if (!policy.calls?.log) this.state.outbox.calls = [];
     this.save(this.state);
     const e = this.enforced(now);
-    const news = [...this.changes(before, e, first), ...this.cannot(was, policy), ...this.caregivers(was, policy, now), ...ran];
+    const news = [...this.changes(before, e, first), ...this.wifiOnly(offBefore, policy), ...this.cannot(was, policy), ...this.caregivers(was, policy, now), ...ran];
     this.held = { suspended: e.suspended, schedule: e.schedule?.id ?? null };
     if (answered.length) news.push(`${this.kid()} sees your answer: ${answered.join("; ")}`);
     // A new version can change nothing the phone shows: a lock's result, reported, leaves the rules, say.
@@ -425,9 +427,22 @@ export class SimPhone {
     const located = (p: Policy | null) => p?.location != null && (p.location.mode !== "off" || p.location.lost !== null);
     const words: string[] = [];
     if (located(policy) && !located(was)) words.push("location is on, but it has no GPS: it can't share where it is");
+    if (measuresMobileData(policy) && !(was && measuresMobileData(was))) words.push("measuring mobile data is on, but it has no mobile data: it can't count what its apps use");
     if (policy.network_log.enabled && !was?.network_log.enabled) words.push("network logging is on, but it can't note which websites its apps look up");
     const update = policy.agent_update;
     if (update && update.sha256 !== was?.agent_update?.sha256) words.push(`couldn't install Belay ${update.version_name ?? `version ${String(update.version_code)}`}: it can't install a new version`);
+    return words;
+  }
+
+  /** Phase 13: the apps it keeps off mobile data now and before, in words, as the kid's rules screen lists them. */
+  private wifiOnly(before: string[], policy: Policy): string[] {
+    const after = this.keptOffMobileData(policy)?.wifi_only ?? [];
+    const names = (pkgs: string[]) => (pkgs.length <= 3 ? pkgs.map((p) => this.label(p)).join(", ") : `${String(pkgs.length)} apps`);
+    const off = after.filter((p) => !before.includes(p));
+    const back = before.filter((p) => !after.includes(p));
+    const words: string[] = [];
+    if (off.length) words.push(`${names(off)} can't use mobile data now (Wi-Fi only)`);
+    if (back.length) words.push(`${names(back)} can use mobile data again`);
     return words;
   }
 
@@ -558,7 +573,7 @@ export class SimPhone {
       policy_version: policy.version,
       applied_at: this.state.appliedAt,
       suspended_count: e.suspended.size,
-      problems: policy.network_log.enabled ? [SAYS.noNetworkLog] : [],
+      problems: [...(policy.network_log.enabled ? [SAYS.noNetworkLog] : []), ...(measuresMobileData(policy) ? [SAYS.noMobileData] : [])],
       agent_update: policy.agent_update ? { version_code: policy.agent_update.version_code, state: "failed", problem: SAYS.noUpdate, at: this.state.appliedAt ?? now } : null,
       recovery: null,
       commands: this.state.results.map((r) => ({ id: r.id, result: r.result, at: r.at, problem: r.problem })),
@@ -574,9 +589,24 @@ export class SimPhone {
           }
         : null,
       network_log: policy.network_log.enabled ? { enabled: false, paused: false } : null,
+      mobile_data: this.keptOffMobileData(policy),
       location: location ? { permission: true, location_on: true, last_fix_at: null, problem: SAYS.noGps } : null,
       calls: policy.calls ? { dialer: true, problem: null } : null,
     };
+  }
+
+  /**
+   * Phase 13: the Wi-Fi-only apps it keeps off mobile data now, as Android would for Belay: none it
+   * never blocks, none it hid (Android refuses a hidden app) and none not installed. Null while the
+   * policy lists none. A simulated phone has no mobile data, so keeping them off it is easy.
+   */
+  private keptOffMobileData(policy: Policy): { wifi_only: string[] } | null {
+    const listed = wifiOnlyOf(policy);
+    if (!listed.length) return null;
+    const never = new Set(NEVER_BLOCKED);
+    const hidden = new Set(policy.apps.decisions.filter((d) => d.state === "blocked").map((d) => d.package));
+    const installed = new Set(this.state.apps.map((a) => a.package));
+    return { wifi_only: listed.filter((pkg) => installed.has(pkg) && !never.has(pkg) && !hidden.has(pkg)) };
   }
 
   /** The apps held suspended or hidden now, and why. */
@@ -829,6 +859,10 @@ export class SimPhone {
     this.recordUsage(today);
   }
 }
+
+/** Phase 13's part of a policy, read so that one kept from before Phase 13 (a --dir from an older demo) has none. */
+const wifiOnlyOf = (policy: Policy): string[] => (policy as Partial<Policy>).mobile_data?.wifi_only ?? [];
+const measuresMobileData = (policy: Policy): boolean => (policy as Partial<Policy>).mobile_data?.measure === true;
 
 /** "13 apps are paused" stays, "locked the screen" becomes "Locked the screen": each part is a sentence. */
 const sentence = (words: string): string => words.charAt(0).toUpperCase() + words.slice(1);

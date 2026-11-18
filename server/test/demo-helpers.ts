@@ -10,6 +10,7 @@ import {
   EventsRequest,
   InventoryRequest,
   LocationsRequest,
+  MobileDataRequest,
   NetworkRequest,
   PolicyQuery,
   RequestsRequest,
@@ -27,6 +28,7 @@ const SCHEMAS: Record<string, z.ZodType> = {
   calls: CallsRequest,
   locations: LocationsRequest,
   network: NetworkRequest,
+  "mobile-data": MobileDataRequest,
 };
 
 export interface Sent {

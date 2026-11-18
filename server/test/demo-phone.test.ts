@@ -20,7 +20,7 @@ import { getSettings } from "../src/settings.js";
 import { APPS, FIRST_APPS, NEVER_BLOCKED, PHONE_NAME, packageOf } from "../demo/family.js";
 import { SAYS, SimPhone, enforce, newPhoneState } from "../demo/phone.js";
 import { type Sent, checkRequest, checkedFetch, until } from "./demo-helpers.js";
-import { ORIGIN, postForm, signIn, T0, testServer, type TestServer } from "./helpers.js";
+import { get, ORIGIN, postForm, signIn, T0, testServer, type TestServer } from "./helpers.js";
 
 const ZONE = "America/New_York";
 const DAY = 86_400_000;
@@ -30,6 +30,7 @@ describe("the simulated phone", () => {
   let phone: SimPhone;
   let form: (path: string, fields: Record<string, string | string[]>) => Promise<Response>;
   let parentId: () => string = () => "";
+  let cookie = "";
   const sent: Sent[] = [];
   /** What the demo's terminal shows the phone doing: what the kid would see on it. */
   const lines: string[] = [];
@@ -39,6 +40,7 @@ describe("the simulated phone", () => {
     t = testServer({ config: { agentsDir: join(agents, "store") } });
     const parent = await signIn(t, "jordan", "Jordan");
     parentId = () => parent.parent.id;
+    cookie = parent.cookie;
     form = async (path, fields) => postForm(t, path, { _csrf: parent.csrf, ...fields }, { cookie: parent.cookie });
     const { code } = createEnrollmentCode(t.deps.db, t.now(), { deviceName: PHONE_NAME, createdBy: parent.parent.id });
     phone = new SimPhone({
@@ -182,6 +184,22 @@ describe("the simulated phone", () => {
     const device = getDevice(t.deps.db, deviceId(), getSettings(t.deps.db), t.now());
     expect(device?.problems.map((p) => p.fromPhone)).toContain(SAYS.noNetworkLog);
     expect(lines).toContainEqual(expect.stringMatching(/Network logging is on, but it can't note which websites its apps look up\.$/));
+  });
+
+  it("keeps a Wi-Fi-only app off mobile data, and says it can't count mobile data", async () => {
+    // Phase 13: a parent makes an app Wi-Fi only on the phone's Mobile data tab.
+    expect((await form(`/devices/${deviceId()}/mobile-data/wifi-only`, { package: APPS.lyricLoop.package })).status).toBe(302);
+    await until(() => reported()?.mobile_data?.wifi_only.includes(APPS.lyricLoop.package) ?? false);
+    expect(lines).toContainEqual(expect.stringMatching(/Lyric Loop can't use mobile data now \(Wi-Fi only\)\.$/));
+    const page = (await (await get(t, `/devices/${deviceId()}/mobile-data`, cookie)).text()).replaceAll("&#39;", "'");
+    expect(page).toContain("On the phone: it can't use mobile data.");
+    // Measuring it: the phone has none to count, and says so as its problem.
+    expect((await form(`/devices/${deviceId()}/mobile-data/measure`, { on: "1" })).status).toBe(302);
+    await until(() => getDevice(t.deps.db, deviceId(), getSettings(t.deps.db), t.now())?.problems.some((p) => p.fromPhone === SAYS.noMobileData) ?? false);
+    expect(lines).toContainEqual(expect.stringMatching(/Measuring mobile data is on, but it has no mobile data: it can't count what its apps use\.$/));
+    // Back on mobile data.
+    expect((await form(`/devices/${deviceId()}/mobile-data/wifi-only/remove`, { package: APPS.lyricLoop.package })).status).toBe(302);
+    await until(() => lines.at(-1)?.endsWith("Lyric Loop can use mobile data again.") ?? false);
   });
 
   it("tells the kid who else can look after the phone when a parent adds a caregiver", async () => {
