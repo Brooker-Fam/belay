@@ -77,10 +77,10 @@ class ScreenTimeStep(context: Context, private val store: AgentStore) {
         return Read(policy, reading.wall, zone, update, state, Rules.evaluate(input), input.neverBlocked)
     }
 
-    /** [callOn]: whether a call is on, asked only when a schedule's lock is due (then the lock waits). */
-    fun after(read: Read, callOn: () -> Boolean = { false }): Done {
+    /** [lockWaits]: whether a lock waits for a call (core's ScreenLocks), asked only when a schedule's lock is due. */
+    fun after(read: Read, lockWaits: () -> Boolean = { false }): Done {
         val notices = Notices.plan(read.decision, read.state, read.now)
-        val waits = Upkeep.lockDue(read.decision, notices.state, read.now) && callOn()
+        val waits = Upkeep.lockDue(read.decision, notices.state, read.now) && lockWaits()
         val (locks, locked) = Upkeep.locks(read.decision, notices.state, read.now, callOn = waits)
         val days = read.decision.days
         val uploads = UsageUploads.plan(

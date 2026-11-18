@@ -544,8 +544,8 @@ proposal), and the phone shows each step before it happens.
   notice, and Belay's screen lists them from the phone's own record.
 - **`keep_on`:** Belay keeps location on and sets `DISALLOW_CONFIG_LOCATION`.
 - **Lost mode** (`lost`, any mode): the parent's message on the lock screen, location kept
-  on, a fix every 5 minutes, and one screen lock (during a call, once the call ends);
-  everything goes back when it ends.
+  on, a fix every 5 minutes, and one screen lock (during a call Telecom has, once the call
+  ends; the audio mode alone never holds it off); everything goes back when it ends.
 - **Only a parent** turns location on or off, changes places, `keep_on` or lost mode.
   An AI client may read fixes only with the `location` scope on (off by default), and may
   ask for `locate_now` only in `on_demand` or `periodic` mode; the kid's notice names it.
@@ -617,7 +617,8 @@ server decides whether a change tightens or loosens.
 - **Schedules:** from `start` to `end` on `days` (an `end` at or before `start` ends the
   next day), every app is suspended except the never-blocked ones, the `exempt` ones and
   the schedule's `allow`; `lock` also locks the screen when it starts (during a call, once
-  the call ends, if the schedule is still on); `skip` names days it doesn't start.
+  the call ends, if the schedule is still on, as for `lock_now` below); `skip` names days it
+  doesn't start.
 - **Always open:** the never-blocked apps and `exempt`. Schedules and daily totals also
   leave the clock and the keyboard alone, as a pause does; a limit that names the clock
   itself still applies.
@@ -632,15 +633,20 @@ server decides whether a change tightens or loosens.
   no `POST /usage`, and no `used_minutes`, `used` or `left` in the report.
 - **`lock_now`** (a command): locks the screen once, unless it arrives after `expires_at`.
   The phone runs it after applying the rest of the policy, so a pause sent with it suspends
-  the apps first. While a call is on (the phone's, or one in an app, a call to 988 included),
-  the lock waits and the command stays unrun: it's `done` once the call ends, or `expired` if
-  the call outlasts it. A phone updated to a Belay that can lock reads that permission at its next
+  the apps first. While a call is on, a call to 988 included, the lock waits and the command
+  stays unrun: while Belay is the phone app, a call Telecom has (`TelecomManager.isInCall`:
+  carrier calls, and calls apps place through Android's own call system); otherwise a carrier
+  call by the audio mode (`MODE_IN_CALL`, which no app can set), for at most 30 minutes. No
+  other audio mode counts, so an app holding `MODE_IN_COMMUNICATION` holds no lock off. It's
+  `done` once the call ends, or `expired` with `waited_for_call: true` if the call outlasts
+  it. A phone updated to a Belay that can lock reads that permission at its next
   restart (platform notes S5): until then the result is `failed`, "Android lets Belay lock the
   screen only after the phone restarts once with this version of Belay." The server sends it
   with `expires_at` 10 minutes on, and with a pause of 5 to 240 minutes when a parent or an AI
   client locks the phone (the command line's `lock-now` sends the lock alone, expiring after
   its `--minutes`); a new one replaces one still waiting. The parent sees a failed one's
-  `problem` word for word.
+  `problem` word for word, and an expired one with `waited_for_call` as one a call was on
+  until it expired, not one the phone got too late.
 - **The report:** `enforcement.screen_time` changes every minute the phone is used, but the
   phone checks in early only when something other than the minutes changed (a limit used up,
   a schedule starting, usage access, a self-serve take); the 2-hourly check-in carries the
@@ -840,7 +846,7 @@ The answers in `requests` gain `minutes?` (Phase 3: an approved `more_time`).
 | `problems` | string[] | Belay's own words for what it couldn't do, and for what can get around the rules that it noticed (another user or profile, a proxy on the network while there's a web filter, wireless debugging), at most 20 of 200 characters; the server shows the second kind first |
 | `agent_update` | `{version_code, state: "downloading"\|"checking"\|"installing"\|"failed"\|"done", problem?, at}`? | Phase 6: the offered update; `done` once Belay runs that version or a newer one |
 | `recovery` | `{version, used_at, until}`? | Phase 6: the last use of the recovery key; repair access is open until `until` |
-| `commands` | `[{id, result: "done"\|"failed"\|"expired", at, problem?}]` | the last 20 commands' results, newest first |
+| `commands` | `[{id, result: "done"\|"failed"\|"expired", at, problem?, waited_for_call?}]` | the last 20 commands' results, newest first; `waited_for_call: true` (only ever true, or left out) on an `expired` `lock_now` whose lock waited for a call still on when it expired |
 | `never_blocked` | string[] | the packages this phone never blocks, at most 100 |
 | `screen_time` | `{day, measured, used_minutes?, limits: [{id, used?, left?, state: "open"\|"used_up"\|"extra"}], schedule?: {id, until}, self_serve: [{limit_id, package?, minutes, at}]}`? | Phase 3: the phone's view now; minutes left out when `measure` is off (`used` rounds down, `left` up) |
 | `network_log` | `{enabled, paused}`? | Phase 3: null while the policy's `network_log` is off and Android's logging is too; `enabled`: Android logs for Belay; `paused`: Android paused it, while another user or profile is on the phone |

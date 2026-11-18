@@ -78,14 +78,14 @@ class LocationStep(context: Context, private val store: AgentStore) {
         val lockWaits: Boolean = false,
     )
 
-    /** [callOn]: whether a call is on, asked only when lost mode's lock is due (then it waits). */
+    /** [telecomCall]: whether Telecom has a call on (core's ScreenLocks), asked only when lost mode's lock is due (then it waits). */
     fun run(
         policy: WirePolicy,
         commands: List<WireCommand>,
         owner: Boolean,
         requests: List<KidRequest>,
         now: Long,
-        callOn: () -> Boolean = { false },
+        telecomCall: () -> Boolean = { false },
     ): Done {
         val location = policy.location
         val before = store.locationState()
@@ -135,7 +135,7 @@ class LocationStep(context: Context, private val store: AgentStore) {
         }
 
         if (owner) {
-            state = lost(location, state, callOn)
+            state = lost(location, state, telecomCall)
             state = locationOn(location, state, facts)
             // Granted at the start of most steps (DeviceOwnerSetup.ensure); here for the ones that skip setup.
             if ((LocationRules.collecting(location) || state.help != null) && !facts.permission) DeviceOwnerSetup.ensure(app)
@@ -197,7 +197,7 @@ class LocationStep(context: Context, private val store: AgentStore) {
     )
 
     /** Lost mode as the policy says: the message on the lock screen and one lock, or both taken back. */
-    private fun lost(location: WireLocation?, state: LocationState, callOn: () -> Boolean): LocationState {
+    private fun lost(location: WireLocation?, state: LocationState, telecomCall: () -> Boolean): LocationState {
         val lost = location?.lost
         val admin = DeviceOwnerSetup.admin(app)
         if (lost == null) {
@@ -221,8 +221,8 @@ class LocationStep(context: Context, private val store: AgentStore) {
                 Log.w(Agent.TAG, "lost mode: the lock screen message couldn't be set", e)
             }
         }
-        // One lock, once no call is on (core's ScreenLocks): during a call it waits for a step after it.
-        if (!applied.locked && ScreenLocks.lostLockNow(applied, callOn())) {
+        // One lock, once no call Telecom has is on (core's ScreenLocks): during one it waits for a step after it.
+        if (!applied.locked && ScreenLocks.lostLockNow(applied, telecomCall())) {
             val problem = ScreenLock.lock(app, owner = true)
             if (problem != null) Log.w(Agent.TAG, "lost mode: $problem")
             applied = applied.copy(locked = true)

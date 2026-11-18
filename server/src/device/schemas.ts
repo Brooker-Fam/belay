@@ -218,6 +218,8 @@ export const Enforcement = z.strictObject({
         result: z.enum(["done", "failed", "expired"]),
         at: time,
         problem: text(LIMITS.maxProblem).nullish(),
+        /** A lock_now that expired while its lock waited for a call that was still on. */
+        waited_for_call: z.boolean().optional(),
       }),
     )
     .max(LIMITS.maxCommandResults)

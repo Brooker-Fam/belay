@@ -135,7 +135,8 @@ class CallFlowInstrumentedTest {
     fun aCallOnBelaysScreenHoldsScreenLocksUntilItEnds() {
         val call = FakeCall(incoming = true, number = SAM.numbers.single())
         assertEquals(Ring.RING, add(call).action)
-        assertTrue("a ringing call should hold a screen lock", InCall.now(context))
+        assertTrue("a ringing call should hold a screen lock", InCall.now(context).telecom)
+        assertTrue("a ringing call should hold a screen lock", InCall.lockWaits(context, System.currentTimeMillis()))
         call.state = Call.STATE_ACTIVE
         instrumentation.runOnMainSync { CallFlow.removed(context, call) }
         await("Belay still counts a call that ended") { !CallFlow.callOn }

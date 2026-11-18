@@ -37,8 +37,12 @@ import family.brooker.belay.service.ParentNotice
 class CommandRunner(context: Context) {
     private val app = context.applicationContext
 
-    /** The results, in the order the commands were handled; lock_now waits for [lockNow], locate_now for LocationStep. */
-    fun run(plan: CommandPlan, owner: Boolean, now: Long): List<WireCommandResult> {
+    /**
+     * The results, in the order the commands were handled; lock_now waits for [lockNow], locate_now
+     * for LocationStep. [waitedForCall]: the lock_now commands that waited for a call at the last
+     * step, reported so if they've expired since (core's CommandLog.notRun).
+     */
+    fun run(plan: CommandPlan, owner: Boolean, now: Long, waitedForCall: Collection<String> = emptyList()): List<WireCommandResult> {
         val ran = plan.run.filter { it.kind !in LATER }.map { command ->
             val result = when (command.kind) {
                 WireCommand.REMOVE_OTHER_USERS -> removeOtherUsers(command, owner)
@@ -48,18 +52,18 @@ class CommandRunner(context: Context) {
             Log.i(Agent.TAG, "command ${command.id} (${command.kind}): ${result.result}" + (result.problem?.let { ": $it" } ?: ""))
             result
         }
-        val reported = CommandLog.notRun(plan, now)
-        reported.forEach { Log.i(Agent.TAG, "command ${it.id}: ${it.result}, not run") }
+        val reported = CommandLog.notRun(plan, now, waitedForCall)
+        reported.forEach { Log.i(Agent.TAG, "command ${it.id}: ${it.result}, not run" + if (it.waitedForCall == true) " (a call was on)" else "") }
         return ran + reported
     }
 
     /**
      * Phase 3: [plan]'s lock_now commands, each locking the screen once (several at once lock once);
-     * none while a call is on ([callOn]: they're left for a step after it).
+     * none while the lock waits for a call ([waits], core's ScreenLocks: they're left for a step after it).
      */
-    fun lockNow(plan: CommandPlan, owner: Boolean, callOn: () -> Boolean = { false }): List<WireCommandResult> {
+    fun lockNow(plan: CommandPlan, owner: Boolean, waits: () -> Boolean = { false }): List<WireCommandResult> {
         if (plan.lockNow.isEmpty()) return emptyList()
-        val commands = ScreenLocks.lockNow(plan, callOn())
+        val commands = ScreenLocks.lockNow(plan, waits())
         if (commands.isEmpty()) {
             Log.i(Agent.TAG, "screen lock waits for a call to end")
             return emptyList()

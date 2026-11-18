@@ -131,7 +131,7 @@ relying on something new, it goes here first, with a source.
 | T17 | What Android counts as an emergency call: the whole number, so "*67911" isn't one, and a caller ID showing 911 is | Confirmed: Belay takes the caller-ID codes Android knows (`*67`, `*82`, `#31#`, `*31#`) off itself; the network decides what "*67911" reaches | AOSP; Pixel pending (Phase 5 checklist, a test number) |
 | T18 | What Telecom tells an in-call service about an emergency | Confirmed: emergency callback mode and a network-identified emergency call, both skip filtering; emergency SMS mode can't be read | AOSP; Pixel pending (the carrier's setting) |
 | T19 | A call to 911 before the first unlock reaches a direct-boot-aware receiver | Confirmed; before that unlock Telecom finds no service of Belay's | AOSP; Emulator (the storage); Pixel pending (a test number) |
-| T20 | Whether a call is on: Telecom's `isInCall` for the dialer, and the audio mode | Confirmed: neither needs a permission | AOSP; Emulator (Phase 5 CI); Pixel pending |
+| T20 | Whether a call is on: Telecom's `isInCall` for the dialer, and the audio mode | Confirmed: neither needs a permission; only `MODE_IN_CALL` can't be set by an app | AOSP; Emulator (Phase 5 CI); Pixel pending |
 | T21 | `WRITE_SECURE_SETTINGS` granted over adb outlives the debugging lock | Confirmed; it can't turn adb back on | AOSP |
 | O1 | Handing over: clearing reset protection, and what a reset from Settings does on a fully managed phone | Confirmed in AOSP; Pixel pending (Phase 11 checklist) | AOSP |
 
@@ -2406,22 +2406,45 @@ unfiltered (calls fail open; the Pixel checklist looks).
 ### T20. Whether a call is on
 
 **Confirmed.** Verified on: AOSP; Emulator (a call on Belay's screen, Phase 5 CI); Pixel pending
-(Phase 3 checklist: a call in Google's Phone app).
+(Phase 3 checklist: a call in Google's Phone app, and an app's call). Read again on 2026-11-18
+for the fourth review's N5.
 
 - Telecom's `TelecomServiceImpl.isInCall` → `canReadPhoneState`: "The system/default dialer can
-  always read phone state - so that emergency calls will still work"; any other app needs
-  `READ_PHONE_STATE`, which Belay doesn't hold. The answer is `CallsManager.hasOngoingCalls`: every
-  managed call, an emergency call in the preloaded dialer included.
-- `AudioService.getMode` and `AudioManager.addOnModeChangedListener` need no permission. The mode is
-  `MODE_RINGTONE` while a call rings, `MODE_IN_CALL` during a carrier call, `MODE_IN_COMMUNICATION`
-  during a call in an app, `MODE_CALL_SCREENING`, and from API 33 `MODE_CALL_REDIRECT` and
-  `MODE_COMMUNICATION_REDIRECT`.
+  always read phone state - so that emergency calls will still work" (`isPrivilegedDialerCalling`:
+  `DefaultDialerCache.isDefaultOrSystemDialer`); any other app needs `READ_PRIVILEGED_PHONE_STATE`,
+  or `READ_PHONE_STATE` and its app op, and without either `enforceCallingOrSelfPermission`
+  throws. Belay holds neither. The answer is `CallsManager.hasOngoingCalls(…)`:
+  `CALL_FILTER_ALL`, "both managed and self-managed calls" (external ones aren't), in
+  `ONGOING_CALL_STATES` (choosing a SIM, dialing, ringing, answered, active, on hold…): every
+  carrier call, an emergency call in the preloaded dialer included, and the calls apps place
+  through Android's own call system (self-managed `ConnectionService`s). Telecom doesn't end
+  a suspended app's calls (nothing in `CallsManager` or `TelecomServiceImpl` handles
+  suspension).
+- `AudioService.getMode` and `AudioManager.addOnModeChangedListener` need no permission.
+  `AudioService.setMode` takes `MODE_IN_CALL`, `MODE_CALL_REDIRECT` and
+  `MODE_COMMUNICATION_REDIRECT` only from a holder of `MODIFY_PHONE_STATE` ("MODIFY_PHONE_STATE
+  Permission Denial"), which `core/res/AndroidManifest.xml` makes `signature|privileged|role`;
+  the roles that grant it (`PermissionController`'s `roles.xml`) are `SYSTEM_AUDIO_INTELLIGENCE`
+  and `SYSTEM_CALL_STREAMING`, both `systemOnly`, and `RETAIL_DEMO`, `static`. Every other mode,
+  `MODE_RINGTONE`, `MODE_IN_COMMUNICATION` and `MODE_CALL_SCREENING` among them, takes only
+  `MODIFY_AUDIO_SETTINGS`, a normal permission. `getMode` is the mode of
+  `getAudioModeOwnerHandler`: the newest privileged requester (one with `MODIFY_PHONE_STATE`)
+  first, else the newest active one, so an app can't hide a carrier call's `MODE_IN_CALL`. An app
+  that set `MODE_IN_COMMUNICATION` stays the owner while it plays or records
+  (`SetModeDeathHandler.isActive`); suspending it only takes audio focus
+  (`MediaFocusControl.noFocusForSuspendedApp`), so a paused app can keep the mode.
 
-Belay's consequence: every screen lock Belay makes (lock_now, a schedule that locks as it starts,
-lost mode's one lock) waits while a call is on: Belay's own, any Telecom call while Belay is the
-dialer, or, by the audio mode, a call in any app. It happens at the first step after the call if
-it's still due (core's `ScreenLocks`); Belay listens for the audio mode to go back to normal, and
-looks again every minute.
+Belay's consequence: every screen lock Belay makes waits while a call is on, and only for a call
+an app can't make up (the fourth review's N5). While Belay is the dialer, a lock_now and a
+schedule's lock wait for any call Telecom has (`isInCall`, or a call on Belay's own screen), as
+long as it lasts; that includes an app's call placed through Android's own call system, paused
+or not. While Belay isn't the dialer, Telecom won't answer it, so they wait only while the audio
+mode is `MODE_IN_CALL` (a carrier call), for at most 30 minutes from the step the wait began;
+then the screen locks, and the call goes on. Lost mode's one lock waits only for a call Telecom
+has. No other audio mode holds a lock off. A lock still due happens at the first step after the
+call (core's `ScreenLocks`): Belay takes a step when the audio mode changes, and looks again
+every minute. A `lock_now` that expires while it waits is reported `expired` with
+`waited_for_call`.
 
 ### T21. `WRITE_SECURE_SETTINGS` granted over adb outlives the debugging lock
 

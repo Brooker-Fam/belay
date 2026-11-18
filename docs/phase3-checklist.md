@@ -67,8 +67,14 @@ kid's real apps or times.
    parent page has no result yet. End the call: the screen locks within a minute, and the result
    is "done". Do it once more with a bedtime schedule (with "lock" on) that starts during a call:
    the apps pause at the start, and the screen locks only once the call ends. If calls aren't on
-   for this phone, the call goes through Google's Phone app, and Belay sees it by the audio mode:
-   write down which it was.
+   for this phone, the call goes through Google's Phone app, and Belay sees it by the audio mode
+   (`MODE_IN_CALL`): write down which it was. Without calls on, the wait lasts at most 30 minutes:
+   a call that goes on longer is locked behind the lock screen then, and carries on.
+5. Only a call an app can't make up holds a lock (the fourth review's N5). With a voice or video
+   call open in an approved app, check in maintenance whether Android's own call system has it
+   (`adb shell dumpsys telecom` lists the call while it's on), then tap "lock now". If it doesn't
+   list it, the screen locks within seconds and the app's call carries on; if it does, the lock
+   waits as for a phone call (with calls on). Write down the app and which it was.
 
 ## 4. Usage access off
 
@@ -165,6 +171,7 @@ kid's real apps or times.
 | 3.2 | What works during bedtime; the alarm rings | pending | |
 | 3.3 | Lock now, with and without a PIN | pending | |
 | 3.4 | Lock now and a bedtime's lock during a call: no lock until it ends, then done; Belay's call or Google's Phone app | pending | |
+| 3.5 | Lock now during an app's call: does `dumpsys telecom` list it; locks at once if not, and the app's call goes on | pending | |
 | 4.1 | Usage access off: noticed within seconds, limited apps paused | pending | |
 | 4.2 | "Turn usage access back on" opens Belay's switch or the list | pending | |
 | 5.1 | Next stage sentences | pending | |

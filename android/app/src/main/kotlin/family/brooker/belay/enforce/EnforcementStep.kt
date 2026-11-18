@@ -133,7 +133,8 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
         val log = store.commandLog()
         val commandPlan = Commands.plan(policy.commands, log.doneIds, now, CommandRunner.RUNS)
         val runner = CommandRunner(app)
-        val results = runner.run(commandPlan, owner, now)
+        // A lock_now that waited for a call at the last step and expired since is reported so.
+        val results = runner.run(commandPlan, owner, now, waitedForCall = log.waitingForCall)
         val enforcer = Enforcer(app)
         val actual = if (owner) {
             enforcer.actual(
@@ -189,15 +190,18 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
         // Phase 3: lock the screen for lock_now commands and for a schedule that locks as it
         // starts, now that the rest is applied; then the notices, and the usage to send. Nothing
         // here may stop what was applied from being recorded below. Every lock waits while a call
-        // is on (core's ScreenLocks), asked only when one is due.
-        val callOn by lazy { InCall.now(app) }
-        val lockResults = runner.lockNow(commandPlan, owner) { callOn }
+        // is on (core's ScreenLocks), asked only when one is due: a lock_now's and a schedule's for
+        // a call Telecom has, or one only the audio mode shows for at most 30 minutes; lost mode's
+        // only for a call Telecom has.
+        val lockWaitsForCall by lazy { InCall.lockWaits(app, now) }
+        val telecomCall by lazy { InCall.now(app).telecom }
+        val lockResults = runner.lockNow(commandPlan, owner) { lockWaitsForCall }
         val lockNowWaits = commandPlan.lockNow.isNotEmpty() && lockResults.isEmpty()
         // Phase 4: location's part: the fixes the collector took, locate_now, the periodic and lost
         // mode fixes due, keep_on and lost mode. If it fails, the rest is still recorded.
         val locationStep = LocationStep(app, store)
         val located = try {
-            locationStep.run(policy, commandPlan.run.filter { it.kind == WireCommand.LOCATE_NOW }, owner, requests, now) { callOn }
+            locationStep.run(policy, commandPlan.run.filter { it.kind == WireCommand.LOCATE_NOW }, owner, requests, now) { telecomCall }
         } catch (e: RuntimeException) {
             Log.e(Agent.TAG, "location's part of the step failed", e)
             null
@@ -227,7 +231,7 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
         }
         val done = read?.let {
             try {
-                screenTimeStep?.after(it) { callOn }
+                screenTimeStep?.after(it) { lockWaitsForCall }
             } catch (e: RuntimeException) {
                 Log.e(Agent.TAG, "screen time's notices and uploads failed", e)
                 screenTimeProblem = "Belay couldn't finish screen time's step: ${e.javaClass.simpleName}."
@@ -271,7 +275,7 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
             applied = next,
             requests = made + sentAgain,
             at = now,
-            commands = log.record(ran).takeIf { ran.isNotEmpty() },
+            commands = log.record(ran).waiting(if (lockNowWaits) commandPlan.lockNow.map { it.id } else emptyList()).takeIf { it != log },
             screenTime = screenTimeWrite,
             usage = done?.usage.orEmpty(),
             dropUsage = policy.screenTime?.measure == false && store.pendingUsageCount() > 0,
@@ -279,10 +283,10 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
             calls = calling?.write,
             network = networking?.write,
         )
-        // A lock that waits for a call: Belay looks again when Android's audio mode goes back to
-        // normal, and every minute anyway.
+        // A lock that waits for a call: Belay looks again when Android's audio mode changes, and
+        // every minute anyway. With none waiting, a later wait for the audio mode starts afresh.
         val lockWaits = lockNowWaits || done?.lockWaits == true || located?.lockWaits == true
-        if (lockWaits) InCall.lockWaits(app)
+        if (lockWaits) InCall.listenForTheEnd(app) else InCall.noLockWaits()
         PolicyTimer.schedule(app, listOfNotNull(plan.nextChangeAt, calling?.nextAt, ScreenLocks.recheckAt(lockWaits, now)).minOrNull())
         log(plan, changes, made)
         next.handover?.takeIf { it != applied.handover }?.let(::logHandover)
