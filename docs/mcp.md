@@ -294,28 +294,39 @@ too, since whoever holds a phone's token can send any text.
 
 ## Prompts
 
-- **`weekly_review`:** goes through the week's changes and the kid's waiting requests,
-  looks up each new or requested app (age rating, chatting with strangers, in-app
-  purchases, data safety), and gives a short verdict and a conversation starter for each,
-  with a suggested answer to each request. From Phase 3 it adds the last 14 days of screen
-  time: totals against the limits, and anything Belay couldn't count. It never claims to
-  have approved anything.
+- **`weekly_review`:** the week on the family's phones, in short sections, leading with what
+  needs the parent and leaving out a section with nothing in it: an "I need help" no parent
+  has seen (urgent: look now, and never a guess at why); the phones' health, with a sign that
+  someone may be getting around Belay first (another user or profile, a proxy, wireless
+  debugging, a different signing key); the requests and proposals waiting, with a suggested
+  answer to each request; the week's app changes, with each new or requested app looked up
+  (age rating, chatting with strangers, in-app purchases, data safety), a short verdict and
+  a conversation starter; calls from someone who isn't a contact that Belay refused or sent
+  to voicemail, and contact requests waiting (only the numbers `get_calls` gives, which are
+  never 911, 988, emergency or private ones); arrivals at and departures from the family's
+  places, as facts (never a `locate_now`); each app's top domains of the week, with
+  `get_network_activity`'s reminder that a name looked up isn't a page visited; and screen
+  time against the limits, with anything Belay couldn't count. It never claims to have
+  approved anything.
 - **`family_check_in(device)`** (Phase 3): a monthly talk with the kid in the room: what went
   well first, then what was hard, without judging; what the next stage would change and how
   to get there; three open questions for the kid; and changes the family might make, only as
   suggestions.
-
-The server's instructions add, for screen time: "Screen time is a number, not a verdict about
-the kid. Report it plainly, don't guess why, and don't moralize."
 - **`review_app(device, package)`:** the same review for one app.
 - **`review_request(device, package)`:** reviews an app the kid asked for, with their
   reason, and suggests how the parent might answer (approve, decline or let's talk, with a
   note). If the parent wants to approve, it offers a proposal; the parent still decides.
 
-The prompts follow the categories a parent allows, as the tools do: with Apps off,
+The prompts follow the categories a parent allows, as the tools do, as they are each time a
+prompt is asked for: a prompt never asks the AI app to read a category that's off, and says in
+one line that it is. `weekly_review` has each category's section only while it's on (the
+phones' status and problems, and proposals waiting, are always there). With Apps off,
 `review_app` and `review_request` say nothing about the phone's apps (not even whether the
 app is on it) and tell the AI app it's off; with Requests off, `review_request` says so too.
 Each use of `review_app` and `review_request` is in the activity log, like a tool's read.
+
+The server's instructions add, for screen time: "Screen time is a number, not a verdict about
+the kid. Report it plainly, don't guess why, and don't moralize."
 
 ## Things to ask
 
