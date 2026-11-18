@@ -32,7 +32,7 @@ import { passwordProblem, usernameProblem } from "../auth/parents.js";
 import type { Deps } from "../deps.js";
 import { CARE_PAUSE_MINUTES, careActor, careCounted, careLimited, careLocate, carePause } from "../family/caregivers/changes.js";
 import { listCareSubscriptions, removeCareSubscription, saveCareSubscription, sendToCaregiver } from "../family/caregivers/push.js";
-import { type Caregiver, HELP_WINDOW_MS, ONLINE_MS, accessCurrent, careAccess } from "../family/caregivers/store.js";
+import { type Caregiver, HELP_WINDOW_MS, ONLINE_MS, accessCurrent, careAccess, getsHelpAsked, helpAskedAt } from "../family/caregivers/store.js";
 import { LOCATE_NOW_MS } from "../family/commands.js";
 import { getDevice } from "../family/devices.js";
 import { phoneHelp } from "../family/kidside.js";
@@ -250,15 +250,16 @@ export function careRoutes(deps: Deps, assets: Assets): Hono<CareEnv> {
   };
 
   /**
-   * The help requests a caregiver sees: their phones' with help on, since their access began, at
-   * most 7 days back. The list puts every help request no parent has seen first (at most 100 a
-   * phone), so it reads past them to the newer ones a parent saw.
+   * The help requests a caregiver sees: their phones' with help on, that the kid asked since their
+   * help began on that phone (getsHelpAsked: the seventh review's H1), received at most 7 days back.
+   * The list puts every help request no parent has seen first (at most 100 a phone), so it reads
+   * past them to the newer ones a parent saw.
    */
   const helpFor = (caregiver: Caregiver, now: number): HelpView[] =>
     caregiver.phones
       .filter((id) => careAccess(caregiver, id, "help", now))
       .flatMap((id) => listRequests(db, { deviceId: id, kind: "help", limit: 300 }))
-      .filter((r): r is HelpView => r.kind === "help" && r.receivedAt >= Math.max(caregiver.accessFrom, now - HELP_WINDOW_MS))
+      .filter((r): r is HelpView => r.kind === "help" && r.receivedAt >= now - HELP_WINDOW_MS && getsHelpAsked(caregiver, r.deviceId, helpAskedAt(r), now))
       .sort((a, b) => b.receivedAt - a.receivedAt);
 
   const home = (c: CareContext, extra: { message?: string; error?: string } = {}, status: ContentfulStatusCode = 200) => {

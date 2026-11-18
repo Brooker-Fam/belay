@@ -374,7 +374,10 @@ export const CareHomePage: FC<{
       <section id="help">
         <h2>"I need help"</h2>
         {help.requests.length === 0 ? (
-          <p class="muted">No help requests since your access began. When the kid presses "I need help", it shows here, and as a notification if you turn them on.</p>
+          <p class="muted">
+            No help requests since a parent let you get them for these phones. When the kid presses "I need help", it shows here, and as a notification if you turn them
+            on.
+          </p>
         ) : (
           help.requests.map((r) => <CareHelpCard view={view} request={r} kidNumber={help.kidNumber(r.deviceId)} where={help.where} />)
         )}
