@@ -636,7 +636,8 @@ object Agent {
                     Log.i(TAG, "calls: calls' state saved")
                 }
             } catch (t: Throwable) {
-                Log.e(TAG, "storing the callback window failed", t)
+                // Neutral words here too: that the window couldn't be stored would say it opened.
+                Log.e(TAG, "calls: calls' state couldn't be saved", t)
             }
         }
         // The block list lifts for the window at the next step.

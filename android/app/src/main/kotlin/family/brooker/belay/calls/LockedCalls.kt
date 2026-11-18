@@ -29,7 +29,7 @@ object LockedCalls {
         val out = try {
             file.startWrite()
         } catch (e: IOException) {
-            Log.w(Agent.TAG, "calls: the time couldn't be kept before the unlock", e)
+            failed(e)
             return
         }
         try {
@@ -37,9 +37,15 @@ object LockedCalls {
             file.finishWrite(out)
         } catch (e: IOException) {
             file.failWrite(out)
-            Log.w(Agent.TAG, "calls: the time couldn't be kept before the unlock", e)
+            failed(e)
         }
     }
+
+    /**
+     * The same neutral words as the agent's (Agent.emergencyContact), and only the exception's
+     * class: its message would name this file, which exists only after such a call.
+     */
+    private fun failed(e: IOException) = Log.w(Agent.TAG, "calls: calls' state couldn't be saved: ${e.javaClass.simpleName}")
 
     /** The time [record] kept, or null. */
     fun emergencyContactAt(context: Context): Long? = read(file(context))
