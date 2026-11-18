@@ -331,7 +331,9 @@ phones' status and problems, and proposals waiting, are always there), and
 `family_check_in` leaves out screen time, the stage and agreement, or the kid's requests the
 same way (the phone's rules, from `get_rules`, are always there). With Apps off,
 `review_app` and `review_request` say nothing about the phone's apps (not even whether the
-app is on it) and tell the AI app it's off; with Requests off, `review_request` says so too.
+app is on it), tell the AI app it's off, and offer nothing that needs it (blocking the app,
+marking it reviewed, proposing to allow it); with Requests off, `review_request` reviews the
+app alone and says so.
 Each use of `review_app` and `review_request` is in the activity log, like a tool's read.
 
 The server's instructions add, for screen time: "Screen time is a number, not a verdict about

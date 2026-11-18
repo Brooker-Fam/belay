@@ -185,3 +185,34 @@ describe("family_check_in", () => {
     }
   });
 });
+
+describe("review_app and review_request", () => {
+  const args = { device: "Robin's phone", package: "com.example.chess" };
+  /** What needs the Apps category: its tools, the proposal to allow an app, and the fields only its tools give. */
+  const APP_WORDS = ["get_installed_apps", "block_app", "mark_apps_reviewed", "propose_change", "play_store link"];
+
+  it("never ask for a tool whose category is off, and say so instead", async () => {
+    const { prompt } = await family();
+    const app = await prompt("review_app", ALL, args);
+    for (const words of ["Call get_installed_apps", "(the play_store link)", "block_app", "mark_apps_reviewed"]) expect(app).toContain(words);
+    const request = await prompt("review_request", ALL, args);
+    for (const words of ["Call list_requests for that phone", "then get_installed_apps", "For each request", "propose_change (kind allow_app)"]) expect(request).toContain(words);
+    // Apps off: nothing about the phone's apps, no tool that needs the category, no proposal to allow the app.
+    for (const name of ["review_app", "review_request"]) {
+      const text = await prompt(name, but("apps"), args);
+      for (const words of APP_WORDS) expect(text, `${name}: ${words}`).not.toContain(words);
+      expect(text, name).toContain("A parent turned off AI access to apps in Belay's settings");
+      expect(text, name).toContain("You can still look the app up in public");
+      expect(text, name).toContain("2. Check the permissions its store page lists against what it's for: ones an app doesn't need");
+      expect(text, name).not.toContain("Check its source");
+    }
+    // Requests off: no request to read, and none to answer.
+    const alone = await prompt("review_request", but("requests"), args);
+    expect(alone).not.toContain("list_requests");
+    expect(alone).not.toContain("For each request");
+    expect(alone).toContain("A parent turned off AI access to the kid's requests in Belay's settings: review the app alone, and say so.");
+    expect(alone).toContain("Call get_installed_apps for that phone");
+    const neither = await prompt("review_request", ALL.filter((s) => s !== "requests" && s !== "apps"), args);
+    expect(neither).not.toMatch(/Call |list_requests|get_installed_apps|propose_change|block_app/);
+  });
+});
