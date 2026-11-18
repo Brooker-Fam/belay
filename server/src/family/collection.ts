@@ -207,6 +207,7 @@ function callsKept(db: DB, deviceId: string): Omit<Kept, "fingerprint"> {
 function networkKept(db: DB, deviceId: string): Omit<Kept, "fingerprint"> {
   const days = count(db, "network_days WHERE device_id = ?", deviceId);
   const on = networkSettings(db, deviceId)?.enabled === true;
+  const privateSites = count(db, "network_private_domains WHERE device_id = ?", deviceId);
   return {
     category: "network",
     title: COLLECTED_TITLES.network,
@@ -214,7 +215,7 @@ function networkKept(db: DB, deviceId: string): Omit<Kept, "fingerprint"> {
     stopping: on
       ? "Network logging turns off: the phone stops noting which websites and services its apps look up."
       : "Network logging is off: the phone doesn't note which websites and services its apps look up.",
-    stays: [],
+    stays: privateSites ? ["The private websites, which network logging never notes: they're this phone's rules."] : [],
     anything: days > 0 || on,
   };
 }

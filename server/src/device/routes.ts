@@ -9,7 +9,7 @@ import type { Deps } from "../deps.js";
 import { offeredFile } from "../family/agent.js";
 import { saveCallRecords, withoutAlwaysAllowed } from "../family/calls/records.js";
 import { markNotified, saveLocations } from "../family/location/fixes.js";
-import { networkCutoff, saveNetworkDays, withoutCrisis } from "../family/network/store.js";
+import { networkCutoff, privateDomainsOf, saveNetworkDays, withoutNeverKept } from "../family/network/store.js";
 import { buildPolicy, changePolicy, neverBlockedOn, policyVersion } from "../family/policy.js";
 import { receiveReport } from "../family/reports.js";
 import { saveRequests, type SavedRequests } from "../family/requests.js";
@@ -333,25 +333,26 @@ export function deviceRoutes(deps: Deps): Hono<DeviceEnv> {
    * entry (family/network/store.ts). Idempotent by day: a day sent again replaces the stored one.
    * Kept only while the phone's switch is on (a parent's choice); otherwise accepted, dropped and
    * counted, so the phone stops sending. The never-blocked apps' lookups are never kept, and nor
-   * is an entry naming one of 988's websites: it's taken out before the body is checked, and the
-   * server's log says only that it happened, never the name or the phone. Rate limited per phone
-   * apart from its other calls.
+   * is an entry naming one of 988's websites or one of the phone's private websites: it's taken out
+   * before the body is checked. For 988's, the server's log says only that it happened, never the
+   * name or the phone; a private one goes without a word (a Belay from before private websites
+   * sends them, and the log's time would say when). Rate limited per phone apart from its other calls.
    */
   app.post("/network", limit(LIMITS.networkBytes), async (c) => {
     const raw = await readJsonBody(c);
     if (!raw.ok) return fail(400, "invalid_request", raw.description);
-    const { body, neverKept } = withoutCrisis(raw.value);
+    const phone = c.var.phone;
+    const { body, crisis } = withoutNeverKept(raw.value, privateDomainsOf(db, phone.id));
     const checked = checkJson(NetworkRequest, body);
     if (!checked.ok) return fail(400, "invalid_request", checked.description);
     const now = deps.now();
-    const phone = c.var.phone;
     db.prepare("UPDATE devices SET last_seen_at = ? WHERE id = ?").run(now, phone.id);
     const never = neverBlockedOn(db, phone.id);
     const saved = saveNetworkDays(db, phone.id, checked.value.days, now, {
       keep: (pkg) => never(pkg) === null,
       oldest: networkCutoff(now, getSettings(db).networkDays),
     });
-    if (neverKept > 0) deps.log("A phone sent network activity naming 988's websites, which Belay never keeps: not kept. Belay on the phone shouldn't send it.");
+    if (crisis > 0) deps.log("A phone sent network activity naming 988's websites, which Belay never keeps: not kept. Belay on the phone shouldn't send it.");
     if (saved.dropped > 0) deps.log(`A phone sent ${saved.dropped} day${saved.dropped === 1 ? "" : "s"} of network activity its rules didn't ask for: not kept.`);
     return c.json({ server_time: now, accepted: saved.accepted });
   });
