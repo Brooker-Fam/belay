@@ -10,7 +10,7 @@ import type { Enforcement } from "../../device/schemas.js";
 import { CALL_LIMITS } from "../../family/calls/numbers.js";
 import type { CallRecordView } from "../../family/calls/records.js";
 import type { CallSettings, Contact, ListedNumber } from "../../family/calls/store.js";
-import { OUTCOME_WORDS, REASON_WORDS, TEXTS_NOT_ENFORCED, rulesInWords } from "../../family/calls/words.js";
+import { NO_NUMBER_OUT, OUTCOME_WORDS, REASON_WORDS, TEXTS_NOT_ENFORCED, rulesInWords } from "../../family/calls/words.js";
 import type { DeviceView } from "../../family/devices.js";
 import type { ContactRequestView } from "../../family/requests.js";
 import type { ParentNumber } from "../../settings.js";
@@ -238,7 +238,8 @@ const CallRow: FC<{ view: View; device: DeviceView; record: CallRecordView; name
       <Time ms={r.at} tz={view.tz} />
       <div>
         <span>
-          {DIRECTION[r.direction]}: {contact !== null ? <strong>{contact}</strong> : r.number !== null ? <strong class="pkg">{r.number}</strong> : "no caller ID"}
+          {DIRECTION[r.direction]}:{" "}
+          {contact !== null ? <strong>{contact}</strong> : r.number !== null ? <strong class="pkg">{r.number}</strong> : r.direction === "out" ? NO_NUMBER_OUT : "no caller ID"}
           {r.contactId !== null && !names.has(r.contactId) && <span class="small muted"> (a contact since removed)</span>}
         </span>
         <div class="small">

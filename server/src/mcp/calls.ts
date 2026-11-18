@@ -24,7 +24,7 @@ import { CALL_LIMITS } from "../family/calls/numbers.js";
 import { patchOf, settle, sideOf, sideProblem } from "../family/calls/patch.js";
 import { listCallRecords } from "../family/calls/records.js";
 import { callSettings, listContacts, listNumbers, proposedContactId } from "../family/calls/store.js";
-import { OUTCOME_WORDS, REASON_WORDS, callChangeSentence, callsSummary, rulesInWords } from "../family/calls/words.js";
+import { NO_NUMBER_OUT, OUTCOME_WORDS, REASON_WORDS, callChangeSentence, callsSummary, rulesInWords } from "../family/calls/words.js";
 import { type DeviceRow, findDeviceByName, listDevices } from "../family/devices.js";
 import { parentNumbersFor } from "../family/kidside.js";
 import { type Changer, type PolicyContext, RuleRefused } from "../family/policy.js";
@@ -195,7 +195,7 @@ export function registerCallsTools(server: McpServer, deps: Deps, caller: Caller
             ? { who: names.has(r.contactId) ? "a contact" : "a contact who has been removed since", untrusted: { contact: names.get(r.contactId) ?? r.contactName ?? "" } }
             : r.number !== null
               ? { who: "someone who isn't a contact", number: r.number }
-              : { who: "no caller ID" }),
+              : { who: r.direction === "out" ? NO_NUMBER_OUT : "no caller ID" }),
         })),
         ...(records.length === 0 ? { note: s?.enabled && s.log ? "No calls in that time." : "The phone records calls only while a parent has turned that on; then calls show here." } : {}),
         reminder: "A call is a fact, not a verdict about the kid: report it plainly, and don't guess who someone is or why they called. Other people's numbers are private: share them only with the parent who asked.",

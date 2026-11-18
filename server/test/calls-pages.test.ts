@@ -182,9 +182,14 @@ describe("the Calls tab", () => {
       calls: [
         { id: "call-00000001", at: T0 - 3_600_000, direction: "out", contact_id: mom.id, duration_s: 125, outcome: "answered" },
         { id: "call-00000002", at: T0 - 1_800_000, direction: "in", number: STRANGER, duration_s: 0, outcome: "rejected", reason: "unknown" },
+        // A number the phone couldn't write in full (a local one, 211), and a caller with none.
+        { id: "call-00000003", at: T0 - 1_200_000, direction: "out", duration_s: 300, outcome: "answered" },
+        { id: "call-00000004", at: T0 - 600_000, direction: "in", duration_s: 0, outcome: "rejected", reason: "withheld" },
       ],
     });
     let { html } = await page(`${base}/calls`);
+    expect(html).toContain("Outgoing: a number the phone couldn&#39;t write in full (the phone keeps the digits)");
+    expect(html).toContain("Incoming: no caller ID");
     expect(html).toContain("Outgoing: <strong>Mom</strong>");
     expect(html).toContain("answered");
     expect(html).toContain("2 minutes");

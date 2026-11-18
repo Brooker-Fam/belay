@@ -132,6 +132,12 @@ export function callChangeSentence(c: CallChange, opts: { numbers?: boolean } = 
   }
 }
 
+/**
+ * An outgoing call whose number the phone couldn't write in full (a local number without its area
+ * code, a short code like 211): the phone keeps the digits, and sends the call without them.
+ */
+export const NO_NUMBER_OUT = "a number the phone couldn't write in full (the phone keeps the digits)";
+
 export const OUTCOME_WORDS = {
   answered: "answered",
   missed: "missed",
