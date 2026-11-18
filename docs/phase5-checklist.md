@@ -190,6 +190,18 @@ clears it too. Every step here is in maintenance (adb on).
    page (and its status) says "Belay on the phone says: The phone restarted and stayed locked for
    N minutes. …", with N about the time from the restart to the unlock; it's gone a day later.
    Restart once more and unlock at once: no such note.
+9. Calls while a call from before the unlock is still on (the fifth review's plausible P1,
+   platform notes T22). You need a third phone you can answer, not a contact. At least 2 hours
+   after step 6, with only contacts for both directions, restart the Pixel and leave it locked.
+   Call it from the second phone and answer on the lock screen, then unlock the Pixel with the
+   call still on. In the in-call screen that has the call (write down whose: Google's Phone app
+   is expected), put it on hold, tap Add call and call the third phone. Write down whether Belay
+   ends that call ("Your parent hasn't allowed calls to …") or the third phone rings. Hang up
+   that call, then call the Pixel from the third phone while the second phone's call is still
+   on: write down which app shows the waiting call, and whether it rings past only contacts.
+   Hang up everything. Within a minute, write down what Belay's Recent tab and the parent page
+   list of the three calls (the second phone's, from before the unlock, is expected in both;
+   the other two aren't read: T22).
 
 ## Results
 
@@ -233,3 +245,4 @@ clears it too. Every step here is in maintenance (adb on).
 | 11.6 | `*67` and `#31#` before a test emergency number: placed under only contacts; what the second phone shows; no record | pending | |
 | 11.7 | The test number cleared | pending | |
 | 11.8 | A restart, 10 minutes locked: Google's Phone app rings; after the unlock the missed call in Recent and on the parent page, no reason; the Calls page's note, and none after a quick restart | pending | |
+| 11.9 | A call from before the unlock still on: which app has it; Add call to a stranger ended or not; a stranger's waiting call rings or not; what Recent and the parent page list | pending | |

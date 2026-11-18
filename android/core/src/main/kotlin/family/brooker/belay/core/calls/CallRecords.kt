@@ -247,8 +247,18 @@ object CallRecords {
             .filter { AlwaysAllowed.opensCallbackWindow(it.number, android) }
             .maxOfOrNull { it.at }
 
-    /** What [whileLocked] takes: the entries to keep (and, with `log`, send), and every call log time read. */
-    data class Taken(val entries: List<CallEntry>, val seen: List<Long>)
+    /**
+     * What [whileLocked] takes: the entries to keep (and, with `log`, send), every call log time read,
+     * and the emergency times it decided callbacks by, from 2 hours before the restart to the
+     * unlock (kept for a second read: CallsPlan.afterRead).
+     */
+    data class Taken(val entries: List<CallEntry>, val seen: List<Long>, val emergencyAt: List<Long> = emptyList())
+
+    /**
+     * Android's call log is read from this long before a restart for [whileLocked]: a call to 911 or
+     * 988 then opened a window that reaches into the time the phone was locked (the fifth review's F1).
+     */
+    fun spellReadFrom(bootAt: Long): Long = bootAt - CallsWireLimits.EMERGENCY_CALLBACK_MS
 
     /**
      * The fourth review's N1: the calls Android's own log has from while Belay couldn't decide any,
@@ -259,7 +269,9 @@ object CallRecords {
      * never one with 911, an emergency number, 988 or a private number, and never sent when it rang
      * only because of an emergency: the family's [rules] would have refused it, and the callback
      * window was open then ([emergencyAt]: Belay's record from before the restart, the time kept
-     * before the unlock, and calls to those numbers in the log itself). Its outcome is what
+     * before the unlock, and the times an earlier read of the spell decided by; and calls to those
+     * numbers in the log itself, which is read from 2 hours before the restart, [spellReadFrom],
+     * so a call to 988 just before it counts). Its outcome is what
      * happened in the phone's own app (answered, missed, declined), with no reason: Belay refused
      * nothing. Never one Belay keeps itself ([kept]: the same way and number, within the call's
      * time), or one read before ([seen]), so no call is taken twice, nor one the kid removed.
@@ -278,9 +290,10 @@ object CallRecords {
         newId: () -> String,
     ): Taken {
         val spell = log.filter { it.at in from..until }.sortedBy { it.at }
-        val emergencies = emergencyAt + spell.filter {
-            it.direction == WireCallDirection.OUT && !it.blocked && AlwaysAllowed.opensCallbackWindow(it.number, android)
-        }.map { it.at }
+        // A call to 911 or 988 from 2 hours before the restart to the unlock opened a window into it.
+        val reach = spellReadFrom(from)..until
+        val called = log.filter { it.at in reach && it.direction == WireCallDirection.OUT && !it.blocked && AlwaysAllowed.opensCallbackWindow(it.number, android) }
+        val emergencies = (emergencyAt + called.map { it.at }).distinct().sorted()
         val taken = mutableListOf<CallEntry>()
         for (call in spell) {
             if (call.at in seen || call.blocked) continue
@@ -301,7 +314,7 @@ object CallRecords {
             if ((kept + taken).any { sameCall(it, entry, call.durationS) }) continue
             taken += entry
         }
-        return Taken(taken, (seen + spell.map { it.at }).distinct().takeLast(MAX_KEPT))
+        return Taken(taken, (seen + spell.map { it.at }).distinct().takeLast(MAX_KEPT), emergencies.filter { it in reach })
     }
 
     /** [mine] (Belay's own) and [logged] (from Android's log, lasting [durationS]) are the same call. */

@@ -7,7 +7,9 @@ import kotlin.math.abs
  * What Belay keeps between steps about calls (one row, written by the agent thread), so it only
  * ever undoes its own work: the dialer it took the role from, the numbers it put on Android's block
  * list, and the apps it denied CALL_PHONE. [lastEmergencyContactAt] is only for the callback window
- * on this phone: it's never sent, never in the debug state, and forgotten once the window is over.
+ * on this phone: it's never sent, never in the debug state, and forgotten once the window is over
+ * (after a restart, AfterRestart.emergencyAt keeps the times around it until the last read of
+ * Android's call log for the calls before the unlock).
  */
 @Serializable
 data class CallsState(
@@ -68,6 +70,15 @@ data class AfterRestart(
     val again: Boolean = false,
     /** The times (CallLog.Calls.DATE) of the call log's entries already read, so none is taken twice. */
     val seen: List<Long> = emptyList(),
+    /**
+     * When the kid called 911, an emergency number or 988 around the restart, as the first read
+     * knew it (the fifth review's F1): Belay's record from before it, the time kept before the
+     * unlock, and such a call in Android's call log from 2 hours before it. Kept only while a read
+     * is still due (CallsPlan.keepEmergencies), so a later read decides which calls rang only
+     * because of the callback window by the same window, after the steps in between have
+     * forgotten Belay's own record. Never sent, never in the debug state, gone after the last read.
+     */
+    val emergencyAt: List<Long> = emptyList(),
 )
 
 /** The block list's changes: add [add], remove [remove]; [mine] is Belay's record afterwards if both work. */
@@ -188,6 +199,38 @@ object CallsPlan {
         !spell.read -> true
         else -> spell.again && !callElsewhere()
     }
+
+    /** At most this many emergency times are kept for a spell's reads (a few calls to 911 or 988, at most). */
+    const val MAX_SPELL_EMERGENCIES = 20
+
+    /**
+     * [spell] with the emergency times its reads decide callbacks by (the fifth review's F1):
+     * [known] (Belay's record of the kid's last emergency contact, the time kept before the unlock,
+     * or the calls to 911, an emergency number or 988 a read found in the log) added to those kept,
+     * at every step while a read is due, and only those whose 2-hour window can reach into the
+     * spell: from 2 hours before the restart to the unlock. The steps between two reads forget
+     * Belay's own record once its 2 hours are over, so without these a call that rang in the
+     * phone's own app only because of the window, still on at the unlock, would be sent with its
+     * number at the second read. Once no read is due, none are kept: like Belay's own record,
+     * they're only for the window.
+     */
+    fun keepEmergencies(spell: AfterRestart, known: Collection<Long>): AfterRestart {
+        val due = spell.callsOn && (!spell.read || spell.again)
+        val reach = spell.bootAt - CallsWireLimits.EMERGENCY_CALLBACK_MS..spell.unlockedAt
+        val kept = if (due) (spell.emergencyAt + known).filter { it in reach }.distinct().sorted().takeLast(MAX_SPELL_EMERGENCIES) else emptyList()
+        return if (kept == spell.emergencyAt) spell else spell.copy(emergencyAt = kept)
+    }
+
+    /**
+     * [spell] once Android's call log was read for it ([taken]): read, once more only after the
+     * first read and while a call Belay didn't have is on ([callElsewhere]), and with the emergency
+     * times the read decided by kept for that second read (none after it).
+     */
+    fun afterRead(spell: AfterRestart, taken: CallRecords.Taken, callElsewhere: () -> Boolean): AfterRestart =
+        keepEmergencies(spell.copy(read = true, again = !spell.read && callElsewhere(), seen = taken.seen), taken.emergencyAt)
+
+    /** Calls went off: [spell]'s calls are never read, and its emergency times go. */
+    fun noMoreReads(spell: AfterRestart): AfterRestart = spell.copy(read = true, again = false, emergencyAt = emptyList())
 
     /**
      * `enforcement.calls.problem` for [LOCKED_NOTE_FOR_MS] after the unlock, when the phone stayed

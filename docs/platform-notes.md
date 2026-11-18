@@ -2199,8 +2199,10 @@ number, a tap on one of Belay's buttons to text 911 or 988, `NEW_OUTGOING_CALL` 
 numbers (from the preloaded dialer or the lock screen's emergency dialer, also with a caller-ID code
 before it, T17, and before the first unlock after a restart, T19), an outgoing one in Android's call
 log, or Telecom's extra. A text sent from the texting app opens nothing: Android gives Belay no sign
-of it (T18). Belay keeps the time only on the phone, and forgets it once the window is over. A call
-that rings only because of the window is never sent (its record would tell a parent).
+of it (T18). Belay keeps the time only on the phone, and forgets it once the window is over (after
+a restart, the times around it only until Belay's last read of the call log for the calls before
+the unlock, T22). A call that rings only because of the window is never sent (its record would
+tell a parent).
 
 ### T12. Missed-call notifications
 
@@ -2475,7 +2477,8 @@ turn adb back on.
 
 ### T22. Android's call log before the first unlock
 
-**Confirmed in AOSP.** Verified on: AOSP (read 2026-11-18 for the fourth review's N1); Emulator
+**Confirmed in AOSP.** Verified on: AOSP (read 2026-11-18 for the fourth review's N1, and again
+for the fifth review's F1, P1 and P2); Emulator
 pending (`ci-emulator-test.sh`, a call before the unlock; `CallsInstrumentedTest`, the read);
 Pixel pending (Phase 5 checklist, 11.2 and 11.5).
 
@@ -2498,6 +2501,18 @@ Pixel pending (Phase 5 checklist, 11.2 and 11.5).
   false only with `DISALLOW_OUTGOING_CALLS` (Belay never sets it) or for a profile.
 - Telecom has nothing for the unlock (`InCallController`, `CallsManager`): a call that rang
   before it stays with the dialer that had it, and is logged when it ends.
+- And the calls after it, while it's on (read 2026-11-18 for the fifth review's plausible P1):
+  `InCallController.bindToServices` makes the user's one connection when its first call comes,
+  with the default dialer's in-call service only if `getDefaultDialerComponent` finds one (before
+  the unlock it finds none of Belay's, T19: `EmergencyInCallServiceConnection(systemInCallInfo,
+  null)`); `onCallAdded` hands every later call to that connection while it's bound
+  (`addCallToConnectedServices`), and only `unbindFromServices`, once no call is left, drops it.
+  So while a call that rang before the unlock is still on, every new call, in or out, goes to
+  the preloaded dialer, unfiltered, as before the unlock.
+- The call log can be changed. An app holding `WRITE_CALL_LOG` can add, change or delete entries
+  (`core/res/AndroidManifest.xml`: `dangerous`, `hardRestricted`, so it's held only once the
+  installer allowlists it; Play does for backup-and-restore apps), with any number, type, date
+  and duration, dated ahead too, and the preloaded dialer's call history deletes them.
 - `UserManager.getUserUnlockRealtime` would say when the unlock was, but it's `@hide`
   (`maxTargetSdk = R`).
 
@@ -2507,10 +2522,20 @@ time of the first call Belay's own in-call service had since, if sooner). With c
 the restart, Belay then reads Android's call log from the restart to that unlock time and keeps
 each call it didn't decide like one of its own, by the same rules (core's
 `CallRecords.whileLocked`: never 911, an emergency number, 988, a private number, or a call that
-rang only because of the 2-hour window), with what happened and no reason. A call Belay has
+rang only because of the 2-hour window), with what happened and no reason. For that window it
+reads from 2 hours before the restart, so a call to 988 just before it counts even when Belay's
+own record missed it (the fifth review's F1). A call Belay has
 itself, or one read before, isn't taken again. If Telecom had a call Belay didn't (one answered
 on the lock screen and still on), Belay reads once more after it, since Android logs it only at
-its end. While calls is on, `enforcement.calls.problem` says how long the phone stayed locked, for
+its end; that read decides by the emergency times the first one had (core's
+`AfterRestart.emergencyAt`, kept with the restart only until then), since the steps in between
+forget Belay's own record once its 2 hours are over. Calls made while that call is still on go
+to the preloaded dialer and aren't read: the Phase 5 checklist looks (step 11.9). Belay takes the log
+as Android keeps it: an app with `WRITE_CALL_LOG` could add a made-up call to 988 that makes
+the next 2 hours' strangers callbacks, never sent, or a made-up call from a contact, and the
+kid can delete an entry before Belay reads it. Belay reports that permission as "call history"
+(core's `SensitivePermissions`), so a parent sees it when deciding on such an app (threat model).
+While calls is on, `enforcement.calls.problem` says how long the phone stayed locked, for
 a day after an unlock 10 minutes or more after the restart.
 
 ## Off belay (Phase 11)

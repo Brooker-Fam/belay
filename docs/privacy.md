@@ -257,7 +257,9 @@ allows it, and only while that screen is open. Camera frames are never stored or
   calls are recorded, and deleted, with any records not sent yet, when calls is turned off; the
   kid can remove any of them (only the phone's copy: a record sent, or waiting to be, stays the
   parents'). When the kid last called 911 or 988 (or tapped a button to text them) is kept only
-  for the 2 hours every caller rings, and never sent; a call to 911 from the lock screen before the
+  for the 2 hours every caller rings, and never sent (after a restart, until Belay has read
+  Android's call log for the calls from before the unlock: at most until a call still on then
+  ends); a call to 911 from the lock screen before the
   phone's first unlock after a restart keeps only that time, in the part of the phone's storage
   Android opens at boot, until Belay's own storage opens. Belay's log on the phone (readable only
   with USB debugging) says what it did with each call, never why: nothing in it tells a call or

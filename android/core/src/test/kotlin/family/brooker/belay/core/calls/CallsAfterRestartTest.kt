@@ -178,6 +178,62 @@ class CallsAfterRestartTest {
     }
 
     @Test
+    fun `a call to 988 in the 2 hours before the restart opens the window into it`() {
+        // The log is read from 2 hours before the restart: the kid called 988 at 21:30, then restarted.
+        val nineEightEight = AndroidLogCall("988", at("2026-11-18T21:30:00"), WireCallDirection.OUT, 900, outcome = WireCallOutcome.ANSWERED)
+        val counselor = inCall("+15555550161", at("2026-11-18T22:40:00"))
+        val taken = take(listOf(nineEightEight, counselor))
+        assertTrue(taken.entries.single().callback, "it rang only because of the window")
+        assertNull(CallRecords.toWire(taken.entries.single(), private, android))
+        assertEquals(listOf(nineEightEight.at), taken.emergencyAt, "what the read decided by")
+        assertEquals(listOf(counselor.at), taken.seen, "the call before the restart isn't one of the spell's")
+        // One from longer ago opens nothing: its window was over before the restart.
+        val old = nineEightEight.copy(at = CallRecords.spellReadFrom(bootAt) - minute)
+        assertFalse(take(listOf(old, counselor)).entries.single().callback)
+        assertEquals(emptyList(), take(listOf(old, counselor)).emergencyAt)
+        assertEquals(bootAt - 2 * HOUR, CallRecords.spellReadFrom(bootAt))
+    }
+
+    @Test
+    fun `the emergency times a read decides by are kept for the next read, and only while one is due`() {
+        val spell = AfterRestart(12, bootAt, unlockedAt, callsOn = true)
+        val times = listOf(bootAt - 3 * HOUR, bootAt - HOUR, bootAt + 10 * minute, unlockedAt + HOUR)
+        // Only those whose 2 hours reach into the spell: from 2 hours before the restart to the unlock.
+        val kept = CallsPlan.keepEmergencies(spell, times)
+        assertEquals(listOf(bootAt - HOUR, bootAt + 10 * minute), kept.emergencyAt)
+        // A later step that has forgotten them keeps them, while the second read is still due.
+        val waiting = kept.copy(read = true, again = true)
+        assertEquals(kept.emergencyAt, CallsPlan.keepEmergencies(waiting, emptyList()).emergencyAt)
+        // After the last read, or with calls off through the restart, none are kept.
+        assertEquals(emptyList(), CallsPlan.keepEmergencies(waiting.copy(again = false), times).emergencyAt)
+        assertEquals(emptyList(), CallsPlan.keepEmergencies(spell.copy(callsOn = false), times).emergencyAt)
+        // A few at most.
+        val many = (1..50).map { bootAt + it * minute }
+        assertEquals(CallsPlan.MAX_SPELL_EMERGENCIES, CallsPlan.keepEmergencies(spell, many).emergencyAt.size)
+        assertEquals(many.takeLast(CallsPlan.MAX_SPELL_EMERGENCIES), CallsPlan.keepEmergencies(spell, many).emergencyAt, "the newest")
+        // Calls off: the spell's calls are never read, and the times go.
+        val off = CallsPlan.noMoreReads(waiting)
+        assertEquals(emptyList(), off.emergencyAt)
+        assertFalse(CallsPlan.readLockedCalls(off, callsOn = true) { false })
+        assertFalse(CallsPlan.readLockedCalls(CallsPlan.noMoreReads(spell), callsOn = true) { false }, "not even a first read")
+    }
+
+    @Test
+    fun `a read keeps what it decided by for the second read only`() {
+        val nineOneOne = at("2026-11-18T22:05:00")
+        val spell = CallsPlan.keepEmergencies(AfterRestart(12, bootAt, unlockedAt, callsOn = true), listOf(nineOneOne))
+        val first = CallsPlan.afterRead(spell, take(emptyList(), emergencyAt = spell.emergencyAt)) { true }
+        assertTrue(first.read)
+        assertTrue(first.again, "a call Belay didn't have is still on")
+        assertEquals(listOf(nineOneOne), first.emergencyAt)
+        val second = CallsPlan.afterRead(first, take(emptyList(), emergencyAt = first.emergencyAt)) { error("not asked after the first read") }
+        assertFalse(second.again)
+        assertEquals(emptyList(), second.emergencyAt, "gone after the last read")
+        // A first read with no call still on keeps none.
+        assertEquals(emptyList(), CallsPlan.afterRead(spell, take(emptyList(), emergencyAt = spell.emergencyAt)) { false }.emergencyAt)
+    }
+
+    @Test
     fun `the report says how long the phone stayed locked, for a day, when it was 10 minutes or more`() {
         val spell = AfterRestart(12, bootAt, unlockedAt, callsOn = true)
         val note = assertNotNull(CallsPlan.lockedNote(spell, unlockedAt + minute))

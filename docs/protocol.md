@@ -438,7 +438,9 @@ phone's other calls (30 a minute).
 - **Before the first unlock after a restart** Belay decides no calls (only its outgoing-call
   receiver runs then): the preloaded dialer takes them all, unfiltered. Once the phone is
   unlocked, Belay takes those calls from Android's call log into its recent calls and records,
-  by the rules below, with what happened and no `reason`; and while calls is on, for a day after
+  by the rules below (a call to 911 or 988 in the 2 hours before the restart opens the window
+  too, and a call still on at the unlock is decided by the same window once it ends), with what
+  happened and no `reason`; and while calls is on, for a day after
   a phone stayed locked 10 minutes or more, `enforcement.calls.problem` says how long ("The
   phone restarted and stayed locked for about 8 hours. …"), never when or which calls.
 - **Records** (`log`): when, direction, duration, outcome, and the contact, or the number for

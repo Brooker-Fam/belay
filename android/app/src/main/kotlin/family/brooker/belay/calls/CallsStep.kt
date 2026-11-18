@@ -72,12 +72,15 @@ class CallsStep(context: Context, private val store: AgentStore) {
         // restart, and Android's call log for a call its dialer didn't see.
         val beforeUnlock = LockedCalls.emergencyContactAt(app)
         // The last restart, and the calls Android logged while the phone was locked after it, read
-        // before the window below forgets the times they're decided by.
+        // before the window below forgets the times they're decided by. Those times are kept with
+        // the restart until its last read (the fifth review's F1), so a second read, after the
+        // window is forgotten here, decides by the same window.
+        val known = listOfNotNull(before?.lastEmergencyContactAt, beforeUnlock)
         val restart = CallsPlan.afterRestart(
             before?.afterRestart, bootCount(), bootAt = System.currentTimeMillis() - SystemClock.elapsedRealtime(),
             unlockedAt = CallFlow.firstCallAt?.let { minOf(now, it - 1) } ?: now, callsWasOn = before?.on == true && calls != null,
         )
-        val (spell, whileLocked) = lockedCalls(restart, policy, listOfNotNull(before?.lastEmergencyContactAt, beforeUnlock), android)
+        val (spell, whileLocked) = lockedCalls(CallsPlan.keepEmergencies(restart, known), policy, known, android)
         state = state.copy(afterRestart = spell)
         val fromLog = if (calls != null) CallRecords.lastEmergencyContact(AndroidCalls.log(app, now - CallsWireLimits.EMERGENCY_CALLBACK_MS, limit = 50), android, now) else null
         val seen = listOfNotNull(fromLog, beforeUnlock.takeIf { calls != null }).maxOrNull()
@@ -123,15 +126,16 @@ class CallsStep(context: Context, private val store: AgentStore) {
     /**
      * The calls Android logged between the restart and the unlock that Belay didn't decide (core's
      * CallRecords.whileLocked), when they're due to be read (CallsPlan.readLockedCalls): [spell] as
-     * read, and the entries to keep. [emergencyAt]: the kid's last emergency contact as Belay knew it
-     * before the restart, and the time kept before the unlock (LockedCalls).
+     * read, and the entries to keep. [emergencyAt]: the kid's last emergency contact as Belay knows
+     * it now, and the time kept before the unlock (LockedCalls), with those [spell] kept from the
+     * first read; the log is read from 2 hours before the restart for calls to 911 or 988.
      */
     @VisibleForTesting
     internal fun lockedCalls(spell: AfterRestart, policy: WirePolicy, emergencyAt: List<Long>, android: EmergencyNumbers): Pair<AfterRestart, List<CallEntry>> {
         val calls = policy.calls ?: return spell to emptyList()
         val elsewhere by lazy { InCall.elsewhere(app) }
         if (!CallsPlan.readLockedCalls(spell, callsOn = true) { elsewhere } || !AndroidCalls.canReadLog(app)) return spell to emptyList()
-        val log = AndroidCalls.log(app, since = spell.bootAt, limit = CallRecords.MAX_KEPT, until = spell.unlockedAt)
+        val log = AndroidCalls.log(app, since = CallRecords.spellReadFrom(spell.bootAt), limit = CallRecords.MAX_KEPT, until = spell.unlockedAt)
         val zone = ZoneId.systemDefault()
         val rules = CallsNow(calls = calls, contacts = CallContacts.of(policy), blocked = CallContacts.blocked(policy, android), now = spell.unlockedAt)
         val quietAt = { at: Long ->
@@ -142,11 +146,11 @@ class CallsStep(context: Context, private val store: AgentStore) {
             }
         }
         val taken = CallRecords.whileLocked(
-            log, spell.bootAt, spell.unlockedAt, spell.seen, store.calls(), rules, quietAt, emergencyAt, CallContacts.private(policy), android,
+            log, spell.bootAt, spell.unlockedAt, spell.seen, store.calls(), rules, quietAt, spell.emergencyAt + emergencyAt, CallContacts.private(policy), android,
         ) { UUID.randomUUID().toString() }
         // No count and no times: what was taken would say whether the kid had calls then.
         Log.i(Agent.TAG, "calls: read Android's call log for the time before the unlock")
-        return spell.copy(read = true, again = !spell.read && elsewhere, seen = taken.seen) to taken.entries
+        return CallsPlan.afterRead(spell, taken) { elsewhere } to taken.entries
     }
 
     private fun bootCount(): Int? = Settings.Global.getInt(app.contentResolver, Settings.Global.BOOT_COUNT, -1).takeIf { it >= 0 }
@@ -172,7 +176,15 @@ class CallsStep(context: Context, private val store: AgentStore) {
         val giveBack = if (owner && isDialer) CallsPlan.giveBackTo(state, installed, app.packageName) else null
         // Done once Belay's dialer is off and it no longer holds the role, and nothing is denied.
         val undone = !enabled && !isDialer && state.callPhoneDenied.isEmpty()
-        val next = if (undone) null else state.copy(on = false, report = null, lastEmergencyContactAt = null, callPhoneRequesters = emptySet(), requestersReadFrom = null)
+        // The last restart's calls aren't read any more, and the emergency times kept for them go.
+        val next = if (undone) {
+            null
+        } else {
+            state.copy(
+                on = false, report = null, lastEmergencyContactAt = null, callPhoneRequesters = emptySet(), requestersReadFrom = null,
+                afterRestart = state.afterRestart?.let(CallsPlan::noMoreReads),
+            )
+        }
         if (before?.on == true) Log.i(Agent.TAG, "calls: off; giving the dialer back to ${giveBack ?: "Android's choice"}")
         return Done(AgentStore.CallsWrite(next, dropUnsent = true, clearRecents = true), null, emptyList(), giveBack, disable = enabled, nextAt = null, next)
     }
