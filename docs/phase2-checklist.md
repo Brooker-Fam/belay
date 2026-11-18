@@ -82,6 +82,52 @@ Make sure you know the parent account's password, then:
    find it). Don't test a recovery-mode reset unless you're ready to sign in with that
    account afterwards.
 
+## 7. Ways around Belay (only the real phone shows these)
+
+From the audit in [platform-notes.md](platform-notes.md#getting-around-belay-the-phase-2-audit)
+(H1 to H12). Do these with protection on and before hardening, except where it says. Have
+the home Wi-Fi's password ready.
+
+1. **Chrome's settings.** In Chrome, open `chrome://policy`: `ProxySettings` and
+   `DnsOverHttpsMode` are listed with the others, status OK. Write down Chrome's version
+   (`chrome://version`).
+2. **A proxy.** Settings > Network & internet > Internet > the home Wi-Fi > the pencil >
+   Advanced options > Proxy: Manual, host `192.0.2.1`, port `8080` (a test address nobody
+   uses). Save. Within a minute the phone's page shows "Someone may be getting around Belay"
+   with Belay's words about a proxy. Chrome still opens pages; write down whether an approved
+   app's own browser does (it shouldn't, through a proxy that isn't there). Set Proxy back to
+   None: the warning goes at the next check-in.
+3. **Chrome rolled back.** Settings > Apps > Chrome > the menu > Uninstall updates. Open
+   Chrome: `chrome://policy` still lists Belay's settings, OK; write down the version and any
+   setting it marks unknown. Update Chrome from Play again. Then Settings > Apps > Chrome >
+   Storage & cache > Clear storage: `chrome://policy` still lists them.
+4. **Reset options.** Settings > System > Reset options > Reset Bluetooth & Wi-Fi, then join
+   the Wi-Fi again: Settings > Network & internet > Private DNS still shows the filter and
+   can't be changed. With screen time on, Reset app preferences: the phone's page says
+   Belay's usage access is off, and Belay's screen asks to turn it back on. Try: write down
+   whether Android lets you, or asks to allow restricted settings first.
+5. **The time zone.** Settings > System > Date & time: "Set time zone automatically" is on
+   and can't be turned off.
+6. **Wireless debugging (before hardening).** Settings > System > Developer options >
+   Wireless debugging, on: at Belay's next step (within the hour; opening Belay runs one) the
+   phone's page shows Belay's words about wireless debugging. Turn it off: they go. After
+   hardening, it can't be turned on.
+7. **Pinning and picture-in-picture.** Settings > Security & privacy > More security settings
+   > App pinning, on. Pin an approved app, then pause the phone from the parent page: the app
+   closes and pinning ends. Write down what you see. The same with a video in
+   picture-in-picture.
+8. **The assistant during a pause.** With the phone paused, hold the power button (or say
+   "Hey Google"): write down whether the assistant answers a question, which app answers
+   (Settings > Apps > Default apps > Digital assistant app), and what happens when you ask it
+   to open YouTube.
+9. **Guests and in-app browsers.** Quick settings shows no user switcher, and Settings >
+   System > Multiple users can't add a guest. A link to a site the filter blocks, opened in an
+   approved app's own browser and in the Google app, doesn't load; a Google search in the
+   Google app uses SafeSearch.
+10. **The captive portal** (optional, at a café or hotel with a sign-in page): write down the
+    sign-in app (Settings > Apps > show system apps: "Captive Portal Login" and its package
+    name), and whether the page opens in Chrome or in its own window.
+
 ## Results
 
 | Step | Check | Result | Android build |
@@ -98,3 +144,13 @@ Make sure you know the parent account's password, then:
 | 5 | Account lock and SIM lock | pending | |
 | 5 | Play's accounts: another account refused in Play (Play's words, and its version); works again with the list empty | pending | |
 | 6 | Factory reset greyed out; adb blocked and back in maintenance mode | pending | |
+| 7 | `chrome://policy`: ProxySettings and DnsOverHttpsMode OK; Chrome's version | pending | |
+| 7 | A Wi-Fi proxy: reported within a minute; Chrome still works; the report goes with it | pending | |
+| 7 | After "Uninstall updates" and Clear storage, Chrome still has Belay's settings | pending | |
+| 7 | Network reset keeps Private DNS; "Reset app preferences" turns usage access off (could it be turned on again?) | pending | |
+| 7 | Time zone automatic and locked | pending | |
+| 7 | Wireless debugging reported, and gone with it; not possible after hardening | pending | |
+| 7 | A pinned app and picture-in-picture close when the phone pauses | pending | |
+| 7 | The assistant during a pause: does it answer, which app, what "open YouTube" does | pending | |
+| 7 | No guest; in-app browser and Google app filtered, SafeSearch on | pending | |
+| 7 | The captive portal's app and window (optional) | pending | |
