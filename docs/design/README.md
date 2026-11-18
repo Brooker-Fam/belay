@@ -8,8 +8,8 @@ where a design's protocol proposal differs from it, protocol.md is what's built.
 
 **What's built:** every phase here but Phase 5's texts and Phase 9, run end to end on the Android
 17 emulator in CI ([emulator.md](../emulator.md#what-ci-runs)). None of it has run on a real Pixel
-yet: each built phase has a Pixel checklist, named below. [ROADMAP.md](../../ROADMAP.md) has the
-rest.
+yet: each built phase has a Pixel checklist, named below, and [pixel-day.md](../pixel-day.md) has
+the order to run them in. [ROADMAP.md](../../ROADMAP.md) has the rest.
 
 The Android facts were checked on 2026-11-17 against AOSP `android-17.0.0_r1` and
 developer.android.com, and written up as entries for [docs/platform-notes.md](../platform-notes.md)

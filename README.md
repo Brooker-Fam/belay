@@ -15,7 +15,8 @@ by asking Claude or on the parent page. Locking factory reset and USB debugging 
 step a parent takes when ready. What a determined kid can still do is in
 [docs/threat-model.md](docs/threat-model.md); the phase checklists, from
 [docs/phase0-checklist.md](docs/phase0-checklist.md) on, are the real-phone checks still to do
-before it's safe to hand over, and [ROADMAP.md](ROADMAP.md) has what comes next.
+before it's safe to hand over, in the order [docs/pixel-day.md](docs/pixel-day.md) runs them, and
+[ROADMAP.md](ROADMAP.md) has what comes next.
 
 **Setting up a phone for your kid?** Start with [docs/guide.md](docs/guide.md): one guide, for
 a parent who has never used adb, from a used Pixel 8 to a phone your kid uses, and the years

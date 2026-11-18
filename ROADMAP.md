@@ -175,7 +175,8 @@ phase's Pixel checklist is in `docs/`.
     the parent page and Claude over MCP without an Android phone.
 
 **Next:**
-- the Pixel checklists, starting with [Phase 0's](docs/phase0-checklist.md);
+- the Pixel checklists, in the order of [docs/pixel-day.md](docs/pixel-day.md), starting with
+  [Phase 0's](docs/phase0-checklist.md);
 - Phase 5's texts, after the Pixel test of Google Messages' archival hook;
 - Phase 9, when another family needs it.
 

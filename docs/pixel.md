@@ -1,7 +1,8 @@
 # The Pixel 8
 
 Belay targets a used Pixel 8 on Android 17. Google supports the Pixel 8 with updates
-until October 2030.
+until October 2030. Before your kid has it, [pixel-day.md](pixel-day.md) runs every Pixel
+checklist on it, in order, from a factory-fresh phone.
 
 ## Buying a used one
 

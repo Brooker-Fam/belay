@@ -12,7 +12,8 @@ own.
 > says **Not yet checked on a Pixel** wherever the real phone may behave differently, with the
 > checklist that will check it. For now your first phone is a test: keep the
 > [Phase 0 checklist](phase0-checklist.md) open beside this guide, and write down what you
-> see.
+> see. [pixel-day.md](pixel-day.md) has the order of every checklist after it, up to handing
+> the phone to your kid.
 
 ## 1. What Belay is and isn't
 

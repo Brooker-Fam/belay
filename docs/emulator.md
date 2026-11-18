@@ -1,7 +1,7 @@
 # The emulator
 
-Develop on the Android 17 emulator; prove things on the real Pixel 8
-([phase0-checklist.md](phase0-checklist.md)).
+Develop on the Android 17 emulator; prove things on the real Pixel 8, with its checklists in
+the order of [pixel-day.md](pixel-day.md), from [phase0-checklist.md](phase0-checklist.md) on.
 
 ## The image
 
