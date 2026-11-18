@@ -155,7 +155,7 @@ const StepItem: FC<{ view: View; step: StartStep }> = ({ view, step }) => {
         <Step
           title="Turn on notifications"
           state={step.state}
-          why="So you hear at once when your kid asks for an app or needs help, or an AI app proposes a change. Each parent turns them on in their own browsers; on an iPhone, add Belay to the Home Screen first."
+          why="So you hear at once when your kid asks for an app or needs help, an AI app proposes a change, or anyone signs in to Belay. Each parent turns them on in their own browsers; on an iPhone, add Belay to the Home Screen first."
           links={<a href="/settings#notifications">Notifications, in Settings</a>}
         >
           <p class="small">{step.state === "done" ? `On for you in ${some(step.browsers)}.` : "Not on in any of your browsers yet."}</p>

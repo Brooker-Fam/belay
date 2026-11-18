@@ -326,6 +326,30 @@ describe("migration 14 (caregivers)", () => {
   });
 });
 
+describe("migration 18 (each session's browser: the second bypass audit's B1)", () => {
+  it("keeps every session signed in, each with an id of its own and no browser, and new ones take both", () => {
+    const db = phase2();
+    migrate(
+      db,
+      loadMigrations().filter((m) => m.version <= 17),
+    );
+    const insert = db.prepare("INSERT INTO sessions (id_hash, parent_id, csrf, created_at, expires_at) VALUES (?, 'parent-1', 'csrf', ?, ?)");
+    insert.run("hash-1", T, T + 86_400_000);
+    insert.run("hash-2", T + 1, T + 86_400_000);
+    migrate(db);
+    expect(db.pragma("user_version", { simple: true })).toBe(loadMigrations().at(-1)?.version);
+    const rows = db.prepare<[], { id_hash: string; id: string; browser: string | null }>("SELECT id_hash, id, browser FROM sessions ORDER BY id_hash").all();
+    expect(rows.map((r) => [r.id_hash, r.browser])).toEqual([
+      ["hash-1", null],
+      ["hash-2", null],
+    ]);
+    expect(rows.every((r) => /^[0-9a-f]{32}$/.test(r.id))).toBe(true);
+    expect(new Set(rows.map((r) => r.id)).size).toBe(2);
+    // An id is one session's only.
+    expect(() => db.prepare("INSERT INTO sessions (id_hash, id, parent_id, csrf, created_at, expires_at) VALUES ('hash-3', ?, 'parent-1', 'csrf', ?, ?)").run(rows[0]?.id, T, T + 1)).toThrow(/UNIQUE/);
+  });
+});
+
 describe("the migrations", () => {
   it("are numbered once each: two with one number are refused, as parallel work merged would make them", () => {
     const versions = loadMigrations().map((m) => m.version);

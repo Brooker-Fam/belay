@@ -11,8 +11,9 @@ import { Csrf, Layout, Notice, OnThisPage, PostButton, Time, type View } from ".
 const Notifications: FC<{ view: View; publicKey: string; browsers: PushSubscription[] }> = ({ view, publicKey, browsers }) => (
   <div class="card">
     <p>
-      Belay can tell you on your phone or computer when a phone has a request waiting, or an AI app proposes a change. Each notice is end-to-end
-      encrypted to your browser: its push service (Apple, Google, Mozilla or Microsoft) carries it but can't read it.
+      Belay can tell you on your phone or computer when a phone has a request waiting, an AI app proposes a change, or anyone signs in to Belay, a
+      parent or a caregiver, so a sign-in with your password that wasn't you shows up at once. Each notice is end-to-end encrypted to your browser:
+      its push service (Apple, Google, Mozilla or Microsoft) carries it but can't read it.
     </p>
     <p class="muted small" data-push-unsupported hidden>
       This browser can't get notifications from Belay. On an iPhone or iPad, add Belay to your Home Screen first (Share, then Add to Home Screen),
