@@ -85,7 +85,9 @@ hours and the place names.
 - **Kept:** periodic fixes 7 days, on-demand fixes 30 days, place events 90 days, then deleted
   (settings). Lost-mode fixes until lost mode ends plus 7 days.
 - **`locate_now`:** the server adds a command; the phone's long-poll (Phase 2) delivers it in
-  seconds; the request waits up to 60 s for the fix.
+  seconds; the request waits up to 60 s for the fix. A check's answer is its own, or that of a
+  check that took its place in its 2 minutes (the phone runs only the newest), never a later
+  one's: the eighth security review's K6 found a parent's old check shown another's failure.
 - **Describing a fix** without any third-party service: relative to the family's places ("At
   School, within 40 m"; "1.2 km from Home"), computed on the server. An "Open in a map" link puts
   the coordinates in a URL for a map site the family picks (OpenStreetMap or Google Maps); only

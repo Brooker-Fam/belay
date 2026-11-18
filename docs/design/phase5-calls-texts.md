@@ -117,7 +117,10 @@ Belay keeps Google Messages as the SMS and RCS app and names itself the archival
 
 - Google Messages writes RCS, SMS and MMS messages to Android's Telephony provider on each event
   (sent, received, edited, deleted) and starts Belay's archival service with
-  `GOOGLE_MESSAGES_ARCHIVAL_UPDATE`.
+  `GOOGLE_MESSAGES_ARCHIVAL_UPDATE`. Any app can start that service, and Android doesn't say
+  which did, so an update is only a hint: Belay reads only one message's URI (`content://sms/<id>`
+  or `content://mms/<id>`, through one it builds), or compares the store itself (the eighth
+  security review's K1, which the debug-only test already follows).
 - Android grants Belay the restricted-messages app-op, so Belay can read RCS rows (T7, T8).
 - Belay already holds `READ_SMS`: allowlisted by the adb install (I4), granted by policy only
   while texts are on (Phase 4's permission rule).

@@ -135,7 +135,8 @@ may read (the policy's `ai_reads`), under "What your parent can see".
 AI app could read none of it; `AiAlwaysTest` holds this list to the phone's, and
 `sixth-review.test.ts` holds what the tools return with every category off to it, the write
 tools' answers too since the seventh review's M1, and checks that a write tool taking an app
-refuses in a category's words, the same for any app):
+refuses in a category's words, the same for any app, `change_screen_time` with apps too since the
+eighth review's K2, and that no answer names an app the phone reported):
 
 - **The phone:** the phones' names, their status and problems ("silent for 14 hours", "the phone
   hasn't applied the rules changed 4 hours ago", or, first, that someone may be getting around
@@ -162,7 +163,14 @@ counts them, and so do the sentences about the next stage and proposals waiting,
 `change_screen_time` says it changed. A package name says which app is on the phone as plainly
 as its name does, so neither shows; how many apps a rule covers says how the rules are shaped,
 not which apps. The names of limits and schedules show as the kid sees them: the family's, or
-the one Belay gave a limit after its apps when it was made (a parent can rename it).
+the one Belay gave a limit after its apps when it was made (a parent can rename it). Without
+the Apps category, `change_screen_time` takes no apps: a change that names one (under a limit,
+other than `["*"]`, exempt, or left open during a schedule), or renames a limit on some apps, gets
+`block_app`'s refusal, the same whatever the apps. So a name Belay gave after apps is a parent's
+limit's, or one an AI app made while the category was on (the eighth review's K2: a limit an AI
+app added was named after the apps it listed, as the phone names them, which told it the names of
+apps the phone has or had, and whether one was under a rule already said which apps the rules
+hold).
 `get_screen_time` and `get_network_activity` show the apps' package names, which the phone
 counted, without their names from the app list.
 
@@ -178,10 +186,12 @@ account ids, the email addresses of the accounts Play may use (only how many) an
 or which numbers are private, or which websites are (or whether there are any).
 
 Every tool call is in the activity log (Activity → "Also show what AI apps read"). So is each
-change `change_calls` refuses (one that would change nothing aside), and each schedule
-`change_screen_time` refuses as too short, shown with the changes ("Claude via MCP … was
-refused: it tried to change calls with phone numbers while AI access to calls is off"), once an
-hour per connection, phone and reason, naming no number, contact or rule.
+change `change_calls` refuses (one that would change nothing aside), and each change
+`change_screen_time` refuses for naming apps while the Apps category is off, or for a schedule
+too short, shown with the changes ("Claude via MCP … was refused: it tried to change calls with
+phone numbers while AI access to calls is off", "… to change screen time with apps while AI
+access to apps is off"), once an hour per connection, phone and reason, naming no number,
+contact, app or rule.
 
 Each connection may send 300 JSON-RPC messages a minute. A request may carry a batch of at
 most 20, and each message in it counts. What reaches the kid is limited too, per connection and
@@ -212,7 +222,7 @@ reason.
 | `get_calls(device, from?, to?)` | Phase 5: the calls the phone recorded, newest first: when, incoming or outgoing, answered, missed, refused, voicemail or not placed, why, how long, and the contact (its name under `untrusted`) or the number of someone who isn't one. Only while the phone records calls; the last 7 days by default, at most 92. Needs the Calls category. |
 | `change_calls(device, change, reason)` | Phase 5: `mode`, `unknown`, `withheld`, `outgoing`, `quiet`, contacts to add, change (by id) or remove, numbers to block or unblock, on a phone whose calls are on. The server decides: a change whose every part tightens applies at once; anything else, or a mix, or anything that takes from a parent contact, becomes a proposal for a parent. Turning calls on or off, recording them (`log`) and private numbers are refused, and so is blocking 911, 988 or an emergency number, and a contact's `texts` (not enforced yet: texting works with anyone for now). Without the Calls category it takes no phone numbers (to block or unblock, or a contact's), with one answer whatever the number. |
 | `get_location(device)` | Phase 4: the latest fix the server keeps: when and how long ago, why it was taken, how accurate, its coordinates, and where it is by the family's places (inside one, or how far from the nearest). Needs the Location category. |
-| `locate_now(device)` | Phase 4: asks the phone for a fresh fix and waits up to a minute for its answer, which ends the wait as soon as it comes: the fix, or that the phone couldn't find where it is (its own words under `untrusted`) or got the check too late. Only while the phone shares where it is on demand or periodically, and with the Location category. The kid's phone shows a notice naming the AI app ("Your parent checked where this phone is, using Claude"). At most 6 an hour per connection and phone. |
+| `locate_now(device)` | Phase 4: asks the phone for a fresh fix and waits up to a minute for its answer, which ends the wait as soon as it comes: the fix, or that the phone couldn't find where it is (its own words under `untrusted`) or got the check too late. Only this check's answer counts, or one of a check that took its place in its 2 minutes, as on the parent and caregiver pages (the eighth review's K6). Only while the phone shares where it is on demand or periodically, and with the Location category. The kid's phone shows a notice naming the AI app ("Your parent checked where this phone is, using Claude"). At most 6 an hour per connection and phone. |
 | `get_place_events(device, from?, to?)` | Phase 4: arrivals at and departures from the family's places, newest first; the last 7 days by default, at most 92. Needs the Location category. |
 | `get_policy(device)` | What a phone enforces now, in words, with the rules' version and whether the phone has applied it; blocked and waiting apps; a line each on its screen time, location and calls; proposals waiting for a parent (in `untrusted`, naming an app only with the Apps category, and a number or contact only with the Calls category); whether the phone has a recovery key, and when one was last used; how many reset protection accounts, and how many accounts Play may use (never which). |
 | `get_rules(device)` | Phase 3: the phone's screen-time rules (measuring, limits with their ids, schedules, exempt apps, self-serve, what happens when Belay can't count), extra time given today, the last "lock now", and proposals waiting. The apps under each rule with the Apps category; without it, only how many. With the Screen time category, where each limit stands today; with Requests, more-time requests waiting; with Stage and agreement, the stage, what the next one changes, and the agreement with the kid's answer. |
@@ -223,7 +233,7 @@ reason.
 | `block_app(device, package, note?)` | Blocks an app at once (tightening). It refuses the apps the phone never blocks, so 911 and 988 always work: Belay itself, the dialer and the services that place calls, the texting app, the keyboard, the home screen, emergency and safety apps, System UI, Settings, and anything else the phone reports it never blocks. An app that isn't on the phone yet can be blocked ahead of time, but AI apps may have at most 50 of those per phone; a parent clears them on the phone's page. Needs the Apps category. |
 | `pause_phone(device, minutes?)` | Pauses the phone at once, for some minutes or until a parent resumes it. The kid's phone says so in Belay's own words ("Your parent paused this phone until 6:30 PM."): the AI app writes no note (a parent can, on the parent page). It can't shorten a pause already running, and against one at least as long it changes nothing; a longer one keeps a parent's note. At most 6 pauses and locks an hour per connection and phone. |
 | `lock_phone(device, minutes)` | Phase 3: pauses the phone for 5 to 240 minutes and locks its screen, if the phone gets it within 10 minutes (during a call, about 2 minutes after the call ends), with no note, like `pause_phone`. Calls, texts, 911 and 988 still work. A phone that couldn't lock says why, word for word, under `untrusted` in `get_rules`. `get_rules`' `last_lock` says only when it was sent and whether the phone got it in time, in the same words whether or not a call was on, with no time of the phone's: the phone reports it when it has it, and a phone that can't lock (until it restarts after an update) fails every one in the same words, call or not, so nothing in it says the kid was on a call, or when one ended (fifth security review, F2; sixth, G2). Counted with `pause_phone`'s pauses. |
-| `change_screen_time(device, change, reason)` | Phase 3: limits (new, or changed by id), schedules, removing either, exempt apps, self-serve, what happens when Belay can't count, or `stage` (a stage's name, on its own, with the Stage and agreement category). The server decides: a change whose every part tightens applies at once; anything else, or a mix, becomes a proposal for a parent, and so does moving to another stage, always, and anything about a schedule that locks the screen (a new one, its lock turned on, or a change to one that locks). Each schedule it adds or changes runs at least 15 minutes, or it's refused. Belay names a limit or schedule it adds or renames (below): a `name` the AI app gives isn't used as written. |
+| `change_screen_time(device, change, reason)` | Phase 3: limits (new, or changed by id), schedules, removing either, exempt apps, self-serve, what happens when Belay can't count, or `stage` (a stage's name, on its own, with the Stage and agreement category). The server decides: a change whose every part tightens applies at once; anything else, or a mix, becomes a proposal for a parent, and so does moving to another stage, always, and anything about a schedule that locks the screen (a new one, its lock turned on, or a change to one that locks). Each schedule it adds or changes runs at least 15 minutes, or it's refused. Belay names a limit or schedule it adds or renames (below): a `name` the AI app gives isn't used as written. Without the Apps category it takes no apps (under a limit, exempt, or open during a schedule) and renames no limit on some apps: one refusal, whatever the apps (the eighth review's K2). |
 | `get_server_health` | The family's server itself: its problems (urgent first), the last backup and daily try, when a backup was last verified and the last restore drill, free disk space, the database's size, and whether its clock agrees with the phones'. No family data. |
 | `propose_change(device, change, reason)` | Proposes loosening a rule (`allow_app` with a package, which needs the Apps category, `resume`, `lift_restriction` with a restriction, `web_filter_off`, `new_apps_allow`) for a parent to approve on the parent page. It changes nothing itself. |
 
@@ -280,7 +290,9 @@ too, since whoever holds a phone's token can send any text.
   after what it is: a limit after its apps, as the phone names them ("Chess Club and Puzzle
   Pop", "Chess Club, Puzzle Pop and 2 more apps", or "3 apps" for apps the phone never
   reported, whose package names could be anything), a daily total "Screen time", a schedule
-  after its kind ("School", "Bedtime", "Schedule"). Renaming is a proposal, like any change
+  after its kind ("School", "Bedtime", "Schedule"). An AI app adds or renames a limit on some
+  apps only while the Apps category is on: without it, a change that names apps, or renames a
+  limit on some, is refused. Renaming is a proposal, like any change
   that doesn't tighten, and it proposes Belay's name, not the AI app's. A name Belay wrote
   follows its limit when apps are added or removed, by anyone; a name a parent wrote stays as
   it is. A pause or lock an AI app makes has no note: the phone says it in Belay's words, and
