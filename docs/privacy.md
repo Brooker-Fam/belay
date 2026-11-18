@@ -153,11 +153,17 @@ app. Call records only while a parent also turns on "Keep a record of calls" (`l
   or not placed because the rules didn't allow it) and why (not a contact, no caller ID, a quiet
   time, a number the kid may not call);
 - the contact's id, or the number of someone who isn't a contact, so a parent can add or block
-  them. Nothing for a caller with no caller ID.
+  them. Nothing for a caller with no caller ID;
+- a caller whose caller ID the phone network says may be fake (it failed STIR/SHAKEN) is a
+  stranger's call, whatever number it showed: recorded with that number, or with none when it
+  showed 911, 988 or a private number (it says nothing about who called, and would read as the
+  kid being in touch with one). An outgoing call is recorded only with its contact or the number
+  it reached.
 
 Never what anyone says, and never a call with 911, an emergency number, 988 or one of the
-family's private numbers: the phone doesn't record those at all, and the server drops any record
-of one it gets (it also treats 988's full number, 1-800-273-8255, as 988). Nor does the server
+family's private numbers, also when the kid dials a caller-ID code before it (`*67 988`): the
+phone doesn't record those at all, and the server drops any record of one it gets (it also
+treats 988's full number, 1-800-273-8255, as 988). Nor does the server
 keep a record about a contact who has a private number, since a call with them may have been
 with it. For 2 hours after the
 kid calls 911 or 988 (or taps one of Belay's buttons to text them), every caller rings, so they
@@ -219,11 +225,17 @@ allows it, and only while that screen is open. Camera frames are never stored or
   Phase 5 keeps Belay's own recent calls, the last 30 days (at most 500): when, which way, how
   long, what happened and why, and the contact or the number; never a call with 911, an
   emergency number, 988 or a private number. They're the kid's recent calls, kept whether or not
-  calls are recorded, and deleted, with any records not sent yet, when calls is turned off. When
-  the kid last called 911 or 988 (or tapped a button to text them) is kept only for the 2 hours
-  every caller rings, and never sent. Network logging (Phase 3) keeps the counts of today and the
-  two days before (which app looked up which name, how many times), and where Android's batches
-  stand; all of it goes, with the days not sent yet, when a parent turns it off.
+  calls are recorded, and deleted, with any records not sent yet, when calls is turned off; the
+  kid can remove any of them (only the phone's copy: a record sent, or waiting to be, stays the
+  parents'). When the kid last called 911 or 988 (or tapped a button to text them) is kept only
+  for the 2 hours every caller rings, and never sent; a call to 911 from the lock screen before the
+  phone's first unlock after a restart keeps only that time, in the part of the phone's storage
+  Android opens at boot, until Belay's own storage opens. Belay's log on the phone (readable only
+  with USB debugging) says what it did with each call, never why: nothing in it tells a call or
+  text with 911, 988 or a private number from any other. Network logging (Phase 3) keeps the
+  counts of today and the two days before (which app looked up which name, how many times), and
+  where Android's batches stand; all of it goes, with the days not sent yet, when a parent turns
+  it off.
 - **On the family's server:** one SQLite database in `/data`, on a machine the family
   controls ([server.md](server.md)). Nothing goes to Belay's authors or anyone else. There
   are no analytics, telemetry, ads or crash-reporting SDKs, in the agent or the server.
@@ -390,7 +402,10 @@ sends outside the family's server, and the parent page says so where you choose 
   app.
 - A call the rules refused never rings; Belay's recent calls say why ("Missed: number not in your
   contacts"). Calls with 911, 988 and the private numbers show there, marked "only on this phone",
-  only while the phone's own call history has them.
+  only while the phone's own call history has them. A caller whose number the phone network
+  couldn't confirm says "The phone network couldn't confirm this number. It may be fake." Every
+  call has Remove, which takes it off Belay's list on this phone; while calls are recorded, the
+  screen says the parent's list stays as it is.
 - When Belay isn't the phone's calling app (it broke, or Android refused), its screen says so:
   "calls go through the phone's own app. Your parent can see this."
 
