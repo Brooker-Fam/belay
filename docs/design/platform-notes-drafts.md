@@ -8,7 +8,8 @@ back the designs in this folder, and re-check some Phase 2 facts.
   another project is named.
 - **Verified on:** nothing here ran on a device. Every entry says *AOSP*, *Docs* or both, and
   what to check on the emulator or the Pixel before Belay relies on it.
-- Entries marked **(Phase 2)** matter to the work being built now.
+- Entries marked **(Phase 2)** mattered to Phase 2 while it was being built; it's built now, and
+  so are most phases these drafts back ([README.md](README.md) says which).
 
 ## Summary
 

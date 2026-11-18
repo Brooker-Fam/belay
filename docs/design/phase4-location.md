@@ -1,7 +1,11 @@
 # Phase 4: location
 
-**Status: design.** Nothing here is built. Android facts cite
-[platform-notes-drafts.md](platform-notes-drafts.md) by id.
+**Status: built** on the server and the phone, and run end to end in CI on the Android 17
+emulator (README, "What exists"; [protocol.md](../protocol.md#location-rules-phase-4-both-sides));
+where the build differs from this design, the protocol and the code are right. **Still open:**
+[phase4-checklist.md](../phase4-checklist.md) on the Pixel. Android facts cite
+[platform-notes-drafts.md](platform-notes-drafts.md) by id; the ones Belay relies on moved to
+[platform-notes.md](../platform-notes.md#location-and-the-kids-side-phases-4-and-7), L1 to L10.
 
 ## Goals
 

@@ -1,8 +1,12 @@
 # Phase 6: reliability and operations
 
-**Status: design.** A new phase. Android facts cite
-[platform-notes-drafts.md](platform-notes-drafts.md) by id. Build its first two parts (self-update
-and the recovery key) right after Phase 2, before Phase 3 ([README](README.md)).
+**Status: built** on the server and the phone, and run end to end in CI on the Android 17
+emulator: a debug build updates itself, and the recovery key opens repair access (README, "What
+exists"; [protocol.md](../protocol.md)); where the build differs from this design, the protocol
+and the code are right. **Still open:** [phase6-checklist.md](../phase6-checklist.md) on the Pixel,
+with a release build. Android facts cite [platform-notes-drafts.md](platform-notes-drafts.md) by
+id; the ones Belay relies on moved to
+[platform-notes.md](../platform-notes.md#updating-belay-other-users-phases-6-and-10).
 
 ## Goals
 

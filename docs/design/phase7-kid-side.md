@@ -1,7 +1,10 @@
 # Phase 7: the kid's side
 
-**Status: design.** A new phase. It gathers the kid-facing parts of Phases 2 to 5 into one
-respectful app, and adds a few things only the kid's side needs. Build its core with Phase 3.
+**Status: built** on the server and the phone, and run end to end in CI on the Android 17
+emulator (README, "What exists"; [protocol.md](../protocol.md#the-kids-side-phase-7-both-sides));
+where the build differs from this design, the protocol and the code are right. **Still open:**
+[phase7-checklist.md](../phase7-checklist.md) on the Pixel. It gathers the kid-facing parts of
+Phases 2 to 5 into one respectful app, and adds a few things only the kid's side needs.
 
 ## Goals
 

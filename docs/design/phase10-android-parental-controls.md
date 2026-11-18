@@ -1,8 +1,12 @@
 # Phase 10: living with Android's own parental controls
 
-**Status: design.** A new phase. Android facts cite
-[platform-notes-drafts.md](platform-notes-drafts.md): V1 to V3, S4, W1, W2. Its detection part is
-small and protects Phase 2, so build it with Phase 2 or right after.
+**Status: built** on the phone and the server: Belay reports other users and restrictions it
+didn't set, puts lifted suspensions back, and removes other users when a parent asks; CI's
+emulator job counts and removes a user made with `pm create-user` (README, "What exists";
+[protocol.md](../protocol.md)). **Still open:** Android's own Parental Controls on the real Pixel
+([phase6-checklist.md](../phase6-checklist.md), sections 4 and 5). Android facts cite
+[platform-notes-drafts.md](platform-notes-drafts.md): V1 to V3, S4, W1, W2; V1, V2 and V4 moved to
+[platform-notes.md](../platform-notes.md#updating-belay-other-users-phases-6-and-10).
 
 ## Goals
 
