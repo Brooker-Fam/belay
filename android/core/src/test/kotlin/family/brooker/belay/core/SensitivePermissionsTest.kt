@@ -26,6 +26,15 @@ class SensitivePermissionsTest {
     }
 
     @Test
+    fun `write secure settings, which adb can grant to any app that asks, is reported`() {
+        val held = SensitivePermissions.held(listOf("android.permission.WRITE_SECURE_SETTINGS", "android.permission.CAMERA"), deviceAdmin = true)
+        assertEquals(listOf("camera", "device_admin", "secure_settings"), held)
+        assertEquals("secure_settings", SensitivePermissions.categories.last())
+        // Asked for and not granted isn't held: the reader passes only granted ones.
+        assertTrue(SensitivePermissions.held(listOf("android.permission.WRITE_SETTINGS")).isEmpty())
+    }
+
+    @Test
     fun `ordinary permissions are not sensitive`() {
         assertTrue(SensitivePermissions.held(listOf("android.permission.INTERNET", "android.permission.VIBRATE")).isEmpty())
     }

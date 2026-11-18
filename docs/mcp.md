@@ -70,8 +70,8 @@ provider's terms. Settings → "What AI apps may read" turns each category off:
 - **Apps:** each app's name, package name, version, install and update dates, where it
   came from (Play Store, sideloaded, …), which sensitive permissions it holds (camera,
   microphone, location, contacts, texts, call history, photos, nearby devices, notification
-  access, accessibility, device admin), app changes over time, and the family's reviews and
-  notes.
+  access, accessibility, device admin, protected system settings), app changes over time,
+  and the family's reviews and notes.
 - **Device status:** model, Android version and security patch, battery, storage, last
   restart, and Belay's own health on the phone (device owner, permissions, battery
   exemption), the update of Belay a parent offered and how it's going, whether Belay's

@@ -706,7 +706,7 @@ server decides whether a change tightens or loosens.
 | `target_sdk`, `category` | int | `category` is `ApplicationInfo.category` (-1: none) |
 | `source` | `play_store` `other_store` `other_app` `sideloaded` `adb` `preinstalled` `unknown` | |
 | `installer` | `{installing?, initiating?, originating?, update_owner?, package_source?}` | raw `InstallSourceInfo` |
-| `permissions` | string[] | sensitive permissions it holds, from: `camera` `microphone` `location` `contacts` `sms` `call_log` `photos_media` `nearby_devices` `notification_access` `accessibility` `device_admin` |
+| `permissions` | string[] | sensitive permissions it holds, from: `camera` `microphone` `location` `contacts` `sms` `call_log` `photos_media` `nearby_devices` `notification_access` `accessibility` `device_admin` `secure_settings` (`WRITE_SECURE_SETTINGS`: Android's own apps hold it; any other app only because adb granted it, and it keeps it after the debugging lock, platform notes T21). A server that doesn't know a name refuses the app, so the server is updated first (it offers Belay's updates). |
 
 **Policy** (server → phone; every field has a default that enforces nothing)
 

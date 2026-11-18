@@ -341,6 +341,7 @@ export const PERMISSION_NAMES: Record<string, string> = {
   notification_access: "Reads notifications",
   accessibility: "Accessibility (can see and control the screen)",
   device_admin: "Device admin",
+  secure_settings: "Changes protected system settings (Android's own apps; any other app only through adb)",
 };
 
 export const DETECTION_NAMES: Record<string, string> = {

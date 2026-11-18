@@ -100,6 +100,16 @@ describe("events", () => {
     expect(appState(t, deviceId, "com.example.drawing")?.present).toBe(0);
   });
 
+  it("carry secure_settings for an app holding WRITE_SECURE_SETTINGS, which adb can grant", async () => {
+    const { t, token, deviceId } = await phoneWithBaseline();
+    const app = pkg("com.example.tasker", { version_code: 7, permissions: ["accessibility", "secure_settings"], source: "sideloaded" });
+    await send(t, token, "events", { events: [event("installed", "com.example.tasker", { to: { code: 7 }, happened_at: app.first_install_time, app })] });
+    expect(appState(t, deviceId, "com.example.tasker")).toMatchObject({ permissions: '["accessibility","secure_settings"]' });
+    // Still a closed list: a name the protocol doesn't have is refused.
+    const res = await deviceCall(t, token, "events", { events: [event("installed", "com.example.other", { to: { code: 1 }, app: pkg("com.example.other", { permissions: ["root" as never] }) })] });
+    expect(res.status).toBe(400);
+  });
+
   it("without details, leave them unknown until the next snapshot", async () => {
     const { t, token, deviceId } = await phoneWithBaseline();
     await send(t, token, "events", { events: [event("installed", "com.example.chat", { to: { code: 30 }, happened_at: T0 + 5 })] });

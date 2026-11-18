@@ -91,6 +91,12 @@ data class WirePackage(
     val category: Int,
     val source: String,
     val installer: WireInstaller,
+    /**
+     * The sensitive permissions it holds, as SensitivePermissions.categories names them (the
+     * server's PermissionCategory): `camera` … `device_admin`, and `secure_settings`
+     * (WRITE_SECURE_SETTINGS), which a server older than this phone's Belay doesn't know. The
+     * server offers Belay's updates, so it's always at least as new.
+     */
     val permissions: List<String>,
 )
 

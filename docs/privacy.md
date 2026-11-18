@@ -17,7 +17,7 @@ parent can see" (built from the code that collects them: `inventory/Collectors.k
   which app installed it;
 - which sensitive permissions it holds: camera, microphone, location, contacts, texts,
   call history, photos and media, nearby devices, and special access (reading
-  notifications, accessibility, device admin);
+  notifications, accessibility, device admin, changing protected system settings);
 - when an app is installed, updated or removed, and how Belay noticed.
 
 **How the phone and Belay are doing**
