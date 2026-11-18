@@ -41,7 +41,10 @@ data class WireCalls(
     /** Callers with no caller id (withheld, unknown, payphone). */
     val withheld: WireCallAction = WireCallAction.RING,
     val outgoing: WireOutgoing = WireOutgoing.ANY,
-    /** During Phase 3's bedtime and school schedules, only always-allowed numbers and parents ring. */
+    /**
+     * During Phase 3's bedtime and school schedules, only parents and calls from 911 or Android's
+     * emergency numbers ring (and everyone during the callback window, as always).
+     */
     val quiet: Boolean = false,
     /** Send call records (POST /api/v1/calls); never for emergency numbers, 988 or private numbers. */
     val log: Boolean = false,
@@ -95,7 +98,8 @@ enum class WireCallReason {
 /**
  * One call's metadata (POST /api/v1/calls, only with `calls.log`). [number] (E.164) only when
  * [contactId] is null, so a parent can approve or block an unknown caller. Calls with emergency
- * numbers, 988 or the family's private numbers are never recorded at all.
+ * numbers, 988 or the family's private numbers are never recorded at all; a stranger whose caller
+ * id failed the network's check and only showed one of them is, without the number (CallRecords).
  */
 @Serializable
 data class WireCallRecord(
