@@ -140,13 +140,14 @@ phase's Pixel checklist is in `docs/`.
 - **Phase 10:** another user or profile is reported, and removed when a parent asks.
 - **Phase 11:** off belay: the last stage, stopping collection with deletion, the hand-over.
 - **Across phases:**
-  - three security reviews and a check of the third's fixes, with their fixes in (the third's on
+  - three security reviews and two checks of their fixes, with their fixes in (the third's on
     the phone too: a spoofed caller ID is a stranger's, 911 and 988 go through with a caller-ID
     code, the callback window opens before the first unlock, and screen locks wait for a call
-    to end; the check's on the phone too: calls before the first unlock after a restart are
+    to end; the first check's on the phone too: calls before the first unlock after a restart are
     recorded afterwards, only a call an app can't make up holds a screen lock off, a parent's
     number whose caller-ID check fails goes to voicemail, and only the codes that hide or show
-    the number come off);
+    the number come off; the second's: a 911 or 988 callback still on at the unlock is never
+    sent, a lock now's result never tells of a call, and an app's own call holds no lock);
   - an audit of how a kid could get around Belay on Android 17: a proxy and wireless debugging
     are reported, Chrome ignores proxies, and the time zone stays automatic;
   - limits on what an AI app can do to the kid's phone (checks, pauses, locks, and schedules
