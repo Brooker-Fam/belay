@@ -1,6 +1,8 @@
 package family.brooker.belay.enforce
 
 import android.content.Context
+import android.os.SystemClock
+import android.provider.Settings
 import android.util.Log
 import family.brooker.belay.Agent
 import family.brooker.belay.BuildConfig
@@ -133,8 +135,7 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
         val log = store.commandLog()
         val commandPlan = Commands.plan(policy.commands, log.doneIds, now, CommandRunner.RUNS)
         val runner = CommandRunner(app)
-        // A lock_now that waited for a call at the last step and expired since is reported so.
-        val results = runner.run(commandPlan, owner, now, waitedForCall = log.waitingForCall)
+        val results = runner.run(commandPlan, owner, now)
         val enforcer = Enforcer(app)
         val actual = if (owner) {
             enforcer.actual(
@@ -192,11 +193,13 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
         // here may stop what was applied from being recorded below. Every lock waits while a call
         // is on (core's ScreenLocks), asked only when one is due: a lock_now's and a schedule's for
         // a call Telecom has, or one only the audio mode shows for at most 30 minutes; lost mode's
-        // only for a call Telecom has.
+        // only for a call Telecom has. A lock_now is reported when the phone has it, a call on or
+        // not, and its lock stays due until a step with no call on (core's ScreenLocks.lockNow).
         val lockWaitsForCall by lazy { InCall.lockWaits(app, now) }
         val telecomCall by lazy { InCall.now(app).telecom }
-        val lockResults = runner.lockNow(commandPlan, owner) { lockWaitsForCall }
-        val lockNowWaits = commandPlan.lockNow.isNotEmpty() && lockResults.isEmpty()
+        val locking = runner.lockNow(commandPlan, owner, log.lockDue, bootCount(), bootAt = now - SystemClock.elapsedRealtime()) { lockWaitsForCall }
+        val lockResults = locking.results
+        val lockNowWaits = locking.due != null
         // Phase 4: location's part: the fixes the collector took, locate_now, the periodic and lost
         // mode fixes due, keep_on and lost mode. If it fails, the rest is still recorded.
         val locationStep = LocationStep(app, store)
@@ -275,7 +278,7 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
             applied = next,
             requests = made + sentAgain,
             at = now,
-            commands = log.record(ran).waiting(if (lockNowWaits) commandPlan.lockNow.map { it.id } else emptyList()).takeIf { it != log },
+            commands = log.record(ran).due(locking.due).takeIf { it != log },
             screenTime = screenTimeWrite,
             usage = done?.usage.orEmpty(),
             dropUsage = policy.screenTime?.measure == false && store.pendingUsageCount() > 0,
@@ -336,6 +339,9 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
     }
 
     private fun words(inventory: Map<String, PackageRecord>) = KidWords(app) { inventory[it]?.label ?: it }
+
+    /** Settings.Global.BOOT_COUNT, when Android has it: which restart this is (a lock due from before one is dropped). */
+    private fun bootCount(): Int? = Settings.Global.getInt(app.contentResolver, Settings.Global.BOOT_COUNT, -1).takeIf { it >= 0 }
 
     private fun notDeviceOwner(changes: EnforcementChanges) = ApplyOutcome(
         failedSuspend = changes.suspend,

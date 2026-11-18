@@ -56,7 +56,7 @@
 # `calls --mode contacts --unknown reject --log on`, Belay becomes the default dialer (telecom
 # get-default-dialer) and reports it; the calls instrumented tests run; an incoming call from a
 # contact's number (the emulator console's `gsm call`) rings Belay's screen (its debug state), and a
-# lock-now sent while it rings waits, then is done once the call ends; one
+# lock-now sent while it rings is done at once, its lock due until the call ends; one
 # from another number is rejected without ringing and reaches the server as rejected, unknown, with
 # its number; block-number puts the number on Android's block list and unblock-number takes it off;
 # and `calls --off` gives the default dialer back (or, with none before, Android drops Belay from
@@ -706,6 +706,18 @@ wait_dialer() {
 # The calls part of Belay's debug state: the dialer, Belay's own block-list entries and how it
 # decided the last calls (no numbers; never when the kid last called 911 or 988).
 calls_state() { state 2>/dev/null | jq -c '.calls' 2>/dev/null || true; }
+# Whether a lock-now's lock waits for a call to end on the phone (its debug state's lock_due).
+lock_due() { state 2>/dev/null | jq -e '.lock_due == true' >/dev/null 2>&1; }
+# Waits up to $1 seconds until no lock-now's lock is due on the phone: it happened.
+wait_lock_done() {
+  local _
+  for _ in $(seq 1 "${1:-60}"); do
+    if state 2>/dev/null | jq -e '.lock_due == false' >/dev/null 2>&1; then return 0; fi
+    sleep 1
+  done
+  echo "--- lock_due in Belay's state: $(state 2>/dev/null | jq -c '.lock_due' 2>/dev/null || true)"
+  return 1
+}
 # An incoming call from $1 (made-up, 555-01xx, never 911 or 988) on the emulator's modem, written
 # in E.164; if the console refuses the "+", the US national form (10 digits), which Belay formats
 # to E.164 with the phone's country.
@@ -776,21 +788,32 @@ elif [ -n "$E2E_CLI" ]; then
     { gsm_cancel "$CONTACT_NUMBER"; diagnose; die "Belay's in-call service doesn't show the contact's call"; }
   echo "Belay rings: $(calls_state | jq -c '{ringing, now}')"
 
-  step "Phase 5: a screen lock waits while a call rings, and locks once the call ends"
+  step "Phase 5: lock-now while a call rings is done at once, and its lock waits for the call to end"
   lock_id="$(server_cli_out lock-now "$phone")"
   [[ "$lock_id" =~ ^[A-Za-z0-9_-]+$ ]] || { gsm_cancel "$CONTACT_NUMBER"; die "lock-now should print only the command's id" "$lock_id"; }
   wait_applied
-  lock_done="[.enforcement.commands[]? | select(.id == \"$lock_id\" and .result == \"done\")] | length > 0"
-  # The step that applied it saw the call: the lock waits (core's ScreenLocks), so no result yet.
-  sleep 5
-  if server_status | jq -e ".phones[0] | $lock_done" >/dev/null 2>&1; then
+  # The phone reports it when it has it, a call on or not, so its result never tells of a call (the
+  # fifth security review's F2): done at once, while the lock itself waits (core's ScreenLocks).
+  wait_server "[.enforcement.commands[]? | select(.id == \"$lock_id\" and .result == \"done\")] | length > 0" \
+    "a done result for lock-now while a call rang" 30
+  if ! lock_due; then
     gsm_cancel "$CONTACT_NUMBER"
     diagnose
-    die "lock-now locked the screen while a call rang"
+    die "lock-now locked the screen while a call rang (no lock due on the phone)"
   fi
   gsm_cancel "$CONTACT_NUMBER"
   wait_calls_state '(.now // []) | length == 0' 20 || { diagnose; die "the contact's call didn't end after gsm cancel"; }
-  wait_server "$lock_done" "a done result for lock-now once the call ended" 90
+  # Then the lock happens at the next step: the audio mode's change, or the policy timer's minute.
+  wait_lock_done 90 || { diagnose; die "lock-now's lock was still due after the call ended"; }
+  locked=0
+  for _ in $(seq 1 15); do
+    if screen_off_or_locked; then
+      locked=1
+      break
+    fi
+    sleep 1
+  done
+  [ "$locked" = 1 ] || { diagnose; die "lock-now's lock happened after the call, but the screen is on and unlocked"; }
   wake_up
 
   step "Phase 5: a call from a number that isn't a contact is rejected, never rings, and is reported"

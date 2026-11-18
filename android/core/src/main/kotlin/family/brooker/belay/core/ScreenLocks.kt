@@ -1,6 +1,7 @@
 package family.brooker.belay.core
 
 import family.brooker.belay.core.location.LostApplied
+import kotlinx.serialization.Serializable
 
 /**
  * What Belay can tell about a call now, for the screen locks that wait for one (calls/InCall.kt,
@@ -31,15 +32,25 @@ data class CallNow(val telecom: Boolean = false, val carrier: Boolean = false) {
 }
 
 /**
+ * A `lock_now`'s lock that waits for a call to end, after the phone reported the command done
+ * (ScreenLocks.lockNow), due in the restart that [bootCount] and [bootAt] say (core's Boots). A
+ * restart locks the screen by itself, so one due from before it is dropped. No time: when it
+ * became due would say when a call was on.
+ */
+@Serializable
+data class LockDue(val bootCount: Int? = null, val bootAt: Long)
+
+/**
  * Every screen lock Belay makes waits while a call is on, so the screen doesn't go off in the
  * middle of one, a 988 call included: a `lock_now` command (a parent's or an AI app's) and a
  * schedule that locks as it starts (Upkeep.locks) wait for a call Telecom has, and, while Belay
  * isn't the dialer, for one Android's audio mode shows, for at most [CARRIER_WAIT_MS]; lost mode's
  * one lock waits only for a call Telecom has. A lock still due when the call ends happens at the
- * next step: a lock_now until it expires (it's reported `expired` then, with `waited_for_call`, as
- * the protocol says), a schedule's while that schedule is on, lost mode's while lost mode is on.
- * What the lock comes with (a pause, the schedule's or lost mode's rules) applies at once either
- * way: only the lock waits. Locking never ends a call: the screen goes off, and the call goes on.
+ * next step: a lock_now's however long the call was ([lockNow]: the command was reported done
+ * when the phone had it), a schedule's while that schedule is on, lost mode's while lost mode is
+ * on. What the lock comes with (a pause, the schedule's or lost mode's rules) applies at once
+ * either way: only the lock waits. Locking never ends a call: the screen goes off, and the call
+ * goes on.
  */
 object ScreenLocks {
     /** While a lock waits for a call to end, the agent looks again at least this often. */
@@ -70,8 +81,30 @@ object ScreenLocks {
         return CallWait(waits = now - since < CARRIER_WAIT_MS, carrierSince = since)
     }
 
-    /** The lock_now commands to run now: none while a lock waits ([waits]: they stay in the policy until they're done or expire). */
-    fun lockNow(plan: CommandPlan, waits: Boolean): List<WireCommand> = if (waits) emptyList() else plan.lockNow
+    /**
+     * A step's part in lock_now: the commands to report now ([report]: done, or failed when the
+     * lock fails), whether to lock the screen now ([lock]), and the lock due after the step ([due]).
+     */
+    data class LockNowStep(val report: List<WireCommand>, val lock: Boolean, val due: LockDue?)
+
+    /**
+     * lock_now (the fifth review's F2): [plan]'s new lock_now commands are reported at the step
+     * that first has them, a call on or not, so a result never says that a call was on, or when one
+     * ended (it used to come only after the call, or as `expired` with `waited_for_call`): with no
+     * call on, the screen locks now (several at once lock once); while one is on ([waits], asked
+     * only when a lock is due), they're reported done and the lock is [due] until a step with no
+     * call on, however long that takes. A lock due from before a restart is dropped ([bootCount],
+     * [bootAt]): the restart locked the screen. Only `expired` (the phone got it too late) and
+     * `failed` (the lock failed now) say the screen didn't lock; a due lock that fails later is the
+     * phone's log's to say, since when it was tried would say when the call ended.
+     */
+    fun lockNow(plan: CommandPlan, due: LockDue?, bootCount: Int?, bootAt: Long, waits: () -> Boolean): LockNowStep {
+        val stillDue = due?.takeIf { Boots.same(it.bootCount, it.bootAt, bootCount, bootAt) }
+        val fresh = plan.lockNow
+        if (fresh.isEmpty() && stillDue == null) return LockNowStep(emptyList(), lock = false, due = null)
+        if (waits()) return LockNowStep(fresh, lock = false, due = stillDue ?: LockDue(bootCount, bootAt))
+        return LockNowStep(fresh, lock = true, due = null)
+    }
 
     /** Whether lost mode's one lock happens now: not before, not twice, and not during a call Telecom has ([telecom]). */
     fun lostLockNow(applied: LostApplied, telecom: Boolean): Boolean = !applied.locked && !telecom

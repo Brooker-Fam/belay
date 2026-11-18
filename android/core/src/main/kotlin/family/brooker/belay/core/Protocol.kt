@@ -214,6 +214,10 @@ data class WireRecoveryUse(
 
 @Serializable
 enum class WireCommandOutcome {
+    /**
+     * It ran. A lock_now is done when the phone has it, whether it locks the screen then or, during
+     * a call, once the call ends (core's ScreenLocks.lockNow), so its result never tells of a call.
+     */
     @SerialName("done") DONE,
     @SerialName("failed") FAILED,
 
@@ -228,11 +232,6 @@ data class WireCommandResult(
     val at: Long,
     /** Belay's own words, or Android's, when it failed. */
     val problem: String? = null,
-    /**
-     * Only true, or left out: a lock_now that expired while its lock waited for a call that was
-     * still on (core's ScreenLocks), rather than one that reached the phone too late.
-     */
-    @SerialName("waited_for_call") val waitedForCall: Boolean? = null,
 )
 
 @Serializable

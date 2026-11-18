@@ -102,7 +102,10 @@ object StateDump {
             put("used_versions", JsonArray(recovery.usedVersions.map(::JsonPrimitive)))
             recovery.lastUse?.let { put("last_use", Json.encodeToJsonElement(WireRecoveryUse.serializer(), it)) }
         }
-        put("commands", JsonArray(store.commandLog().results.map { Json.encodeToJsonElement(WireCommandResult.serializer(), it) }))
+        val commands = store.commandLog()
+        put("commands", JsonArray(commands.results.map { Json.encodeToJsonElement(WireCommandResult.serializer(), it) }))
+        // A lock_now's lock that waits for a call to end (core's ScreenLocks.lockNow): only whether, never since when.
+        put("lock_due", commands.lockDue != null)
         // Phase 7: when a parent saw each help request, from the policy's help_seen.
         val seen = store.policy()?.helpSeen.orEmpty().groupBy { it.requestId }.mapValues { (_, all) -> all.minOf { it.at } }
         put(

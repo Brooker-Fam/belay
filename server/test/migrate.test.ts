@@ -272,6 +272,26 @@ describe("migration 10 (Play's accounts)", () => {
   });
 });
 
+describe("migration 13 (no lock tells of a call)", () => {
+  it("drops whether a lock waited for a call, and keeps every command and its result", () => {
+    const db = phase2();
+    migrate(
+      db,
+      loadMigrations().filter((m) => m.version <= 12),
+    );
+    db.prepare("INSERT INTO commands (id, device_id, kind, issued_at, expires_at, result, result_at, waited_for_call) VALUES ('c-1', 'phone-1', 'lock_now', ?, ?, 'expired', ?, 1)").run(T, T + 600_000, T + 660_000);
+    db.prepare("INSERT INTO commands (id, device_id, kind, issued_at, expires_at, result, result_at) VALUES ('c-2', 'phone-1', 'lock_now', ?, ?, 'done', ?)").run(T + 1, T + 600_001, T + 2);
+    migrate(db);
+    expect(db.pragma("user_version", { simple: true })).toBe(loadMigrations().at(-1)?.version);
+    const columns = (db.prepare("PRAGMA table_info(commands)").all() as { name: string }[]).map((c) => c.name);
+    expect(columns).not.toContain("waited_for_call");
+    expect(db.prepare("SELECT id, kind, result, result_at FROM commands ORDER BY id").all()).toEqual([
+      { id: "c-1", kind: "lock_now", result: "expired", result_at: T + 660_000 },
+      { id: "c-2", kind: "lock_now", result: "done", result_at: T + 2 },
+    ]);
+  });
+});
+
 describe("the migrations", () => {
   it("are numbered once each: two with one number are refused, as parallel work merged would make them", () => {
     const versions = loadMigrations().map((m) => m.version);

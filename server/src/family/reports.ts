@@ -36,20 +36,17 @@ export function receiveReport(ctx: PolicyContext, deviceId: string, device: Devi
 /**
  * The phone's results for one-shot commands (enforcement.commands, its last 20): each command the
  * server sent this phone gets its first result, and leaves the policy. Results for ids the server
- * never sent this phone (a test's own command, say) are ignored. An expired lock_now whose lock
- * waited for a call still on (`waited_for_call`) is kept so, for the words the parents see.
+ * never sent this phone (a test's own command, say) are ignored. Nothing in a result says whether
+ * a call was on: the phone reports a lock_now when it has it, during a call too (the fifth
+ * review's F2).
  */
 function noteCommands(ctx: PolicyContext, deviceId: string, device: Device, log: Log): void {
   const { db, now } = ctx;
-  const record = db.prepare(
-    "UPDATE commands SET result = ?, result_at = ?, problem = ?, reported_at = ?, waited_for_call = ? WHERE device_id = ? AND id = ? AND result IS NULL",
-  );
+  const record = db.prepare("UPDATE commands SET result = ?, result_at = ?, problem = ?, reported_at = ? WHERE device_id = ? AND id = ? AND result IS NULL");
   const kindOf = db.prepare<[string, string], { kind: string }>("SELECT kind FROM commands WHERE device_id = ? AND id = ?");
   for (const r of device.enforcement?.commands ?? []) {
-    const kind = kindOf.get(deviceId, r.id)?.kind;
-    const waited = r.result === "expired" && r.waited_for_call === true && kind === "lock_now";
-    if (record.run(r.result, r.at, phoneWords(r.problem), now, waited ? 1 : 0, deviceId, r.id).changes === 1) {
-      log(`command.${r.result}`, { kind, command: r.id, ...(waited ? { waited_for_call: true } : {}) });
+    if (record.run(r.result, r.at, phoneWords(r.problem), now, deviceId, r.id).changes === 1) {
+      log(`command.${r.result}`, { kind: kindOf.get(deviceId, r.id)?.kind, command: r.id });
     }
   }
 }

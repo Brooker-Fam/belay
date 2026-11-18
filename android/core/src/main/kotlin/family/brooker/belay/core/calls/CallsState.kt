@@ -1,7 +1,7 @@
 package family.brooker.belay.core.calls
 
+import family.brooker.belay.core.Boots
 import kotlinx.serialization.Serializable
-import kotlin.math.abs
 
 /**
  * What Belay keeps between steps about calls (one row, written by the agent thread), so it only
@@ -164,7 +164,7 @@ object CallsPlan {
     }
 
     /** Two records of a restart whose boot times are this close are the same one, without a boot count. */
-    const val SAME_BOOT_MS = 10L * 60 * 1000
+    const val SAME_BOOT_MS = Boots.SAME_BOOT_MS
 
     /** After a restart the phone stayed locked this long or more: the report says so (a quick restart doesn't). */
     const val LOCKED_NOTE_FROM_MS = 10L * 60 * 1000
@@ -186,8 +186,7 @@ object CallsPlan {
     }
 
     /** Whether [spell] is the restart that [bootCount] and [bootAt] say the phone had last. */
-    fun sameBoot(spell: AfterRestart, bootCount: Int?, bootAt: Long): Boolean =
-        if (bootCount != null && spell.bootCount != null) bootCount == spell.bootCount else abs(bootAt - spell.bootAt) < SAME_BOOT_MS
+    fun sameBoot(spell: AfterRestart, bootCount: Int?, bootAt: Long): Boolean = Boots.same(spell.bootCount, spell.bootAt, bootCount, bootAt)
 
     /**
      * Whether to read Android's call log for [spell]'s calls now: once, then once more if a call

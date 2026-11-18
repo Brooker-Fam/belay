@@ -9,8 +9,10 @@ import kotlin.test.assertTrue
 
 /**
  * Screen locks wait while a call is on (a 988 call included), and happen after it if still due:
- * for a call Telecom has, as long as it lasts; for one only Android's audio mode shows (MODE_IN_CALL,
- * while Belay isn't the dialer), 30 minutes at most (the fourth review's N5).
+ * for a managed call Telecom has, as long as it lasts; for one only Android's audio mode shows
+ * (MODE_IN_CALL, while Belay isn't the dialer), 30 minutes at most (the fourth review's N5); never
+ * for an app's own call (the fifth's F3). A lock_now is reported when the phone has it, a call on
+ * or not, so its result never tells of a call (the fifth's F2).
  */
 class ScreenLocksTest {
     private val lockNow = WireCommand("c-1", WireCommand.LOCK_NOW, issuedAt = 1_000, expiresAt = 1_000 + 10 * 60_000)
@@ -18,36 +20,58 @@ class ScreenLocksTest {
     private val telecom = CallNow(telecom = true)
     private val carrier = CallNow(carrier = true)
     private val none = CallNow()
+    private val bootAt = 500L
+
+    private fun plan(now: Long, done: Set<String> = emptySet(), commands: List<WireCommand> = listOf(lockNow)) =
+        Commands.plan(commands, done, now = now, runs = setOf(WireCommand.LOCK_NOW))
 
     @Test
-    fun `lock_now waits during a call, stays unrun, and expires as any late command does`() {
-        val plan = Commands.plan(listOf(lockNow), emptySet(), now = 2_000, runs = setOf(WireCommand.LOCK_NOW))
-        assertEquals(listOf(lockNow), ScreenLocks.lockNow(plan, waits = false))
-        assertEquals(emptyList(), ScreenLocks.lockNow(plan, waits = true))
-        // Not run, so not in the command log: the next step after the call runs it...
-        val after = Commands.plan(listOf(lockNow), CommandLog().doneIds, now = 5 * 60_000, runs = setOf(WireCommand.LOCK_NOW))
-        assertEquals(listOf(lockNow), ScreenLocks.lockNow(after, waits = false))
-        // ...unless the call outlasted it: then it's reported expired, never run late.
-        val tooLate = Commands.plan(listOf(lockNow), emptySet(), now = 20 * 60_000, runs = setOf(WireCommand.LOCK_NOW))
-        assertEquals(emptyList(), ScreenLocks.lockNow(tooLate, waits = false))
-        assertEquals(listOf(WireCommandOutcome.EXPIRED), CommandLog.notRun(tooLate, 20 * 60_000).map { it.result })
+    fun `lock_now is reported at the step that has it, during a call too, and the lock waits for the call`() {
+        // No call: the screen locks now, and the command is reported.
+        val quiet = ScreenLocks.lockNow(plan(2_000), due = null, bootCount = 7, bootAt = bootAt) { false }
+        assertEquals(ScreenLocks.LockNowStep(listOf(lockNow), lock = true, due = null), quiet)
+        // A call on: reported all the same (done), and the lock is due, with no time kept.
+        val during = ScreenLocks.lockNow(plan(2_000), due = null, bootCount = 7, bootAt = bootAt) { true }
+        assertEquals(ScreenLocks.LockNowStep(listOf(lockNow), lock = false, due = LockDue(7, bootAt)), during)
+        assertEquals(during.report, quiet.report, "the same report either way")
+        // Reported, so done in the log: later steps don't report it again, whatever the call does.
+        val log = CommandLog().record(during.report.map { CommandLog.done(it, 2_000) }).due(during.due)
+        val later = plan(5 * minute, log.doneIds)
+        assertEquals(emptyList(), later.lockNow)
+        assertEquals(emptyList(), later.expired)
+        // Still on: still due. The call ends, well after the command's 10 minutes: the screen locks then.
+        assertEquals(ScreenLocks.LockNowStep(emptyList(), lock = false, due = log.lockDue), ScreenLocks.lockNow(later, log.lockDue, 7, bootAt) { true })
+        val ended = ScreenLocks.lockNow(plan(3 * 60 * minute, log.doneIds), log.lockDue, 7, bootAt) { false }
+        assertEquals(ScreenLocks.LockNowStep(emptyList(), lock = true, due = null), ended)
+        // Nothing due and nothing new: the call isn't asked about.
+        assertEquals(ScreenLocks.LockNowStep(emptyList(), lock = false, due = null), ScreenLocks.lockNow(later, null, 7, bootAt) { error("not asked") })
     }
 
     @Test
-    fun `an expired lock_now that waited for a call says so, and one that arrived late doesn't`() {
-        val tooLate = Commands.plan(listOf(lockNow), emptySet(), now = 20 * minute, runs = setOf(WireCommand.LOCK_NOW))
-        val waited = CommandLog().waiting(listOf(lockNow.id))
-        val result = CommandLog.notRun(tooLate, 20 * minute, waited.waitingForCall).single()
-        assertEquals(WireCommandOutcome.EXPIRED, result.result)
-        assertEquals(true, result.waitedForCall)
-        assertNull(CommandLog.notRun(tooLate, 20 * minute).single().waitedForCall, "it reached the phone too late")
-        // Only a lock_now: another kind never waits for a call.
-        val remove = WireCommand("c-2", WireCommand.REMOVE_OTHER_USERS, issuedAt = 1_000, expiresAt = 2_000)
-        val expired = Commands.plan(listOf(remove), emptySet(), now = 20 * minute, runs = setOf(WireCommand.REMOVE_OTHER_USERS))
-        assertNull(CommandLog.notRun(expired, 20 * minute, listOf(remove.id)).single().waitedForCall)
-        // Once reported (or run), it's no longer waiting.
-        assertEquals(emptyList(), waited.record(listOf(result)).waitingForCall)
-        assertEquals(emptyList(), waited.waiting(emptyList()).waitingForCall)
+    fun `a lock due from before a restart is dropped, since the restart locked the screen`() {
+        val due = LockDue(7, bootAt)
+        val empty = plan(2_000, commands = emptyList())
+        assertEquals(ScreenLocks.LockNowStep(emptyList(), lock = false, due = null), ScreenLocks.lockNow(empty, due, 8, bootAt + 60 * minute) { error("not asked") })
+        // Without a boot count, by when the phone started.
+        val noCount = LockDue(null, bootAt)
+        assertEquals(ScreenLocks.LockNowStep(emptyList(), lock = true, due = null), ScreenLocks.lockNow(empty, noCount, null, bootAt + minute) { false })
+        assertEquals(ScreenLocks.LockNowStep(emptyList(), lock = false, due = null), ScreenLocks.lockNow(empty, noCount, null, bootAt + 60 * minute) { error("not asked") })
+        // A new lock_now in the new restart, during a call: due in that restart.
+        assertEquals(LockDue(8, bootAt + 60 * minute), ScreenLocks.lockNow(plan(2_000), due, 8, bootAt + 60 * minute) { true }.due)
+    }
+
+    @Test
+    fun `a lock_now expires only when it reached the phone too late, never for a call`() {
+        val tooLate = plan(20 * minute)
+        assertEquals(listOf(lockNow), tooLate.expired)
+        assertEquals(emptyList(), tooLate.lockNow)
+        assertEquals(listOf(WireCommandResult(lockNow.id, WireCommandOutcome.EXPIRED, 20 * minute)), CommandLog.notRun(tooLate, 20 * minute))
+        // Several at once are reported together, and lock once.
+        val second = lockNow.copy(id = "c-2")
+        assertEquals(listOf(lockNow, second), ScreenLocks.lockNow(plan(2_000, commands = listOf(lockNow, second)), null, 7, bootAt) { true }.report)
+        // Nothing in a result says a call was on: what's sent is id, outcome, time and the phone's words.
+        val sent = Wire.json.encodeToString(WireCommandResult.serializer(), CommandLog.done(lockNow, 2_000))
+        assertEquals("""{"id":"c-1","result":"done","at":2000}""", sent)
     }
 
     @Test

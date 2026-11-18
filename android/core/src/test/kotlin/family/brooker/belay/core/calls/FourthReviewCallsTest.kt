@@ -205,15 +205,17 @@ class FourthReviewCallsTest {
 
     @Test
     fun `N5 screen locks - only a call an app can't make up holds one, the audio mode's for 30 minutes`() {
-        // A lock_now that outlasts a call expires, reported as one a call was on until it expired.
+        // A lock_now during a call is reported done at once and its lock waits for the call, so it
+        // never expires for one (since the fifth review's F2, its result never tells of a call).
         val lockNow = WireCommand("c-1", WireCommand.LOCK_NOW, issuedAt = at("2026-11-18T21:00:00"), expiresAt = at("2026-11-18T21:10:00"))
         val during = Commands.plan(listOf(lockNow), emptySet(), now = at("2026-11-18T21:01:00"), runs = setOf(WireCommand.LOCK_NOW))
-        assertEquals(emptyList(), ScreenLocks.lockNow(during, waits = true))
-        val waiting = CommandLog().waiting(during.lockNow.map { it.id })
-        val after = Commands.plan(listOf(lockNow), emptySet(), now = at("2026-11-18T21:30:00"), runs = setOf(WireCommand.LOCK_NOW))
-        val outcome = CommandLog.notRun(after, at("2026-11-18T21:30:00"), waiting.waitingForCall).single()
-        assertEquals(WireCommandOutcome.EXPIRED, outcome.result)
-        assertEquals(true, outcome.waitedForCall)
+        val step = ScreenLocks.lockNow(during, due = null, bootCount = 3, bootAt = 0) { true }
+        assertEquals(listOf(lockNow), step.report)
+        val log = CommandLog().record(step.report.map { CommandLog.done(it, at("2026-11-18T21:01:00")) }).due(step.due)
+        val after = Commands.plan(listOf(lockNow), log.doneIds, now = at("2026-11-18T21:30:00"), runs = setOf(WireCommand.LOCK_NOW))
+        assertEquals(emptyList(), CommandLog.notRun(after, at("2026-11-18T21:30:00")), "never expired")
+        assertEquals(WireCommandOutcome.DONE, log.results.single().result)
+        assertTrue(ScreenLocks.lockNow(after, log.lockDue, 3, 0) { false }.lock, "the screen locks once the call ends")
         // Bedtime 21:00 to 07:00, locking, with the apps paused throughout.
         val bedtime = WireSchedule("s-bed", WireScheduleKind.BEDTIME, "Bedtime", WireDay.entries.toList(), "21:00", "07:00", lock = true)
         val policy = WireScreenTime(schedules = listOf(bedtime))

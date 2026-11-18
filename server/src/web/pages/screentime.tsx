@@ -331,17 +331,19 @@ export interface UsagePageData {
   lastLock: Command | null;
 }
 
+/**
+ * How a lock now went, the same words whatever the kid was doing, and no time beside them: the
+ * phone reports one when it has it, during a call too, and locks once the call ends, so nothing
+ * here says whether a call was on, or when one ended (the fifth review's F2).
+ */
 const LOCK_WORDS: Record<Command["state"], string> = {
   waiting: "sent; waiting for the phone",
-  done: "the phone locked its screen",
+  done: "the phone has it: its screen locks at once, or as soon as a call ends",
   failed: "the phone couldn't lock its screen",
   expired: "the phone got it too late, so it didn't lock",
   not_done: "the phone didn't get it in time",
   replaced: "a newer one took its place",
 };
-
-/** An expired lock the phone says waited for a call: a call was on until it expired. */
-const lockWords = (lock: Command): string => (lock.state === "expired" && lock.waitedForCall ? "a call was on until it expired, so it didn't lock" : LOCK_WORDS[lock.state]);
 
 /** Lock the phone now: a pause, and the screen locked once. The last one and how it went, in the phone's own words. */
 const LockCard: FC<{ view: View; device: DeviceView; lastLock: Command | null }> = ({ view, device, lastLock }) => (
@@ -349,14 +351,7 @@ const LockCard: FC<{ view: View; device: DeviceView; lastLock: Command | null }>
     {lastLock && (
       <>
         <p class="small">
-          Last sent <Time ms={lastLock.issuedAt} tz={view.tz} />: {lockWords(lastLock)}
-          {lastLock.resultAt !== null && (
-            <>
-              {" "}
-              (<Time ms={lastLock.resultAt} tz={view.tz} />)
-            </>
-          )}
-          .
+          Last sent <Time ms={lastLock.issuedAt} tz={view.tz} />: {LOCK_WORDS[lastLock.state]}.
         </p>
         {lastLock.state === "failed" && lastLock.problem && (
           <>
@@ -383,7 +378,7 @@ const LockCard: FC<{ view: View; device: DeviceView; lastLock: Command | null }>
         </button>
       </form>
     )}
-    <p class="small muted">Calls, texts, 911 and 988 still work. The screen locks if the phone gets this within 10 minutes.</p>
+    <p class="small muted">Calls, texts, 911 and 988 still work. The screen locks if the phone gets this within 10 minutes; during a call, as soon as the call ends.</p>
   </div>
 );
 

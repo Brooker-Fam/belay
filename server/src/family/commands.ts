@@ -38,8 +38,6 @@ export interface Command {
   resultAt: number | null;
   /** The phone's words when it failed: untrusted. */
   problem: string | null;
-  /** An expired lock_now whose lock waited for a call that was still on (not one the phone got too late). */
-  waitedForCall: boolean;
   reportedAt: number | null;
   state: CommandState;
 }
@@ -54,7 +52,6 @@ interface CommandRow {
   result: Command["result"];
   result_at: number | null;
   problem: string | null;
-  waited_for_call: number;
   reported_at: number | null;
   replaced_at: number | null;
 }
@@ -72,13 +69,12 @@ function toCommand(r: CommandRow, now: number): Command {
     result: r.result,
     resultAt: r.result_at,
     problem: r.problem,
-    waitedForCall: r.waited_for_call === 1,
     reportedAt: r.reported_at,
     state,
   };
 }
 
-const SELECT = `SELECT c.id, c.kind, c.issued_at, c.expires_at, p.name AS issued_by_name, c.client_name, c.result, c.result_at, c.problem, c.waited_for_call, c.reported_at, c.replaced_at
+const SELECT = `SELECT c.id, c.kind, c.issued_at, c.expires_at, p.name AS issued_by_name, c.client_name, c.result, c.result_at, c.problem, c.reported_at, c.replaced_at
   FROM commands c LEFT JOIN parents p ON p.id = c.issued_by`;
 
 /** The phone's commands, newest first; of one kind, if given. */

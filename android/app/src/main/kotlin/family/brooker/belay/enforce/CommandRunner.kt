@@ -8,6 +8,7 @@ import family.brooker.belay.Agent
 import family.brooker.belay.DeviceOwnerSetup
 import family.brooker.belay.core.CommandLog
 import family.brooker.belay.core.CommandPlan
+import family.brooker.belay.core.LockDue
 import family.brooker.belay.core.OtherUsers
 import family.brooker.belay.core.ScreenLocks
 import family.brooker.belay.core.WireCommand
@@ -26,10 +27,11 @@ import family.brooker.belay.service.ParentNotice
  * marks it partial at once, so a second getSecondaryUsers no longer lists it
  * (docs/platform-notes.md V2). The kid is told first, and only when there is someone to remove.
  *
- * Phase 3, lock_now: [lockNow] locks the screen once per command (ScreenLock), after the step
- * applied the rest, so a pause sent with it has suspended the apps first; while a call is on, the
- * lock waits (core's ScreenLocks): the command stays unrun until a step after the call, or until it
- * expires. [run] leaves them out.
+ * Phase 3, lock_now: [lockNow] locks the screen once for the commands a step has (ScreenLock),
+ * after the step applied the rest, so a pause sent with it has suspended the apps first. Each is
+ * reported at the step that first has it, a call on or not (core's ScreenLocks.lockNow, the fifth
+ * review's F2): during a call it's done, and the lock is due until a step with no call on.
+ * [run] leaves them out.
  *
  * Phase 4, locate_now: the step's location part runs them (location/LocationStep.kt): a fix takes
  * up to a minute, so its result comes at a later step. [run] leaves them out too.
@@ -37,12 +39,8 @@ import family.brooker.belay.service.ParentNotice
 class CommandRunner(context: Context) {
     private val app = context.applicationContext
 
-    /**
-     * The results, in the order the commands were handled; lock_now waits for [lockNow], locate_now
-     * for LocationStep. [waitedForCall]: the lock_now commands that waited for a call at the last
-     * step, reported so if they've expired since (core's CommandLog.notRun).
-     */
-    fun run(plan: CommandPlan, owner: Boolean, now: Long, waitedForCall: Collection<String> = emptyList()): List<WireCommandResult> {
+    /** The results, in the order the commands were handled; lock_now waits for [lockNow], locate_now for LocationStep. */
+    fun run(plan: CommandPlan, owner: Boolean, now: Long): List<WireCommandResult> {
         val ran = plan.run.filter { it.kind !in LATER }.map { command ->
             val result = when (command.kind) {
                 WireCommand.REMOVE_OTHER_USERS -> removeOtherUsers(command, owner)
@@ -52,28 +50,38 @@ class CommandRunner(context: Context) {
             Log.i(Agent.TAG, "command ${command.id} (${command.kind}): ${result.result}" + (result.problem?.let { ": $it" } ?: ""))
             result
         }
-        val reported = CommandLog.notRun(plan, now, waitedForCall)
-        reported.forEach { Log.i(Agent.TAG, "command ${it.id}: ${it.result}, not run" + if (it.waitedForCall == true) " (a call was on)" else "") }
+        val reported = CommandLog.notRun(plan, now)
+        reported.forEach { Log.i(Agent.TAG, "command ${it.id}: ${it.result}, not run") }
         return ran + reported
     }
 
+    /** What [lockNow] did: the lock_now results to record, and the lock due after the step (core's ScreenLocks.lockNow). */
+    class Locking(val results: List<WireCommandResult>, val due: LockDue?)
+
     /**
-     * Phase 3: [plan]'s lock_now commands, each locking the screen once (several at once lock once);
-     * none while the lock waits for a call ([waits], core's ScreenLocks: they're left for a step after it).
+     * Phase 3: [plan]'s lock_now commands and the lock [due] from an earlier step (core's
+     * ScreenLocks.lockNow): the screen locks once now unless the lock waits for a call ([waits],
+     * asked only when a lock is due; never while Belay isn't the device owner, which can't lock),
+     * and each new command is reported now, done (during a call too: then the lock stays due) or
+     * failed. A due lock that fails once the call is over is only logged.
      */
-    fun lockNow(plan: CommandPlan, owner: Boolean, waits: () -> Boolean = { false }): List<WireCommandResult> {
-        if (plan.lockNow.isEmpty()) return emptyList()
-        val commands = ScreenLocks.lockNow(plan, waits())
-        if (commands.isEmpty()) {
-            Log.i(Agent.TAG, "screen lock waits for a call to end")
-            return emptyList()
+    fun lockNow(plan: CommandPlan, owner: Boolean, due: LockDue?, bootCount: Int?, bootAt: Long, waits: () -> Boolean = { false }): Locking {
+        val step = ScreenLocks.lockNow(plan, due, bootCount, bootAt) { owner && waits() }
+        if (!step.lock) {
+            val now = System.currentTimeMillis()
+            step.report.forEach { Log.i(Agent.TAG, "command ${it.id} (${it.kind}): done; the screen lock waits for a call to end") }
+            return Locking(step.report.map { CommandLog.done(it, now) }, step.due)
         }
         val problem = ScreenLock.lock(app, owner)
         val at = System.currentTimeMillis()
-        return commands.map { command ->
-            Log.i(Agent.TAG, "command ${command.id} (${command.kind}): ${if (problem == null) "done" else "failed: $problem"}")
-            if (problem == null) CommandLog.done(command, at) else CommandLog.failed(command, at, problem)
-        }
+        if (step.report.isEmpty() && problem != null) Log.w(Agent.TAG, "the screen lock that waited for a call didn't happen: $problem")
+        return Locking(
+            step.report.map { command ->
+                Log.i(Agent.TAG, "command ${command.id} (${command.kind}): ${if (problem == null) "done" else "failed: $problem"}")
+                if (problem == null) CommandLog.done(command, at) else CommandLog.failed(command, at, problem)
+            },
+            due = null,
+        )
     }
 
     private fun removeOtherUsers(command: WireCommand, owner: Boolean): WireCommandResult {

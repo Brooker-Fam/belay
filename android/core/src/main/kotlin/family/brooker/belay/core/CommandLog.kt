@@ -15,10 +15,11 @@ data class CommandLog(
     /** Newest first, at most WireLimits.MAX_COMMAND_RESULTS: enforcement.commands. */
     val results: List<WireCommandResult> = emptyList(),
     /**
-     * The lock_now commands that waited for a call at the last step (core's ScreenLocks): one that
-     * expires before it runs is reported with `waited_for_call`, since a call was on until then.
+     * A lock_now's lock that waits for a call to end (core's ScreenLocks.lockNow): its commands
+     * were reported done when the phone had them, and the screen locks at the first step with no
+     * call on. Null when none is due.
      */
-    val waitingForCall: List<String> = emptyList(),
+    val lockDue: LockDue? = null,
 ) {
     val doneIds: Set<String> get() = done.toSet()
 
@@ -26,15 +27,14 @@ data class CommandLog(
     fun record(new: List<WireCommandResult>): CommandLog {
         if (new.isEmpty()) return this
         val ids = new.map { it.id }
-        return CommandLog(
+        return copy(
             done = ((done - ids.toSet()) + ids).takeLast(MAX_DONE),
             results = (new.asReversed() + results.filter { it.id !in ids }).take(WireLimits.MAX_COMMAND_RESULTS),
-            waitingForCall = waitingForCall - ids.toSet(),
         )
     }
 
-    /** With [ids] the lock_now commands that wait for a call after this step (none: no lock waits). */
-    fun waiting(ids: List<String>): CommandLog = copy(waitingForCall = ids.distinct().take(MAX_DONE))
+    /** With [lock] the lock_now lock due after this step (null: none). */
+    fun due(lock: LockDue?): CommandLog = if (lock == lockDue) this else copy(lockDue = lock)
 
     companion object {
         /** Far more than the policy ever lists at once; an id older than these is long gone from it. */
@@ -43,15 +43,13 @@ data class CommandLog(
         const val UNKNOWN_PROBLEM = "Belay doesn't know this command yet. Updating Belay may help."
 
         /**
-         * The results for what [plan] doesn't run: expired commands, and kinds this Belay doesn't
-         * know. A lock_now in [waitedForCall] (it waited for a call at the last step) expired while
-         * the call was on: its result says so (`waited_for_call`).
+         * The results for what [plan] doesn't run: expired commands (the phone got them too late;
+         * a lock_now never expires for a call, since it's reported when the phone has it), and kinds
+         * this Belay doesn't know.
          */
-        fun notRun(plan: CommandPlan, now: Long, waitedForCall: Collection<String> = emptyList()): List<WireCommandResult> =
-            plan.expired.map { command ->
-                val waited = command.kind == WireCommand.LOCK_NOW && command.id in waitedForCall
-                WireCommandResult(command.id, WireCommandOutcome.EXPIRED, now, waitedForCall = true.takeIf { waited })
-            } + plan.unknown.map { WireCommandResult(it.id, WireCommandOutcome.FAILED, now, UNKNOWN_PROBLEM) }
+        fun notRun(plan: CommandPlan, now: Long): List<WireCommandResult> =
+            plan.expired.map { WireCommandResult(it.id, WireCommandOutcome.EXPIRED, now) } +
+                plan.unknown.map { WireCommandResult(it.id, WireCommandOutcome.FAILED, now, UNKNOWN_PROBLEM) }
 
         fun done(command: WireCommand, now: Long) = WireCommandResult(command.id, WireCommandOutcome.DONE, now)
 

@@ -167,25 +167,30 @@ describe("the Screen time tab", () => {
     expect(sam.parent.name).toBe("Sam");
   });
 
-  it("says a call was on until a lock expired, when the phone says its lock waited for one", async () => {
+  it("words every lock the same, with no time beside it, and nothing a phone sends says a call was on", async () => {
     const { t, phone, base, form, page, policy } = await family();
-    const expire = async (waited: boolean) => {
+    const send = async (result: "done" | "expired", extra: Record<string, unknown> = {}) => {
       expect((await form(`/devices/${phone.deviceId}/lock`, { minutes: "30" })).status).toBe(302);
       const p = policy();
-      t.advance(11 * 60_000);
-      const result = { id: p.commands[0]?.id ?? "", result: "expired" as const, at: t.now(), ...(waited ? { waited_for_call: true } : {}) };
-      expect((await deviceCall(t, phone.token, "checkin", { status: device({ enforcement: { policy_version: p.version, commands: [result] } }) })).status).toBe(200);
-      return (await page(base)).html;
+      if (result === "expired") t.advance(11 * 60_000);
+      const commands = [{ id: p.commands[0]?.id ?? "", result, at: t.now(), ...extra }];
+      return deviceCall(t, phone.token, "checkin", { status: device({ enforcement: { policy_version: p.version, commands } }) });
     };
-    const waited = await expire(true);
-    expect(waited).toContain("a call was on until it expired, so it didn");
-    expect(waited).not.toContain("too late");
-    // Without the phone's word, it reached the phone too late.
-    expect(await expire(false)).toContain("the phone got it too late, so it didn");
-    // The activity log says the same.
+    // Done when the phone has it, during a call too: the words say both, and no time follows them.
+    expect((await send("done")).status).toBe(200);
+    expect((await page(base)).html).toContain("the phone has it: its screen locks at once, or as soon as a call ends.</p>");
+    // The device API has no word for a lock that waited for a call: a phone that sends one is refused whole.
+    expect((await send("expired", { waited_for_call: true })).status).toBe(400);
+    // Expired only when it reached the phone too late.
+    expect((await send("expired")).status).toBe(200);
+    const expired = (await page(base)).html;
+    expect(expired).toContain("the phone got it too late, so it didn&#39;t lock.</p>");
+    expect(expired).not.toContain("a call was on");
+    // The activity log says the same, and keeps nothing about a call.
     const log = (await page("/activity")).html;
-    expect(log).toContain("a call was on until the request expired");
+    expect(log).toContain("got a request to lock its screen: it locks at once, or as soon as a call ends");
     expect(log).toContain("got a request to lock its screen too late");
+    expect(log).not.toContain("a call was on");
   });
 });
 

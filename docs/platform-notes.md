@@ -2470,8 +2470,9 @@ call), for at most 30 minutes from the step the wait began; then the screen lock
 goes on. Lost mode's one lock waits only for a managed call Telecom has. No other audio mode
 holds a lock off. A lock still due happens at the first step after the
 call (core's `ScreenLocks`): Belay takes a step when the audio mode changes, and looks again
-every minute. A `lock_now` that expires while it waits is reported `expired` with
-`waited_for_call`.
+every minute. A `lock_now` is reported `done` at the step that first has it, a call on or not,
+and its lock stays due until a step with no call on, however long the call lasts (a restart drops
+it): so its result never says a call was on, or when one ended (the fifth review's F2).
 
 ### T21. `WRITE_SECURE_SETTINGS` granted over adb outlives the debugging lock
 

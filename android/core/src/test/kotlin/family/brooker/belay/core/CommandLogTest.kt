@@ -61,4 +61,19 @@ class CommandLogTest {
     fun `a failure's words are capped for the server`() {
         assertEquals(WireLimits.MAX_PROBLEM, CommandLog.failed(remove, T0, "x".repeat(300)).problem!!.length)
     }
+
+    @Test
+    fun `the lock due is kept with the log until a step says none is, and an older log still reads`() {
+        val due = LockDue(bootCount = 4, bootAt = T0)
+        val log = CommandLog().record(listOf(CommandLog.done(remove, T0))).due(due)
+        assertEquals(due, log.lockDue)
+        assertEquals(due, log.record(listOf(CommandLog.done(remove.copy(id = "command-9"), T0 + 1))).lockDue, "recording keeps it")
+        assertNull(log.due(null).lockDue)
+        val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+        val text = json.encodeToString(CommandLog.serializer(), log)
+        assertEquals(log, json.decodeFromString(CommandLog.serializer(), text))
+        // A log stored by the Belay before the fifth review (its waitingForCall, a result's waited_for_call) reads, without them.
+        val older = """{"done":["command-1"],"results":[{"id":"command-1","result":"expired","at":1,"waited_for_call":true}],"waitingForCall":["command-1"]}"""
+        assertEquals(CommandLog(done = listOf("command-1"), results = listOf(WireCommandResult("command-1", WireCommandOutcome.EXPIRED, 1))), json.decodeFromString(CommandLog.serializer(), older))
+    }
 }

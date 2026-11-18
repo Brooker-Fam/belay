@@ -252,15 +252,23 @@ describe("screen time over MCP", () => {
       untrusted: { why_belay_on_the_phone_says: "Android lets Belay lock the screen only after the phone restarts once with this version of Belay." },
     });
     expect(policy().commands).toEqual([]);
-    // One the phone says waited for a call until it expired is worded so, not as one it got too late.
+    // Done: the phone has it, and locks at once or once a call ends; no time comes with it.
     await call("lock_phone", { device: "Alex's phone", minutes: 15 });
-    const waited = policy().commands[0]?.id ?? "";
-    t.advance(11 * MIN);
-    await deviceCall(t, phone.token, "checkin", {
-      status: device({ enforcement: { policy_version: policy().version, commands: [{ id: waited, result: "expired", at: t.now(), waited_for_call: true }] } }),
+    const done = policy().commands[0]?.id ?? "";
+    await deviceCall(t, phone.token, "checkin", { status: device({ enforcement: { policy_version: policy().version, commands: [{ id: done, result: "done", at: t.now() }] } }) });
+    expect((await call("get_rules", { device: "Alex's phone" })).json.last_lock).toEqual({
+      sent: "2026-11-16T10:00:00-05:00",
+      state: "done: the phone has it, and locks its screen at once, or as soon as a call ends",
     });
-    const after = await call("get_rules", { device: "Alex's phone" });
-    expect(after.json.last_lock).toMatchObject({ state: "not done: a call was on until it expired, so the phone didn't lock" });
+    // Expired: the phone got it too late, in the same words for every one.
+    await call("lock_phone", { device: "Alex's phone", minutes: 15 });
+    const late = policy().commands[0]?.id ?? "";
+    t.advance(11 * MIN);
+    await deviceCall(t, phone.token, "checkin", { status: device({ enforcement: { policy_version: policy().version, commands: [{ id: late, result: "expired", at: t.now() }] } }) });
+    expect((await call("get_rules", { device: "Alex's phone" })).json.last_lock).toEqual({
+      sent: "2026-11-16T10:00:00-05:00",
+      state: "not done: the phone got it too late, so it didn't lock",
+    });
   });
 
   it("list_requests: more time, with the limit's name and the kid's reason untrusted; the agreement's answers with their category", async () => {

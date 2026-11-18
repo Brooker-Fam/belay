@@ -210,7 +210,10 @@ export const Enforcement = z.strictObject({
     .nullish(),
   /** Phase 6: the last use of the recovery key on the phone. */
   recovery: z.strictObject({ version: z.int().min(1), used_at: time, until: time }).nullish(),
-  /** The results of the last one-shot commands, newest first. */
+  /**
+   * The results of the last one-shot commands, newest first. A lock_now is done when the phone has
+   * it, during a call too (its lock waits for the call), so nothing here says a call was on.
+   */
   commands: z
     .array(
       z.strictObject({
@@ -218,8 +221,6 @@ export const Enforcement = z.strictObject({
         result: z.enum(["done", "failed", "expired"]),
         at: time,
         problem: text(LIMITS.maxProblem).nullish(),
-        /** A lock_now that expired while its lock waited for a call that was still on. */
-        waited_for_call: z.boolean().optional(),
       }),
     )
     .max(LIMITS.maxCommandResults)

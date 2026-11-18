@@ -58,6 +58,9 @@ object DataCategories {
                 "your parent's rules (not the proxy's address)",
             "How an update of Belay that your parent chose is going, when the recovery key was " +
                 "last used, and whether Belay did what your parent asked, like removing another user",
+            // CommandLog and ScreenLocks.lockNow: reported when the phone has it, during a call too.
+            "Whether the phone got a screen lock your parent sent in time, and whether it could lock. " +
+                "During a call, the screen locks once the call ends, and Belay doesn't say when that was.",
         ),
     )
 
