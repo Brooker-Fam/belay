@@ -40,7 +40,9 @@ docker run --rm -it -p 127.0.0.1:8090:8090 -v ~/.config/belay:/keys belay-setup
    key: later runs use the one in the folder.
 2. **The build.** It builds Belay and signs it with your key
    ([`build-release.sh`](../android/scripts/build-release.sh)), which asks for the key's
-   password. It prints the certificate's SHA-256 again: it must be the one you wrote down.
+   password. It prints the certificate's SHA-256 again (it must be the one you wrote down) and
+   the app's version code, and keeps a copy of the app in your key folder, named with that
+   version code, like `belay-0.6.0-version-code-7.apk` ([Save a copy of this app](#save-a-copy-of-this-app)).
 3. **The page.** Open `http://localhost:8090` in Chrome or Edge on this computer and follow it:
    get the phone ready, check the app (its certificate's SHA-256, to compare with yours), paste
    the server's address and the code from the parent page's **Add a phone** (or leave them
@@ -50,13 +52,31 @@ docker run --rm -it -p 127.0.0.1:8090:8090 -v ~/.config/belay:/keys belay-setup
    `provision.sh`. Press Ctrl+C in the terminal when you're done.
 
 `docker run … belay-setup serve` only serves the page, and the page installs an APK you choose
-(one you built before, with the kit or `build-release.sh`), again showing its certificate's
-SHA-256 for you to compare.
+(one you built before: the kit keeps them in your key folder, and `build-release.sh` leaves one
+in `android/app/build/outputs/apk/release/`), again showing its certificate's SHA-256 for you to
+compare.
 
 The APK you choose can be a debug build too (`./gradlew :app:assembleDebug`), for a test phone.
 The page says which it is: a test-only build, which
 [`unprovision.sh`](../android/scripts/unprovision.sh) can remove without a reset, or a release
 build, which only a factory reset removes.
+
+## Save a copy of this app
+
+Updating Belay later, from the family's server, takes the app you built and its version code
+([Updating Belay](server.md#updating-belay)), and only an app signed with your key will do. So
+the kit keeps every app it builds in the folder you gave as `/keys`, next to the key, as
+`belay-<version>-version-code-<n>.apk`, and never writes over a different file there. The
+server's backups don't hold the apps: keep them. The page's **Save a copy of this app** saves one
+more, wherever your browser saves downloads.
+
+To update Belay on the phones, from the repository's folder: `git pull`, `docker build` as above,
+and run the kit again. It builds the new version with your key and keeps its copy; it doesn't need
+the phone, so press Ctrl+C once the page is up. Then, on the server's page for the phone, under
+**Updating Belay**, **Add a version of Belay**: choose that file, type its version code and
+**Add this version**, then, on the page after it, **Offer it to** the phone. A browser's file
+chooser hides `~/.config`: on a Mac, press Cmd+Shift+G and type `~/.config/belay`; on Linux,
+press Ctrl+L and type it; on Windows, it's `%USERPROFILE%\.config\belay`.
 
 ## What stays on your computer, and why
 
@@ -66,6 +86,8 @@ build, which only a factory reset removes.
   a folder that looks like a copy of the repository. The image is built without any key (its
   `.dockerignore` leaves out `*.p12`, `*.jks`, `*.keystore`, `signing.properties` and `.env`
   files), and the page never sees the key, only the signed APK.
+- **Every app the kit builds**, in that same folder ([above](#save-a-copy-of-this-app)): an app
+  holds no key, only your key's signature, and updating Belay takes it.
 - **The family's server never holds the key.** A phone updates Belay only with an APK signed by
   the key it was set up with (Phase 6), so whoever takes over the server still can't make the
   phones install anything but what you signed. The kit doesn't talk to the server at all: the

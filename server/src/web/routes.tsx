@@ -34,9 +34,9 @@ import {
 import { newId } from "../crypto.js";
 import type { Deps } from "../deps.js";
 import { cancelCode, createEnrollmentCode, pendingCodes } from "../device/enroll.js";
-import { packageName } from "../device/schemas.js";
+import { LIMITS as DEVICE_LIMITS, packageName } from "../device/schemas.js";
 import { type App, getApp, listApps, listChanges, markReviewed, reviewHistory, appCounts } from "../family/apps.js";
-import { getAgentFile, listAgentFiles, offerAgent, withdrawOffer } from "../family/agent.js";
+import { AgentFileError, addAgentFile, getAgentFile, listAgentFiles, offerAgent, withdrawOffer } from "../family/agent.js";
 import { makePhoneRecoveryKey, recoveryState, usableKey } from "../family/recovery.js";
 import { issueCommand, listCommands } from "../family/commands.js";
 import { type DeviceView, deleteDevice, getDevice, listDevices, nameTaken, renameDevice, revokeDevice } from "../family/devices.js";
@@ -97,7 +97,7 @@ import { screenTimeWebRoutes } from "./screentime.js";
 import { ActivityPage } from "./pages/activity.js";
 import { AddPage, CodePage } from "./pages/add.js";
 import { InvitePage, LoginPage, MessagePage, SetupPage } from "./pages/auth.js";
-import { RecoveryKeyPage } from "./pages/belay.js";
+import { RecoveryKeyPage, VersionPage } from "./pages/belay.js";
 import { type AppRule, AppPage, DevicePage, DevicesPage, type PhoneRules } from "./pages/devices.js";
 import { ProposalsPage, RequestsPage } from "./pages/requests.js";
 import { AskAgainPage, MAINTENANCE_HOURS, PAUSE_MINUTES } from "./pages/rules.js";
@@ -106,6 +106,7 @@ import { HelpBanner } from "./pages/help.js";
 import { SettingsPage, ShownOncePage } from "./pages/settings.js";
 import { TimelinePage } from "./pages/timeline.js";
 import type { View } from "./ui.js";
+import { FormReader, UploadError, type UploadProblem } from "./upload.js";
 
 export type WebEnv = { Bindings: Bindings; Variables: { session: Session | null } };
 type WebContext = Context<WebEnv>;
@@ -113,6 +114,28 @@ type Form = Record<string, string | File | (string | File)[]>;
 
 const COOKIE = "belay";
 const NAME_MAX = 60;
+
+/**
+ * "Add a version of Belay", on a phone's page: the one form with a file, an APK. Its route reads
+ * its own body as it arrives (web/upload.ts), within a limit of its own, and checks its CSRF token
+ * itself, before the file: the 64 KB limit and the token check every other form gets would read
+ * the whole body into memory first.
+ */
+const isAddVersion = (c: Context) => c.req.method === "POST" && /^\/devices\/[^/]+\/update\/add$/.test(c.req.path);
+/** The APK, and 64 KB for the form's other fields and its multipart framing. */
+const ADD_VERSION_LIMIT = DEVICE_LIMITS.maxAgentBytes + 64 * 1024;
+const ADD_VERSION_WORDS: Record<UploadProblem, string> = {
+  not_multipart: "That form didn't send a file. Choose Belay's APK file, then add it.",
+  too_large: `That file is larger than ${DEVICE_LIMITS.maxAgentBytes / 1024 / 1024} MB, the most the server keeps, so nothing was kept.`,
+  ended: "The upload stopped before all of the file arrived, so nothing was kept. Choose the file and add it again.",
+  malformed: "That form didn't arrive the way this page sends it, so nothing was kept. Reload the page and try again.",
+};
+const VERSION_CODE_WORDS = "The version code is a whole number, 1 or more, like 7: the setup kit and build-release.sh print it when they build Belay.";
+/** After "Add a version of Belay", on the version's page. */
+const VERSION_SAVED: Record<string, string> = {
+  added: "Added.",
+  already: "That file was on the server already, so it's kept once.",
+};
 
 const SAVED: Record<string, string> = {
   settings: "Settings saved.",
@@ -270,7 +293,8 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
   const message = (c: WebContext, title: string, text: string, status: ContentfulStatusCode = 200, link?: { href: string; label: string }) =>
     render(c, <MessagePage view={view(c)} title={title} message={text} link={link} />, status);
 
-  app.use("*", bodyLimit({ maxSize: 64 * 1024, onError: (c) => c.text("That form is too large.", 413) }));
+  const formLimit = bodyLimit({ maxSize: 64 * 1024, onError: (c) => c.text("That form is too large.", 413) });
+  app.use("*", createMiddleware<WebEnv>((c, next) => (isAddVersion(c) ? next() : formLimit(c, next))));
   app.use(
     "*",
     createMiddleware<WebEnv>(async (c, next) => {
@@ -392,7 +416,7 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
         if (c.req.method === "GET") return c.redirect(`/login?next=${encodeURIComponent(c.req.path + (new URL(c.req.url).search || ""))}`);
         return message(c, "Signed out", "Sign in again, then try that once more.", 401, { href: "/login", label: "Sign in" });
       }
-      if (c.req.method === "POST") {
+      if (c.req.method === "POST" && !isAddVersion(c)) {
         const form = await c.req.parseBody({ all: true });
         if (first(form, "_csrf") !== session.csrf) return message(c, "That form expired", "Go back, reload the page, and try again.", 403);
       }
@@ -578,6 +602,65 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
   });
 
   // ── Updating Belay (Phase 6): a parent's action only ────────────────
+
+  /**
+   * "Add a version of Belay", on a phone's page: the APK goes to addAgentFile as it arrives
+   * (web/upload.ts), as the CLI's agent-add's does, and the page after it shows its SHA-256 and
+   * version, with the button to offer it to this phone. The server never parses the APK: the
+   * phone checks it before installing. A refusal reads the rest of the upload first, so the
+   * browser, which shows an answer once it has sent the file, shows the words.
+   */
+  app.post("/devices/:id/update/add", async (c) => {
+    const device = deviceOr404(c);
+    if (!device) return noPhone(c);
+    const session = me(c);
+    const form = FormReader.open(c.req.raw, ADD_VERSION_LIMIT);
+    const refuse = async (error: string, status: ContentfulStatusCode) => {
+      await form.discard();
+      return showDevice(c, device, { error }, status);
+    };
+    try {
+      if (device.revokedAt !== null) return await refuse("This phone is disconnected, so it can't be updated.", 400);
+      // The fields before the file: the CSRF token first, then the version code and name.
+      const fields = new Map<string, string>();
+      let part = await form.next();
+      for (let n = 0; part !== null && part.filename === null; n++, part = await form.next()) {
+        if (n === 10) throw new UploadError("malformed");
+        fields.set(part.name, (await form.text(1024)).trim());
+      }
+      if (fields.get("_csrf") !== session.csrf) {
+        await form.discard();
+        return await message(c, "That form expired", "Go back, reload the page, and try again.", 403);
+      }
+      const code = fields.get("version_code") ?? "";
+      if (!/^[0-9]{1,10}$/.test(code) || Number(code) < 1) return await refuse(VERSION_CODE_WORDS, 400);
+      if (part?.name !== "apk" || part.filename === "") return await refuse("Choose Belay's APK file, then add it.", 400);
+      const now = deps.now();
+      const version = { code: Number(code), name: fields.get("version_name") || null };
+      const { file, existed } = await addAgentFile(db, config.agentsDir, now, form.file(), version, { parentId: session.parent.id });
+      if (!existed) {
+        audit(db, now, asParent(c), "agent.added", { detail: { version_code: file.versionCode, version_name: file.versionName ?? undefined, sha256: file.sha256, size: file.size } });
+      }
+      await form.discard();
+      return c.redirect(`/devices/${device.id}/versions/${file.sha256}?saved=${existed ? "already" : "added"}`);
+    } catch (error) {
+      if (error instanceof UploadError) return refuse(ADD_VERSION_WORDS[error.problem], error.problem === "too_large" ? 413 : 400);
+      // Not a version name, not an APK, larger than the most the server keeps (the file alone),
+      // or a file added before with another version code.
+      if (error instanceof AgentFileError) return refuse(error.message, form.partBytes > DEVICE_LIMITS.maxAgentBytes ? 413 : 400);
+      if ((error as NodeJS.ErrnoException).code === "ENOSPC") return refuse("The server's disk is full, so it couldn't keep that file, and nothing was kept.", 507);
+      throw error;
+    }
+  });
+
+  /** A version of Belay on the server, from a phone's page: what it is, and the button to offer it to that phone. */
+  app.get("/devices/:id/versions/:sha256", (c) => {
+    const device = deviceOr404(c);
+    if (!device) return noPhone(c);
+    const file = getAgentFile(db, c.req.param("sha256"));
+    if (!file) return message(c, "No such version", "That version of Belay isn't on this server.", 404, { href: `/devices/${device.id}#update`, label: `Back to ${device.name}` });
+    return render(c, <VersionPage view={view(c)} device={device} file={file} message={VERSION_SAVED[c.req.query("saved") ?? ""]} />);
+  });
 
   app.post("/devices/:id/update", async (c) => {
     const device = deviceOr404(c);

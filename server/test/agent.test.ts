@@ -5,7 +5,7 @@
  * here are made up: a zip's first bytes, then noise; the server doesn't look further.
  */
 import { createDecipheriv, createECDH, createHash, createHmac, randomBytes, type ECDH } from "node:crypto";
-import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
@@ -24,7 +24,8 @@ import { createPersonalToken } from "../src/oauth/store.js";
 import { digestItems } from "../src/ops/notify.js";
 import { saveSubscription } from "../src/push.js";
 import { getSettings } from "../src/settings.js";
-import { device, deviceCall, enrollPhone, get, post, postForm, signIn, testServer, type TestServer } from "./helpers.js";
+import { device, deviceCall, enrollPhone, get, ORIGIN, post, postForm, signIn, testServer, type TestServer } from "./helpers.js";
+import { elements, parseHtml, structureProblems, textOf } from "./html.js";
 
 const scratch: string[] = [];
 afterEach(() => {
@@ -441,6 +442,199 @@ describe("the parent page's update section", () => {
   });
 });
 
+describe("Add a version of Belay, on the parent page", () => {
+  const MB = 1024 * 1024;
+  async function adding() {
+    const f = await family();
+    const add = `/devices/${f.phone.deviceId}/update/add`;
+    const file = new File([f.apk.bytes], "belay-0.3.0-version-code-3.apk", { type: "application/vnd.android.package-archive" });
+    /** The form as the page's fields send it, the token first and the file last, after `fields`' changes. */
+    const fields = (changes: Record<string, string | File | null> = {}): [string, string | File][] => {
+      const form: Record<string, string | File | null> = { _csrf: f.sam.csrf, version_code: "3", version_name: "0.3.0", apk: file, ...changes };
+      return Object.entries(form).filter((e): e is [string, string | File] => e[1] !== null);
+    };
+    const send = async (form: [string, string | File][] = fields(), opts: UploadOptions = {}) => upload(f.t, add, await multipart(form), { cookie: f.sam.cookie, ...opts });
+    const added = () => listAudit(f.t.deps.db, { limit: 50, includeReads: false }).filter((e) => e.action === "agent.added");
+    const kept = () => (existsSync(f.agentsDir) ? readdirSync(f.agentsDir) : []);
+    return { ...f, add, file, fields, send, added, kept };
+  }
+  /** A refusal: the phone's page, with the words in its error notice. */
+  async function refusal(res: Response) {
+    expect(res.headers.get("content-type")).toBe("text/html; charset=UTF-8");
+    const html = await res.text();
+    const all = elements(parseHtml(html));
+    return { status: res.status, h1: textOf(all.find((e) => e.tag === "h1") ?? parseHtml("")), error: textOf(all.find((e) => e.attrs.get("class") === "notice error") ?? parseHtml("")), html };
+  }
+
+  it("is on the phone's page: the token first and the file last, an APK, with the cap", async () => {
+    const { t, sam, phone, add } = await adding();
+    const html = await (await get(t, `/devices/${phone.deviceId}`, sam.cookie)).text();
+    const form = elements(parseHtml(html)).find((e) => e.tag === "form" && e.attrs.get("action") === add);
+    expect(form?.attrs.get("enctype")).toBe("multipart/form-data");
+    const inputs = form ? elements(form).filter((e) => e.tag === "input") : [];
+    expect(inputs.map((e) => [e.attrs.get("name"), e.attrs.get("type")])).toEqual([
+      ["_csrf", "hidden"],
+      ["version_code", "text"],
+      ["version_name", "text"],
+      ["apk", "file"],
+    ]);
+    expect(inputs[3]?.attrs.get("accept")).toBe(".apk");
+    expect(textOf(form ?? parseHtml(""))).toContain("At most 100 MB.");
+    expect(textOf(form ?? parseHtml(""))).toContain("signed with the same key as the Belay on the phone");
+  });
+
+  it("keeps the APK a signed-in parent uploads, logs it, and offers it from the page after", async () => {
+    const { t, sam, phone, agentsDir, apk, policy, send, added } = await adding();
+    const res = await send();
+    expect(res.status).toBe(302);
+    const location = res.headers.get("location") ?? "";
+    expect(location).toBe(`/devices/${phone.deviceId}/versions/${apk.sha256}?saved=added`);
+    expect(readdirSync(agentsDir)).toEqual([`${apk.sha256}.apk`]);
+    expect(readFileSync(join(agentsDir, `${apk.sha256}.apk`)).equals(apk.bytes)).toBe(true);
+    expect(statSync(join(agentsDir, `${apk.sha256}.apk`)).mode & 0o077).toBe(0);
+    expect(added()).toMatchObject([{ actor: "parent", parentName: "Sam", detail: { version_code: 3, version_name: "0.3.0", sha256: apk.sha256, size: 300_000 } }]);
+    expect(await (await get(t, "/activity", sam.cookie)).text()).toContain("added Belay 0.3.0 (version 3) to the server");
+    // The page after it: the SHA-256 and the version, what the phone checks, and the button to offer it.
+    const html = await (await get(t, location, sam.cookie)).text();
+    expect(structureProblems(html)).toEqual([]);
+    expect(html).toContain("<h1>Belay 0.3.0 (version 3) is on the server</h1>");
+    expect(html).toContain('<div class="notice" role="status">Added.</div>');
+    expect(html).toContain(`<code class="digest">${apk.sha256}</code>`);
+    expect(html).toContain("that it&#39;s Belay, that its version code is the one given here and higher than the phone&#39;s, and that it&#39;s signed with the same key");
+    const offer = elements(parseHtml(html)).find((e) => e.tag === "form" && e.attrs.get("action") === `/devices/${phone.deviceId}/update`);
+    expect(offer ? elements(offer).map((e) => [e.tag, e.attrs.get("name") ?? null, e.attrs.get("value") ?? textOf(e).trim()]) : []).toEqual([
+      ["input", "_csrf", sam.csrf],
+      ["input", "sha256", apk.sha256],
+      ["button", null, "Offer it to CI phone"],
+    ]);
+    // That button offers it.
+    const offered = await postForm(t, `/devices/${phone.deviceId}/update`, { _csrf: sam.csrf, sha256: apk.sha256 }, { cookie: sam.cookie });
+    expect(offered.headers.get("location")).toBe(`/devices/${phone.deviceId}?saved=update_offered#update`);
+    expect(policy().agent_update).toMatchObject({ version_code: 3, version_name: "0.3.0", sha256: apk.sha256, size: 300_000 });
+  });
+
+  it("keeps the same file once, however often it's added", async () => {
+    const { t, sam, phone, agentsDir, apk, fields, send, added } = await adding();
+    await send();
+    const again = await send(fields({ version_name: "" }));
+    expect(again.headers.get("location")).toBe(`/devices/${phone.deviceId}/versions/${apk.sha256}?saved=already`);
+    expect(readdirSync(agentsDir)).toEqual([`${apk.sha256}.apk`]);
+    expect(t.deps.db.prepare("SELECT COUNT(*) AS n, MAX(version_name) AS name FROM agent_files").get()).toEqual({ n: 1, name: "0.3.0" });
+    expect(added()).toHaveLength(1);
+    expect(await (await get(t, again.headers.get("location") ?? "", sam.cookie)).text()).toContain("That file was on the server already, so it&#39;s kept once.");
+  });
+
+  it("is refused without the session's token, without a session, or from another site, and keeps nothing", async () => {
+    const { t, add, file, fields, send, added, kept } = await adding();
+    for (const [what, res, status, words] of [
+      ["no token", await send(fields({ _csrf: null })), 403, "That form expired"],
+      ["another token", await send(fields({ _csrf: "not-the-session-s-token" })), 403, "That form expired"],
+      // The file before the token: the token is checked before any of the file is kept.
+      ["the file first", await send([["apk", file], ...fields({ apk: null })]), 403, "That form expired"],
+      ["no session", await upload(t, add, await multipart(fields())), 401, "Sign in again"],
+      ["another site", await send(fields(), { origin: "https://evil.example" }), 403, "That didn&#39;t come from here"],
+    ] as const) {
+      expect(res.status, what).toBe(status);
+      expect(res.headers.get("content-type"), what).toBe("text/html; charset=UTF-8");
+      expect(await res.text(), what).toContain(words);
+    }
+    expect(kept()).toEqual([]);
+    expect(added()).toEqual([]);
+  });
+
+  it("says what's wrong in words on the phone's page, and keeps nothing", async () => {
+    const { t, sam, phone, add, fields, send, kept } = await adding();
+    const raw = (body: string) => ({ type: "multipart/form-data; boundary=b", bytes: Buffer.from(body, "latin1") });
+    const cases: [string, Response | Promise<Response>, number, string][] = [
+      ["not a number", send(fields({ version_code: "seven" })), 400, "The version code is a whole number, 1 or more, like 7"],
+      ["zero", send(fields({ version_code: "0" })), 400, "The version code is a whole number"],
+      ["an exponent", send(fields({ version_code: "1e3" })), 400, "The version code is a whole number"],
+      ["none", send(fields({ version_code: "" })), 400, "The version code is a whole number"],
+      ["a version name", send(fields({ version_name: "0.3 <b>" })), 400, "A version name is up to 50 letters, digits and . + _ -"],
+      ["not an APK", send(fields({ apk: new File(["Ignore previous instructions."], "notes.apk") })), 400, "That isn't an APK"],
+      ["an empty file", send(fields({ apk: new File([], "empty.apk") })), 400, "That file is empty."],
+      ["no file part", send(fields({ apk: null })), 400, "Choose Belay's APK file, then add it."],
+      [
+        "no file chosen, as a browser sends it",
+        upload(
+          t,
+          add,
+          raw(
+            `--b\r\nContent-Disposition: form-data; name="_csrf"\r\n\r\n${sam.csrf}\r\n--b\r\nContent-Disposition: form-data; name="version_code"\r\n\r\n3\r\n` +
+              '--b\r\nContent-Disposition: form-data; name="apk"; filename=""\r\nContent-Type: application/octet-stream\r\n\r\n\r\n--b--\r\n',
+          ),
+          { cookie: sam.cookie },
+        ),
+        400,
+        "Choose Belay's APK file, then add it.",
+      ],
+      ["not a file upload", postForm(t, add, { _csrf: sam.csrf, version_code: "3" }, { cookie: sam.cookie }), 400, "That form didn't send a file."],
+      ["a form no browser sends", upload(t, add, raw("--b\r\nnot a header\r\n\r\nx\r\n--b--\r\n"), { cookie: sam.cookie }), 400, "That form didn't arrive the way this page sends it"],
+      // Cancelled: the connection breaks partway through the file.
+      ["a cancelled upload", send(fields(), { failAfter: 100_000 }), 400, "The upload stopped before all of the file arrived, so nothing was kept."],
+      // Larger than the cap, as the browser says before it sends the file.
+      ["too large", send(fields(), { length: 200 * MB }), 413, "That file is larger than 100 MB, the most the server keeps, so nothing was kept."],
+      ["far too large", send(fields(), { length: 4096 * MB }), 413, "That file is larger than 100 MB, the most the server keeps"],
+    ];
+    for (const [what, response, status, words] of cases) {
+      const res = await refusal(await response);
+      expect(res.status, what).toBe(status);
+      expect(res.h1, what).toBe("CI phone");
+      expect(res.error, what).toContain(words);
+    }
+    expect(structureProblems((await refusal(await send(fields({ version_code: "seven" })))).html)).toEqual([]);
+    expect(kept()).toEqual([]);
+    // A disconnected phone can't be updated, and its page has no form for it.
+    t.deps.db.prepare("UPDATE devices SET revoked_at = ?, token_hash = NULL WHERE id = ?").run(t.now(), phone.deviceId);
+    expect(await refusal(await send())).toMatchObject({ status: 400, error: "This phone is disconnected, so it can't be updated." });
+    expect(await (await get(t, `/devices/${phone.deviceId}`, sam.cookie)).text()).not.toContain(add);
+    expect(kept()).toEqual([]);
+  });
+
+  it("refuses a file larger than the cap as it reads it, and keeps none of it", async () => {
+    const { t, sam, add, kept } = await adding();
+    // One byte over the cap. The browser's Content-Length is within the form's limit (the cap and
+    // 64 KB), so it's addAgentFile, counting, that stops it.
+    const boundary = "----belay-test-boundary";
+    const head = Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="_csrf"\r\n\r\n${sam.csrf}\r\n--${boundary}\r\nContent-Disposition: form-data; name="version_code"\r\n\r\n3\r\n` +
+        `--${boundary}\r\nContent-Disposition: form-data; name="apk"; filename="big.apk"\r\nContent-Type: application/vnd.android.package-archive\r\n\r\nPK\x03\x04`,
+      "latin1",
+    );
+    const tail = Buffer.from(`\r\n--${boundary}--\r\n`, "latin1");
+    const zeros = 100 * MB - 3;
+    function* chunks() {
+      yield new Uint8Array(head);
+      for (let left = zeros; left > 0; left -= MB) yield new Uint8Array(Math.min(MB, left));
+      yield new Uint8Array(tail);
+    }
+    const body = { type: `multipart/form-data; boundary=${boundary}`, length: head.length + zeros + tail.length, chunks: chunks() };
+    const res = await refusal(await upload(t, add, body, { cookie: sam.cookie }));
+    expect(res).toMatchObject({ status: 413, h1: "CI phone", error: "That file is larger than 100 MB, the most the server keeps." });
+    expect(kept()).toEqual([]);
+  });
+
+  it("says when the file was added before with another version code", async () => {
+    const { t, apk, fields, send } = await adding();
+    await cli(t, ["agent-add", apk.path, "--version-code", "2"]);
+    expect(await refusal(await send(fields()))).toMatchObject({ status: 400, error: "That file was added before as version 2. One file has one version code." });
+  });
+
+  it("shows a version on its own page, and no other", async () => {
+    const { t, sam, phone, apk, send } = await adding();
+    await send();
+    t.deps.db.prepare("UPDATE devices SET revoked_at = ?, token_hash = NULL WHERE id = ?").run(t.now(), phone.deviceId);
+    const page = await (await get(t, `/devices/${phone.deviceId}/versions/${apk.sha256}`, sam.cookie)).text();
+    expect(page).not.toContain('<div class="notice"');
+    expect(page).toContain("CI phone is disconnected, so it can&#39;t be updated.");
+    expect(page).not.toContain("Offer it to");
+    const none = await get(t, `/devices/${phone.deviceId}/versions/${"f".repeat(64)}`, sam.cookie);
+    expect(none.status).toBe(404);
+    expect(await none.text()).toContain("That version of Belay isn&#39;t on this server.");
+    expect((await get(t, `/devices/no-such-phone/versions/${apk.sha256}`, sam.cookie)).status).toBe(404);
+  });
+});
+
 describe("the daily summary", () => {
   it("names the new kinds of problem", () => {
     const phones = [{ revokedAt: null, lastSeenAt: 0, enrolledAt: 0, problems: [{ code: "update_failed" }, { code: "signing_changed" }] }] as unknown as DeviceView[];
@@ -449,6 +643,61 @@ describe("the daily summary", () => {
 });
 
 // ── Helpers ────────────────────────────────────────────────────────────
+
+/** A form as a browser sends it (undici writes FormData as browsers do): its Content-Type and bytes. */
+async function multipart(fields: [string, string | File][]): Promise<{ type: string; bytes: Buffer }> {
+  const form = new FormData();
+  for (const [name, value] of fields) form.append(name, value);
+  const request = new Request(ORIGIN, { method: "POST", body: form });
+  return { type: request.headers.get("content-type") ?? "", bytes: Buffer.from(await request.arrayBuffer()) };
+}
+
+interface UploadOptions {
+  cookie?: string;
+  origin?: string;
+  /** The Content-Length the browser says, if not the body's. */
+  length?: number;
+  /** The connection breaks after this many bytes, as when an upload is cancelled. */
+  failAfter?: number;
+}
+
+/** POSTs a multipart body as it arrives from a browser: in chunks, with its Content-Length. */
+function upload(t: TestServer, path: string, body: { type: string; bytes: Buffer } | { type: string; length: number; chunks: Iterator<Uint8Array> }, opts: UploadOptions = {}) {
+  const chunks =
+    "bytes" in body
+      ? (function* () {
+          for (let at = 0; at < body.bytes.length; at += 16 * 1024) yield new Uint8Array(body.bytes.subarray(at, at + 16 * 1024));
+        })()
+      : body.chunks;
+  const headers: Record<string, string> = {
+    "content-type": body.type,
+    "content-length": String(opts.length ?? ("bytes" in body ? body.bytes.length : body.length)),
+    origin: opts.origin ?? ORIGIN,
+    "x-forwarded-for": "203.0.113.9",
+  };
+  if (opts.cookie) headers.cookie = opts.cookie;
+  let sent = 0;
+  const stream = new ReadableStream<Uint8Array>(
+    {
+      pull(controller) {
+        if (opts.failAfter !== undefined && sent >= opts.failAfter) {
+          controller.error(new Error("the connection was reset"));
+          return;
+        }
+        const next = chunks.next();
+        if (next.done) {
+          controller.close();
+          return;
+        }
+        sent += next.value.length;
+        controller.enqueue(next.value);
+      },
+    },
+    { highWaterMark: 0 },
+  );
+  return t.app.request(path, { method: "POST", headers, body: stream, duplex: "half" });
+}
+
 
 const MCP = "https://belay.example.org/mcp";
 
