@@ -281,14 +281,15 @@ Day 11, about 4 hours.
 contact with a made-up name); the computer with adb; if you have them, a Bluetooth headset or car
 and two SIMs (Phase 5 §9).
 
-**Run:** [Phase 7](phase7-checklist.md) §1 to §6, then [Phase 5](phase5-checklist.md) §1 to §10.
+**Run:** [Phase 7](phase7-checklist.md) §1 to §6, then [Phase 5](phase5-checklist.md) §1 to §10,
+then Phase 5 §13 (Gemini in Google Messages, about 15 minutes).
 
 - Phase 7 §1.1 needs each state in turn: a pause, a bedtime, a limit used up, lost mode. Set each
   from the parent page.
 - Calls go on for the first time here, after the archival test (which needs Belay not to be the
   phone app).
 
-**Record:** Phase 7's table; Phase 5's rows 1.1 to 10.2.
+**Record:** Phase 7's table; Phase 5's rows 1.1 to 10.2, and 13.1 to 13.6.
 
 ## Sitting 9: the callback window, with caregivers in its waits
 

@@ -190,6 +190,11 @@ the phone uses it ([pixel.md](pixel.md#which-google-account)).
 - Make it a few days early: reset protection (section 6) can take up to 72 hours to accept a
   new account.
 - Keep its password from the kid, and don't add it to the phone until Belay is set up.
+- Know that an adult's own account turns on **Gemini inside Google Messages**, the texting app:
+  Google offers it to a personal account 18 or over, not to a Family Link or work account. Belay
+  never pauses the texting app, so that AI chat works during a pause and at bedtime, and Belay
+  can't turn it off: Google documents no setting for it that Belay could set. Section 6 says how
+  to hide its button, which your kid can show again.
 
 ### A password manager
 
@@ -435,9 +440,17 @@ phone's page, **Apps and rules**, on the parent page.
    and apps up to the rating you choose; and Settings > Authentication > "For all purchases
    through Google Play on this device". Belay can't set these for you
    ([phase2-checklist.md](phase2-checklist.md#before-you-start)).
+3. In Google Messages, if you don't want your kid chatting with Gemini there: tap the profile
+   picture > Messages settings > Gemini in Messages, and turn off **Show Gemini button**. It's
+   your kid's switch too, so they can turn it back on: talk about it, as for any AI chat. Belay
+   can't lock it, block the texting app, or pause it at bedtime, and the web filter doesn't see
+   the chat ([threat-model.md](threat-model.md#getting-around-belay-the-phase-2-audit)). If that
+   isn't enough, the other way is a different default texting app (an open decision for your
+   family, [the calls design](design/phase5-calls-texts.md#gemini-in-google-messages)).
 
 **Not yet checked on a Pixel:** a parent-owned account and Play next to a device owner
-([phase0-checklist.md](phase0-checklist.md), step 3).
+([phase0-checklist.md](phase0-checklist.md), step 3), and what Gemini in Google Messages shows
+your kid ([phase5-checklist.md](phase5-checklist.md), section 13).
 
 ### Turn protection on
 

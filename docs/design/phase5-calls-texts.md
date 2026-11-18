@@ -147,6 +147,39 @@ Start with Option A, after a Pixel test of the archival path (open question 1). 
 later for families who want "approved contacts only" for texts, like Gabb. Under Option A, the
 dialer half still gives "approved contacts only" for calls.
 
+### Gemini in Google Messages
+
+Google Messages has Gemini built in, for "a personal Google Account that you manage on your
+own", 18 or over, not one "managed by Family Link" or "a Google Workspace account", with RCS chats
+on (support.google.com/messages/answer/14599070, read 2026-11-18). That's the parent-owned account
+the guide asks for, so on the kid's phone the texting app can carry an AI chat. Belay never pauses,
+limits, makes Wi-Fi only or network-logs the texting app (it's how the kid reaches 911, 988 and
+their parents), so the chat works through pauses, bedtime and limits, on Google's servers, past
+the DNS filter (the second bypass audit's B2).
+
+What Google documents for admins doesn't turn it off. Its Android Enterprise page for Google
+Messages (support.google.com/work/android/answer/13761869, read 2026-11-18) lists two managed
+configuration keys, `messages_archival` (Option A) and `disable_rcs` ("Set the disable_rcs app
+restriction to true", from messages.android_20220121_02_RC03), and developer.android.com's RCS
+archival page names only the first; nothing mentions Gemini. A device owner can set Google
+Messages' keys with `setApplicationRestrictions` (the debug build does, for T8), but Belay doesn't
+guess undocumented ones. `disable_rcs` would take away one of Gemini's requirements, but Google
+doesn't say it removes Gemini, and it costs RCS (group chats and iPhone conversations fall back to
+SMS and MMS), so it isn't a rule either: at most something to try on the Pixel later, with a debug
+switch like the texts test's.
+
+The family's options, whichever texts option they choose:
+
+- **Leave Google Messages, with "Show Gemini button" off** (Messages settings > Gemini in Messages).
+  The kid can turn it back on: a conversation, not a lock. The guide says so where the parent-owned
+  account goes on the phone.
+- **A different default texting app**, without an assistant built in: Option B's Belay SMS app, or
+  another SMS app the family approves (it waits for a parent like any app; Belay then never pauses
+  that one instead). It loses what Google Messages gives (RCS, its spam protection), as Option B
+  does, and Option A's archival with it.
+- **Block Gemini and the Google app** (the threat model's Gemini row): doesn't reach Gemini in
+  Messages.
+
 ### Flagging on the phone
 
 `TextFlags` (`:core`, pure, versioned, JVM-tested on made-up messages) runs deterministic rules
@@ -389,6 +422,8 @@ Belay's `InCallService` mid-call.
    2 hours after a call to emergency services, platform notes T6). Keeping blocks for a tap would
    mean a blocked number can't reach the kid during a rescue that started with a text to 988; a
    real call to 911 or 988 would still lift them.
+9. Gemini in Google Messages ([above](#gemini-in-google-messages)): leave it, with "Show Gemini
+   button" off, or a different default texting app.
 
 ## Open questions
 
@@ -401,3 +436,6 @@ Belay's `InCallService` mid-call.
 5. What else must a dialer support well: Wi-Fi calling, RTT, Bluetooth headsets and cars, visual
    voicemail, a Wear watch?
 6. Which languages does `TextFlags` need first, and who maintains the lists?
+7. Gemini in Google Messages, on the Pixel with the parent-owned account (Phase 5 checklist §13):
+   where it shows, whether "Show Gemini button" off leaves another way in, and whether the kid can
+   turn it back on. Later, with a debug switch: does `disable_rcs` remove it?

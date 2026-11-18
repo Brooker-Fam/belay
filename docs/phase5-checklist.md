@@ -314,6 +314,35 @@ What the outcome means (send the results; the texts design decides from them):
   [drafts](design/platform-notes-drafts.md#t9-belay-as-the-default-sms-app): SMS and MMS only, so
   iPhone and group chats lose RCS), or no text monitoring.
 
+## 13. Gemini in Google Messages
+
+Google Messages has Gemini built in for an adult's own Google account with RCS chats on, which is
+what the parent-owned account is, and Belay never pauses the texting app, so the chat works
+through pauses and bedtime ([the threat model's row](threat-model.md#getting-around-belay-the-phase-2-audit),
+[the calls design](design/phase5-calls-texts.md#gemini-in-google-messages)). Google documents no
+setting a device owner can use to turn it off; this section finds out what the kid sees and can
+do. Either build will do, with the parent-owned account on the phone (the guide's section 6), and
+RCS chats connected (Messages settings > RCS chats). Ask Gemini only made-up, harmless questions,
+and write down no account names.
+
+1. Open Google Messages. Write down, word for word, every place Gemini shows: a button in the
+   conversation list, a "Gemini" conversation, or an offer to try it.
+   If none shows, write down Messages' version (Settings > Apps > Messages) and whether Messages
+   settings has "Gemini in Messages" at all.
+2. If it shows, start a chat with one made-up question, and write down whether it answers.
+3. Pause the phone on the parent page. Open Google Messages (it stays open: Belay never pauses it)
+   and ask Gemini one more made-up question: write down whether it answers while the phone is
+   paused. Resume the phone.
+4. Messages settings > Gemini in Messages: turn off **Show Gemini button**. Write down whether
+   Gemini can still be reached another way: an old Gemini conversation in the list, Start chat
+   with "Gemini" typed in, or a share or suggestion.
+5. Turn **Show Gemini button** back on, as your kid would: write down whether anything asks for a
+   PIN, a password or a parent, or whether it's greyed out. Then turn it off again, if that's the
+   family's choice.
+6. `adb shell dumpsys package com.google.android.apps.messaging | grep -i versionName` (in
+   maintenance, or with the debug build): write down the version, so the results say which Google
+   Messages this was.
+
 ## Results
 
 | Step | Check | Result | Android build |
@@ -366,3 +395,9 @@ What the outcome means (send the results; the texts design decides from them):
 | 12.7 | Stop: all taken back, Belay restarted; Google Messages' notice gone? | pending | |
 | 12.8 | The time box ends it by itself | pending | |
 | 12 | The outcome: archival works, SMS only, or Google Messages doesn't call Belay | pending | |
+| 13.1 | Where Gemini shows in Google Messages, word for word (or Messages' version and settings if it doesn't) | pending | |
+| 13.2 | Gemini answers a made-up question | pending | |
+| 13.3 | Gemini in Messages while the phone is paused | pending | |
+| 13.4 | Show Gemini button off: another way in? | pending | |
+| 13.5 | Show Gemini button back on: anything stops the kid? | pending | |
+| 13.6 | Google Messages' version | pending | |
