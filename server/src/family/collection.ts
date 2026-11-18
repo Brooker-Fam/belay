@@ -6,7 +6,8 @@
  * page), never an AI app, and it's in the activity log with what went.
  *
  * Stopping is a switch where the phone has one: screen time's measuring, location (with lost mode
- * and keeping location on), recording calls (Phase 5), and network logging (Phase 3's last part). The phone always sends its app list and app changes while Belay
+ * and keeping location on), recording calls (Phase 5), network logging (Phase 3's last part) and
+ * measuring mobile data (Phase 13). The phone always sends its app list and app changes while Belay
  * is on it (its rules work from them), and the kid can always ask for things ("I need help" must
  * always reach a parent), so for those two what goes is what's kept now. A request the kid's phone
  * still shows keeps a bare record (that it was asked, and the answer, without anyone's words), so
@@ -22,13 +23,15 @@ import { setCalls } from "./calls/changes.js";
 import { callSettings, listContacts, listNumbers } from "./calls/store.js";
 import { setLocation, setLost } from "./location/changes.js";
 import { listPlaces, locationSettings } from "./location/store.js";
+import { setMobileDataMeasure } from "./mobiledata/changes.js";
+import { mobileDataSettings, wifiOnlyPackages } from "./mobiledata/store.js";
 import { setNetworkLog } from "./network/changes.js";
 import { networkSettings } from "./network/store.js";
 import { type Changed, type Person, type PolicyContext, RuleRefused, changePolicy } from "./policy.js";
 import { setPhoneSettings } from "./screentime/changes.js";
 import { phoneRules } from "./screentime/rules.js";
 
-export const COLLECTED = ["apps", "screen_time", "location", "calls", "network", "requests"] as const;
+export const COLLECTED = ["apps", "screen_time", "location", "calls", "network", "mobile_data", "requests"] as const;
 export type Collected = (typeof COLLECTED)[number];
 
 /** The tables each category's rows are in (location's checks are the phone's locate_now commands). */
@@ -38,6 +41,7 @@ export const COLLECTED_TABLES: Record<Collected, readonly string[]> = {
   location: ["fixes", "place_events", "places"],
   calls: ["call_records"],
   network: ["network_days", "network_lookups"],
+  mobile_data: ["mobile_data_days", "mobile_data_apps"],
   requests: ["requests"],
 };
 
@@ -67,6 +71,9 @@ export const RECORDS: readonly string[] = [
   // Phase 3: the network logging switch, and the private websites it never notes.
   "network_settings",
   "network_private_domains",
+  // Phase 13: measuring mobile data's switch, and the Wi-Fi-only apps.
+  "mobile_data_settings",
+  "wifi_only_apps",
   "handovers",
   "enrollment_codes",
   "audit_log",
@@ -84,6 +91,7 @@ export const COLLECTED_TITLES: Record<Collected, string> = {
   location: "Where the phone is",
   calls: "Calls",
   network: "Websites and services apps look up",
+  mobile_data: "Mobile data use",
   requests: "Requests",
 };
 
@@ -220,6 +228,22 @@ function networkKept(db: DB, deviceId: string): Omit<Kept, "fingerprint"> {
   };
 }
 
+function mobileDataKept(db: DB, deviceId: string): Omit<Kept, "fingerprint"> {
+  const days = count(db, "mobile_data_days WHERE device_id = ?", deviceId);
+  const on = mobileDataSettings(db, deviceId)?.measure === true;
+  const wifiOnly = wifiOnlyPackages(db, deviceId).length;
+  return {
+    category: "mobile_data",
+    title: COLLECTED_TITLES.mobile_data,
+    goes: days ? [`${plural(days, "day")} of mobile data use: how much mobile data each app used, and how much the phone used on Wi-Fi`] : [],
+    stopping: on
+      ? "Measuring mobile data turns off: the phone stops sending how much mobile data each app uses."
+      : "Measuring mobile data is off: the phone doesn't send how much mobile data apps use.",
+    stays: wifiOnly ? [`The ${plural(wifiOnly, "Wi-Fi-only app")}: ${wifiOnly === 1 ? "it's" : "they're"} this phone's rules, and collect nothing.`] : [],
+    anything: days > 0 || on,
+  };
+}
+
 function requestsKept(db: DB, deviceId: string, now: number): Omit<Kept, "fingerprint"> {
   const recent = now - PHONE_KEEPS_REQUESTS_MS;
   const closed = `requests WHERE device_id = ? AND NOT ${KEPT_REQUEST}`;
@@ -266,7 +290,9 @@ export function keptFor(db: DB, deviceId: string, category: Collected, now: numb
             ? callsKept(db, deviceId)
             : category === "network"
               ? networkKept(db, deviceId)
-              : requestsKept(db, deviceId, now);
+              : category === "mobile_data"
+                ? mobileDataKept(db, deviceId)
+                : requestsKept(db, deviceId, now);
   return { ...kept, fingerprint: fingerprintOf(kept) };
 }
 
@@ -312,6 +338,11 @@ function deleteNetwork(db: DB, deviceId: string): Deleted {
   return { network_days: db.prepare("DELETE FROM network_days WHERE device_id = ?").run(deviceId).changes };
 }
 
+function deleteMobileData(db: DB, deviceId: string): Deleted {
+  // mobile_data_apps go with their day.
+  return { mobile_data_days: db.prepare("DELETE FROM mobile_data_days WHERE device_id = ?").run(deviceId).changes };
+}
+
 function deleteRequests(db: DB, deviceId: string, now: number): Deleted {
   const recent = now - PHONE_KEEPS_REQUESTS_MS;
   const closed = `device_id = ? AND NOT ${KEPT_REQUEST}`;
@@ -349,6 +380,7 @@ export function stopCollecting(ctx: PolicyContext, deviceId: string, category: C
     }
     if (category === "calls" && callSettings(db, deviceId)?.log) setCalls(ctx, deviceId, { log: false }, who);
     if (category === "network" && networkSettings(db, deviceId)?.enabled) setNetworkLog(ctx, deviceId, false, who);
+    if (category === "mobile_data" && mobileDataSettings(db, deviceId)?.measure) setMobileDataMeasure(ctx, deviceId, false, who);
     return changePolicy(ctx, deviceId, who, (log) => {
       const deleted =
         category === "apps"
@@ -361,7 +393,9 @@ export function stopCollecting(ctx: PolicyContext, deviceId: string, category: C
                 ? deleteCalls(db, deviceId)
                 : category === "network"
                   ? deleteNetwork(db, deviceId)
-                  : deleteRequests(db, deviceId, now);
+                  : category === "mobile_data"
+                    ? deleteMobileData(db, deviceId)
+                    : deleteRequests(db, deviceId, now);
       log("collection.stopped", { category, deleted });
       return { deleted };
     });

@@ -6,7 +6,8 @@
  * There is no kind of proposal for hardening (factory reset, debugging, reset protection) or
  * maintenance mode, and lift_restriction never covers factory_reset or debugging: AI apps
  * can't touch them, even as a proposal. Nor for turning calls on or off, recording them, or the
- * private numbers (Phase 5): a calls proposal's patch never holds them.
+ * private numbers (Phase 5): a calls proposal's patch never holds them. Nor for measuring mobile
+ * data (Phase 13): a mobile_data proposal only changes the Wi-Fi-only apps.
  */
 import { audit } from "../audit.js";
 import { newId } from "../crypto.js";
@@ -39,6 +40,9 @@ import {
   sideOf as callsSideOf,
 } from "./calls/patch.js";
 import { callChangeSentence } from "./calls/words.js";
+import { type WifiOnlyPatch, changeWifiOnly } from "./mobiledata/changes.js";
+import { wifiOnlyPackages } from "./mobiledata/store.js";
+import { wifiOnlyTitle, wifiOnlyWords } from "./mobiledata/words.js";
 import { moveToStage, setPhoneRules } from "./screentime/changes.js";
 import { classifyScreenTimeChange, type RuleChange } from "./screentime/classify.js";
 import { type RulesPatch, applyPatch, emptyPatch, patchSides } from "./screentime/patch.js";
@@ -50,7 +54,15 @@ export const MAX_PENDING_PROPOSALS = 20;
 
 /** What propose_change takes. Screen time's proposals come from change_screen_time instead, and calls' from change_calls. */
 export const PROPOSAL_KINDS = ["allow_app", "resume", "lift_restriction", "web_filter_off", "new_apps_allow"] as const;
-export type ProposalKind = (typeof PROPOSAL_KINDS)[number] | "screen_time" | "move_stage" | "calls";
+export type ProposalKind = (typeof PROPOSAL_KINDS)[number] | "screen_time" | "move_stage" | "calls" | "mobile_data";
+
+/**
+ * Every kind, for the proposals table's CHECK (test/mobiledata-api.test.ts checks the latest
+ * migration takes each one): a kind added to ProposalKind and not here doesn't compile.
+ */
+export const ALL_PROPOSAL_KINDS = [...PROPOSAL_KINDS, "screen_time", "move_stage", "calls", "mobile_data"] as const satisfies readonly ProposalKind[];
+type EveryKindListed = [Exclude<ProposalKind, (typeof ALL_PROPOSAL_KINDS)[number]>] extends [never] ? true : never;
+export const EVERY_KIND_LISTED: EveryKindListed = true;
 
 /** The locks an AI app may propose lifting: never factory reset or debugging. */
 export const LIFTABLE = [...SAFE_RESTRICTIONS, ...LOCK_RESTRICTIONS] as const;
@@ -67,7 +79,9 @@ export type ProposalChange =
   /** Phase 3: moving a phone to another stage, which is always a parent's. */
   | { kind: "move_stage"; stageId: string; stageName: string }
   /** Phase 5: a change to a phone's calls that doesn't only tighten (never on or off, recording or private numbers). */
-  | { kind: "calls"; patch: CallsPatch };
+  | { kind: "calls"; patch: CallsPatch }
+  /** Phase 13: a change to a phone's Wi-Fi-only apps that takes one off (never measuring). */
+  | { kind: "mobile_data"; patch: WifiOnlyPatch };
 
 /** "outdated": a parent tried to approve it, but what it was about had changed since, so nothing was applied. */
 export type ProposalStatus = "pending" | "approved" | "rejected" | "outdated";
@@ -164,6 +178,12 @@ function changeOf(r: Pick<ProposalRow, "kind" | "package" | "restriction" | "pay
       const ok = !!patch && typeof patch.rules === "object" && patch.rules !== null && Array.isArray(patch.contacts) && Array.isArray(patch.blocked);
       return { kind: "calls", patch: ok ? (patch as unknown as CallsPatch) : { rules: {}, contacts: [], blocked: [] } };
     }
+    case "mobile_data": {
+      // The stored JSON, read leniently: a patch that doesn't read changes nothing.
+      const patch = payloadOf(r.payload).patch as Record<string, unknown> | undefined;
+      const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+      return { kind: "mobile_data", patch: { add: strings(patch?.add), remove: strings(patch?.remove) } };
+    }
     default:
       return { kind: r.kind };
   }
@@ -171,7 +191,7 @@ function changeOf(r: Pick<ProposalRow, "kind" | "package" | "restriction" | "pay
 
 /** What the change stores in its row besides its kind. */
 function payloadFor(change: ProposalChange): string | null {
-  if (change.kind === "screen_time" || change.kind === "calls") return canonical({ patch: change.patch });
+  if (change.kind === "screen_time" || change.kind === "calls" || change.kind === "mobile_data") return canonical({ patch: change.patch });
   if (change.kind === "move_stage") return canonical({ stage_id: change.stageId, stage_name: change.stageName });
   return null;
 }
@@ -183,6 +203,11 @@ function payloadFor(change: ProposalChange): string | null {
 export function callsWords(change: Extract<ProposalChange, { kind: "calls" }>, opts: { numbers?: boolean } = {}): { effect: "tightens" | "loosens" | "neither"; words: string }[] {
   const { before, after } = callsPatchSides(change.patch);
   return classifyCallsChange(before, after).changes.map((c) => ({ effect: c.effect, words: callChangeSentence(c, opts) }));
+}
+
+/** Phase 13: a Wi-Fi-only proposal's changes in the parents' words, with their effect (`labels` null names no app). */
+export function mobileDataWords(change: Extract<ProposalChange, { kind: "mobile_data" }>, labels: Labels | null = packageNames): { effect: "tightens" | "loosens"; words: string }[] {
+  return wifiOnlyWords(change.patch, labels).map((c) => ({ effect: c.effect, words: c.words }));
 }
 
 /** A screen-time proposal's changes, as classifyScreenTimeChange finds them in its parts. */
@@ -252,6 +277,8 @@ export function changeWords(
       const more = words.length > 1 ? ` (and ${words.length - 1} more change${words.length === 2 ? "" : "s"})` : "";
       return { title: `Change calls: ${lower}${more}`, gerund: `changing calls: ${lower}${more}` };
     }
+    case "mobile_data":
+      return wifiOnlyTitle(change.patch, labels);
     case "allow_app": {
       const name = labels === null ? "an app" : label ? `"${oneLine(label, 60)}"` : change.package;
       return { title: `Allow ${name}`, gerund: `allowing ${name}` };
@@ -298,6 +325,11 @@ export function nothingToLoosen(db: DB, deviceId: string, change: ProposalChange
     case "calls":
       if (emptyCallsPatch(change.patch)) return "It changes nothing.";
       return callsAlreadyApplied(callsSideOf(db, deviceId), change.patch) ? "The phone's calls are already like that." : null;
+    case "mobile_data": {
+      if (!change.patch.remove.length) return change.patch.add.length ? "It only tightens: an AI app applies that itself." : "It changes nothing.";
+      const list = new Set(wifiOnlyPackages(db, deviceId));
+      return change.patch.remove.some((p) => list.has(p)) ? null : "Those apps can use mobile data already: none of them is Wi-Fi only any more.";
+    }
   }
 }
 
@@ -498,6 +530,9 @@ export function approveProposal(ctx: PolicyContext, id: string, parentId: string
         break;
       case "calls":
         applyCallsPatch(ctx, proposal.deviceId, change.patch, parent, { proposalId: proposal.id });
+        break;
+      case "mobile_data":
+        changeWifiOnly(ctx, proposal.deviceId, change.patch, parent, { proposalId: proposal.id });
         break;
     }
     db.prepare("UPDATE proposals SET status = 'approved', decided_by = ?, decided_at = ? WHERE id = ?").run(parentId, now, id);

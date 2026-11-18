@@ -146,7 +146,7 @@ describe("the CLI's location commands", () => {
 describe("status --json", () => {
   it("each phone gains location, fixes (newest first, at most 50), place_events, help and talk requests with withdrawn_at, help_seen, parent_numbers and ai_reads", async () => {
     const { t, phone } = await family();
-    expect(await status(t)).toMatchObject({ location: null, fixes: [], place_events: [], help_seen: [], parent_numbers: [], ai_reads: ["apps", "device_status", "requests", "screen_time", "agreement"] });
+    expect(await status(t)).toMatchObject({ location: null, fixes: [], place_events: [], help_seen: [], parent_numbers: [], ai_reads: ["apps", "device_status", "requests", "screen_time", "agreement", "mobile_data"] });
     await cli(t, "location", "CI phone", "--mode", "periodic");
     const place = (await cli(t, "place", "CI phone", "--name", "Test point", "--lat", "40.1", "--lng", "-73.2", "--radius", "100")).out;
     const check = (await cli(t, "locate-now", "CI phone")).out;

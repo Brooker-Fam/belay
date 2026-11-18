@@ -98,12 +98,14 @@ describe("the MCP server", () => {
       "block_app",
       "change_calls",
       "change_screen_time",
+      "change_wifi_only",
       "get_app_changes",
       "get_calls",
       "get_contacts",
       "get_device_status",
       "get_installed_apps",
       "get_location",
+      "get_mobile_data",
       "get_network_activity",
       "get_place_events",
       "get_policy",
@@ -119,7 +121,7 @@ describe("the MCP server", () => {
       "pause_phone",
       "propose_change",
     ]);
-    const changes = ["block_app", "pause_phone", "lock_phone", "change_screen_time", "change_calls"];
+    const changes = ["block_app", "pause_phone", "lock_phone", "change_screen_time", "change_calls", "change_wifi_only"];
     // locate_now sends the phone a check (the kid sees a notice), and changes no rule.
     const writes = ["mark_apps_reviewed", "propose_change", "locate_now", ...changes];
     for (const tool of tools) {
@@ -128,7 +130,8 @@ describe("the MCP server", () => {
       expect(tool.annotations?.openWorldHint).toBe(false);
     }
     // A client sends every tool's description and schema to its model, every time: they stay compact.
-    expect(JSON.stringify({ tools }).length).toBeLessThan(35_000);
+    // Phase 13's two tools (get_mobile_data, change_wifi_only) took it past the 35,000 before them.
+    expect(JSON.stringify({ tools }).length).toBeLessThan(37_000);
   });
 
   it("list_devices: status, model, patch age, counts, and no ids", async () => {

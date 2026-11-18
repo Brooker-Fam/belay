@@ -7,6 +7,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { describe, expect, it } from "vitest";
 import { createParent } from "../src/auth/parents.js";
+import { MOBILE_DATA_REMINDER } from "../src/mcp/mobiledata.js";
 import { NETWORK_REMINDER } from "../src/mcp/network.js";
 import { createPersonalToken } from "../src/oauth/store.js";
 import { type AiScope, AI_SCOPES, updateSettings } from "../src/settings.js";
@@ -46,6 +47,7 @@ const WEEKLY_TOOLS: Record<Exclude<AiScope, "agreement">, { asks: string; never:
   calls: { asks: "get_calls", never: ["get_calls", "get_contacts", "change_calls"] },
   location: { asks: "get_place_events", never: ["get_place_events", "get_location", "locate_now"] },
   network: { asks: "get_network_activity", never: ["get_network_activity"] },
+  mobile_data: { asks: "get_mobile_data", never: ["get_mobile_data", "change_wifi_only", "Wi-Fi only"] },
   screen_time: { asks: "get_screen_time", never: ["get_screen_time"] },
 };
 
@@ -58,13 +60,14 @@ const OFF_WORDS: Record<AiScope, string> = {
   location: "location",
   calls: "calls",
   network: "network activity",
+  mobile_data: "mobile data use",
 };
 
 describe("weekly_review", () => {
   it("with every category on, leads with what needs the parent, then a short section for each", async () => {
     const { prompt } = await family();
     const text = await prompt("weekly_review", ALL);
-    const order = ["Help requests:", "Phones' health:", "Waiting for the parent:", "Apps:", "Calls:", "Location:", "Network:", "Screen time:"].map((s) => text.indexOf(s));
+    const order = ["Help requests:", "Phones' health:", "Waiting for the parent:", "Apps:", "Calls:", "Location:", "Network:", "Mobile data:", "Screen time:"].map((s) => text.indexOf(s));
     expect(order.every((at) => at >= 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
     expect(text).toContain('Lead with what needs the parent: an "I need help" no parent has seen, then a phone that needs attention, then what waits for their answer.');
@@ -89,6 +92,10 @@ describe("weekly_review", () => {
     // Network: the week's top domains per app, with get_network_activity's own reminder.
     expect(text).toContain("the week's top few domains");
     expect(text).toContain(NETWORK_REMINDER);
+    // Mobile data: the week against the week before, the top apps, and Wi-Fi only only as a suggestion.
+    expect(text).toContain("this week's mobile data total and the change from the week before, the top few apps on mobile data");
+    expect(text).toContain("you may suggest making it Wi-Fi only (change_wifi_only, only if the parent agrees)");
+    expect(text).toContain(MOBILE_DATA_REMINDER);
     expect(text).toContain("Screen time is a number, not a verdict about the kid");
   });
 
@@ -114,7 +121,7 @@ describe("weekly_review", () => {
     expect(text).toContain("Waiting for the parent: call get_policy for each phone");
     expect(text).not.toContain("I need help");
     expect(text).toContain(
-      "A parent turned off AI access to the kid's requests, device status, apps, calls, location, network activity and screen time in Belay's settings: say so in one line, and leave them out.",
+      "A parent turned off AI access to the kid's requests, device status, apps, calls, location, network activity, mobile data use and screen time in Belay's settings: say so in one line, and leave them out.",
     );
     // The stage and agreement aren't part of it, on or off.
     expect(await prompt("weekly_review", but("agreement"))).toBe(await prompt("weekly_review", ALL));
@@ -134,10 +141,11 @@ describe("weekly_review", () => {
 });
 
 /** What each category's part of family_check_in asks for, and words that only that part has. */
-const CHECK_IN_PARTS: Record<"screen_time" | "agreement" | "requests", { asks: string; never: string[] }> = {
+const CHECK_IN_PARTS: Record<"screen_time" | "agreement" | "requests" | "mobile_data", { asks: string; never: string[] }> = {
   screen_time: { asks: "get_screen_time for the last 30 days", never: ["get_screen_time", "days that went over", "a limit the kid kept every day"] },
   agreement: { asks: "The stage and the agreement, from get_rules", never: ["The stage and the agreement", "get_rules' stage", "the agreement followed", "a move to this stage"] },
   requests: { asks: "list_requests for that phone", never: ["list_requests", "I need help", "requests a parent approved", "requests made politely"] },
+  mobile_data: { asks: "get_mobile_data for the last 30 days", never: ["get_mobile_data", "change_wifi_only", "Wi-Fi only"] },
 };
 
 describe("family_check_in", () => {
@@ -160,12 +168,14 @@ describe("family_check_in", () => {
     expect(text).toContain("If a help request hasn't been seen, tell the parent to look at it now.");
     expect(text).not.toContain("turned off AI access");
     // Steps numbered in order, whatever is left out.
-    expect(text.match(/^\d+\. /gm)).toEqual(["1. ", "2. ", "3. ", "4. ", "5. ", "6. ", "7. "]);
+    expect(text.match(/^\d+\. /gm)).toEqual(["1. ", "2. ", "3. ", "4. ", "5. ", "6. ", "7. ", "8. "]);
+    // Phase 13: what's Wi-Fi only, and what could use mobile data again, only as a suggestion.
+    expect(text).toContain("whether one could again (rules are built to loosen), only as a suggestion");
   });
 
   it("never asks for screen time, the stage and agreement, or the kid's requests while they're off, and says so in one line", async () => {
     const { prompt } = await family();
-    for (const [scope, { asks, never }] of Object.entries(CHECK_IN_PARTS) as ["screen_time" | "agreement" | "requests", { asks: string; never: string[] }][]) {
+    for (const [scope, { asks, never }] of Object.entries(CHECK_IN_PARTS) as ["screen_time" | "agreement" | "requests" | "mobile_data", { asks: string; never: string[] }][]) {
       const text = await prompt("family_check_in", but(scope), args);
       for (const words of never) expect(text, `${scope} off: ${words}`).not.toContain(words);
       expect(text, scope).toContain(`A parent turned off AI access to ${OFF_WORDS[scope]} in Belay's settings: say so in one line, and leave it out.`);
@@ -177,7 +187,7 @@ describe("family_check_in", () => {
     for (const { never } of Object.values(CHECK_IN_PARTS)) for (const words of never) expect(none).not.toContain(words);
     expect(none).toContain("First read get_rules for that phone.");
     expect(none).toContain("Say what could loosen next, like another rule in get_rules");
-    expect(none).toContain("A parent turned off AI access to screen time, the stage and agreement, and the kid's requests in Belay's settings: say so in one line, and leave them out.");
+    expect(none).toContain("A parent turned off AI access to screen time, the stage and agreement, the kid's requests, and mobile data use in Belay's settings: say so in one line, and leave them out.");
     expect(none.match(/^\d+\. /gm)).toEqual(["1. ", "2. ", "3. ", "4. "]);
     // The other categories aren't part of it, on or off.
     for (const scope of ["apps", "device_status", "location", "calls", "network"] as const) {

@@ -255,7 +255,7 @@ describe("the policy's ai_reads and parent_numbers", () => {
   it("ai_reads lists the AI scopes that are on; changing them gives every phone a new version at once", async () => {
     const { t, phone, policy, parent } = await family();
     const second = await enrollPhone(t, "Sam's phone");
-    expect(policy().ai_reads).toEqual(["apps", "device_status", "requests", "screen_time", "agreement"]);
+    expect(policy().ai_reads).toEqual(["apps", "device_status", "requests", "screen_time", "agreement", "mobile_data"]);
     const changed: string[] = [];
     const done = changeFamilySettings(
       {
@@ -270,7 +270,7 @@ describe("the policy's ai_reads and parent_numbers", () => {
     );
     expect(done.phonesChanged).toBe(2);
     expect(changed.sort()).toEqual([phone.deviceId, second.deviceId].sort());
-    expect(policy()).toMatchObject({ version: 1, ai_reads: ["apps", "device_status", "requests", "agreement", "location"] });
+    expect(policy()).toMatchObject({ version: 1, ai_reads: ["apps", "device_status", "requests", "agreement", "location", "mobile_data"] });
     expect(listAudit(t.deps.db, { limit: 1, includeReads: false })[0]).toMatchObject({ actor: "parent", action: "settings.changed", detail: { phones_changed: 2 } });
     // Nothing a phone sees changed: no new version.
     expect(changeFamilySettings({ db: t.deps.db, now: t.now() }, { silentHours: 6 }, parent).phonesChanged).toBe(0);

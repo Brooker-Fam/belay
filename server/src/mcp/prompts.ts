@@ -13,6 +13,7 @@ import { getApp } from "../family/apps.js";
 import { findDeviceByName } from "../family/devices.js";
 import type { Changer } from "../family/policy.js";
 import { type AiScope, getSettings } from "../settings.js";
+import { MOBILE_DATA_REMINDER } from "./mobiledata.js";
 import { NETWORK_REMINDER } from "./network.js";
 import type { Caller } from "./server.js";
 
@@ -28,6 +29,7 @@ const NAMES: Record<AiScope, string> = {
   location: "location",
   calls: "calls",
   network: "network activity",
+  mobile_data: "mobile data use",
 };
 
 /** "a", "a and b", "a, b and c"; with a comma before the last "and" when an item has one of its own. */
@@ -63,7 +65,7 @@ const appsOff =
   "\n\n(A parent turned off AI access to apps in Belay's settings, so Belay says nothing about the apps on that phone, not even whether this one is there: say so. You can still look the app up in public, like its Play Store page, if the parent wants.)";
 
 /** The categories weekly_review reads, in the order of its sections. */
-const WEEKLY: readonly AiScope[] = ["requests", "device_status", "apps", "calls", "location", "network", "screen_time"];
+const WEEKLY: readonly AiScope[] = ["requests", "device_status", "apps", "calls", "location", "network", "mobile_data", "screen_time"];
 
 /**
  * weekly_review's words for the categories that are on: what needs the parent first (help no
@@ -86,6 +88,8 @@ function weeklyReviewText(on: Scopes): string {
       "Location: for each phone that shares where it is periodically (list_devices says), call get_place_events for the last 7 days, and list the arrivals and departures as facts: when, and which place. Never guess why, or where the phone was in between. Don't call locate_now: the kid's phone shows a notice for every check.",
     on.network &&
       `Network: call get_network_activity for each phone for the last 7 days (it says whether network logging is on). For each app, give the week's top few domains with how many times each was looked up, as facts. ${NETWORK_REMINDER}`,
+    on.mobile_data &&
+      `Mobile data: for each phone, call get_mobile_data for the last 14 days (it says whether measuring is on). Give this week's mobile data total and the change from the week before, the top few apps on mobile data, and any Wi-Fi-only app that still used mobile data, as facts. If one app uses most of it, you may suggest making it Wi-Fi only (change_wifi_only, only if the parent agrees). ${MOBILE_DATA_REMINDER}`,
     on.screen_time &&
       "Screen time: for each phone that has screen-time rules, call get_rules and get_screen_time for the last 14 days. Give this week's totals against the limits (how many days each limit was kept), what changed from last week, and anything Belay couldn't count, with why. Screen time is a number, not a verdict about the kid: report it plainly, don't guess why, and don't moralize.",
   ].filter((s): s is string => typeof s === "string");
@@ -99,7 +103,7 @@ function weeklyReviewText(on: Scopes): string {
 }
 
 /** The categories family_check_in reads. */
-const CHECK_IN: readonly AiScope[] = ["screen_time", "agreement", "requests"];
+const CHECK_IN: readonly AiScope[] = ["screen_time", "agreement", "requests", "mobile_data"];
 
 /**
  * family_check_in's words for one phone (the parent's name for it, as data) and the categories
@@ -112,6 +116,7 @@ function familyCheckInText(on: Scopes, device: string): string {
     "get_rules for that phone",
     ...(on.screen_time ? ["get_screen_time for the last 30 days (from 29 days before today on the phone)"] : []),
     ...(on.requests ? ["list_requests for that phone (this month's requests and answers)"] : []),
+    ...(on.mobile_data ? ["get_mobile_data for the last 30 days"] : []),
   ];
   const went = [...(on.screen_time ? ["limits kept, schedules followed"] : []), ...(on.requests ? ["requests made politely"] : []), ...(on.agreement ? ["the agreement followed"] : [])];
   const loosened = [...(on.requests ? ["requests a parent approved"] : []), ...(on.agreement ? ["a move to this stage, if it was this month"] : [])];
@@ -127,6 +132,8 @@ function familyCheckInText(on: Scopes, device: string): string {
       ...(on.agreement ? ["Show what the next stage would change, in the stage's own sentences (get_rules' stage), and how to get there, in the family's words; if there's no next stage, say so."] : []),
       `${loosened.length || on.agreement ? "Then what else" : "Say what"} could loosen next, like ${on.screen_time ? "a limit the kid kept every day, or " : ""}another rule in get_rules: only as a suggestion, since a parent decides.`,
     ].join(" "),
+    on.mobile_data &&
+      "Wi-Fi only, from get_mobile_data: which apps can't use mobile data, and whether one could again (rules are built to loosen), only as a suggestion: letting one use mobile data again is a proposal (change_wifi_only) that a parent approves. Mobile data use is a number, not a verdict about the kid.",
     on.requests &&
       `The kid's own requests this month: what they asked for and how each was answered, without judging the asking. Don't read out the words of an "I need help" or a "Talk to my parent": say only that there was one, and leave it to the parent to follow up. If a help request hasn't been seen, tell the parent to look at it now.`,
     "Ask three open questions for the kid, like what they'd like to change, what's been hard, and what they're proud of. Listen; don't argue with the answers.",
@@ -158,7 +165,7 @@ export function registerPrompts(server: McpServer, deps: Deps, caller: Caller): 
     {
       title: "Weekly review",
       description:
-        "The week on the family's phones, what needs the parent first: help requests, the phones' health, requests and proposals waiting; then app changes and reviews, calls, places, network activity and screen time, as far as the parent lets AI apps read them.",
+        "The week on the family's phones, what needs the parent first: help requests, the phones' health, requests and proposals waiting; then app changes and reviews, calls, places, network activity, mobile data use and screen time, as far as the parent lets AI apps read them.",
     },
     () => ({ messages: [{ role: "user", content: { type: "text", text: weeklyReviewText(getSettings(db).aiScopes) } }] }),
   );

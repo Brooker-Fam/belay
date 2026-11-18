@@ -2,7 +2,7 @@ import type { Child, FC } from "hono/jsx";
 import type { Parent } from "../../auth/parents.js";
 import type { Grant } from "../../oauth/store.js";
 import type { PushSubscription } from "../../push.js";
-import { ACTIVITY_DAYS, AI_SCOPES, CALL_DAYS, LOCATION_DAYS, MAP_SITES, MAX_PARENT_NUMBERS, NETWORK_DAYS, OFF_BY_DEFAULT, type Settings, USAGE_MONTHS } from "../../settings.js";
+import { ACTIVITY_DAYS, AI_SCOPES, CALL_DAYS, LOCATION_DAYS, MAP_SITES, MAX_PARENT_NUMBERS, MOBILE_DATA_DAYS, NETWORK_DAYS, OFF_BY_DEFAULT, type Settings, USAGE_MONTHS } from "../../settings.js";
 import { formatAgo, timeZones } from "../../time.js";
 import { ChangePasswordForm } from "./auth.js";
 import { Csrf, Layout, Notice, OnThisPage, PostButton, Time, type View } from "../ui.js";
@@ -150,6 +150,8 @@ export const SettingsPage: FC<{
         <input id="call-days" type="number" name="call_days" min={CALL_DAYS.min} max={CALL_DAYS.max} required value={String(settings.callDays)} />
         <label for="network-days">Keep network activity (which websites and services apps looked up) for this many days, then delete it (only for phones with network logging on)</label>
         <input id="network-days" type="number" name="network_days" min={NETWORK_DAYS.min} max={NETWORK_DAYS.max} required value={String(settings.networkDays)} />
+        <label for="mobile-data-days">Keep mobile data use (how much mobile data each app used) for this many days, then delete it (only for phones that measure it)</label>
+        <input id="mobile-data-days" type="number" name="mobile_data_days" min={MOBILE_DATA_DAYS.min} max={MOBILE_DATA_DAYS.max} required value={String(settings.mobileDataDays)} />
         <label for="activity-days">Keep the activity log for this many days, then delete older entries ({ACTIVITY_DAYS.min} at least)</label>
         <input id="activity-days" type="number" name="activity_days" min={ACTIVITY_DAYS.min} max={ACTIVITY_DAYS.max} required value={String(settings.activityDays)} />
         <fieldset>
@@ -160,7 +162,9 @@ export const SettingsPage: FC<{
           {settings.newAiScopes.length > 0 && (
             <p class="small">
               <span class="chip new">new</span> marks what Belay added since you last saved these.{" "}
-              {settings.newAiScopes.some((s) => settings.aiScopes[s])
+              {settings.newAiScopes.some((s) => settings.aiScopes[s]) && settings.newAiScopes.some((s) => !settings.aiScopes[s])
+                ? "The ones ticked are on, like the others you left on: save to keep them, or untick them. The others start off: tick them to let AI apps read them."
+                : settings.newAiScopes.some((s) => settings.aiScopes[s])
                 ? "It's on, like the others you left on: save to keep it, or untick it."
                 : settings.newAiScopes.every((s) => OFF_BY_DEFAULT.includes(s))
                   ? "It starts off for every family: tick it to let AI apps read it."

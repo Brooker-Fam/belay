@@ -21,6 +21,7 @@ import { deviceFacts } from "./devices.js";
 import { aiReadsFor, helpSeenFor, parentNumbersFor } from "./kidside.js";
 import { locationFor } from "./location/store.js";
 import { networkLogFor } from "./network/store.js";
+import { mobileDataFor } from "./mobiledata/store.js";
 import { handoverFor, handoverOf, offBelayFor } from "./offbelay/store.js";
 import { agreementFor } from "./screentime/agreement.js";
 import { insertExtra, phoneDay, phoneRules, screenTimeFor, stageFor } from "./screentime/rules.js";
@@ -621,6 +622,8 @@ export function buildPolicy(db: DB, deviceId: string, now: number): Policy {
     agreement: agreementFor(db, deviceId),
     // Phase 3 (family/network): which domains apps look up, a parent's choice alone.
     network_log: networkLogFor(db, deviceId),
+    // Phase 13 (family/mobiledata): the Wi-Fi-only apps, and measuring, a parent's choice alone.
+    mobile_data: mobileDataFor(db, deviceId),
     // Phase 4 (family/location): a parent's choice alone.
     location: locationFor(db, deviceId),
     // Phase 7 (family/kidside.ts): for the kid's screen.

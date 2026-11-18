@@ -21,14 +21,14 @@ describe("AI scopes after an upgrade", () => {
     stored(t, { apps: false, device_status: false });
     expect(getSettings(t.deps.db)).toMatchObject({
       aiScopes: { apps: false, device_status: false, requests: false, screen_time: false, agreement: false },
-      newAiScopes: ["requests", "screen_time", "agreement", "location", "calls", "network"],
+      newAiScopes: ["requests", "screen_time", "agreement", "location", "calls", "network", "mobile_data"],
     });
   });
 
   it("so does a family that turned only one off", () => {
     const t = testServer();
     stored(t, { apps: true, device_status: false });
-    expect(getSettings(t.deps.db).aiScopes).toEqual({ apps: true, device_status: false, requests: false, screen_time: false, agreement: false, location: false, calls: false, network: false });
+    expect(getSettings(t.deps.db).aiScopes).toEqual({ apps: true, device_status: false, requests: false, screen_time: false, agreement: false, location: false, calls: false, network: false, mobile_data: false });
   });
 
   it("a family that left them all on gets the new one on, marked new", () => {
@@ -36,7 +36,7 @@ describe("AI scopes after an upgrade", () => {
     stored(t, { apps: true, device_status: true });
     expect(getSettings(t.deps.db)).toMatchObject({
       aiScopes: { apps: true, device_status: true, requests: true, screen_time: true, agreement: true },
-      newAiScopes: ["requests", "screen_time", "agreement", "location", "calls", "network"],
+      newAiScopes: ["requests", "screen_time", "agreement", "location", "calls", "network", "mobile_data"],
     });
   });
 
@@ -45,7 +45,7 @@ describe("AI scopes after an upgrade", () => {
     stored(t, { apps: true, device_status: true, requests: false });
     expect(getSettings(t.deps.db)).toMatchObject({
       aiScopes: { apps: true, device_status: true, requests: false, screen_time: false, agreement: false },
-      newAiScopes: ["screen_time", "agreement", "location", "calls", "network"],
+      newAiScopes: ["screen_time", "agreement", "location", "calls", "network", "mobile_data"],
     });
   });
 
@@ -53,12 +53,42 @@ describe("AI scopes after an upgrade", () => {
     const t = testServer();
     expect(getSettings(t.deps.db).aiScopes.location).toBe(false);
     stored(t, { apps: true, device_status: true, requests: true, screen_time: true, agreement: true });
-    expect(getSettings(t.deps.db)).toMatchObject({ aiScopes: { apps: true, location: false, calls: false, network: false }, newAiScopes: ["location", "calls", "network"] });
+    expect(getSettings(t.deps.db)).toMatchObject({ aiScopes: { apps: true, location: false, calls: false, network: false }, newAiScopes: ["location", "calls", "network", "mobile_data"] });
     const sam = await signIn(t);
+    // Phase 13's mobile data is new too, and on (the family left everything on): the page says which is which.
+    const mixed = await (await get(t, "/settings", sam.cookie)).text();
+    expect(mixed).toContain("The ones ticked are on, like the others you left on: save to keep them, or untick them. The others start off: tick them to let AI apps read them.");
+    t.deps.db.prepare("DELETE FROM settings WHERE key = 'ai_scopes'").run();
+    stored(t, { apps: true, device_status: true, requests: true, screen_time: true, agreement: true, mobile_data: true });
     const html = await (await get(t, "/settings", sam.cookie)).text();
     expect(html).toContain("It starts off for every family: tick it to let AI apps read it.");
     expect(html).toContain('value="location"/> Location: where the phone is');
     expect(updateSettings(t.deps.db, { aiScopes: { location: true } }).aiScopes.location).toBe(true);
+  });
+
+  it("Phase 13's mobile data starts on, like screen time, unless the family turned something off", () => {
+    const t = testServer();
+    // Never saved: on, with nothing marked new.
+    expect(getSettings(t.deps.db)).toMatchObject({ aiScopes: { mobile_data: true, screen_time: true, network: false }, newAiScopes: [] });
+    // Saved before Phase 13 with everything on: on, marked new.
+    stored(t, { apps: true, device_status: true, requests: true, screen_time: true, agreement: true });
+    expect(getSettings(t.deps.db)).toMatchObject({ aiScopes: { mobile_data: true, location: false } });
+    expect(getSettings(t.deps.db).newAiScopes).toContain("mobile_data");
+    // A family that turned one off (location's own default counts too): off, marked new, until they tick it.
+    t.deps.db.prepare("DELETE FROM settings WHERE key = 'ai_scopes'").run();
+    stored(t, { apps: true, device_status: true, requests: true, screen_time: true, agreement: true, location: false, calls: false, network: false });
+    expect(getSettings(t.deps.db)).toMatchObject({ aiScopes: { mobile_data: false }, newAiScopes: ["mobile_data"] });
+    expect(updateSettings(t.deps.db, { aiScopes: { mobile_data: true } })).toMatchObject({ aiScopes: { mobile_data: true }, newAiScopes: [] });
+  });
+
+  it("keeps 90 days of mobile data use unless the family chooses 1 to 400", () => {
+    const t = testServer();
+    expect(getSettings(t.deps.db).mobileDataDays).toBe(90);
+    expect(updateSettings(t.deps.db, { mobileDataDays: 31 }).mobileDataDays).toBe(31);
+    expect(() => updateSettings(t.deps.db, { mobileDataDays: 0 })).toThrow();
+    expect(() => updateSettings(t.deps.db, { mobileDataDays: 401 })).toThrow();
+    t.deps.db.prepare("UPDATE settings SET value = '\"lots\"' WHERE key = 'mobile_data_days'").run();
+    expect(getSettings(t.deps.db).mobileDataDays).toBe(90);
   });
 
   it("a family that never saved them gets the defaults, with nothing marked new", () => {

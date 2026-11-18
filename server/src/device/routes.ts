@@ -9,6 +9,7 @@ import type { Deps } from "../deps.js";
 import { offeredFile } from "../family/agent.js";
 import { saveCallRecords, withoutAlwaysAllowed } from "../family/calls/records.js";
 import { markNotified, saveLocations } from "../family/location/fixes.js";
+import { mobileDataCutoff, saveMobileDataDays } from "../family/mobiledata/store.js";
 import { networkCutoff, privateDomainsOf, saveNetworkDays, withoutNeverKept } from "../family/network/store.js";
 import { buildPolicy, changePolicy, neverBlockedOn, policyVersion } from "../family/policy.js";
 import { receiveReport } from "../family/reports.js";
@@ -31,6 +32,7 @@ import {
   InventoryRequest,
   LIMITS,
   LocationsRequest,
+  MobileDataRequest,
   NetworkRequest,
   PolicyQuery,
   RequestsRequest,
@@ -354,6 +356,28 @@ export function deviceRoutes(deps: Deps): Hono<DeviceEnv> {
     });
     if (crisis > 0) deps.log("A phone sent network activity naming 988's websites, which Belay never keeps: not kept. Belay on the phone shouldn't send it.");
     if (saved.dropped > 0) deps.log(`A phone sent ${saved.dropped} day${saved.dropped === 1 ? "" : "s"} of network activity its rules didn't ask for: not kept.`);
+    return c.json({ server_time: now, accepted: saved.accepted });
+  });
+
+  /**
+   * Phase 13: how much mobile data each app used, one local day per entry, with the day's Wi-Fi
+   * total (family/mobiledata/store.ts). Idempotent by day: a day sent again replaces the stored one.
+   * Kept only while the phone's switch is on (a parent's choice); otherwise accepted, dropped and
+   * counted, so the phone stops sending. A never-blocked app's own line is never kept: its bytes go
+   * with Android's own.
+   */
+  app.post("/mobile-data", limit(LIMITS.mobileDataBytes), async (c) => {
+    const body = await readJson(c, MobileDataRequest);
+    if (!body.ok) return fail(400, "invalid_request", body.description);
+    const now = deps.now();
+    const phone = c.var.phone;
+    db.prepare("UPDATE devices SET last_seen_at = ? WHERE id = ?").run(now, phone.id);
+    const never = neverBlockedOn(db, phone.id);
+    const saved = saveMobileDataDays(db, phone.id, body.value.days, now, {
+      never: (pkg) => never(pkg) !== null,
+      oldest: mobileDataCutoff(now, getSettings(db).mobileDataDays),
+    });
+    if (saved.dropped > 0) deps.log(`A phone sent ${saved.dropped} day${saved.dropped === 1 ? "" : "s"} of mobile data use its rules didn't ask for: not kept.`);
     return c.json({ server_time: now, accepted: saved.accepted });
   });
 

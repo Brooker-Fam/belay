@@ -65,7 +65,7 @@ describe("screen time over MCP", () => {
   it("the instructions say screen time is a number, not a verdict", async () => {
     const { client } = await family();
     expect(client.getInstructions()).toContain("Screen time is a number, not a verdict about the kid. Report it plainly, don't guess why, and don't moralize.");
-    expect(client.getInstructions()).toContain("Whether Belay measures screen time at all is a parent's choice too");
+    expect(client.getInstructions()).toContain("Whether Belay measures screen time or mobile data is a parent's choice too: you can't turn either on or off.");
   });
 
   it("get_screen_time: the days the phone sent, the apps untrusted, gaps as gaps, and days not sent as unknown", async () => {

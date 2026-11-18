@@ -49,6 +49,14 @@ export const LIMITS = {
   maxNetworkCount: 1_000_000,
   /** The family's private websites a phone has, at most (the policy's `network_log.private_domains`). */
   maxPrivateDomains: 100,
+  /** Phase 13: `POST /api/v1/mobile-data`. */
+  mobileDataBytes: 256 * 1024,
+  maxMobileDataDays: 31,
+  maxMobileDataApps: 500,
+  /** One day's bytes on one line, at most: 100 TB, far past any phone. */
+  maxMobileDataBytes: 100_000_000_000_000,
+  /** Phase 13: the Wi-Fi-only apps a phone has, at most (the policy's `mobile_data.wifi_only`). */
+  maxWifiOnly: 100,
 } as const;
 
 const time = z.int().min(0);
@@ -260,6 +268,8 @@ export const Enforcement = z.strictObject({
     .nullish(),
   /** Phase 3: network logging, as Android has it (null while it's off): `paused` while another user or profile is on the phone. */
   network_log: z.strictObject({ enabled: z.boolean(), paused: z.boolean() }).nullish(),
+  /** Phase 13: the apps Android keeps off mobile data for Belay now (null while the policy lists none and Android has none). */
+  mobile_data: z.strictObject({ wifi_only: z.array(packageName).max(LIMITS.maxWifiOnly) }).nullish(),
   /** Phase 4: whether Belay can take a fix; null while location is off. */
   location: z
     .strictObject({
@@ -473,6 +483,28 @@ export const NetworkDay = z.strictObject({
 export type NetworkDay = z.infer<typeof NetworkDay>;
 export const NetworkRequest = z.strictObject({ days: z.array(NetworkDay).min(1).max(LIMITS.maxNetworkDays) });
 
+const bytes = z.int().min(0).max(LIMITS.maxMobileDataBytes);
+/**
+ * Phase 13: one local day of mobile data use, as Android counted it on the phone: each app's bytes
+ * on mobile data (most first, never the apps the phone never blocks), the lines that aren't one
+ * app's, and the day's Wi-Fi total. Idempotent by `day`: a day sent again replaces the stored one.
+ */
+export const MobileDataDay = z.strictObject({
+  day: ymd,
+  zone: text(64),
+  from: time,
+  as_of: time,
+  complete: z.boolean(),
+  mobile_bytes: bytes,
+  wifi_bytes: bytes,
+  apps: z.array(z.strictObject({ package: packageName, bytes })).max(LIMITS.maxMobileDataApps),
+  android_bytes: bytes,
+  removed_bytes: bytes,
+  hotspot_bytes: bytes,
+});
+export type MobileDataDay = z.infer<typeof MobileDataDay>;
+export const MobileDataRequest = z.strictObject({ days: z.array(MobileDataDay).min(1).max(LIMITS.maxMobileDataDays) });
+
 export const PolicyQuery = z.strictObject({
   /** The version the phone has; the server answers at once if it has a different one. */
   have: z.coerce.number().int().min(-1).optional(),
@@ -683,6 +715,11 @@ export const Policy = z.strictObject({
    * under one), like 988's; a parent's alone, sent whether logging is on or off. An AI app never sees them.
    */
   network_log: z.strictObject({ enabled: z.boolean(), private_domains: z.array(domainName).max(LIMITS.maxPrivateDomains) }),
+  /**
+   * Phase 13 (family/mobiledata): the apps the phone keeps off mobile data, sorted, and whether it sends how much mobile
+   * data each app uses (`POST /mobile-data`, a parent's choice alone). Both off by default; always sent.
+   */
+  mobile_data: z.strictObject({ wifi_only: z.array(packageName).max(LIMITS.maxWifiOnly), measure: z.boolean() }),
   /** Phase 4: null until a parent first sets location on the phone; mode off: no location at all. */
   location: Location.nullable(),
   /** Phase 7: the data categories (the AI scopes' ids) the parents' AI app may read, for "What your parent can see". */
