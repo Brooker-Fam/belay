@@ -375,11 +375,12 @@ sends outside the family's server, and the parent page says so where you choose 
   ("Chrome on Android": a few of Belay's own words from its User-Agent, never the User-Agent
   itself), and goes to every parent's browsers at once, as a notice with who, that kind of
   browser and the time. A parent's sessions keep that kind too, for the list of where they're
-  signed in in Settings. The address a request comes from (its IP address) is used only to slow
-  down password guessing, in the server's memory, and is never kept: not in the activity log, not
-  in a session, not in a notice (the second bypass audit's B1). It would rarely tell a parent
-  anything (at home, the kid's phone and the parents' share one), and it would say where each
-  parent signs in from, for as long as the log is kept.
+  signed in in Settings. The address a request comes from (its IP address) is used only for the
+  server's rate limits (sign-in attempts, enrollment codes, AI apps' registrations and tokens), in
+  its memory, and is never kept: not in the activity log, not in a session, not in a notice (the
+  second bypass audit's B1). It would rarely tell a parent anything (at home, the kid's phone and
+  the parents' devices share one), and it would say where each parent signs in from, for as long
+  as the log is kept.
 - **AI apps a parent connects** (like Claude), through MCP, and only the categories the
   parents allow in Settings: apps, device status, (from Phase 2) requests, the kid's own
   words, and (from Phase 3) screen time, and the stage and agreement, all on by default (a
