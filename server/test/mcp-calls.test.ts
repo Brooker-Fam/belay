@@ -339,9 +339,24 @@ describe("with the Calls category off (its default), nothing says anything about
   });
 });
 
-describe("a private number's contact", () => {
+describe("private numbers", () => {
   const THERAPIST = "+15555550150";
   const HELPLINE = "+15555550177";
+
+  it("an AI app can't block one (a helpline the family keeps private), and is told the same as for a number on the emergency card", async () => {
+    const { t, phone, ctx, sam, call, policy, callsOn } = await family();
+    callsOn();
+    setPrivateNumber(ctx(), phone.deviceId, HELPLINE, true, sam);
+    updateSettings(t.deps.db, { parentNumbers: [{ name: "Aunt Jo", number: "+15555550160" }], aiScopes: { calls: true } });
+    const helpline = await call("change_calls", { device: "Alex's phone", change: { block_numbers: [HELPLINE] }, reason: "Unknown number calling late" });
+    expect(helpline.isError).toBe(true);
+    expect(helpline.text).toBe(`Nothing changed. Belay doesn't let an AI app block ${HELPLINE}: only a parent decides about that number, on the phone's Calls tab.`);
+    const card = await call("change_calls", { device: "Alex's phone", change: { block_numbers: ["+15555550160"] }, reason: "x" });
+    expect(card.text).toBe(helpline.text.replace(HELPLINE, "+15555550160"));
+    expect(policy()).toMatchObject({ private_numbers: [HELPLINE], blocked_numbers: [] });
+    // A number no one has still blocks at once.
+    expect((await call("change_calls", { device: "Alex's phone", change: { block_numbers: [STRANGER] }, reason: "x" })).json.status).toBe("done: it only tightens, so it applies at once");
+  });
 
   it("making a contact's number private deletes the contact's call records, and the server keeps none about them after, counted nowhere", async () => {
     const { t, phone, ctx, sam, call, callsOn } = await family();

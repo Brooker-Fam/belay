@@ -271,7 +271,8 @@ emergency card isn't a contact, since with only contacts that parent's calls wou
 `--unknown`. `contact` with a name the phone already has adds the number to that contact,
 keeping its id; calls and texts are on unless turned off, and a parent only with `--parent`.
 Numbers are E.164 (`+`, the country code, the number). `block-number` refuses 911, 988 and
-every emergency number, a contact's number and one on the emergency card, with why.
+every emergency number, a contact's number, one on the emergency card and a private one, with
+why.
 
 They're logged as the server's ("The server" on the Activity page), and a running server
 passes them to the phone within a second or two. `status --json` gives each phone's
@@ -524,8 +525,11 @@ rules are kept for next time.
   in its own storage on the phone; it never writes them into Android's Contacts.
 - **Blocked numbers** (at most 500): Belay, as the phone app, puts them on Android's block list,
   which blocks their texts too. Never 911, 988 or an emergency number (in any form, 988's full
-  number included), a contact's number, or one on the emergency card: the server refuses, with
-  why. Adding a blocked number as a contact unblocks it.
+  number included), a contact's number, one on the emergency card, or a private number: the
+  server refuses, with why. A private number is a helpline the kid may call; blocking it would
+  cut the kid off from its calls, so a parent takes it off the private numbers first, a choice
+  of its own in the activity log (unmarking it as part of the block would start recording the
+  kid's calls with it unasked). Adding a blocked number as a contact unblocks it.
 - **Private numbers** (at most 50): numbers Belay never records, like a helpline, besides 911,
   988 and emergency numbers, which it never records anyway. Making a number private deletes the
   records already kept of it, and of the contact who has it: the server keeps no record about a

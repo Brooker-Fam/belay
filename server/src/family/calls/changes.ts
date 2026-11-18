@@ -65,7 +65,7 @@ function change(
     const { db, now } = ctx;
     const current = sideOf(db, deviceId);
     const { side, unblocked } = settle(current, want(current));
-    const problem = sideProblem(current, side, { emergencyCard: parentNumbersFor(db, deviceId).map((p) => p.number) });
+    const problem = sideProblem(current, side, { emergencyCard: parentNumbersFor(db, deviceId).map((p) => p.number), ai: who.kind === "ai" });
     if (problem) throw new RuleRefused(problem);
     const classification = classifyCallsChange(current, side);
     if (who.kind === "ai" && (classification.collection || !classification.onlyTightens)) {
@@ -189,7 +189,8 @@ export function removeContact(ctx: PolicyContext, deviceId: string, id: string, 
 /**
  * Blocks a number: Belay, as the phone app, puts it on Android's block list, which blocks its calls
  * and texts. Tightening, so an AI app may (it's in the activity log). Never an emergency number or
- * 988, a contact's number, or one on the emergency card: refused, with why.
+ * 988, a contact's number, one on the emergency card or a private one: refused, with why (an AI
+ * app is told the same about the last two, which it can't see: patch.ts's sideProblem).
  */
 export function blockNumber(ctx: PolicyContext, deviceId: string, number: string, who: Changer): Changed<CallsDone> {
   typed([number], "blocked");

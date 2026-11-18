@@ -183,7 +183,7 @@ const NumbersCard: FC<{ view: View; device: DeviceView; kind: "blocked" | "priva
     {kind === "blocked" ? (
       <p class="small">
         Belay, as the phone app, puts these on Android's block list, which blocks their calls and texts too. {callsOn ? "" : "Blocking works only while calls are on."}{" "}
-        It never blocks 911, 988 or an emergency number, a contact's number, or one on the emergency card.
+        It never blocks 911, 988 or an emergency number, a contact's number, one on the emergency card, or a private number.
       </p>
     ) : (
       <p class="small">

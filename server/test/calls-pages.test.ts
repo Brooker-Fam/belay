@@ -159,8 +159,15 @@ describe("the Calls tab", () => {
     expect((await form(`${base}/calls/private`, { number: "988" })).status).toBe(400);
     ({ html } = await page(`${base}/calls`));
     expect(html).toContain("Only a parent sees which numbers they are: AI apps see how many.");
+    // A private number isn't blocked while it's private: a parent takes it off them first.
+    const helpline = await form(`${base}/calls/blocked`, { number: "+15555550177" });
+    expect(helpline.status).toBe(400);
+    expect(await helpline.text()).toContain("+15555550177 is one of the private numbers, which Belay never records, like a helpline the kid may call: take it off the private numbers first");
+    expect(policy().blocked_numbers).toEqual([]);
     await form(`${base}/calls/private/remove`, { number: "+15555550177" });
     expect(policy().private_numbers).toEqual([]);
+    expect((await form(`${base}/calls/blocked`, { number: "+15555550177" })).status).toBe(302);
+    expect(policy().blocked_numbers).toEqual(["+15555550177"]);
   });
 
   it("recent calls, with Add as contact and Block beside a caller who isn't a contact", async () => {

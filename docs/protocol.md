@@ -429,7 +429,8 @@ What the server does with them:
   number is one contact's; contact names are 1 to 60 characters, one per phone. The server
   refuses to put 911, any emergency number it knows (112, 999, 000…, with or without a country
   code) or 988 (988's full number included) in `blocked_numbers`, saying why, and refuses a
-  contact's number there, or one on the emergency card (`parent_numbers`). A number a contact
+  contact's number there, one on the emergency card (`parent_numbers`), or a private one (an AI
+  client is told the same about the last two, which it can't see). A number a contact
   gains that was blocked is unblocked. Making a number private deletes the records kept of it,
   and of the contact who has it.
 - **Who may change what:** turning calls on or off, `log` and `private_numbers` are a parent's

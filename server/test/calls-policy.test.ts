@@ -120,6 +120,11 @@ describe("the policy's calls", () => {
     for (const n of ["988", "+1988", "+18002738255", "1-800-273-8255"]) expect(refusal(n), n).toBe("Belay never blocks 988: the crisis line always works, in and out, whatever the rules say.");
     expect(refusal(MOM)).toBe("+15555550100 is Mom's number, a contact: take it off the contact first, then block it.");
     expect(refusal("+15555550123")).toBe("+15555550123 is on the kid's emergency card: take it off the card first, then block it.");
+    // A private number (a helpline the kid may call): a parent takes it off the private numbers first.
+    setPrivateNumber(ctx(), phone.deviceId, "+15555550177", true, parent);
+    expect(refusal("+15555550177")).toBe(
+      "+15555550177 is one of the private numbers, which Belay never records, like a helpline the kid may call: take it off the private numbers first if you mean to block it.",
+    );
     expect(refusal("+1 555 555 0199")).toBe("blocked");
     expect(policy().blocked_numbers).toEqual([STRANGER]);
     expect(blockNumber(ctx(), phone.deviceId, STRANGER, parent).changed).toBe(false);
@@ -196,6 +201,13 @@ describe("who may change calls", () => {
     expect(blockNumber(ctx(), phone.deviceId, "+15555550198", ai).changed).toBe(true);
     expect(policy()).toMatchObject({ calls: { mode: "contacts", quiet: true }, blocked_numbers: ["+15555550198", STRANGER] });
     expect(() => blockNumber(ctx(), phone.deviceId, "988", ai)).toThrow("Belay never blocks 988");
+    // A private number and one on the emergency card, which an AI app can't see: the same words for both.
+    setPrivateNumber(ctx(), phone.deviceId, "+15555550177", true, parent);
+    setPhoneParentNumbers(ctx(), phone.deviceId, [{ name: "Gran", number: "+15555550123" }], parent);
+    for (const n of ["+15555550177", "+15555550123"]) {
+      expect(() => blockNumber(ctx(), phone.deviceId, n, ai), n).toThrow(`Belay doesn't let an AI app block ${n}: only a parent decides about that number, on the phone's Calls tab.`);
+    }
+    expect(policy()).toMatchObject({ private_numbers: ["+15555550177"], blocked_numbers: ["+15555550198", STRANGER] });
   });
 
   it("a proposal: approved in the parent's name, or out of date when what it changes changed, with nothing applied", async () => {

@@ -273,7 +273,10 @@ too, since whoever holds a phone's token can send any text.
   parent approves, each part is checked against the phone's calls as they are then. Turning
   calls on or off, recording them and private numbers have no tool and no proposal, and no
   tool answers the kid's request to add a contact. The server refuses to block 911, 988 or an
-  emergency number, which always work in the phone's own code. While a parent keeps the Calls
+  emergency number, which always work in the phone's own code, and a contact's number; and it
+  doesn't let an AI app block a number on the emergency card or a private one (a helpline the
+  family keeps private), saying the same about both, since an AI app sees neither list, only how
+  many. While a parent keeps the Calls
   category off, `change_calls` names no number and takes none: a change with one (to block,
   to unblock, a contact's) gets the same refusal whatever the number, so an AI app can't learn
   whether a number it guessed is a contact's, on the emergency card or blocked.

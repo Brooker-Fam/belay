@@ -165,12 +165,26 @@ export function settle(current: CallsSide, desired: CallsSide): { side: CallsSid
 }
 
 /**
+ * What an AI app is told about a number it may not block that it can't see: one on the emergency
+ * card, or a private one. The same words for both, and nothing that says which, since AI apps see
+ * only how many of each there are.
+ */
+export const aiMayNotBlock = (number: string): string => `Belay doesn't let an AI app block ${number}: only a parent decides about that number, on the phone's Calls tab.`;
+
+/**
  * Why the side can't be saved, in words, or null. Only what the change touches is checked: a new
  * or changed contact's name (1 to 60 characters, one per phone) and numbers (1 to 5, E.164, never
  * an emergency number or 988, each one contact's), how many there are, and each number newly
- * blocked (never an emergency number or 988, a contact's, or one on the emergency card) or private.
+ * blocked (never an emergency number or 988, a contact's, one on the emergency card or a private
+ * one) or private. For an AI app (`ai`), a number on the card and a private one get the same words.
+ *
+ * A private number is one the family keeps out of every record, like a helpline the kid may call.
+ * Blocking it would stop its calls and texts reaching the kid, and doing that while it stays private
+ * hides that the kid can't be reached by it, so even a parent takes it off the private numbers first,
+ * a choice of its own in the activity log, as for a contact's number or one on the card. Unmarking
+ * it as part of the block instead would start recording the kid's calls with it unasked.
  */
-export function sideProblem(current: CallsSide, desired: CallsSide, opts: { emergencyCard?: string[] } = {}): string | null {
+export function sideProblem(current: CallsSide, desired: CallsSide, opts: { emergencyCard?: string[]; ai?: boolean } = {}): string | null {
   const before = new Map(current.contacts.map((c) => [c.id, c]));
   const owner = new Map<string, string>();
   for (const c of desired.contacts) for (const n of c.numbers) if (!owner.has(n)) owner.set(n, c.name);
@@ -199,12 +213,15 @@ export function sideProblem(current: CallsSide, desired: CallsSide, opts: { emer
   const newlyBlocked = desired.blockedNumbers.filter((n) => !wasBlocked.has(n));
   if (desired.blockedNumbers.length > CALL_LIMITS.maxBlocked && newlyBlocked.length) return `A phone can have at most ${CALL_LIMITS.maxBlocked} blocked numbers. Unblock one first.`;
   const card = new Set(opts.emergencyCard ?? []);
+  const kept = new Set(desired.privateNumbers);
   for (const n of newlyBlocked) {
     const problem = numberProblem(n, "blocked");
     if (problem) return problem;
     const name = owner.get(n);
     if (name !== undefined) return `${n} is ${oneLine(name, 60)}'s number, a contact: take it off the contact first, then block it.`;
+    if (opts.ai && (card.has(n) || kept.has(n))) return aiMayNotBlock(n);
     if (card.has(n)) return `${n} is on the kid's emergency card: take it off the card first, then block it.`;
+    if (kept.has(n)) return `${n} is one of the private numbers, which Belay never records, like a helpline the kid may call: take it off the private numbers first if you mean to block it.`;
   }
   const wasPrivate = new Set(current.privateNumbers);
   const newlyPrivate = desired.privateNumbers.filter((n) => !wasPrivate.has(n));
