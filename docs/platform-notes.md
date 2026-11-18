@@ -1364,7 +1364,10 @@ sets a global proxy, and Chrome's configuration); Pixel pending.
   proxy on mobile data (Settings' `network/apn/ApnSettings.java` is a restricted fragment for
   `DISALLOW_CONFIG_MOBILE_NETWORKS`; carriers can also make APNs read-only); or a global proxy:
   `settings put global http_proxy host:port` over adb (`ProxyTracker.loadDeprecatedGlobalHttpProxy`;
-  `:0` clears it), or a device owner's `setRecommendedGlobalProxy`.
+  `:0` clears it, but only once ConnectivityService handles the change: it reads the setting
+  then, and an empty one changes nothing, so deleting the setting right after `:0` can leave the
+  proxy on; seen on the google_apis emulator, 2026-11-18), or a device owner's
+  `setRecommendedGlobalProxy`.
 - Reading it: `ConnectivityManager.getDefaultProxy()` is `ConnectivityService.getProxyForNetwork`
   for the caller's default network: the global proxy if there is one, otherwise the network's
   own (`LinkProperties.getHttpProxy`), with no permission needed. A network callback's

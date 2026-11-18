@@ -214,6 +214,14 @@ export function getSettings(db: DB): Settings {
   };
 }
 
+/**
+ * Whether the family has saved what AI apps may read at least once: Settings' form saves the
+ * choices with every save, and nothing else does. Until then, the defaults apply.
+ */
+export function aiChoicesSaved(db: DB): boolean {
+  return read(db, "ai_scopes") !== undefined;
+}
+
 /** The ids of the AI scopes that are on, in Settings' order: the policy's `ai_reads`. */
 export function aiReads(settings: Pick<Settings, "aiScopes">): string[] {
   return SCOPE_KEYS.filter((key) => settings.aiScopes[key]);

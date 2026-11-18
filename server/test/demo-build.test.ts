@@ -37,9 +37,11 @@ describe("the server's build and image", () => {
     expect(ignored).toContain("demo");
   });
 
-  it("leave a built dist/ without the demo, when there is one (npm run build makes it)", () => {
-    const dist = join(SERVER, "dist");
-    if (!existsSync(dist)) return;
+  // Skipped without a dist/, except where CI builds before the tests and asks for it
+  // (BELAY_TEST_DIST=required, .github/workflows/server.yml): there a missing one fails.
+  const dist = join(SERVER, "dist");
+  it.skipIf(!existsSync(dist) && process.env.BELAY_TEST_DIST !== "required")("leave a built dist/ without the demo (npm run build makes it)", () => {
+    expect(existsSync(dist), "no dist/ to check: npm run build first").toBe(true);
     const files = readdirSync(dist, { recursive: true, encoding: "utf8" });
     expect(files.filter((f) => /(^|[/\\])demo([/\\]|$)/.test(f))).toEqual([]);
     const js = files.filter((f) => f.endsWith(".js"));

@@ -88,6 +88,17 @@
 # when measuring turned on), and `--measure off` leaves the phone nothing unsent. Only the Pixel
 # shows an app actually losing mobile data (docs/phase13-checklist.md).
 #
+# Phase 12, with BELAY_E2E_CLI and a server whose CLI has `caregivers`, after the other phases (the
+# caregiver's pause would hold the apps they open): `caregiver-add` gives a made-up caregiver status,
+# pause and help until three days on, and the phone's debug state lists them with exactly that (core's
+# kid.Caregivers, by the phone's own clock). Then the caregiver's browser, on this computer: curl with
+# a cookie jar joins with the one-time link, reads the form token on their page, and pauses the phone
+# for 15 minutes there, with the Origin a browser sends (one from another site is refused), so the
+# caregiver pages' own checks apply. The phone has the pause as the caregiver's (Home and the notice
+# name them), and with the fixture APKs it pauses the fixture app. `caregiver-end` takes them off the
+# phone's list and signs them out, their pause stays, and a parent's `resume` ends it, as later steps
+# need. The kid's screens and a caregiver on another phone are the Pixel's (docs/phase12-checklist.md).
+#
 # Phase 11, with BELAY_E2E_CLI and a server whose status has handover, just before the restart: a
 # parent hands the phone over; the phone applies that policy, and its debug state shows the hand-over
 # carried out, holding none of its locks and no reset protection (a debug build never sets it, and
@@ -1134,6 +1145,112 @@ if [ -n "$E2E_CLI" ] && server_status | jq -e '.phones[0] | has("calls")' >/dev/
   for _ in $(seq 1 90); do service_running && break; sleep 1; done
   service_running || { diagnose; die "BelayService didn't come back after calls went off"; }
   wait_applied
+fi
+
+# Phase 12: the caregivers Belay's kid screens list now, and the pause as the policy has it, with who
+# set it as Home and the pause notice name them (both in its debug state).
+caregivers_state() { state 2>/dev/null | jq -c '{caregivers, pause}' 2>/dev/null || true; }
+# Waits up to $2 seconds until the jq filter $1 holds for that.
+wait_caregivers_state() {
+  local _
+  for _ in $(seq 1 "${2:-30}"); do
+    if caregivers_state | jq -e "$1" >/dev/null 2>&1; then return 0; fi
+    sleep 1
+  done
+  echo "--- Belay's caregivers and pause: $(caregivers_state)"
+  return 1
+}
+# The caregiver's browser, on this computer: curl with a cookie jar. Their pages are at the server's
+# public address, which the CLI's link carries ($care_origin). The emulator's 10.0.2.2 is this
+# computer's own 127.0.0.1, so curl connects there for it (on any port), keeping the address as it
+# is: the Host, the Origin and the cookie's site are what a browser's would be.
+care_jar=""
+care_origin=""
+care_curl() { curl -sS --max-time 30 --connect-to 10.0.2.2::127.0.0.1: -b "$care_jar" -c "$care_jar" "$@"; }
+# Posts a form on the caregiver's pages (the path, then curl's fields) as a browser does from their
+# own page, Origin included; prints the answer's status and where it sends the browser next.
+care_post() {
+  local path="$1" head
+  shift
+  head="$(care_curl -o /dev/null -D - -H "Origin: $care_origin" "$@" "$care_origin$path" | tr -d '\r')"
+  printf '%s %s\n' "$(sed -n '1s/^HTTP\/[0-9.]* \([0-9]*\).*/\1/p' <<<"$head")" "$(sed -n 's/^[Ll]ocation: //p' <<<"$head")"
+}
+
+if [ -n "$E2E_CLI" ] && ! server_cli_out caregivers --json 2>/dev/null | jq -e 'has("caregivers")' >/dev/null 2>&1; then
+  echo "the server's CLI has no caregivers (its Phase 12 commands aren't there yet): the caregiver checks are skipped"
+elif [ -n "$E2E_CLI" ]; then
+  command -v curl >/dev/null || die "The caregiver checks need curl."
+  phone="$(server_status | jq -r '.phones[0].name')"
+  # Made-up, for this run only: nobody keeps the password.
+  CARE_NAME="CI Grandma"
+  care_user=ci-grandma
+  care_password="ci-$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+  care_jar="$(mktemp)"
+
+  step "Phase 12: a parent adds a caregiver; the phone lists them, with what they may do and until when"
+  # Three days on, to the minute: the emulator keeps this computer's time.
+  care_until=$((($(date +%s) / 60 + 3 * 24 * 60) * 60))
+  link="$(server_cli_out caregiver-add "$phone" --name "$CARE_NAME" --can status,pause,help --until "$(date -u -d "@$care_until" +%Y-%m-%dT%H:%MZ)")"
+  [[ "$link" =~ ^https?://[^/]+/care/join/[A-Za-z0-9_-]{43}$ ]] || die "caregiver-add should print only the one-time link" "$link"
+  care_origin="${link%%/care/join/*}"
+  wait_applied
+  listed=".caregivers == [{\"name\": \"$CARE_NAME\", \"until\": ${care_until}000, \"can\": [\"status\", \"pause\", \"help\"]}]"
+  wait_caregivers_state "$listed" 30 || { diagnose; die "the phone's debug state doesn't list $CARE_NAME with status, pause and help until $care_until"; }
+  echo "the phone lists: $(state | jq -c '.caregivers')"
+
+  step "Phase 12: the caregiver joins with the link and pauses the phone from their page, as a browser does"
+  # With the fixture app, the pause can be seen holding an app.
+  if [ -n "$FIXTURE_V1" ]; then
+    adb install -r -t "$FIXTURE_V1" >/dev/null
+    wait_fixture "hidden=false suspended=false" 15 || { diagnose; die "the fixture app isn't installed and open to use"; }
+  fi
+  device_id="$(state | jq -r '.connection.device_id // empty')"
+  [ -n "$device_id" ] || die "the phone's debug state has no device id"
+  [ "$(care_curl -o /dev/null -w '%{http_code}' "$link")" = 200 ] || die "the caregiver's join page didn't open"
+  joined="$(care_post "${link#"$care_origin"}" --data-urlencode "username=$care_user" --data-urlencode "password=$care_password" --data-urlencode "repeat=$care_password")"
+  [ "$joined" = "302 /care" ] || die "joining with the link didn't sign the caregiver in" "$joined"
+  page="$(care_curl "$care_origin/care")"
+  # Each form on their page carries their session's token.
+  csrf=""
+  csrf_re='name="_csrf" value="([^"]+)"'
+  [[ $page =~ $csrf_re ]] && csrf="${BASH_REMATCH[1]}"
+  [ -n "$csrf" ] || die "the caregiver's page has no form token"
+  pause_form="/care/phones/$device_id/pause"
+  [[ $page == *"action=\"$pause_form\""* ]] || die "the caregiver's page has no pause for this phone ($device_id)"
+  # From another site, nothing: their pages check where a form comes from.
+  elsewhere="$(care_curl -o /dev/null -w '%{http_code}' -H "Origin: https://elsewhere.example" --data-urlencode "_csrf=$csrf" -d minutes=15 -d lock=0 "$care_origin$pause_form")"
+  [ "$elsewhere" = 403 ] || die "a pause posted from another site wasn't refused" "$elsewhere"
+  paused="$(care_post "$pause_form" --data-urlencode "_csrf=$csrf" -d minutes=15 -d lock=0)"
+  [ "$paused" = "302 /care?saved=paused#phone-$device_id" ] || die "the caregiver's pause wasn't taken" "$paused"
+
+  step "Phase 12: the phone has the pause as the caregiver's"
+  wait_applied
+  wait_caregivers_state ".pause.by == \"$CARE_NAME\" and .pause.until != null" 30 || { diagnose; die "the phone doesn't have the pause as $CARE_NAME's"; }
+  if [ -n "$FIXTURE_V1" ]; then
+    wait_fixture "hidden=false suspended=true" 15 || { diagnose; die "$CARE_NAME's pause didn't pause the fixture app"; }
+    state | jq -e "(.reasons[\"$FIXTURE_PKG\"] // []) | any(. == \"paused\")" >/dev/null || { diagnose; die "the fixture app is held, but not for the pause"; }
+  fi
+  echo "the phone: $(caregivers_state)"
+
+  step "Phase 12: ending the caregiver's access takes them off the phone's list and signs them out; a parent resumes their pause"
+  server_cli caregiver-end "$CARE_NAME"
+  wait_applied
+  wait_caregivers_state ".caregivers == [] and .pause.by == \"$CARE_NAME\"" 30 || { diagnose; die "the phone still lists $CARE_NAME after caregiver-end, or lost their pause"; }
+  [ "$(care_curl -o /dev/null -w '%{http_code}' "$care_origin/care")" = 302 ] || die "the caregiver's page still opens after their access ended"
+  ended=".caregivers[] | select(.name == \"$CARE_NAME\") | .access == \"ended\" and .joined"
+  server_cli_out caregivers --json | jq -e "$ended" >/dev/null || die "the server doesn't list $CARE_NAME as joined, with their access ended"
+  # A caregiver's pause stays until its end; later steps need the phone's apps.
+  server_cli resume "$phone"
+  wait_applied
+  wait_caregivers_state '.pause == null' 30 || { diagnose; die "the phone still has a pause after a parent resumed it"; }
+  if [ -n "$FIXTURE_V1" ]; then
+    wait_fixture "hidden=false suspended=false" 15 || { diagnose; die "the fixture app was still paused after a parent resumed the phone"; }
+    adb uninstall "$FIXTURE_PKG" >/dev/null
+  fi
+  rm -f "$care_jar"
+  echo "the phone: $(caregivers_state)"
+elif [ -n "$E2E_SERVER" ]; then
+  echo "BELAY_E2E_CLI not given: the caregiver checks are skipped"
 fi
 
 if [ -n "$E2E_CLI" ] && ! server_status | jq -e '.phones[0] | has("handover")' >/dev/null 2>&1; then

@@ -5,6 +5,7 @@
  * every form, no map embedded. Made-up places and names only.
  */
 import { describe, expect, it, vi } from "vitest";
+import { createFixWaiters } from "../src/device/fixwaiters.js";
 import { Policy } from "../src/device/schemas.js";
 import { locateNow } from "../src/family/location/changes.js";
 import { listPlaces } from "../src/family/location/store.js";
@@ -138,12 +139,48 @@ describe("the Location and help tab", () => {
     expect(after).toContain("<blockquote>No GPS fix in 60 seconds</blockquote>");
   });
 
-  it("Check now says plainly when no fix came in time", async () => {
+  it("Check now says plainly when no answer came in time", async () => {
     const { base, form, page } = await family({ locateWaitMs: 30 });
     await form(`${base}/location`, { ...PERIODIC, mode: "on_demand" });
     const res = await form(`${base}/location/check`, {});
     expect(res.status).toBe(302);
-    expect((await page(res.headers.get("location") ?? "")).html).toContain("No answer yet: the phone hasn&#39;t sent a fix within a minute.");
+    expect((await page(res.headers.get("location") ?? "")).html).toContain("No answer yet: the phone hasn&#39;t answered within a minute.");
+  });
+
+  it("Check now stops waiting as soon as the phone says it couldn't, and shows the phone's words, escaped", async () => {
+    // A real server's minute, and a poll of an hour: only the phone's answer ends the wait.
+    const { t, phone, base, form, page, policy } = await family({ locateWaitMs: 60_000 });
+    t.deps.fixWaiters = createFixWaiters({ pollMs: 3_600_000 });
+    await form(`${base}/location`, { ...PERIODIC, mode: "on_demand" });
+    const checkin = (commands: { id: string; result: "failed" | "expired"; problem?: string }[]) =>
+      deviceCall(t, phone.token, "checkin", { status: device({ enforcement: { policy_version: policy().version, commands: commands.map((c) => ({ at: t.now(), ...c })) } }) });
+    const started = Date.now();
+    const pending = form(`${base}/location/check`, {});
+    await vi.waitFor(() => {
+      expect(policy().commands).toHaveLength(1);
+    });
+    const [check] = policy().commands;
+    await checkin([{ id: check?.id ?? "", result: "failed", problem: `<b>Location</b> is off & "Belay" can't look` }]);
+    const res = await pending;
+    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(t.deps.fixWaiters.size).toBe(0);
+    expect(res.headers.get("location")).toBe(`${base}/location?check=${check?.id ?? ""}#where`);
+    const { html } = await page(res.headers.get("location") ?? "");
+    expect(html).toContain("The phone answered: it couldn&#39;t find where it is. Belay on the phone says:");
+    expect(html).toContain("<blockquote>&lt;b&gt;Location&lt;/b&gt; is off &amp; &quot;Belay&quot; can&#39;t look</blockquote>");
+    expect(html).not.toContain("<b>Location</b>");
+    expect(html).not.toContain("No answer yet");
+    // Got too late, by the phone's clock: that's an answer too.
+    t.advance(60_000);
+    const again = form(`${base}/location/check`, {});
+    await vi.waitFor(() => {
+      expect(policy().commands).toHaveLength(1);
+    });
+    const [late] = policy().commands;
+    await checkin([{ id: late?.id ?? "", result: "expired" }]);
+    const lateRes = await again;
+    expect(t.deps.fixWaiters.size).toBe(0);
+    expect((await page(lateRes.headers.get("location") ?? "")).html).toContain("The phone answered: it got the check too late, by its own clock");
   });
 
   it("lost mode: the lock screen's words and a number, then off; the kid's number and the emergency card", async () => {
