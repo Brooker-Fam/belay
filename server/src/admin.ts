@@ -59,6 +59,9 @@
  *   private-website "<phone>" <website>, or private-website "<phone>" --remove <website>
  *                                                 a website network logging never notes, with the names under it
  *   handover "<phone>"                            hands the phone over to the kid (Phase 11); prints one sentence
+ *   wifi-only "<phone>" <package>, or wifi-only "<phone>" --remove <package>
+ *                                                 an app the phone keeps off mobile data (Phase 13)
+ *   mobile-data "<phone>" --measure on|off        whether the phone sends how much mobile data each app uses (Phase 13)
  *
  * Changes are logged as the server's (the activity log's "The server"). A running server sees
  * them within a second or two and passes them to the phone's long-poll. Hardening (factory
@@ -90,6 +93,8 @@ import { callSettings, callsFor, contactsFor, listContacts, numbersOf } from "./
 import { callsSummary } from "./family/calls/words.js";
 import { setNetworkLog, setPrivateWebsite } from "./family/network/changes.js";
 import { networkDays, networkKept, networkLogFor, networkSettings } from "./family/network/store.js";
+import { changeWifiOnly, setMobileDataMeasure } from "./family/mobiledata/changes.js";
+import { bytesInWords, mobileDataDays, mobileDataFor, mobileDataKept } from "./family/mobiledata/store.js";
 import { handOver } from "./family/offbelay/changes.js";
 import { handoverOf } from "./family/offbelay/store.js";
 import { setPhoneRules, setPhoneSettings } from "./family/screentime/changes.js";
@@ -199,7 +204,10 @@ const USAGE = `Commands:
   network "<phone>" --on|--off
   private-website "<phone>" <website>
   private-website "<phone>" --remove <website>
-  handover "<phone>"`;
+  handover "<phone>"
+  wifi-only "<phone>" <package>
+  wifi-only "<phone>" --remove <package>
+  mobile-data "<phone>" --measure on|off`;
 
 /** How many of the newest call records status --json lists per phone. */
 const STATUS_CALLS = 50;
@@ -212,6 +220,9 @@ const STATUS_USAGE_DAYS = 31;
 
 /** How many of the newest network days status --json lists per phone. */
 const STATUS_NETWORK_DAYS = 31;
+
+/** How many of the newest mobile data days status --json lists per phone. */
+const STATUS_MOBILE_DATA_DAYS = 31;
 
 /** An on|off flag: true, false, left out (undefined), or anything else ("bad"). */
 function onOff(value: string | true | undefined): boolean | undefined | "bad" {
@@ -428,6 +439,21 @@ async function run(argv: string[], io: CliIO): Promise<void> {
             entries: n.entries.map((e) => ({ package: e.package, domain: e.domain, lookups: e.lookups })),
             dropped: n.dropped,
           })),
+          /** Phase 13: the policy's mobile_data (the Wi-Fi-only apps and measuring), and the days of mobile data use the phone sent, newest first (times as the phone sent them). */
+          mobile_data: mobileDataFor(db, d.id),
+          mobile_data_days: mobileDataDays(db, d.id, { limit: STATUS_MOBILE_DATA_DAYS }).map((m) => ({
+            day: m.day,
+            zone: m.zone,
+            from: m.from,
+            as_of: m.asOf,
+            complete: m.complete,
+            mobile_bytes: m.mobileBytes,
+            wifi_bytes: m.wifiBytes,
+            apps: m.apps.map((a) => ({ package: a.package, bytes: a.bytes })),
+            android_bytes: m.androidBytes,
+            removed_bytes: m.removedBytes,
+            hotspot_bytes: m.hotspotBytes,
+          })),
         };
       });
       if (flags.has("json")) {
@@ -465,6 +491,15 @@ async function run(argv: string[], io: CliIO): Promise<void> {
           io.out(
             `  network logging: ${ns?.enabled ? "on" : "off"}; ${kept.days} day${kept.days === 1 ? "" : "s"} of network activity kept` +
               (privateSites ? `; ${privateSites} private website${privateSites === 1 ? "" : "s"}, never noted` : ""),
+          );
+        }
+        const md = p.mobile_data;
+        const mdKept = mobileDataKept(db, id);
+        if (md.wifi_only.length || md.measure || mdKept.days) {
+          const today = p.mobile_data_days[0];
+          io.out(
+            `  mobile data: ${md.wifi_only.length} Wi-Fi-only app${md.wifi_only.length === 1 ? "" : "s"}; measuring ${md.measure ? "on" : "off"}; ${mdKept.days} day${mdKept.days === 1 ? "" : "s"} kept` +
+              (today ? `; ${today.day}: ${bytesInWords(today.mobile_bytes)} on mobile data` : ""),
           );
         }
         for (const c of p.recent_changes.slice(0, 5)) io.out(`  ${c.at ?? ""} ${c.kind} ${c.package}`);
@@ -509,6 +544,45 @@ async function run(argv: string[], io: CliIO): Promise<void> {
       } else {
         io.out(already ? `${row.name}: ${domain} wasn't a private website.` : `${row.name}: ${domain} isn't a private website any more (rules version ${done.version}).`);
       }
+      return;
+    }
+    case "wifi-only": {
+      // Phase 13: what the Mobile data page's Wi-Fi-only apps do, as a parent: any package, never one the phone never blocks.
+      const row = phone();
+      const remove = flags.get("remove");
+      const pkg = typeof remove === "string" ? remove : (positional[1] ?? "");
+      if (!pkg || remove === true || (remove === undefined && flags.size) || positional.length > (remove === undefined ? 2 : 1)) {
+        throw new CliError(`Usage: wifi-only "<phone>" <package>, or wifi-only "<phone>" --remove <package>`);
+      }
+      if (!packageName.safeParse(pkg).success) throw new CliError(`${pkg} isn't a package name, like com.example.app.`);
+      const done = changeWifiOnly(ctx, row.id, remove === undefined ? { add: [pkg], remove: [] } : { add: [], remove: [pkg] }, server);
+      const { added, removed } = done.result;
+      io.out(
+        remove === undefined
+          ? added.length
+            ? `${row.name}: ${pkg} is Wi-Fi only: the phone keeps it off mobile data (rules version ${done.version}).`
+            : `${row.name}: ${pkg} was Wi-Fi only already.`
+          : removed.length
+            ? `${row.name}: ${pkg} may use mobile data again (rules version ${done.version}).`
+            : `${row.name}: ${pkg} wasn't Wi-Fi only.`,
+      );
+      return;
+    }
+    case "mobile-data": {
+      // Phase 13: what the Mobile data page's measuring switch does: a parent's choice, never an AI app's.
+      const row = phone();
+      const measure = onOff(flags.get("measure"));
+      if (measure === undefined || measure === "bad" || flags.size > 1 || positional.length > 1) throw new CliError(`Usage: mobile-data "<phone>" --measure on|off`);
+      const done = setMobileDataMeasure(ctx, row.id, measure, server);
+      const what = measure ? "on" : "off";
+      io.out(
+        done.result.already
+          ? `${row.name}: measuring mobile data was already ${what} (rules version ${done.version}).`
+          : `${row.name}: measuring mobile data is ${what} (rules version ${done.version}). ` +
+              (measure
+                ? "The phone sends how much mobile data each app uses each day, and the day's Wi-Fi total."
+                : `The phone stops sending it. What the server kept stays until it's ${getSettings(db).mobileDataDays} days old; Stop collecting, on the phone's page, deletes it now.`),
+      );
       return;
     }
     case "handover": {
