@@ -371,9 +371,12 @@ describe("help requests", () => {
     f.t.advance(MIN);
     const { token, id } = await add(f);
     const coach = await add(f, { name: "Coach Lee", can: ["status"] });
+    // Help on, but for the other phone only.
+    const aunt = await add(f, { name: "Aunt Robin", phone: [f.other.deviceId], can: ["help"] });
     const care = await join(f, token);
     const browser = browserFor(f.t, id, () => f.fetch.mock.calls, "caregiver");
     const leeBrowser = browserFor(f.t, coach.id, () => f.fetch.mock.calls, "caregiver");
+    const auntBrowser = browserFor(f.t, aunt.id, () => f.fetch.mock.calls, "caregiver");
     const parentBrowser = browserFor(f.t, f.sam.parent.id, () => f.fetch.mock.calls);
     f.fetch.mockClear();
     await deviceCall(f.t, f.phone.token, "requests", { requests: [help("request-0002", f.t.now(), { reason: "I missed the bus", location: fix({ reason: "help" }) })] });
@@ -383,6 +386,7 @@ describe("help requests", () => {
     expect(browser.notices()).toEqual([{ title: "Belay: help", body: 'Alex\'s phone needs help: "I missed the bus". They shared where the phone is.', url: "/care#help", urgent: true, urgency: "high" }]);
     expect(parentBrowser.notices()[0]?.url).toBe("/requests#help");
     expect(leeBrowser.notices()).toEqual([]);
+    expect(auntBrowser.notices()).toEqual([]);
     const home = (await care.page()).html;
     expect(home).toContain("I missed the bus");
     expect(home).toContain("Where the phone was, shared by the kid");

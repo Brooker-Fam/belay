@@ -248,11 +248,15 @@ export function careRoutes(deps: Deps, assets: Assets): Hono<CareEnv> {
     };
   };
 
-  /** The help requests a caregiver sees: their phones' with help on, since their access began, at most 7 days back. */
+  /**
+   * The help requests a caregiver sees: their phones' with help on, since their access began, at
+   * most 7 days back. The list puts every help request no parent has seen first (at most 100 a
+   * phone), so it reads past them to the newer ones a parent saw.
+   */
   const helpFor = (caregiver: Caregiver, now: number): HelpView[] =>
     caregiver.phones
       .filter((id) => careAccess(caregiver, id, "help", now))
-      .flatMap((id) => listRequests(db, { deviceId: id, kind: "help", limit: 50 }))
+      .flatMap((id) => listRequests(db, { deviceId: id, kind: "help", limit: 300 }))
       .filter((r): r is HelpView => r.kind === "help" && r.receivedAt >= Math.max(caregiver.accessFrom, now - HELP_WINDOW_MS))
       .sort((a, b) => b.receivedAt - a.receivedAt);
 

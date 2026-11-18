@@ -162,6 +162,46 @@ describe("a caregiver's session is no session anywhere but /care", () => {
     expect(mcp.status).toBe(401);
   });
 
+  it("every caregiver route answers a parent's session exactly as it answers none: in the parent's cookie or the caregiver's", async () => {
+    const f = await family();
+    const parentValue = f.sam.cookie.split("=").slice(1).join("=");
+    const routes = [
+      ...new Map(
+        f.t.app.routes
+          .filter((r) => /^\/care(\/|$)/.test(r.path) && !r.path.includes("*"))
+          .flatMap((r) => (r.method === "ALL" ? ["GET", "POST"] : [r.method]).map((method) => [`${method} ${r.path}`, { method, path: r.path }] as const)),
+      ).values(),
+    ];
+    const paths = routes.map((r) => `${r.method} ${r.path}`);
+    for (const must of ["GET /care", "GET /care/login", "POST /care/phones/:id/pause", "POST /care/phones/:id/locate", "GET /care/phones/:id/checks/:command", "POST /care/push/subscribe"]) {
+      expect(paths, must).toContain(must);
+    }
+    let n = 0;
+    const call = (method: string, path: string, cookie?: string) => {
+      n++;
+      const headers = { "x-forwarded-for": `203.0.113.${n % 250}`, origin: "https://belay.example.org", ...(cookie ? { cookie } : {}) };
+      if (method === "GET") return f.t.app.request(path, { headers });
+      return f.t.app.request(path, {
+        method,
+        headers: { "content-type": "application/x-www-form-urlencoded", ...headers },
+        body: new URLSearchParams({ _csrf: f.sam.csrf, minutes: "30", lock: "1", endpoint: "https://fcm.googleapis.com/fcm/send/x", p256dh: "x", auth: "x" }),
+      });
+    };
+    const answer = async (res: Response | Promise<Response>) => {
+      const r = await res;
+      return { status: r.status, location: r.headers.get("location") };
+    };
+    for (const { method, path: template } of routes) {
+      const path = concrete(template, { device: f.phone.deviceId, caregiver: f.caregiverId });
+      const none = await answer(call(method, path));
+      expect(await answer(call(method, path, f.sam.cookie)), `${method} ${path} with the parent's cookie`).toEqual(none);
+      expect(await answer(call(method, path, `__Host-belay_care=${parentValue}`)), `${method} ${path} with the parent's session in the caregiver's cookie`).toEqual(none);
+    }
+    // Nothing a parent's session sent there paused the phone or turned notifications on.
+    expect(f.t.deps.db.prepare("SELECT paused FROM policies WHERE device_id = ?").get(f.phone.deviceId)).toEqual({ paused: 0 });
+    expect(f.t.deps.db.prepare("SELECT COUNT(*) AS n FROM caregiver_push").get()).toEqual({ n: 0 });
+  });
+
   it("a parent's session gets nothing on the caregiver pages: it isn't a caregiver's", async () => {
     const f = await family();
     expect((await get(f.t, "/care", f.sam.cookie)).headers.get("location")).toBe("/care/login?next=%2Fcare");
