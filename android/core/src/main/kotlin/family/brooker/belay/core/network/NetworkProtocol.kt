@@ -57,4 +57,7 @@ object NetworkWireLimits {
 
     /** One entry's lookups in a day, and a day's `dropped`, at most. */
     const val MAX_COUNT = 1_000_000
+
+    /** The policy's `network_log.private_domains`, at most: the phone reads no more than these. */
+    const val MAX_PRIVATE_DOMAINS = 100
 }

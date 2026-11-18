@@ -87,6 +87,15 @@ class NetworkLogTest {
         assertFalse(old.networkLog.enabled)
         val on = Wire.json.decodeFromString(PolicyResponse.serializer(), """{"server_time":1,"policy":{"version":4,"network_log":{"enabled":true}}}""").policy
         assertTrue(on.networkLog.enabled)
+        // A server from before private websites sends no list: none.
+        assertEquals(emptyList(), on.networkLog.privateDomains)
+        assertEquals(emptyList(), old.networkLog.privateDomains)
+        val listed = Wire.json.decodeFromString(
+            PolicyResponse.serializer(),
+            """{"server_time":1,"policy":{"version":5,"network_log":{"enabled":false,"private_domains":["example.org","example.net"],"later":1}}}""",
+        ).policy
+        assertFalse(listed.networkLog.enabled)
+        assertEquals(listOf("example.org", "example.net"), listed.networkLog.privateDomains)
         val report = Enforcement.report(Applied(policyVersion = 4), networkLog = WireNetworkLogStatus(enabled = true, paused = false))
         val json = obj(Wire.json.encodeToString(WireEnforcement.serializer(), report!!))
         assertEquals("""{"enabled":true,"paused":false}""", json["network_log"].toString())

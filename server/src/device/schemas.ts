@@ -47,6 +47,8 @@ export const LIMITS = {
   maxNetworkEntries: 5000,
   /** One entry's lookups in a day, and a day's `dropped`, at most. */
   maxNetworkCount: 1_000_000,
+  /** The family's private websites a phone has, at most (the policy's `network_log.private_domains`). */
+  maxPrivateDomains: 100,
 } as const;
 
 const time = z.int().min(0);
@@ -670,8 +672,12 @@ export const Policy = z.strictObject({
   stage: Stage.nullable(),
   /** Phase 3: the family agreement's current version, for the kid's screen. */
   agreement: Agreement.nullable(),
-  /** Phase 3: whether the phone logs which domains its apps look up (family/network): a parent's choice alone, off by default. */
-  network_log: z.strictObject({ enabled: z.boolean() }),
+  /**
+   * Phase 3: whether the phone logs which domains its apps look up (family/network): a parent's choice alone, off by default.
+   * `private_domains`: the family's private websites, registrable domains the phone never keeps a lookup of (or of a name
+   * under one), like 988's; a parent's alone, sent whether logging is on or off. An AI app never sees them.
+   */
+  network_log: z.strictObject({ enabled: z.boolean(), private_domains: z.array(domainName).max(LIMITS.maxPrivateDomains) }),
   /** Phase 4: null until a parent first sets location on the phone; mode off: no location at all. */
   location: Location.nullable(),
   /** Phase 7: the data categories (the AI scopes' ids) the parents' AI app may read, for "What your parent can see". */

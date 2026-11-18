@@ -52,9 +52,20 @@ export function networkSettings(db: DB, deviceId: string): NetworkSettings | nul
   return row ? { enabled: row.enabled === 1, enabledAt: row.enabled_at, changedAt: row.changed_at, dropped: row.dropped, droppedAt: row.dropped_at } : null;
 }
 
-/** The policy's `network_log`. */
+/**
+ * The phone's private websites, sorted: registrable domains (family/network/domains.ts) Belay never
+ * keeps a lookup of, or of a name under one, like 988's. A parent's; never shown to an AI app.
+ */
+export function privateDomainsOf(db: DB, deviceId: string): string[] {
+  return db
+    .prepare<[string], { domain: string }>("SELECT domain FROM network_private_domains WHERE device_id = ? ORDER BY domain")
+    .all(deviceId)
+    .map((r) => r.domain);
+}
+
+/** The policy's `network_log`: the switch, and the private websites, sent whether logging is on or off. */
 export function networkLogFor(db: DB, deviceId: string): Policy["network_log"] {
-  return { enabled: networkSettings(db, deviceId)?.enabled === true };
+  return { enabled: networkSettings(db, deviceId)?.enabled === true, private_domains: privateDomainsOf(db, deviceId) };
 }
 
 /** The oldest day kept with `days` days of retention: older ones are deleted. */

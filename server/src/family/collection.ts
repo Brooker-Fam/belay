@@ -64,8 +64,9 @@ export const RECORDS: readonly string[] = [
   "contacts",
   "contact_numbers",
   "call_numbers",
-  // Phase 3: the network logging switch.
+  // Phase 3: the network logging switch, and the private websites it never notes.
   "network_settings",
+  "network_private_domains",
   "handovers",
   "enrollment_codes",
   "audit_log",

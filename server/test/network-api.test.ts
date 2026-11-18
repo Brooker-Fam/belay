@@ -197,14 +197,14 @@ describe("POST /api/v1/network", () => {
 describe("the network logging switch", () => {
   it("is the policy's network_log, off by default, and every change is a new version in the activity log", async () => {
     const { t, phone, ctx, parent, policy } = await family();
-    expect(policy()).toMatchObject({ version: 0, network_log: { enabled: false } });
+    expect(policy()).toMatchObject({ version: 0, network_log: { enabled: false, private_domains: [] } });
     const on = setNetworkLog(ctx(), phone.deviceId, true, parent);
     expect(on).toMatchObject({ changed: true, result: { already: false } });
     expect(policy()).toMatchObject({ version: on.version, network_log: { enabled: true } });
     expect(setNetworkLog(ctx(), phone.deviceId, true, parent)).toMatchObject({ changed: false, result: { already: true } });
     t.advance(1000);
     setNetworkLog(ctx(), phone.deviceId, false, { kind: "server" });
-    expect(policy().network_log).toEqual({ enabled: false });
+    expect(policy().network_log).toEqual({ enabled: false, private_domains: [] });
     const log = t.deps.db.prepare("SELECT action, actor FROM audit_log WHERE action LIKE 'network.%' ORDER BY id").all();
     expect(log).toEqual([
       { action: "network.on", actor: "parent" },
@@ -234,7 +234,7 @@ describe("the network logging switch", () => {
     expect(done.result.deleted).toEqual({ network_days: 2 });
     expect(kept()).toEqual([]);
     expect(t.deps.db.prepare("SELECT COUNT(*) AS n FROM network_lookups").get()).toEqual({ n: 0 });
-    expect(policy().network_log).toEqual({ enabled: false });
+    expect(policy().network_log).toEqual({ enabled: false, private_domains: [] });
     expect(keptFor(t.deps.db, phone.deviceId, "network", t.now())).toMatchObject({ goes: [], anything: false });
     const actions = t.deps.db.prepare<[], { action: string }>("SELECT action FROM audit_log ORDER BY id").all().map((r) => r.action);
     expect(actions.slice(-2)).toEqual(["network.off", "collection.stopped"]);
