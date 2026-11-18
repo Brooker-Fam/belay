@@ -558,8 +558,8 @@ proposal), and the phone shows each step before it happens.
   notice, and Belay's screen lists them from the phone's own record.
 - **`keep_on`:** Belay keeps location on and sets `DISALLOW_CONFIG_LOCATION`.
 - **Lost mode** (`lost`, any mode): the parent's message on the lock screen, location kept
-  on, a fix every 5 minutes, and one screen lock (during a call Telecom has, once the call
-  ends; the audio mode alone never holds it off); everything goes back when it ends.
+  on, a fix every 5 minutes, and one screen lock (during a call Telecom has, about 2 minutes
+  after the call ends; the audio mode alone never holds it off); everything goes back when it ends.
 - **Only a parent** turns location on or off, changes places, `keep_on` or lost mode.
   An AI client may read fixes only with the `location` scope on (off by default), and may
   ask for `locate_now` only in `on_demand` or `periodic` mode; the kid's notice names it.
@@ -630,8 +630,8 @@ server decides whether a change tightens or loosens.
   Used up: its apps are suspended until the next day starts, or until extra time.
 - **Schedules:** from `start` to `end` on `days` (an `end` at or before `start` ends the
   next day), every app is suspended except the never-blocked ones, the `exempt` ones and
-  the schedule's `allow`; `lock` also locks the screen when it starts (during a call, once
-  the call ends, if the schedule is still on, as for `lock_now` below); `skip` names days it
+  the schedule's `allow`; `lock` also locks the screen when it starts (during a call, about 2
+  minutes after the call ends, if the schedule is still on, as for `lock_now` below); `skip` names days it
   doesn't start.
 - **Always open:** the never-blocked apps and `exempt`. Schedules and daily totals also
   leave the clock and the keyboard alone, as a pause does; a limit that names the clock
@@ -652,10 +652,15 @@ server decides whether a change tightens or loosens.
   calls, and calls through a calling account the user turned on, never an app's self-managed
   call); otherwise for a carrier call by the audio mode (`MODE_IN_CALL`, which no app can set),
   for at most 30 minutes. No other audio mode counts, so an app holding `MODE_IN_COMMUNICATION`
-  holds no lock off. The result doesn't wait (the fifth security review's F2): the phone
-  reports it at the step that first has it, `done` whether the screen locks then or, during a
-  call, once the call ends, however long that takes (a restart before then drops it: the
-  restart locked the screen), so no result says whether a call was on, or when one ended.
+  holds no lock off. A lock a call held off waits 2 minutes more once no call is on, counted on
+  the phone only (the sixth security review's I1: a kid whose 988 call dropped can call again
+  before the lock screen, whose emergency dialer takes only emergency numbers, asks for the PIN),
+  and a call in those 2 minutes holds it off again. The result doesn't wait (the fifth security
+  review's F2): the phone reports it at the step that first has it, `done` whether the screen
+  locks then or, during a call, about 2 minutes after the call ends, however long that takes (a
+  restart before then drops it: the restart locked the screen), so no result says whether a call
+  was on, or when one ended. Once reported, the lock has nothing to do with the pause it came
+  with (I2): it still happens after that pause ended, or after a parent resumed the phone.
   `expired` means only that the phone got it after `expires_at`, and `failed` that the lock
   failed when the phone had it; a lock that waited and fails later (rare: Android refusing it
   for another reason) is only in the phone's own log. Whether the phone can lock at all is

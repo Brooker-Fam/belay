@@ -9,7 +9,8 @@ calls goes off, the dialer is given back and Belay holds no call permission. It 
 spoofed 988 caller ID is refused and recorded as a stranger's, that a call Telecom marks as
 emergency callback mode rings, that a slow decision rings, and that a lock-now sent while a call
 rings waits for the call to end (the third security review's fixes; since the fifth's, it's
-reported done at once, the lock still waiting), and that a call before the
+reported done at once, the lock still waiting; since the sixth's, for 2 minutes after the call
+too), and that a call before the
 first unlock after a restart, which Belay can't decide, reaches the server once afterwards, from
 Android's call log (the fourth's). The emulator has no
 call audio and (on the ATD image) no preloaded dialer. This checklist is for the real Pixel 8, with

@@ -28,8 +28,11 @@ import java.util.concurrent.atomic.AtomicBoolean
  *   the step it began, kept here while a lock waits (a restart of Belay, which the kid can't cause,
  *   would start it again). Any other mode, which any app may set (MODE_IN_COMMUNICATION, even from
  *   a paused app, or MODE_RINGTONE), holds no lock off.
- * While a lock waits, Belay listens for the audio mode to change and takes a step then (only a
- * step: what it decides is from the above); the policy timer looks again every minute too
+ * A lock a call held off waits 2 minutes more once none is on (core's ScreenLocks.waits, the sixth
+ * review's I1), counted from the first step with none, in memory only: never stored, sent, logged
+ * or in the debug state (a restart of Belay counts them again). While a lock waits, Belay listens
+ * for the audio mode to change, into a call's or out of one, and takes a step then (only a step:
+ * what it decides is from the above); the policy timer looks again every minute too
  * (ScreenLocks.RECHECK_MS). From any thread.
  */
 object InCall {
@@ -47,9 +50,9 @@ object InCall {
 
     private val listening = AtomicBoolean(false)
 
-    /** When a lock began waiting for a call only the audio mode shows (core's ScreenLocks.wait). */
+    /** What the waits keep from step to step (core's ScreenLocks.Waiting): since when, for the audio mode's call and after one. */
     @Volatile
-    private var carrierSince: Long? = null
+    private var waiting = ScreenLocks.Waiting()
 
     /** What Belay can tell about a call now (core's CallNow.of). */
     fun now(context: Context): CallNow {
@@ -65,18 +68,19 @@ object InCall {
     }
 
     /**
-     * Whether a lock_now or a schedule's lock waits for a call now (core's ScreenLocks.wait), asked
-     * only when one is due. On the agent thread.
+     * Whether the screen locks wait for a call at this step (core's ScreenLocks.waits): a lock_now's
+     * or a schedule's, and lost mode's. Asked once a step, and only when a lock is due. [heldOff]: a
+     * lock_now's lock is due in this boot, which only a call makes. On the agent thread.
      */
-    fun lockWaits(context: Context, at: Long): Boolean {
-        val wait = ScreenLocks.wait(now(context), carrierSince, at)
-        carrierSince = wait.carrierSince
-        return wait.waits
+    fun waits(context: Context, at: Long, heldOff: Boolean): ScreenLocks.Waits {
+        val waits = ScreenLocks.waits(now(context), waiting, at, heldOff)
+        waiting = waits.next
+        return waits
     }
 
-    /** No lock waited at this step: a later wait for the audio mode starts its 30 minutes afresh. */
+    /** No lock waited at this step: a later wait for the audio mode starts its 30 minutes afresh, and nothing held one off. */
     fun noLockWaits() {
-        carrierSince = null
+        waiting = ScreenLocks.Waiting()
     }
 
     /**
@@ -101,7 +105,12 @@ object InCall {
         }
     }
 
-    /** A screen lock waits for a call to end: one step once Android's audio mode leaves a call's. */
+    /**
+     * A screen lock waits for a call to end (or for the 2 minutes after one): a step whenever
+     * Android's audio mode goes into a call's, so a call in those 2 minutes holds the lock off
+     * again, and one once it leaves them, which ends the listening (the step listens again while a
+     * lock still waits).
+     */
     fun listenForTheEnd(context: Context) {
         if (!listening.compareAndSet(false, true)) return
         val app = context.applicationContext
@@ -112,9 +121,10 @@ object InCall {
         }
         val listener = object : AudioManager.OnModeChangedListener {
             override fun onModeChanged(mode: Int) {
-                if (mode in CALL_MODES) return
-                audio.removeOnModeChangedListener(this)
-                listening.set(false)
+                if (mode !in CALL_MODES) {
+                    audio.removeOnModeChangedListener(this)
+                    listening.set(false)
+                }
                 Agent.handle(app, Trigger.CALL)
             }
         }

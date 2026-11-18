@@ -56,7 +56,7 @@
 # `calls --mode contacts --unknown reject --log on`, Belay becomes the default dialer (telecom
 # get-default-dialer) and reports it; the calls instrumented tests run; an incoming call from a
 # contact's number (the emulator console's `gsm call`) rings Belay's screen (its debug state), and a
-# lock-now sent while it rings is done at once, its lock due until the call ends; one
+# lock-now sent while it rings is done at once, its lock due until 2 minutes after the call ends; one
 # from another number is rejected without ringing and reaches the server as rejected, unknown, with
 # its number; block-number puts the number on Android's block list and unblock-number takes it off;
 # and `calls --off` gives the default dialer back (or, with none before, Android drops Belay from
@@ -788,7 +788,7 @@ elif [ -n "$E2E_CLI" ]; then
     { gsm_cancel "$CONTACT_NUMBER"; diagnose; die "Belay's in-call service doesn't show the contact's call"; }
   echo "Belay rings: $(calls_state | jq -c '{ringing, now}')"
 
-  step "Phase 5: lock-now while a call rings is done at once, and its lock waits for the call to end"
+  step "Phase 5: lock-now while a call rings is done at once, and its lock waits for the call to end, and 2 minutes more"
   lock_id="$(server_cli_out lock-now "$phone")"
   [[ "$lock_id" =~ ^[A-Za-z0-9_-]+$ ]] || { gsm_cancel "$CONTACT_NUMBER"; die "lock-now should print only the command's id" "$lock_id"; }
   wait_applied
@@ -803,8 +803,15 @@ elif [ -n "$E2E_CLI" ]; then
   fi
   gsm_cancel "$CONTACT_NUMBER"
   wait_calls_state '(.now // []) | length == 0' 20 || { diagnose; die "the contact's call didn't end after gsm cancel"; }
-  # Then the lock happens at the next step: the audio mode's change, or the policy timer's minute.
-  wait_lock_done 90 || { diagnose; die "lock-now's lock was still due after the call ended"; }
+  # Then the lock waits 2 minutes more (the sixth security review's I1: a call that dropped can be
+  # made again first), from the first step with no call (the call's end, the audio mode's change
+  # or the policy timer's minute): still due 30 seconds on, and done at the step 2 minutes on.
+  sleep 30
+  if ! lock_due; then
+    diagnose
+    die "lock-now's lock happened within 30 seconds of the call's end (it waits 2 minutes after a call)"
+  fi
+  wait_lock_done 240 || { diagnose; die "lock-now's lock was still due 4 minutes after the call ended"; }
   locked=0
   for _ in $(seq 1 15); do
     if screen_off_or_locked; then

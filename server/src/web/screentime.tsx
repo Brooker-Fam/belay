@@ -63,7 +63,7 @@ const SAVED: Record<string, string> = {
   moved: "Moved. The phone gets its new stage's rules within seconds if it's online.",
   reset: "Put back: the phone gets the stage's rules again.",
   extra: "Given. The phone gets the extra time within seconds if it's online.",
-  locked: "Paused, and the screen locks when the phone gets it, within seconds if it's online (during a call, once the call ends).",
+  locked: "Paused, and the screen locks when the phone gets it, within seconds if it's online (during a call, about 2 minutes after the call ends).",
   agreement: "Saved as a new version. The phone asks the kid again.",
   stage: "Saved. Every phone on this stage gets it within seconds if it's online.",
   stage_created: "Stage added.",

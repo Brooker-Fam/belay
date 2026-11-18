@@ -78,7 +78,11 @@ class LocationStep(context: Context, private val store: AgentStore) {
         val lockWaits: Boolean = false,
     )
 
-    /** [telecomCall]: whether Telecom has a call on (core's ScreenLocks), asked only when lost mode's lock is due (then it waits). */
+    /**
+     * [telecomCall]: whether lost mode's lock waits for a call (core's ScreenLocks.waits: a call
+     * Telecom has, or the 2 minutes after one; never while Belay can't lock), asked only when lost
+     * mode's lock is due.
+     */
     fun run(
         policy: WirePolicy,
         commands: List<WireCommand>,
@@ -221,7 +225,7 @@ class LocationStep(context: Context, private val store: AgentStore) {
                 Log.w(Agent.TAG, "lost mode: the lock screen message couldn't be set", e)
             }
         }
-        // One lock, once no call Telecom has is on (core's ScreenLocks): during one it waits for a step after it.
+        // One lock, once no call Telecom has is on (core's ScreenLocks): during one, and for 2 minutes after it, it waits.
         if (!applied.locked && ScreenLocks.lostLockNow(applied, telecomCall())) {
             val problem = ScreenLock.lock(app, owner = true)
             if (problem != null) Log.w(Agent.TAG, "lost mode: $problem")

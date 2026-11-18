@@ -69,12 +69,13 @@ kid's real apps or times.
    lock (PIN) set on the phone. Write down what happens without one (the screen only turns off).
 4. A lock waits for a call (platform notes T20). Call a contact from the phone app, and during the
    call tap "lock now" on the parent page: within seconds the page says "the phone has it: its
-   screen locks at once, or as soon as a call ends", the same words as without a call, and no
-   time beside them (the fifth review's F2), and the screen doesn't lock while the call is on.
-   Keep the call on past the 10 minutes, then end it: the screen locks within a minute, and the
-   page still says the same. Do it once more with a bedtime schedule (with "lock" on) that
-   starts during a call: the apps pause at the start, and the screen locks only once the call
-   ends. If calls aren't on
+   screen locks at once, or about 2 minutes after a call ends", the same words as without a call,
+   and no time beside them (the fifth review's F2), and the screen doesn't lock while the call is
+   on. Keep the call on past the 10 minutes, then end it: the screen stays unlocked for about 2
+   minutes (the sixth review's I1; call the contact again within them and it waits for that call
+   too), then locks, within 3 minutes of the end, and the page still says the same. Do it once
+   more with a bedtime schedule (with "lock" on) that starts during a call: the apps pause at the
+   start, and the screen locks only about 2 minutes after the call ends. If calls aren't on
    for this phone, the call goes through Google's Phone app, and Belay sees it by the audio mode
    (`MODE_IN_CALL`): write down which it was. Without calls on, the wait lasts at most 30 minutes:
    a call that goes on longer is locked behind the lock screen then, and carries on.
@@ -180,7 +181,7 @@ kid's real apps or times.
 | 3.1 | Bedtime warning and notice words; screen locks at the start | pending | |
 | 3.2 | What works during bedtime; the alarm rings | pending | |
 | 3.3 | Lock now, with and without a PIN | pending | |
-| 3.4 | Lock now and a bedtime's lock during a call: done at once in the usual words, no time; no lock until the call ends, past 10 minutes too; Belay's call or Google's Phone app | pending | |
+| 3.4 | Lock now and a bedtime's lock during a call: done at once in the usual words, no time; no lock until about 2 minutes after the call ends, past 10 minutes too, and a second call in those 2 minutes holds it; Belay's call or Google's Phone app | pending | |
 | 3.5 | Lock now during an app's call: does `dumpsys telecom` list it; locks at once either way, and the app's call goes on | pending | |
 | 4.1 | Usage access off: noticed within seconds, limited apps paused | pending | |
 | 4.2 | "Turn usage access back on" opens Belay's switch or the list | pending | |

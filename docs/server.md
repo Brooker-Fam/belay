@@ -409,7 +409,7 @@ itself, offline too; the server keeps the rules and what the phone reports.
 - **Screen time** (a phone's Screen time tab): a day by the hour and the last seven days,
   with the apps that took the time and the times Belay couldn't count, each chart with a table
   of the same numbers; **Lock now**, a pause of 15 minutes to 4 hours and the screen locked
-  once if the phone gets it within 10 minutes (during a call, once it ends; how the last one
+  once if the phone gets it within 10 minutes (during a call, about 2 minutes after it ends; how the last one
   went says whether the phone got it in time, never whether a call was on); and the kid's
   requests for more time,
   answered with 15, 30 or 60 minutes, "Let's talk" or "No". Approving gives the minutes for

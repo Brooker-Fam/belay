@@ -56,7 +56,7 @@ parent can see" (built from the code that collects them: `inventory/Collectors.k
   removing another user);
 - (Phase 3) whether the phone got a screen lock a parent or an AI app sent in time, and whether
   it could lock. The phone reports one when it gets it, during a call too: the screen then locks
-  once the call ends, and nothing says when, so a lock's result never says whether the kid was
+  about 2 minutes after the call ends, and nothing says when, so a lock's result never says whether the kid was
   on a call, or when one ended (fifth security review, F2). A phone that can't lock (until it
   restarts after an update, say) fails every one in the same words, call or not, and says so in
   its status the whole time (sixth review, G2);

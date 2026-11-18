@@ -136,7 +136,12 @@ class CallFlowInstrumentedTest {
         val call = FakeCall(incoming = true, number = SAM.numbers.single())
         assertEquals(Ring.RING, add(call).action)
         assertTrue("a ringing call should hold a screen lock", InCall.now(context).telecom)
-        assertTrue("a ringing call should hold a screen lock", InCall.lockWaits(context, System.currentTimeMillis()))
+        val during = InCall.waits(context, System.currentTimeMillis(), heldOff = false)
+        assertTrue("a ringing call should hold a screen lock", during.lock)
+        assertTrue("a ringing call should hold lost mode's lock", during.lost)
+        // The 2 minutes after the call (core's ScreenLocks.waits) are JVM-tested: an agent step
+        // here may reset what InCall keeps, so this test doesn't count on it.
+        InCall.noLockWaits()
         call.state = Call.STATE_ACTIVE
         instrumentation.runOnMainSync { CallFlow.removed(context, call) }
         await("Belay still counts a call that ended") { !CallFlow.callOn }

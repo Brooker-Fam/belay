@@ -291,4 +291,97 @@ class SixthReviewTest {
             assertTrue(before.zipWithNext { a, b -> (b - a) / minute }.count { it == 110L } >= 2, "the old rule: $before")
         }
     }
+
+    // ── I1: the 2 minutes after a call ──────────────────────────────────────────────────
+
+    private val onCall = CallNow(telecom = true)
+    private val noCall = CallNow()
+
+    /**
+     * The steps while a lock is due, as the app takes them, from [start]: the policy timer a minute
+     * after each step (ScreenLocks.recheckAt, re-armed by every step), and the audio mode's step a
+     * second after each call in [calls] starts and ends (calls/InCall.listenForTheEnd). Each asks
+     * ScreenLocks.waits, as EnforcementStep does, with what calls/InCall.kt kept from the last. The
+     * first step at which the lock ([lost]: lost mode's) no longer waits, or null.
+     */
+    private fun lockAt(start: Long, calls: List<LongRange>, call: CallNow = onCall, heldOff: Boolean = false, lost: Boolean = false): Long? {
+        val audioModeSteps = calls.flatMap { listOf(it.first + 1_000, it.last + 1 + 1_000) }
+        var waiting = ScreenLocks.Waiting()
+        var t = start
+        repeat(10_000) {
+            val w = ScreenLocks.waits(if (calls.any { t in it }) call else noCall, waiting, t, heldOff)
+            waiting = w.next
+            if (!(if (lost) w.lost else w.lock)) return t
+            t = (audioModeSteps.filter { it > t } + ScreenLocks.recheckAt(waiting = true, now = t)!!).min()
+        }
+        return null
+    }
+
+    @Test
+    fun `I1 - a lock that waited for a call happens 2 minutes after the call ends, so a dropped call to 988 can be made again`() {
+        val start = at("2026-11-18T21:00:00")
+        val first = start until start + 25 * minute + 30_000
+        val ended = first.last + 1
+        assertEquals(ended + 1_000 + ScreenLocks.AFTER_CALL_MS, lockAt(start, listOf(first)), "2 minutes from the step at its end")
+        assertEquals(ended + 1_000 + ScreenLocks.AFTER_CALL_MS, lockAt(start, listOf(first), lost = true), "lost mode's too")
+        // The call drops and the kid calls 988 again 50 seconds later, for 5 minutes: the lock waits for
+        // that call too, and the 2 minutes start afresh at its end.
+        val second = ended + 50_000 until ended + 50_000 + 5 * minute
+        assertEquals(second.last + 1 + 1_000 + ScreenLocks.AFTER_CALL_MS, lockAt(start, listOf(first, second)))
+        // A lock no call held off doesn't wait at all.
+        assertEquals(start, lockAt(start, emptyList()))
+    }
+
+    @Test
+    fun `I1 - a lock_now's due lock counts as held off after a restart of Belay, and a clock moved back starts the 2 minutes again`() {
+        val start = at("2026-11-18T21:00:00")
+        // Belay's process started again after the call (the wait's memory is gone); LockDue says a call held it.
+        assertEquals(start + 2 * minute, lockAt(start, emptyList(), heldOff = true))
+        // The clock goes back a minute after the call: the 2 minutes count from then.
+        val quiet = ScreenLocks.waits(noCall, ScreenLocks.Waiting(heldOff = true), start)
+        val back = ScreenLocks.waits(noCall, quiet.next, start - minute)
+        assertTrue(back.lock)
+        assertEquals(start - minute, back.next.quietSince)
+        // What it keeps is only whether a call held a lock off and since when none was on: no call's time.
+        assertEquals(ScreenLocks.Waiting(heldOff = true, quietSince = start), quiet.next)
+        assertEquals(ScreenLocks.Waiting(heldOff = true), ScreenLocks.waits(onCall, quiet.next, start + minute).next)
+    }
+
+    @Test
+    fun `I1 - a call only the audio mode shows holds a lock 30 minutes, then it locks mid-call, and lost mode's doesn't wait for one`() {
+        val start = at("2026-11-18T21:00:00")
+        val carrier = CallNow(carrier = true)
+        // On since before the lock came.
+        val allEvening = start - 5 * minute until start + 3 * hour
+        assertEquals(start + 30 * minute, lockAt(start, listOf(allEvening), carrier), "the cap, with the call still on")
+        assertEquals(start, lockAt(start, listOf(allEvening), carrier, lost = true))
+        // Such a call ending before the cap: the 2 minutes after it too.
+        val short = start - 5 * minute until start + 10 * minute
+        assertEquals(short.last + 1 + 1_000 + ScreenLocks.AFTER_CALL_MS, lockAt(start, listOf(short), carrier))
+    }
+
+    // ── INFO, documented ────────────────────────────────────────────────────────────────
+
+    /** I2: a due lock has nothing to do with the pause it came with (docs/protocol.md says so). */
+    @Test
+    fun `I2 - a lock_now's due lock locks after its pause ended or a parent resumed`() {
+        val bootAt = at("2026-11-18T08:00:00")
+        val t = at("2026-11-18T10:00:00")
+        val (_, due) = runnerLockNow(lockPlan("lock-1", t), null, bootAt, t, cannotLock = null, waits = { true }, lock = { null })
+        assertEquals(LockDue(3, bootAt), due)
+        // 13:00: the 15-minute pause ended at 10:15; the call (and its 2 minutes) are over now.
+        val later = Commands.plan(emptyList(), setOf("lock-1"), at("2026-11-18T13:00:00"), setOf(WireCommand.LOCK_NOW))
+        assertTrue(ScreenLocks.lockNow(later, due, 3, bootAt) { false }.lock)
+    }
+
+    /** I3: without BOOT_COUNT a clock moved 10 minutes or more takes the boot for another, and drops a due lock. */
+    @Test
+    fun `I3 - without BOOT_COUNT a moved clock can drop a due lock, which was reported done`() {
+        val bootAt = at("2026-11-18T08:00:00")
+        val empty = Commands.plan(emptyList(), setOf("x"), bootAt + hour, setOf(WireCommand.LOCK_NOW))
+        val moved = ScreenLocks.lockNow(empty, LockDue(null, bootAt), null, bootAt + 11 * minute) { false }
+        assertFalse(moved.lock)
+        assertEquals(null, moved.due)
+        assertTrue(Boots.same(3, bootAt, 3, bootAt + 11 * minute), "with BOOT_COUNT (the Pixel, the emulator) it's the same boot")
+    }
 }

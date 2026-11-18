@@ -2515,9 +2515,11 @@ screen, by the family's rules, so it's a call Belay decided. While Belay isn't t
 Telecom won't answer it, so they wait only while the audio mode is `MODE_IN_CALL` (a carrier
 call), for at most 30 minutes from the step the wait began; then the screen locks, and the call
 goes on. Lost mode's one lock waits only for a managed call Telecom has. No other audio mode
-holds a lock off. A lock still due happens at the first step after the
-call (core's `ScreenLocks`): Belay takes a step when the audio mode changes, and looks again
-every minute. A `lock_now` is reported `done` at the step that first has it, a call on or not,
+holds a lock off. A lock still due waits 2 minutes more from the first step with no call on, then
+happens at the next step (core's `ScreenLocks.waits`, the sixth review's I1: a call to 988 that
+dropped can be made again before the lock screen asks for the PIN, H9); a call in those 2 minutes
+holds it off again. Belay takes a step when the audio mode goes into a call's or leaves it, and
+looks again every minute. A `lock_now` is reported `done` at the step that first has it, a call on or not,
 and its lock stays due until a step with no call on, however long the call lasts (a restart drops
 it): so its result never says a call was on, or when one ended (the fifth review's F2).
 
