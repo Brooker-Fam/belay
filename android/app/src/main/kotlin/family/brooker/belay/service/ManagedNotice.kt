@@ -12,6 +12,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import family.brooker.belay.Agent
+import family.brooker.belay.DebugTools
 import family.brooker.belay.R
 import family.brooker.belay.core.location.LocationRules
 import family.brooker.belay.core.location.WireLocation
@@ -24,7 +25,8 @@ import family.brooker.belay.ui.MainActivity
  * service's notification. Android 14 lets users dismiss most ongoing notifications, but
  * not a device policy controller's. Tapping it opens Belay's Home. From Phase 4 it also says when
  * Belay shares where the phone is on a schedule ("Shares where this phone is every 30 minutes,
- * 7:00 AM to 9:00 PM").
+ * 7:00 AM to 9:00 PM"). On a debug build, a test that's on says so too (DebugTools.noticeLine:
+ * Phase 5's archival test); release builds have none.
  */
 object ManagedNotice {
     const val CHANNEL_ID = "managed"
@@ -55,12 +57,12 @@ object ManagedNotice {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val text = context.getString(R.string.notice_text)
-        val extra = line
+        val lines = listOfNotNull(line, DebugTools.noticeLine(context))
         return NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(context.getString(R.string.notice_title))
-            .setContentText(extra ?: text)
-            .apply { if (extra != null) setStyle(NotificationCompat.BigTextStyle().bigText("$extra\n$text")) }
+            .setContentText(lines.firstOrNull() ?: text)
+            .apply { if (lines.isNotEmpty()) setStyle(NotificationCompat.BigTextStyle().bigText((lines + text).joinToString("\n"))) }
             .setContentIntent(open)
             .setOngoing(true)
             .setShowWhen(false)
@@ -74,6 +76,11 @@ object ManagedNotice {
     fun update(context: Context, next: String?) {
         if (next == line) return
         line = next
+        refresh(context)
+    }
+
+    /** Shows the notice again as it is now, while the service is running (a debug build's test started or ended). */
+    fun refresh(context: Context) {
         if (BelayService.runningSince == null) return
         if (context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
         try {

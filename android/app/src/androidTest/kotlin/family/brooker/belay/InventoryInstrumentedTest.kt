@@ -83,7 +83,8 @@ class InventoryInstrumentedTest {
         // Phase 4: location is granted by policy only while the policy has it on (the real policy
         // here; denying a granted one restarts Belay, so CI checks that from the shell).
         val plan = DeviceOwnerSetup.permissionPlan(context)
-        val tied = CategoryPermissions.CATEGORY.keys.map { it.substringAfterLast('.') }
+        // A debug test's permission (READ_SMS, the archival test's) follows its test, off here.
+        val tied = (CategoryPermissions.CATEGORY.keys + DebugTools.TESTED_PERMISSIONS).map { it.substringAfterLast('.') }
         // Each category's permissions follow their own category (location, Phase 5's calls).
         val granting = plan.grant.map { it.substringAfterLast('.') }.toSet()
         health.permissions.forEach {

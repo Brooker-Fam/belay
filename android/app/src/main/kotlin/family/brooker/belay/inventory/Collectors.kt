@@ -54,6 +54,9 @@ import family.brooker.belay.core.network.Domains
  *   [family.brooker.belay.mobiledata.MobileDataStep] sends each day (the apps Belay never blocks,
  *   Android's own parts and shared uids together, never one by one): [DataCategories.MOBILE_DATA].
  *   Wi-Fi-only apps collect nothing: they're a rule, on This phone's rules.
+ * - Debug builds only, while Phase 5's archival test is on (ArchivalTest, docs/phase5-checklist.md
+ *   T8): it counts Google Messages' updates on the phone and sends nothing, and MainScreen adds its
+ *   own category to the list (DebugTools.canSee). Release builds have no such test.
  */
 object Collectors {
     /** [clock] shows a policy's "HH:MM" as the kid's phone shows times. */
