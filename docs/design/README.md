@@ -71,6 +71,14 @@ lets a parent remove the profile.
 stops, then collection stops, then the parent hands the phone over: restrictions and FRP lifted,
 data backed up to the kid's own account, a reset from Settings, and the server's data deleted.
 
+**[Phase 12: caregivers](phase12-caregivers.md).** A parent gives a grandparent, a babysitter, a
+coach or the kid's other household limited access to a phone, for at most 30 days at a time: its
+status, pausing or locking it (only ever tighter), the kid's "I need help", and, if the parent
+allows it, checking where it is now. A separate kind of account with its own few pages and a
+session no parent page, MCP or OAuth accepts (a test walks every route); never anything that
+loosens. The kid's screen lists each caregiver with what they can see and do and until when, from
+the policy, and every pause and check names them. Nothing new on Android.
+
 ## Recommended build order
 
 1. **Finish Phase 2, with the fixes in "For Phase 2, now" below.**
