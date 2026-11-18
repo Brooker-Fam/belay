@@ -74,7 +74,7 @@ class CallsStep(context: Context, private val store: AgentStore) {
         // The last restart, and the calls Android logged while the phone was locked after it, read
         // before the window below forgets the times they're decided by.
         val restart = CallsPlan.afterRestart(
-            before?.afterRestart, bootCount(), bootAt = now - SystemClock.elapsedRealtime(),
+            before?.afterRestart, bootCount(), bootAt = System.currentTimeMillis() - SystemClock.elapsedRealtime(),
             unlockedAt = CallFlow.firstCallAt?.let { minOf(now, it - 1) } ?: now, callsWasOn = before?.on == true && calls != null,
         )
         val (spell, whileLocked) = lockedCalls(restart, policy, listOfNotNull(before?.lastEmergencyContactAt, beforeUnlock), android)

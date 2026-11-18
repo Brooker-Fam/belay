@@ -80,7 +80,10 @@ list. In short, a kid can:
 - set up Android's own Parental Controls, which add a hidden profile and can undo Belay's
   pauses (reported at the top of the phone's page; you can have Belay remove it);
 - use developer options and USB debugging, until you lock them;
-- unlock the screen right after "Lock now" (they know their PIN; the apps stay paused).
+- unlock the screen right after "Lock now" (they know their PIN; the apps stay paused);
+- with calls on, restart the phone and leave it locked: until it's unlocked, calls ring in the
+  phone's own app without your call rules. Belay records those calls afterwards, and the Calls
+  tab says how long the phone stayed locked.
 
 **What it takes:**
 
@@ -612,7 +615,9 @@ while the phone is paused, and a call from 911 rings, unless the phone network s
 ID is fake; for 2 hours after a call to one, anyone can call back; and Belay never records them.
 A caller ID that only shows 988's number is treated like any other caller (988 doesn't call
 people; a counselor calls back from their own number, which those 2 hours let through), and a
-caller whose caller ID may be fake is a stranger, whatever number it shows.
+caller whose caller ID may be fake is a stranger, whatever number it shows (one showing a
+parent's number goes to voicemail, so a parent on a line that fails the check can leave a
+message).
 Texting isn't managed yet: the texting app works with anyone, and a contact's "Can text" does
 nothing for now.
 
