@@ -267,8 +267,9 @@ allows it, and only while that screen is open. Camera frames are never stored or
   for the 2 hours every caller rings, and never sent (after a restart, until Belay has read
   Android's call log for the calls from before the unlock: at most until a call still on then
   ends); a call to 911 from the lock screen before the
-  phone's first unlock after a restart keeps only that time, in the part of the phone's storage
-  Android opens at boot, until Belay's own storage opens. Belay's log on the phone (readable only
+  phone's first unlock after a restart keeps only its time (each such call's, at most 20), in the
+  part of the phone's storage Android opens at boot, until Belay's own storage opens and the
+  call's 2 hours are over. Belay's log on the phone (readable only
   with USB debugging) says what it did with each call, never why: nothing in it tells a call or
   text with 911, 988 or a private number from any other. Network logging (Phase 3) keeps the
   counts of today and the two days before (which app looked up which name, how many times), and

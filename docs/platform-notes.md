@@ -2412,12 +2412,22 @@ only); Pixel pending (Phase 5 checklist, with a test number).
   (emergency routing only "if service cannot support normal routing"). Otherwise Android treats it
   like 911: Telecom gives it to the preloaded dialer, `NEW_OUTGOING_CALL` carries it, and a call
   from it is an emergency call (T17).
+- What only Belay keeps of those calls (read again on 2026-11-18 for the sixth review's G1): the
+  lock screen's `EmergencyDialer.placeCall` (`packages/services/Telephony`) calls only a number
+  `TelephonyManager.isEmergencyNumber` (or one of its shortcuts) accepts, and shows
+  `BAD_EMERGENCY_NUMBER_DIALOG` for any other, so before the unlock the kid can call 911 (or
+  another emergency number) but not 988; and Telecom's `CallLogManager.okayToLogCall` logs an
+  emergency call only when the carrier sets `KEY_ALLOW_EMERGENCY_NUMBERS_IN_CALL_LOG_BOOL`, which
+  `CarrierConfigManager` defaults to `false`. So the call log usually has no trace of them.
 
 Belay's consequence: `OutgoingCallReceiver` is Belay's only direct-boot-aware component. A call to
 911 from the lock screen before the first unlock reaches it, and Belay keeps only the time, in
-device-protected storage (`calls/LockedCalls.kt`); its watchers wait for the unlock. Once the phone
-is unlocked, CallsGate and the calls step read the time into the 2-hour window, and the step
-deletes it once the window is over or calls goes off. Before that unlock Belay's in-call and
+device-protected storage (`calls/LockedCalls.kt`): every such call's, at most 20 (the sixth
+review's G1: a dispatcher's callback to the first of two 911 calls hours apart is decided by the
+first one's window, so keeping only the newest sent it with its number). Its watchers wait for the
+unlock. Once the phone is unlocked, the calls step reads them all into the restart's reads of the
+call log (T22), and CallsGate the newest into the 2-hour window; once that step is stored, each
+goes when its window is over, and all of them when calls goes off. Before that unlock Belay's in-call and
 screening services can't run, so Telecom gives every call to the preloaded dialer, unfiltered
 (calls fail open; the Pixel checklist looks): Telecom's `InCallController.getDefaultDialerComponent`
 finds no in-call service of Belay's, and `bindToServices` makes an
