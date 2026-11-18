@@ -268,6 +268,8 @@ describe("AI data scopes", () => {
       ["list_requests", "requests", {}],
       ["get_screen_time", "screen_time", { device: "Sam's phone" }],
       ["change_screen_time", "agreement", { device: "Sam's phone", change: { stage: "Base camp" }, reason: "x" }],
+      // The eighth review's K2: a change that names an app needs Apps.
+      ["change_screen_time", "apps", { device: "Sam's phone", change: { exempt_add: ["com.example.chat"] }, reason: "x" }],
       ["get_location", "location", { device: "Sam's phone" }],
       ["locate_now", "location", { device: "Sam's phone" }],
       ["get_place_events", "location", { device: "Sam's phone" }],
