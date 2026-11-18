@@ -6,7 +6,8 @@
 #
 # 1. provision.sh (debug build), including its restart
 # 2. device owner, foreground service, the managed notice (and that it can't be dismissed),
-#    the standby bucket, uninstall blocked
+#    the standby bucket, uninstall blocked; and, with no Google Messages on the image, that the
+#    debug-only archival test's switch (T8, a Pixel test) says so and sets nothing
 # 3. installing, updating and removing a package are detected (by any layer)
 # 4. the instrumented tests; with the two fixture APKs (./gradlew :fixture:assembleV1Debug
 #    :fixture:assembleV2Debug), they also install, update and remove the fixture app and
@@ -329,6 +330,25 @@ ash appops get "$PKG" GET_USAGE_STATS | contains allow || die "usage access not 
 out="$(adb uninstall "$PKG" 2>&1 || true)"
 printf '%s\n' "$out"
 if grep -q '^Success' <<<"$out"; then die "Belay could be uninstalled"; fi
+
+# Phase 5's archival test (T8) is for the Pixel, with Google Messages (docs/phase5-checklist.md).
+# Neither CI image is expected to have Google Messages: there, the debug-only switch must say so and
+# set nothing. If an image has it, the switch isn't tried (its test changes the phone for an hour).
+step "The archival test's switch: no Google Messages here, so it sets nothing"
+archival() { ash am broadcast -a "$PKG.DEBUG_ARCHIVAL" -n "$PKG/.DebugArchivalReceiver" --es command "$1"; }
+if ash pm path com.google.android.apps.messaging | contains 'package:'; then
+  echo "Google Messages is on this image: the archival test is the Pixel's (T8), so its switch isn't tried here"
+else
+  out="$(archival start)"
+  printf '%s\n' "$out"
+  contains "result=1, data=\"Google Messages isn't installed.\"" <<<"$out" || die "the archival test's switch didn't say Google Messages isn't installed" "$out"
+  out="$(archival status)"
+  printf '%s\n' "$out"
+  for want in 'result=-1' 'off: never started' 'messages_archival: not set' 'READ_SMS: not granted' 'archival service: off'; do
+    contains "$want" <<<"$out" || die "the archival test's status doesn't say '$want'" "$out"
+  done
+  if ash dumpsys package "$PKG" | contains 'android.permission.READ_SMS: granted=true'; then die "Belay holds READ_SMS with no archival test on"; fi
+fi
 
 if [ -n "$E2E_SERVER" ]; then
   step "The server: the phone enrolled and sent its app list"

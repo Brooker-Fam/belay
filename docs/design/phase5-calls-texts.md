@@ -4,8 +4,11 @@
 exists"; [protocol.md](../protocol.md), "Calls rules"); where the build differs from this design,
 the protocol and the code are right. Android facts cite
 [platform-notes-drafts.md](platform-notes-drafts.md) by id; the calls ones (T1 to T6) moved to
-[platform-notes.md](../platform-notes.md#calls-phase-5), next to T10 to T16. The texts half depends
-on a Pixel test (T8) before it's decided.
+[platform-notes.md](../platform-notes.md#calls-phase-5), next to T10 to T16, and T8 to its
+[Texts](../platform-notes.md#texts-phase-5s-second-half). The texts half depends on a Pixel test
+(T8) before it's decided: debug builds carry it, an adb switch that counts Google Messages' updates
+and never reads a text ([phase5-checklist.md](../phase5-checklist.md), section 12, with what each
+outcome means for Options A and B).
 
 ## Goals
 

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug builds only (src/debug): what the kid reads while the archival test is on (ArchivalTest.kt;
+     docs/phase5-checklist.md, T8). Release builds have none of these, or the test. -->
+<resources>
+    <!-- The managed notice's line while the test is on. %1$s: when it ends, like "3:15 PM". -->
+    <string name="archival_notice">Until %1$s, Belay is testing whether it can tell when a text comes or goes. It counts them and never reads them.</string>
+
+    <!-- What your parent can see, while the test is on. %1$s: when it ends. -->
+    <string name="archival_can_see_title">A test about texts, until %1$s</string>
+    <string name="archival_can_see_counts">How many times Google Messages tells Belay that a text came, went or changed, and when</string>
+    <string name="archival_can_see_never">Belay never reads your texts: not what they say, and not who they\'re with</string>
+    <string name="archival_can_see_stays">The count stays on this phone and isn\'t sent to your parent\'s server. Your parent looks at it with a computer.</string>
+    <string name="archival_can_see_google">Google Messages may say that your messages are being archived. That\'s this test, and it ends by itself.</string>
+
+    <!-- The short notice Android may show while Belay counts one update. -->
+    <string name="archival_counting">Belay is counting a text for its test. It doesn\'t read it.</string>
+</resources>

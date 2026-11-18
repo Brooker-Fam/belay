@@ -55,13 +55,22 @@ jobs:
           cp android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk apks/
           cp android/fixture/build/outputs/apk/v1/debug/fixture-v1-debug.apk apks/
           cp android/fixture/build/outputs/apk/v2/debug/fixture-v2-debug.apk apks/
-      # Debug-only parts (src/debug) must never reach a release build.
+      # Debug-only parts (src/debug) must never reach a release build: not in its manifest (with
+      # Phase 5's archival test: its switch, service, receivers and READ_SMS), and not in its classes.
       - name: The release build has no debug-only parts
         run: |
+          apk=android/app/build/outputs/apk/release/app-release-unsigned.apk
           aapt2="$(find "$ANDROID_HOME/build-tools" -name aapt2 -type f | sort | tail -n 1)"
-          manifest="$("$aapt2" dump xmltree --file AndroidManifest.xml android/app/build/outputs/apk/release/app-release-unsigned.apk)"
-          if grep -qE 'DebugRecoveryReceiver|DEBUG_RECOVER|DebugUsageReceiver|DEBUG_UPLOAD_USAGE|DebugHelpReceiver|DEBUG_HELP|testOnly' <<<"$manifest"; then
+          manifest="$("$aapt2" dump xmltree --file AndroidManifest.xml "$apk")"
+          if grep -qE 'DebugRecoveryReceiver|DEBUG_RECOVER|DebugUsageReceiver|DEBUG_UPLOAD_USAGE|DebugHelpReceiver|DEBUG_HELP|DebugArchivalReceiver|DEBUG_ARCHIVAL|Archival|GOOGLE_MESSAGES_ARCHIVAL_UPDATE|READ_SMS|WRITE_SMS|testOnly' <<<"$manifest"; then
             echo "::error::The release APK's manifest has debug-only parts."
+            exit 1
+          fi
+          dexdump="$(find "$ANDROID_HOME/build-tools" -name dexdump -type f | sort | tail -n 1)"
+          classes="$("$dexdump" "$apk" | grep 'Class descriptor')"
+          grep -q 'Lfamily/brooker/belay/DebugTools;' <<<"$classes" || { echo "::error::dexdump listed no Belay classes."; exit 1; }
+          if grep -E "Lfamily/brooker/belay/(Debug(Recovery|Usage|Help|Archival)Receiver|Archival|archival/)" <<<"$classes"; then
+            echo "::error::The release APK has debug-only classes."
             exit 1
           fi
       # Phase 6's self-update test: a second debug build of Belay, on this runner (so the same

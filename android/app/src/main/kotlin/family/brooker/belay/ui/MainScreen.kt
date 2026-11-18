@@ -35,8 +35,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import family.brooker.belay.AgentView
 import family.brooker.belay.BuildConfig
+import family.brooker.belay.DebugTools
 import family.brooker.belay.R
 import family.brooker.belay.core.AppChange
 import family.brooker.belay.core.ChangeKind
@@ -102,6 +104,8 @@ fun MainScreen(
     onRecovery: () -> Unit,
 ) {
     val context = LocalContext.current
+    // Debug builds only: a test that's on is in "What your parent can see" too (DebugTools; none in release builds).
+    val testing = DebugTools.canSee(context).collectAsStateWithLifecycle().value
     Scaffold { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
@@ -167,7 +171,7 @@ fun MainScreen(
                 }
                 Screen.CAN_SEE -> {
                     item {
-                        CanSeeCard(Collectors.categories(kid.policy) { hhmm -> clock(words, hhmm) }, connection, kid.policy?.aiReads.orEmpty())
+                        CanSeeCard(Collectors.categories(kid.policy) { hhmm -> clock(words, hhmm) } + testing, connection, kid.policy?.aiReads.orEmpty())
                     }
                     if (caregivers.isNotEmpty()) item { CaregiversCard(caregivers, words) }
                     item { ConnectionCard(connection, waiting, onConnect) }

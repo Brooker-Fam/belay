@@ -16,7 +16,8 @@ Android's call log (the fourth's). The emulator has no
 call audio and (on the ATD image) no preloaded dialer. This checklist is for the real Pixel 8, with
 the **release** build and a SIM: real calls, Google's Phone app next to Belay, the incoming-call
 screen over the lock screen, Bluetooth, Do Not Disturb, and what happens when Belay breaks. Do
-[phase7-checklist.md](phase7-checklist.md) first.
+[phase7-checklist.md](phase7-checklist.md) first. Section 12, the one test texts wait on (Google
+Messages' archival), needs the debug build instead: it says when to do it.
 
 Record what you see in the table at the end, word for word where Android or the carrier says
 something. No screenshots in the repository, and no account names, phone numbers or serial
@@ -205,6 +206,98 @@ clears it too. Every step here is in maintenance (adb on).
    list of the three calls (the second phone's, from before the unlock, is expected in both;
    the other two aren't read: T22).
 
+## 12. Texts' one test: Google Messages' archival (T8), with the debug build
+
+Phase 5's texts wait on one answer ([the design](design/phase5-calls-texts.md), Option A or B):
+does Google Messages tell Belay about each text when Belay, a device owner set up over adb with no
+managed Google Play, names itself the archival app in Google Messages' managed configuration?
+Android 17's side is confirmed in AOSP; Google Messages' side isn't documented for this case
+(platform notes T8).
+
+Only a **debug** build has the test, behind an adb switch; release builds contain none of it. Do
+this section while a debug build is the device owner: on a freshly reset Pixel,
+`android/scripts/provision.sh --debug` (with `--server` and `--code`, or without: the test needs no
+server), before the release build goes on for sections 1 to 11, or after them on a phone reset again.
+`android/scripts/unprovision.sh` takes the debug build off without a reset. Keep calls off for the
+whole section: as the phone app, Belay holds the restricted-messages app-op anyway (T8), which would
+hide whether the archival configuration gave it.
+
+The test never reads a text. For each update Google Messages sends, it keeps when it came, how
+(Belay's service or a broadcast), the names of its extras and, when one names a message, whether
+reading that worked and how many rows it has: Belay asks only for the rows' ids, to count them, so
+nothing in a message reaches it. Nothing goes to the server. While it's on, the phone says so
+(step 3). Use made-up words in every message, and write down no phone numbers.
+
+You need: the Pixel with its SIM and the debug build as device owner; a parent's phone that texts it
+and can turn RCS (chat features) off and on (an Android phone with Google Messages, or an iPhone with
+RCS); adb over USB; about 30 minutes. The switch, for the steps below (`status`, `start` or `stop`
+last):
+
+```bash
+adb shell am broadcast -a family.brooker.belay.DEBUG_ARCHIVAL -n family.brooker.belay/.DebugArchivalReceiver --es command status
+```
+
+1. **Before.** `adb shell cmd role get-role-holders android.app.role.SMS` says
+   `com.google.android.apps.messaging`. If not, make Google Messages the SMS app (Settings > Apps >
+   Default apps > SMS app; if Settings won't change it, turn the phone's lock on default apps off on
+   the parent page for this section). In Google Messages' settings, RCS chats says "Connected" (it can
+   take minutes to check the number; write down what it says). Write down
+   `adb shell appops get family.brooker.belay READ_RESTRICTED_MESSAGES` (expected "No operations."
+   and "Default mode: ignore") and the switch's `status`: "off: never started", Google Messages'
+   version, "its schema has messages_archival" (if it doesn't, update Google Messages from the Play
+   Store first: an older one may not know the key), "default SMS app:
+   com.google.android.apps.messaging", "READ_SMS: not granted", "Belay is the phone app: no".
+2. **Start:** `--es command start` (an hour; add `--ei minutes 30` for less). Expected `result=-1`
+   and "on until …", "messages_archival: Belay", "READ_SMS: granted", "archival service: on" and,
+   within seconds (ask `status` again), "restricted messages: allowed". `appops get` as in step 1 now
+   prints `READ_RESTRICTED_MESSAGES: allow` (the package's mode, which Android's archival tracker
+   sets), not after `Uid mode:` (that would be a role's). Then open Google Messages, or, if it was
+   open, `adb shell am force-stop com.google.android.apps.messaging` and open it again, so it reads
+   its configuration.
+3. **What the kid sees.** The managed notice says "Until <time>, Belay is testing whether it can tell
+   when a text comes or goes. It counts them and never reads them.", and Belay's What your parent can
+   see lists "A test about texts, until <time>". In Google Messages, look at the conversation list, a
+   conversation, its settings and the notification shade, and write down word for word anything that
+   says messages are archived, saved or managed (Google says users "are clearly informed when message
+   archival is active"; it doesn't say where), or that it says nothing.
+4. **SMS.** With RCS off on the parent's phone, so it goes as SMS, text the Pixel one made-up line,
+   then reply from the Pixel. After each, `status`: write down "updates" and "with a message URI".
+5. **RCS.** Turn RCS back on on the parent's phone and wait until both phones show the conversation
+   as RCS (the box you type in says which). Send one RCS message each way, with `status` after each.
+   With a third phone at hand, one message in an RCS group chat with both too (the design's open
+   question 1).
+6. **What came.** `adb shell run-as family.brooker.belay cat no_backup/debug-archival-test.json`:
+   for each update write down its time (to match it to steps 4 and 5), `via` (`service` or
+   `broadcast`), its `extras` names, and its `uri`'s `outcome` and `rows`: names and counts only,
+   nothing from a message. `adb logcat -d | grep -E "GOOGLE_MESSAGES_ARCHIVAL|archival test"`:
+   write down any line that says Belay's archival service wasn't allowed to start. If no update came
+   at all, force-stop and reopen Google Messages as in step 2 and send one more SMS before concluding.
+7. **Stop:** `--es command stop`. Expected `result=-1`, "off since … (stopped over adb)" and "READ_SMS
+   is denied by policy next, and Android restarts Belay". Within a minute the managed notice comes back
+   without the test's line (Belay restarted), What your parent can see doesn't list the test, `status`
+   says "messages_archival: not set", "READ_SMS: not granted", "restricted messages: not allowed
+   (default)" and "archival service: off", and `appops get` prints `READ_RESTRICTED_MESSAGES: default`
+   (the tracker's reset). Write down whether what Google Messages showed in step 3 went away.
+8. **The time box:** `--es command start --ei minutes 2`, then wait 3 minutes without touching it:
+   `status` says "off since … (its time was up)", the notice's line is gone, and step 7's checks hold.
+
+What the outcome means (send the results; the texts design decides from them):
+
+- **Archival works:** updates came for the SMS and the RCS messages, and each one with a URI read with
+  `rows` 1 (or the updates had no URI: then texts would compare Android's message store before and
+  after, as Google's page describes). Texts get the design's recommended **Option A**: Google Messages
+  stays, Belay reads each message on the phone and sends only alerts. Step 6's `via` and extras
+  shape how.
+- **Updates, but RCS can't be read:** the SMS's URI read with `rows` 1, but an RCS one with `rows` 0,
+  or "restricted messages" never became allowed. Google Messages calls Belay, but Android didn't let
+  Belay read RCS messages (or Google Messages didn't write them to Android's store): Option A would
+  cover SMS and MMS only. Write down step 2's `appops` lines.
+- **Google Messages doesn't call Belay:** no update at all, with Google Messages the SMS app, RCS
+  connected, "messages_archival: Belay" and the service on. Google Messages doesn't archive to an app
+  named by a device owner that was set up over adb, without managed Google Play (or this version
+  doesn't). Then the family chooses: Belay as the default SMS app (**Option B**, T9: SMS and MMS only,
+  so iPhone and group chats lose RCS), or no text monitoring.
+
 ## Results
 
 | Step | Check | Result | Android build |
@@ -248,3 +341,12 @@ clears it too. Every step here is in maintenance (adb on).
 | 11.7 | The test number cleared | pending | |
 | 11.8 | A restart, 10 minutes locked: Google's Phone app rings; after the unlock the missed call in Recent and on the parent page, no reason; the Calls page's note, and none after a quick restart | pending | |
 | 11.9 | A call from before the unlock still on: which app has it; Add call to a stranger ended or not; a stranger's waiting call rings or not; what Recent and the parent page list | pending | |
+| 12.1 | Google Messages the SMS app; RCS chats' status; the switch's status before: Google Messages' version, its schema | pending | |
+| 12.2 | Start: messages_archival, READ_SMS, the service, restricted messages allowed; `appops get`'s lines | pending | |
+| 12.3 | The managed notice's and What your parent can see's words; what Google Messages shows, word for word | pending | |
+| 12.4 | SMS each way: updates, and with a message URI, after each | pending | |
+| 12.5 | RCS each way (and a group chat): updates, and with a message URI, after each | pending | |
+| 12.6 | Each update: via, extras' names, the URI's outcome and rows; logcat | pending | |
+| 12.7 | Stop: all taken back, Belay restarted; Google Messages' notice gone? | pending | |
+| 12.8 | The time box ends it by itself | pending | |
+| 12 | The outcome: archival works, SMS only, or Google Messages doesn't call Belay | pending | |

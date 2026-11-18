@@ -53,7 +53,7 @@ back the designs in this folder, and re-check some Phase 2 facts.
 | T5 | The dialer decides whether a call rings | Moved to platform-notes.md (Phase 5) | |
 | T6 | Blocked numbers, and blocking after an emergency call | Moved to platform-notes.md (Phase 5) | |
 | T7 | Reading texts with `READ_SMS` on Android 17 | Partly: drafts, restricted (RCS) rows and one-time codes are hidden | AOSP; Docs |
-| T8 | Google Messages RCS archival | Confirmed in the docs and the code; untested | Docs; AOSP |
+| T8 | Google Messages RCS archival | Moved to platform-notes.md (Phase 5's texts), with its Pixel test; untested on a device | |
 | T9 | Belay as the default SMS app | Confirmed: requirements listed; SMS and MMS only | AOSP |
 | X1 | adb over WebUSB (Tango) | Confirmed: MIT, Chromium only, USB access is exclusive | Docs; npm |
 
@@ -446,7 +446,9 @@ with L7 to L10 and G1 to G2.
 ## Calls and texts
 
 T1 to T6 moved to [docs/platform-notes.md](../platform-notes.md#calls-phase-5) for Phase 5's
-calls, next to T10 to T16. T7 to T9, about texts, are still a design.
+calls, next to T10 to T16. T7 and T9, about texts, are still a design; T8 moved to
+[platform-notes.md](../platform-notes.md#texts-phase-5s-second-half) when debug builds gained its
+Pixel test.
 
 ### T7. Reading texts with `READ_SMS` on Android 17
 
@@ -466,6 +468,18 @@ calls, next to T10 to T16. T7 to T9, about texts, are still a design.
 - `READ_SMS` is hard-restricted (I4).
 
 ### T8. Google Messages RCS archival
+
+**Moved** to [platform-notes.md](../platform-notes.md#t8-google-messages-rcs-archival-for-a-device-owner-set-up-over-adb)
+and checked again in AOSP 17 (2026-11-18), when debug builds gained the Pixel test for it
+([phase5-checklist.md](../phase5-checklist.md), section 12: it counts Google Messages' updates and, for
+a message one names, reads only the rows' ids, to count them); this draft stays as it was written. What
+the second look added, still untested on a device: the tracker reads the restrictions of whichever app
+holds the SMS role, and only through the policy engine, so it works only with
+`app_restrictions_coexistence` (on, read-only, in Android 17's `cp2a`) and starts only with
+`secure_access_to_restricted_rcs_messages` (on, read-only, in `cp2a`); it hears of a change only from
+`setApplicationRestrictions`; `WRITE_SMS` is a removed permission that any app that asks for it holds,
+so it doesn't keep other apps from starting the archival service; `READ_SMS` is granted to a device
+owner by policy; and the DIALER role holds `read_restricted_messages` too.
 
 **Confirmed in the docs and the code; untested.** Verified on: Docs; AOSP.
 

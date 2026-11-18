@@ -16,6 +16,10 @@ kotlin {
         jvmTarget.set(JvmTarget.JVM_17)
         allWarningsAsErrors.set(true)
     }
+    // The archival test's pure part (docs/phase5-checklist.md, T8) is debug-only, so it lives in the
+    // app's src/debug, which release builds never contain. It's plain Kotlin too: compiled into these
+    // tests as well, `:core:test` covers it (ArchivalLogTest). Nothing else belongs in that directory.
+    sourceSets.getByName("test").kotlin.srcDir("../app/src/debug/kotlin/family/brooker/belay/archival")
 }
 
 dependencies {

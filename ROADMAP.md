@@ -215,7 +215,7 @@ on the Pixel, including the battery cost per mode.
 Calls are built and run end to end in CI (a contact's call rings Belay's screen, a stranger's
 is refused and recorded, Belay becomes and stops being the phone app). **Still open:**
 [docs/phase5-checklist.md](docs/phase5-checklist.md) on the Pixel, and texts, after the Pixel
-test of Google Messages' archival hook (T8).
+test of Google Messages' archival hook (T8), which debug builds now carry (the checklist's section 12).
 
 
 - **Calls:** Belay as the default dialer, so the family decides who rings, including withheld

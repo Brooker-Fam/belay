@@ -6,7 +6,18 @@
      belayTestOnly is "true" unless CI's self-update test builds a second debug APK with
      -PbelayTestOnly=false: Android never lets an app install a test-only APK through a
      session (docs/platform-notes.md I5). -->
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- Phase 5's archival test for the Pixel (ArchivalTest.kt; docs/phase5-checklist.md, T8):
+         Google Messages' archival app needs READ_SMS. Debug builds only, granted by policy only
+         while the test is on and denied by policy otherwise (DeviceOwnerSetup), so the dialer role
+         can't grant it either. Hard-restricted: an adb install allowlists it (platform notes I4).
+         The main manifest already says telephony isn't required; lint looks for it here too. -->
+    <uses-permission android:name="android.permission.READ_SMS" />
+    <uses-feature
+        android:name="android.hardware.telephony"
+        android:required="false" />
+
     <application android:testOnly="${belayTestOnly}">
 
         <!-- ci-emulator-test.sh types the recovery key with adb (DebugRecoveryReceiver.kt).
@@ -41,5 +52,49 @@
                 <action android:name="family.brooker.belay.DEBUG_HELP" />
             </intent-filter>
         </receiver>
+
+        <!-- Phase 5's archival test for the Pixel (T8): adb starts it, reads it and stops it
+             (DebugArchivalReceiver.kt). Debug builds only; only the adb shell can send it. -->
+        <receiver
+            android:name=".DebugArchivalReceiver"
+            android:exported="true"
+            android:permission="android.permission.WRITE_SECURE_SETTINGS">
+            <intent-filter>
+                <action android:name="family.brooker.belay.DEBUG_ARCHIVAL" />
+            </intent-filter>
+        </receiver>
+
+        <!-- The archival service Google Messages' docs describe (ArchivalService.kt): exported, a
+             short foreground service, protected by WRITE_SMS, for its update; and a receiver for the
+             same update, which the docs also call a broadcast. Both disabled here, and enabled only
+             while the test is on. WRITE_SMS keeps no app out (platform notes T8): an update is only
+             counted. WRITE_SMS isn't in the SDK (it's a hidden, removed permission), so lint takes it
+             for a typo: it's the one the docs name. -->
+        <service
+            android:name=".ArchivalService"
+            android:enabled="false"
+            android:exported="true"
+            android:foregroundServiceType="shortService"
+            android:permission="android.permission.WRITE_SMS"
+            tools:ignore="SystemPermissionTypo">
+            <intent-filter>
+                <action android:name="GOOGLE_MESSAGES_ARCHIVAL_UPDATE" />
+            </intent-filter>
+        </service>
+        <receiver
+            android:name=".ArchivalUpdateReceiver"
+            android:enabled="false"
+            android:exported="true"
+            android:permission="android.permission.WRITE_SMS"
+            tools:ignore="SystemPermissionTypo">
+            <intent-filter>
+                <action android:name="GOOGLE_MESSAGES_ARCHIVAL_UPDATE" />
+            </intent-filter>
+        </receiver>
+
+        <!-- The test's time box (ArchivalTest.kt): not exported, only Belay's own alarm reaches it. -->
+        <receiver
+            android:name=".ArchivalTimerReceiver"
+            android:exported="false" />
     </application>
 </manifest>
