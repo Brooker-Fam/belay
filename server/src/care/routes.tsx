@@ -101,6 +101,7 @@ export function careRoutes(deps: Deps, assets: Assets): Hono<CareEnv> {
       now: deps.now(),
       path: c.req.path,
       assets: assets.urls,
+      demo: config.demoBanner,
     };
   };
   const message = (c: CareContext, title: string, text: string, status: ContentfulStatusCode = 200, link?: { href: string; label: string }) =>

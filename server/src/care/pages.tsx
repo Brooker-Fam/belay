@@ -11,7 +11,7 @@ import type { FixView } from "../family/location/store.js";
 import type { HelpView } from "../family/requests.js";
 import { formatAgo, formatDateTime, offsetLabel } from "../time.js";
 import { FixLine, type Where } from "../web/pages/help.js";
-import { Csrf, Notice, Time, type View } from "../web/ui.js";
+import { Csrf, DemoBanner, Notice, Time, type View, pageTitle } from "../web/ui.js";
 
 /** What every caregiver page knows: a View (the parent pages' components take it), and who's signed in. */
 export interface CareView extends View {
@@ -32,7 +32,7 @@ export const CareLayout: FC<PropsWithChildren<{ view: CareView; title: string }>
       <meta name="robots" content="noindex" />
       <meta name="theme-color" content="#1f6f5c" />
       <meta name="apple-mobile-web-app-title" content="Belay" />
-      <title>{`${title} · Belay`}</title>
+      <title>{pageTitle(title, view)}</title>
       {/* Opens the caregiver page from a Home Screen (where iOS lets a web page get notifications). */}
       <link rel="manifest" href="/care.webmanifest" />
       <link rel="icon" href={view.assets.icon} type="image/svg+xml" />
@@ -40,6 +40,7 @@ export const CareLayout: FC<PropsWithChildren<{ view: CareView; title: string }>
       <script src={view.assets.js} defer></script>
     </head>
     <body>
+      <DemoBanner view={view} />
       {view.caregiverName !== null && (
         <header class="top">
           <div class="bar">

@@ -35,6 +35,17 @@ function current(path: string, href: string): boolean {
   return href === "/" ? path === "/" || path.startsWith("/devices") : path.startsWith(href);
 }
 
+/** "Requests · Belay", or "Requests · Belay demo" on `npm run demo`'s server. */
+export const pageTitle = (title: string, view: View): string => `${title} · Belay${view.demo ? " demo" : ""}`;
+
+/** `npm run demo`'s banner (docs/demo.md), first on every page of its server, the caregivers' too; on no other server. */
+export const DemoBanner: FC<{ view: View }> = ({ view }) =>
+  view.demo ? (
+    <div class="demo-banner" role="note">
+      Demo: a made-up family. Nothing here is real.
+    </div>
+  ) : null;
+
 export const Layout: FC<PropsWithChildren<{ view: View; title: string; narrow?: boolean }>> = ({ view, title, narrow, children }) => (
   <html lang="en">
     <head>
@@ -44,18 +55,14 @@ export const Layout: FC<PropsWithChildren<{ view: View; title: string; narrow?: 
       <meta name="robots" content="noindex" />
       <meta name="theme-color" content="#1f6f5c" />
       <meta name="apple-mobile-web-app-title" content="Belay" />
-      <title>{`${title} · Belay${view.demo ? " demo" : ""}`}</title>
+      <title>{pageTitle(title, view)}</title>
       <link rel="manifest" href="/manifest.webmanifest" />
       <link rel="icon" href={view.assets.icon} type="image/svg+xml" />
       <link rel="stylesheet" href={view.assets.css} />
       <script src={view.assets.js} defer></script>
     </head>
     <body>
-      {view.demo && (
-        <div class="demo-banner" role="note">
-          Demo: a made-up family. Nothing here is real.
-        </div>
-      )}
+      <DemoBanner view={view} />
       {view.parentName !== null && (
         <a class="skip" href="#main">
           Skip the menu

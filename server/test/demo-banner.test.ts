@@ -6,7 +6,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { loadConfig } from "../src/config.js";
-import { get, signIn, testServer } from "./helpers.js";
+import { updateSettings } from "../src/settings.js";
+import { enrollPhone, get, PASSWORD, postForm, signIn, testServer } from "./helpers.js";
 import { structureProblems } from "./html.js";
 
 const BANNER = "Demo: a made-up family. Nothing here is real.";
@@ -25,6 +26,7 @@ describe("the demo banner", () => {
       ["/login", false],
       ["/oauth/authorize", false],
       ["/requests", true],
+      ["/caregivers", true],
       ["/stages", true],
       ["/timeline", true],
       ["/add", true],
@@ -32,6 +34,30 @@ describe("the demo banner", () => {
       ["/activity", true],
     ] as const) {
       const html = await (await get(t, path, signedIn ? parent.cookie : undefined)).text();
+      expect(html, path).toContain(BANNER);
+      expect(html, path).toMatch(/<title>[^<]* · Belay demo<\/title>/);
+      expect(structureProblems(html), path).toEqual([]);
+    }
+  });
+
+  it("is on a caregiver's pages too, signed in or out", async () => {
+    const t = testServer({ config: { demoBanner: true } });
+    updateSettings(t.deps.db, { timezone: "America/New_York" });
+    const parent = await signIn(t);
+    const phone = await enrollPhone(t, "A made-up phone");
+    // A parent adds a caregiver (made up), who joins with the link the page shows.
+    const added = await postForm(t, "/caregivers", { _csrf: parent.csrf, name: "Grandma", phone: [phone.deviceId], can: ["status", "pause", "help"], until: "2026-11-19T18:00" }, { cookie: parent.cookie });
+    const token = /\/care\/join\/([A-Za-z0-9_-]{43})/.exec(await added.text())?.[1] ?? "";
+    expect(token).not.toBe("");
+    const joinPage = await (await get(t, `/care/join/${token}`)).text();
+    const joined = await postForm(t, `/care/join/${token}`, { username: "grandma", password: PASSWORD, repeat: PASSWORD });
+    expect(joined.headers.get("location")).toBe("/care");
+    const cookie = (joined.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
+    for (const [path, html] of [
+      ["/care/login", await (await get(t, "/care/login")).text()],
+      [`/care/join/${token}`, joinPage],
+      ["/care", await (await get(t, "/care", cookie)).text()],
+    ] as const) {
       expect(html, path).toContain(BANNER);
       expect(html, path).toMatch(/<title>[^<]* · Belay demo<\/title>/);
       expect(structureProblems(html), path).toEqual([]);
@@ -46,6 +72,7 @@ describe("the demo banner", () => {
       ["/login", "Sign in", false],
       ["/add", "Add a phone", true],
       ["/settings", "Settings", true],
+      ["/care/login", "Caregiver sign-in", false],
     ] as const) {
       const html = await (await get(t, path, signedIn ? parent.cookie : undefined)).text();
       expect(html, path).toContain(words);
