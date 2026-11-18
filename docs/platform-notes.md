@@ -1465,7 +1465,9 @@ automatic.** Verified on: AOSP; Emulator pending (Phase 2 CI: `EnforcementInstru
   and SettingsProvider refuses writes of `AUTO_TIME_ZONE` under it, from adb too.
 - `DevicePolicyManager.setAutoTimeZonePolicy` (API 36) sets the automatic time zone through the
   policy engine (`AUTO_TIME_ZONE_ENABLED`, or `…_NOT_CONTROLLED_BY_POLICY` to hand it back);
-  `setAutoTimeZoneEnabled(admin, true)` (API 30) only writes the setting.
+  `setAutoTimeZoneEnabled(admin, true)` (API 30) only writes the setting. Both check
+  `SET_TIME_ZONE`, which DevicePolicyManager's own checks give the device owner
+  (`services/devicepolicy` `PermissionChecker`, with `SET_TIME` for `setAutoTimePolicy`).
 
 Belay's consequence: with the date and time locked, Belay sets the automatic time zone as it
 sets automatic time, so a zone set by hand before the lock can't shift a schedule (screen
