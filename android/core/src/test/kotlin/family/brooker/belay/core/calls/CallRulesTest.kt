@@ -282,7 +282,7 @@ class CallRulesTest {
     fun `911 and 988 dialed with a caller-id code before them always go through, and open the window`() {
         val contactsOnly = now(WireCalls(mode = WireCallMode.CONTACTS, outgoing = WireOutgoing.CONTACTS))
         val any = now(WireCalls(outgoing = WireOutgoing.ANY))
-        val emergency = listOf("*67911", "*67 911", "*82911", "#31#911", "*31#911", "*67#911", "*67112", "*272911", "*67*82911")
+        val emergency = listOf("*67911", "*67 911", "*82911", "#31#911", "*31#911", "*67112", "*67*82911", "*31#*67911")
         val crisis = listOf("*67988", "*67 988", "#31#988", "*82988", "*31#988", "*67 1-800-273-8255", "*6718002738255", "#31#+18002738255")
         for (now in listOf(contactsOnly, any, now(null))) {
             emergency.forEach { assertEquals(OutgoingDecision(true, alwaysAllowed = AlwaysAllowedKind.EMERGENCY), CallRules.outgoing(PhoneNumbers.key(it), now, android), it) }
@@ -293,7 +293,10 @@ class CallRulesTest {
         assertEquals(OutgoingDecision(false), CallRules.outgoing("*675555550199", contactsOnly, android))
         assertEquals(OutgoingDecision(false), CallRules.outgoing("*67+15555550123", contactsOnly, android))
         assertEquals(OutgoingDecision(true), CallRules.outgoing("*675555550199", any, android))
-        // Not an emergency number with digits after it, or a code that isn't one.
-        for (n in listOf("*679115", "**67911", "*6", "*67", "#31#", "*6791")) assertFalse(CallRules.outgoing(n, contactsOnly, android).allowed, n)
+        // Not an emergency number with digits after it, or a code that isn't one, or one that
+        // reads as another code (the fourth review's N8: "*67#" is call forwarding's to GSM).
+        for (n in listOf("*679115", "**67911", "*6", "*67", "#31#", "*6791", "*67#911", "*272911", "*671911", "*679112")) {
+            assertFalse(CallRules.outgoing(n, contactsOnly, android).allowed, n)
+        }
     }
 }

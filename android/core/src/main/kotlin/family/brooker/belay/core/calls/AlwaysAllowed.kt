@@ -72,12 +72,13 @@ object AlwaysAllowed {
 
     /**
      * Why a call the kid dials to [number] always works: as [kind] says, or once the caller-id codes
-     * dialed before it are taken off (PhoneNumbers.withoutCodes: "*67 911", "#31#988"). Android
-     * itself sees only the whole string, so it calls "*67911" an ordinary number (platform notes
-     * T17); Belay lets it through, and whatever the network does with it is the network's.
+     * dialed before it are taken off (PhoneNumbers.withoutCodes: "*67 911", "#31#988"; only the
+     * codes that hide or show the caller's number, so "*67 1911" isn't 911). Android itself sees
+     * only the whole string, so it calls "*67911" an ordinary number (platform notes T17); Belay
+     * lets it through, and whatever the network does with it is the network's.
      */
     fun dialed(number: String?, android: EmergencyNumbers): AlwaysAllowedKind? =
-        kind(number, android) ?: PhoneNumbers.withoutCodes(number).firstNotNullOfOrNull { kind(it, android) }
+        kind(number, android) ?: PhoneNumbers.withoutCodes(number)?.let { kind(it, android) }
 
     /** Whether a call or text the kid makes to [number] opens the 2-hour window in which every caller rings. */
     fun opensCallbackWindow(number: String?, android: EmergencyNumbers): Boolean = dialed(number, android) != null

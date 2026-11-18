@@ -128,7 +128,7 @@ relying on something new, it goes here first, with a source.
 | T14 | Denying `CALL_PHONE` to other apps leaves emergency calls working | Confirmed | AOSP; Emulator pending (Phase 5 CI) |
 | T15 | CI: no preloaded dialer on ATD; the emulator console simulates incoming calls | Confirmed | AOSP; Docs; Emulator pending (Phase 5 CI) |
 | T16 | Call audio routes and the SIM choice for an in-call app | Confirmed: the endpoint API from API 34 | AOSP; Pixel pending |
-| T17 | What Android counts as an emergency call: the whole number, so "*67911" isn't one, and a caller ID showing 911 is | Confirmed: Belay takes caller-ID codes off itself; the network decides what "*67911" reaches | AOSP; Pixel pending (Phase 5 checklist, a test number) |
+| T17 | What Android counts as an emergency call: the whole number, so "*67911" isn't one, and a caller ID showing 911 is | Confirmed: Belay takes the caller-ID codes Android knows (`*67`, `*82`, `#31#`, `*31#`) off itself; the network decides what "*67911" reaches | AOSP; Pixel pending (Phase 5 checklist, a test number) |
 | T18 | What Telecom tells an in-call service about an emergency | Confirmed: emergency callback mode and a network-identified emergency call, both skip filtering; emergency SMS mode can't be read | AOSP; Pixel pending (the carrier's setting) |
 | T19 | A call to 911 before the first unlock reaches a direct-boot-aware receiver | Confirmed; before that unlock Telecom finds no service of Belay's | AOSP; Emulator (the storage); Pixel pending (a test number) |
 | T20 | Whether a call is on: Telecom's `isInCall` for the dialer, and the audio mode | Confirmed: neither needs a permission | AOSP; Emulator (Phase 5 CI); Pixel pending |
@@ -2314,14 +2314,26 @@ with 911.
   (`adjustServiceBindingsForEmergency`, `EmergencyInCallServiceConnection.setHasEmergency` →
   `takeControl`). Call screening (`CallsManager.setUpCallFilterGraph`) is still asked first. 988
   isn't on the list (T3), so a caller ID showing it stays with the default dialer.
+- The caller-ID codes Android itself knows (read 2026-11-18): `frameworks/opt/telephony`'s
+  `MmiCode.sPatternCdmaMmiCodeWhileRoaming` (`\*(\d{2})(\+{0,1})(\d{0,})`) and
+  `GsmMmiCode.convertCdmaMmiCodesTo3gppMmiCodes` (the same in `ImsPhoneMmiCode`) turn exactly
+  `*67` into `#31#` and `*82` into `*31#`, CLIR's service code (`GsmMmiCode.SC_CLIR = "31"`);
+  no other `*NN`. `GsmMmiCode.sPatternSuppService` (TS 22.030 6.5.2: an action, a two- or
+  three-digit service code, up to four `*` parts, then `#`) reads any dial string that starts so
+  as a supplementary service request, not a number: "*67#911" is call forwarding on busy's code
+  (service code 67) to a GSM network, then "911".
 
-Belay's consequence: Belay takes up to three leading codes (`*NN`, `*NNN`, `#NN#`, `*NN#`) off a
-number itself (core's `PhoneNumbers.withoutCodes`) before it decides whether the number always
-works or is private, and never to match a contact: a call the kid dials so to 911 or 988 always
-goes through, opens the 2-hour window and is never recorded, and whatever the network does with it
-is the network's. A caller ID showing 911 is Belay's to refuse only in screening, so one that
-failed the network's check (spoofed) is refused there or not at all: with another screening app
-chosen (T4), or when screening takes too long, it rings in the preloaded dialer.
+Belay's consequence: Belay takes only the codes that hide or show the caller's number off a number
+itself, `*67`, `*82`, `#31#` and `*31#`, one or more of them in front (core's
+`PhoneNumbers.withoutCodes`), before it decides whether the number always works or is private, and
+never to match a contact: a call the kid dials so to 911 or 988 always goes through, opens the
+2-hour window and is never recorded, and whatever the network does with it is the network's. No
+other code comes off, a three-digit one or one followed by what makes the string a supplementary
+service code (`*67#`, `*67*31#`), so "*67 1911", "*27 2911" and "*67 9112" are ordinary numbers,
+never 911 or 112 (the fourth review's N8). A caller ID showing 911 is Belay's to refuse only in
+screening, so one that failed the network's check (spoofed) is refused there or not at all: with
+another screening app chosen (T4), or when screening takes too long, it rings in the preloaded
+dialer.
 
 ### T18. What Telecom tells an in-call service about an emergency
 

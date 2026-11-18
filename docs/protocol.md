@@ -409,8 +409,9 @@ phone's other calls (30 a minute).
   incoming-call and in-call screens; it places every call with `TelecomManager.placeCall`.
 - **Always allowed, in code** (`:core`, never the policy): the kid can always call 911, every
   number Android reports as an emergency number (`isEmergencyNumber`) and 988 (988's full
-  number, 1-800-273-8255, too), also with caller-id codes dialed before them (`*67`, `*82`,
-  `#31#`, `*31#`: any `*NN`, `*NNN`, `#NN#` or `*NN#`), in every mode, stage, pause and
+  number, 1-800-273-8255, too), also with the caller-id codes that hide or show the caller's
+  number dialed before them (`*67`, `*82`, `#31#`, `*31#`, one or more; no other code, and
+  never one that reads as another code, like `*67#`), in every mode, stage, pause and
   schedule. A call from 911 or an emergency number always rings, unless its caller id failed
   the network's check; contacts with `parent` always ring too. Telecom sends emergency calls to
   the preloaded dialer, which is never hidden, suspended or disabled.

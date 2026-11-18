@@ -80,8 +80,8 @@ class AlwaysAllowedTest {
 
     @Test
     fun `911 and 988 dialed with a caller-id code before them always work too`() {
-        val emergency = listOf("*67911", "*67 911", "*82 911", "#31#911", "*31#911", "*272911", "*67*82911", "*67911,1")
-        val crisis = listOf("*67988", "#31#988", "*82(988)", "*67 1-800-273-8255", "*6718002738255", "*67 800 273 8255", "#31#+18002738255")
+        val emergency = listOf("*67911", "*67 911", "*82 911", "#31#911", "*31#911", "*67*82911", "*31#*67911", "*67911,1")
+        val crisis = listOf("*67988", "#31#988", "*82(988)", "*67 1-800-273-8255", "*6718002738255", "*67 800 273 8255", "#31#+18002738255", "#31#*67988")
         for (android in androids) {
             emergency.forEach { assertEquals(AlwaysAllowedKind.EMERGENCY, AlwaysAllowed.dialed(it, android), "'$it'") }
             crisis.forEach { assertEquals(AlwaysAllowedKind.CRISIS_988, AlwaysAllowed.dialed(it, android), "'$it'") }
@@ -95,6 +95,12 @@ class AlwaysAllowedTest {
         // Not after something that isn't a code, and not with digits after them.
         for (n in listOf("*6911", "**67911", "*679115", "67911", "+67911", "*67", "#31#", "##31#911")) {
             assertNull(AlwaysAllowed.dialed(n, us), "'$n'")
+        }
+        // Only the codes that hide or show the caller's number come off (the fourth review's N8):
+        // never a three-digit code, a digit of the number, or a code that reads as another one.
+        for (n in listOf("*272911", "*671911", "*822911", "*671988", "*679112", "*67#911", "*67#31#988", "*67*31#988", "*69911", "#99#988")) {
+            for (android in androids) assertNull(AlwaysAllowed.dialed(n, android), "'$n'")
+            assertFalse(AlwaysAllowed.opensCallbackWindow(n, us), "'$n'")
         }
     }
 

@@ -86,10 +86,12 @@ class CallRecordsTest {
         // country, nothing at all): neither kept nor sent, since it could only say that the kid called
         // someone, when, and for how long.
         for (number in listOf("55501", "*611", "5555550199", null, "*67")) assertNull(entry(number), "$number")
-        // A code read two ways ("*27" then 25555550199, or "*272" then 5555550199): the reading that's a number.
-        assertEquals("+15555550199", assertNotNull(entry("*2725555550199", emergency = us)).number)
-        assertEquals("+15555550199", CallRecords.reached("*2725555550199", us))
+        // A three-digit code isn't one Belay takes off (the fourth review's N8), so "*272" and the
+        // number after it reach nothing Belay can write.
+        assertNull(CallRecords.reached("*2725555550199", us))
         assertNull(CallRecords.reached("*2725555550199", android), "no formatter: no number")
+        // Two codes that hide and show the number, then the number.
+        assertEquals("+15555550199", CallRecords.reached("#31#*675555550199", us))
         // A contact's call is kept by the contact.
         assertEquals("c-sam", assertNotNull(entry("+15555550123", sam)).contactId)
         // An incoming short code is kept, and sent without its number.

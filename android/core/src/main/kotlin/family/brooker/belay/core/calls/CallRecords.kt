@@ -97,7 +97,7 @@ object CallRecords {
         if (privateNumbers.isEmpty()) return false
         val key = PhoneNumbers.key(number) ?: return false
         if (key in privateNumbers) return true
-        return PhoneNumbers.withoutCodes(key).any { rest -> e164(rest, android) in privateNumbers }
+        return PhoneNumbers.withoutCodes(key)?.let { rest -> e164(rest, android) in privateNumbers } == true
     }
 
     /**
@@ -107,7 +107,7 @@ object CallRecords {
     fun reached(number: String?, android: EmergencyNumbers): String? {
         val key = PhoneNumbers.key(number) ?: return null
         PhoneNumbers.e164(key)?.let { return it }
-        return (listOf(key) + PhoneNumbers.withoutCodes(key)).mapNotNull { e164(it, android) }.distinct().singleOrNull()
+        return listOfNotNull(key, PhoneNumbers.withoutCodes(key)).mapNotNull { e164(it, android) }.distinct().singleOrNull()
     }
 
     private fun e164(number: String, android: EmergencyNumbers): String? =
