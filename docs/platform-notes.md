@@ -2822,8 +2822,9 @@ nothing, and the app only seems to lose its connection.
   uid when any such caller opened a session in the last 15 s (`POLL_RATE_LIMIT_MS`).
 
 Belay's consequence: a day's numbers are Android's: at its edges, an hour's worth can be split
-between two days by time. Belay sends today about hourly, and a day as complete 2.5 hours after it
-ends, when its last bucket has closed and been polled.
+between two days by time, and so can today's so far at noon or 6 PM. Belay sends today so far
+counted up to noon and up to 6 PM (the seventh security review's M3: never by the hour), and a
+day as complete 2.5 hours after it ends, when its last bucket has closed and been polled.
 
 ### Q8. Removed apps, the hotspot, Android's own uids
 

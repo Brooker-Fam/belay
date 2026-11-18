@@ -6,6 +6,16 @@ the same pause, `lock_now` and `locate_now` it already runs, and shows the kid m
 policy. The work is on the server (a second, much smaller kind of account) and in what the kid's
 screens say.
 
+What the seventh security review changed (below, where each part is): a caregiver's help begins
+per phone, at the later of the phone being added to their access and help being turned on for
+them, and they get only what the kid asked from then on (H1: their page and notices went by one
+start for all their phones, and by when a request arrived); a caregiver's lock names them on the
+kid's phone in a notice of its own, since under a parent's longer pause the pause stays the
+parent's (H2); their page's confirmations are true in every case, and the same whether a pause
+was on already for one without Status (J7); the kid's card says when a caregiver gets the kid's
+phone number (J1, the policy's `kid_number`); a name keeps no control or format character (J5);
+test notices are limited (J9). Removing a parent keeps the caregivers they added (J2): documented.
+
 A parent sometimes hands the kid to someone else for a while: a grandparent for a weekend, a
 babysitter for an evening, a coach on a trip, or the kid's other household. That person may want
 to know whether the phone is on, to pause it at dinner, and to hear at once if the kid presses
@@ -51,8 +61,10 @@ app manifest that opens `/care`.
 A parent adds a caregiver on the parent page's new **Caregivers** page:
 
 - **A name**, the parent's words for them ("Grandma", "Coach Lee"): 1 to 40 characters, one line,
-  cleaned like the kid's own text (no control characters, nothing that hides or reorders text),
-  and different from every other caregiver's. The kid sees it, and so does the caregiver.
+  without any control or format character (Unicode Cc and Cf: nothing invisible, nothing that
+  hides or reorders text) and with each run of spaces one, so two names that look alike are one
+  (the seventh review's J5: "Grand", a word joiner and "ma" was a second Grandma), and different
+  from every other caregiver's. The kid sees it, and so does the caregiver.
 - **The phones** it covers: at least one.
 - **What they may do**, each a choice (below), at least one.
 - **When access ends:** required; a date and time in the family's time zone, at most 30 days from
@@ -70,7 +82,9 @@ A parent can **change** a caregiver (name, phones, what they may do), **renew** 
 most 30 days from then), **end access now**, and **remove** an ended one. Ended caregivers stay
 listed, so the same account can be given access again next month ("Give access again": a new
 start, so the help requests from between don't show); removing one deletes the account, and the
-activity log keeps its name.
+activity log keeps its name. Removing a parent keeps the caregivers they added (the seventh
+review's J2): their access lasts until its end, both the Caregivers page and the caregiver's own
+page then say "a parent" added them, and the other parent can end it there.
 
 At most 20 caregivers per server, ended ones included. AI apps can't see, add or change
 caregivers, not even as a proposal: giving someone access to the kid's phone is a parent's
@@ -85,8 +99,8 @@ Each is a parent's choice per caregiver. The recommended defaults are in bracket
 | Capability | What the caregiver sees and does | Default |
 |---|---|---|
 | `status` | For each phone: whether it's online now (it asked the server for its rules in the last 5 minutes), or when it was last heard from; its battery and whether it's charging; whether it's paused now and until when; the schedule on now (its name, and until when, as the phone last reported); whether it's disconnected. | on |
-| `pause` | Pause the phone for 15 minutes to 4 hours, or pause it and lock the screen now (the existing pause and `lock_now`): only ever longer than a pause in force (a pause at least as long is kept, and the caregiver is told nothing changed), never "until a parent resumes it", and with no note of their own: the kid's phone says the caregiver's name. Only a parent resumes early. At most 6 pauses and locks an hour per caregiver and phone, as for an AI app. | on |
-| `help` | The kid's "I need help" from these phones, by Web Push at once (urgent, like a parent's), and on the caregiver's page: those received since their access began, at most 7 days back, with the kid's words, where the phone was if the kid shared it (described as the parent page describes it, with "Open in a map"), whether a parent has seen it, and "Call" with the kid's number if a parent set one. A caregiver can't mark it seen: it stays at the top of the parents' Requests page until a parent does. | on |
+| `pause` | Pause the phone for 15 minutes to 4 hours, or pause it and lock the screen now (the existing pause and `lock_now`): only ever longer than a pause in force (a pause at least as long is kept, and a caregiver with `status` is told nothing changed, or for a lock, that the pause stayed as it was; one without `status` gets the same words either way, and every pause counts toward the limit, so neither tells them the phone was paused: the seventh review's J7), never "until a parent resumes it", and with no note of their own: the kid's phone says the caregiver's name for their pause while it's the one in force, and for every lock, in a notice of its own (H2: under a parent's longer pause the pause stays the parent's). Only a parent resumes early. At most 6 pauses and locks an hour per caregiver and phone, as for an AI app. | on |
+| `help` | The kid's "I need help" from these phones, by Web Push at once (urgent, like a parent's), and on the caregiver's page: those the kid asked since their help on that phone began, received at most 7 days back, with the kid's words, where the phone was if the kid shared it (described as the parent page describes it, with "Open in a map"), whether a parent has seen it, and "Call" with the kid's number if a parent set one (the kid's card for them says so: J1). Their help on a phone begins at the later of the phone being added to their access and help being turned on for them, and again when access is given again; by when the kid asked (the phone's clock, never later than the server got it), so a request asked offline before then and sent later isn't theirs, and nor is a notice of words the kid adds later to one they can't see (the seventh review's H1: one start for all their phones, and by when a request arrived, gave them a phone's earlier requests). A caregiver can't mark it seen: it stays at the top of the parents' Requests page until a parent does. | on |
 | `locate` | "Check where it is now", only while the phone's location is on (on demand or periodic, as a parent's "Check now"): the existing `locate_now`, waiting up to a minute for the fix, then that one fix, described by the family's places. Never earlier fixes, the places themselves, arrivals and departures, or lost mode. The kid's notice names the caregiver. At most 6 checks an hour per caregiver and phone. | off |
 
 **Never**, for any caregiver: anything that loosens (resume, more time, approving or allowing
@@ -147,10 +161,11 @@ what the parents see, tested on the JVM), and the other lines are in `strings.xm
   online and when it last connected, its battery, and whether it's paused or on a schedule" · "Can
   pause this phone, or pause it and lock the screen, for up to 4 hours at a time. Only your parent
   can end a pause early." · "Gets your "I need help" requests, with what you write, and where this
-  phone is if you share it" · "Can check where this phone is right now. You get a notification
-  every time." · "Can't see your apps, your screen time, your calls, the websites apps look up, or
-  where this phone has been" · "Can't give you more time or let an app through. Only your parent
-  can."
+  phone is if you share it" (with "and your phone number, to call you back" while a parent set
+  the kid's number: the policy's `kid_number`, the seventh review's J1) · "Can check where this
+  phone is right now. You get a notification every time." · "Can't see your apps, your screen
+  time, your calls, the websites apps look up, or where this phone has been" · "Can't give you
+  more time or let an app through. Only your parent can."
 - **Home** gets one line per caregiver, "Your parent gave Grandma some access to this phone until
   Sunday at 6:00 PM.", and a button to that card.
 - **Help** says who else gets it: "Grandma gets your help requests too, with what you write, and
@@ -158,14 +173,19 @@ what the parents see, tested on the JVM), and the other lines are in `strings.xm
 - **A caregiver's pause** reads "Paused by Grandma until 5:30 PM" on Home and on the pause notice,
   "Grandma paused this phone" on the pause banner (with "Only your parent can end it early."), and
   "Grandma paused this phone until 5:30 PM." in the words for paused apps (Today).
+- **A caregiver's lock** posts a notice of its own, once per lock the phone does: "Grandma locked
+  the screen (8:15 PM).", or during a call that it locks about 2 minutes after the call ends
+  (core's `kid.Caregivers.locks`, the seventh review's H2). Under a parent's longer pause her
+  lock leaves the pause the parent's ("Paused by your parent"), so this is what names her. A
+  parent's or an AI app's lock names no one, as their pause doesn't.
 - **A caregiver's check** reads "Grandma checked where this phone is (8:15 PM)." in the notice
   and in "What Belay told your parent".
 
 The phone lists a caregiver only until their `until`, by its own clock (automatic and locked,
 Phase 2), even before it gets a new policy, from the next time a screen is drawn. Each name is the
-parent's words: shown as plain text, on one line, capped at 40 characters, without characters that
-hide or reorder text (the phone cleans it again). `locate` shows only as sent, and only while the
-policy's location takes checks.
+parent's words: shown as plain text, on one line, capped at 40 characters, without any control or
+format character, each run of spaces one (the phone cleans it again). `locate` shows only as
+sent, and only while the policy's location takes checks.
 
 ### On the parent page
 
@@ -194,7 +214,7 @@ nothing.
 
 | Field | Type | |
 |---|---|---|
-| `caregivers` | `[{name, until, can}]` | The caregivers with access to this phone (not ended), soonest end first, then by name; at most 20. `name`: the parent's words, one line, at most 40 characters. `until`: when access ends (epoch ms). `can`: what they may do now, in this order, from `status`, `pause`, `help`, `locate` (`locate` only while the phone's location takes checks: `on_demand` or `periodic`). The phone lists one only until `until`, by its own clock. |
+| `caregivers` | `[{name, until, can, kid_number?}]` | The caregivers with access to this phone (not ended), soonest end first, then by name; at most 20. `name`: the parent's words, one line, at most 40 characters. `until`: when access ends (epoch ms). `can`: what they may do now, in this order, from `status`, `pause`, `help`, `locate` (`locate` only while the phone's location takes checks: `on_demand` or `periodic`). `kid_number` (the seventh review's J1): only `true`, only with `help`, while a parent set the kid's own number, which they then see beside each help request; never the number itself. The phone lists one only until `until`, by its own clock. |
 | `pause.caregiver` | string? | The caregiver who set the pause in force (their name), only when one did: absent when a parent, an AI app or the server's CLI did, so their pause reads as before. |
 | `commands[].caregiver` | string? | The caregiver who sent this `lock_now` or `locate_now` (their name), only when one did; absent otherwise. Never with `via`. |
 
@@ -218,8 +238,10 @@ Nothing new goes from the phone to the server.
   the phones and capabilities a parent chose. A help notice to a caregiver's browser carries what
   a parent's does (the phone's name and the kid's words), encrypted end to end.
 - **The kid sees it** (principle 4): every caregiver with access to their phone, what each can see
-  and do, and until when; who gets their help requests; and the caregiver's name on each pause
-  and check. There's no hidden caregiver: the policy lists every one with access to that phone.
+  and do, and until when; who gets their help requests, and their phone number with them; and
+  the caregiver's name on each pause, lock and check. There's no hidden caregiver: the policy
+  lists every one with access to that phone. A caregiver gets only the help requests the kid
+  asked while the Help screen named them (from their help's start on that phone: H1).
 - **The caregiver sees it too:** the join page and their own page say exactly what they can see
   and do, and until when.
 - **Kept:** a caregiver's account until a parent removes it (ended ones stay so access can be given
@@ -230,13 +252,14 @@ Nothing new goes from the phone to the server.
 
 | Who | Risk | What Belay does |
 |---|---|---|
-| Someone with a caregiver's password or session (a stolen account, a shared tablet) | Watching the kid, pausing the phone, reading help requests. | Only the phones and capabilities a parent chose, until the end (30 days at most): no app list, screen time, calls, websites, location history or places. Passwords of at least 15 characters (argon2id), sign-in limited per address and per username, sessions of 7 days. Pauses and locks only tighten, at most 6 an hour; each check posts a notice on the kid's phone naming the caregiver, at most 6 an hour. Every sign-in and action is in the activity log; a parent ends access at once. |
+| Someone with a caregiver's password or session (a stolen account, a shared tablet) | Watching the kid, pausing the phone, reading help requests. | Only the phones and capabilities a parent chose, until the end (30 days at most): no app list, screen time, calls, websites, location history or places. Passwords of at least 15 characters (argon2id), sign-in limited per address and per username, sessions of 7 days. Pauses and locks only tighten, at most 6 an hour; each check posts a notice on the kid's phone naming the caregiver, at most 6 an hour; test notices at most 5 an hour (the seventh review's J9). Every sign-in and action is in the activity log; a parent ends access at once. |
 | A caregiver trying to reach parent data | The app list, settings, the activity log, MCP. | A separate account, session table and cookie that no parent route reads; one gate on every caregiver route; no MCP, OAuth or tokens; a test that walks every route with a caregiver's session. |
 | An ended caregiver with an open session, or a browser still subscribed | Acting or hearing after access ended. | Every request and every notice checks the end time; ending deletes sessions and browsers at once (a parent) or within the hour (the clean-up), and nothing works in between. |
 | A caregiver persuaded by the kid | Loosening a rule. | Nothing a caregiver can do loosens: no resume, more time, apps, requests or locks. |
 | A parent who wants to watch the kid through a "caregiver" in secret | Hidden access. | Not possible: the policy lists every caregiver with access to the phone, and the kid's screen shows them. |
+| A caregiver given a phone, or help, later | The kid's earlier help requests, asked when the kid's Help screen didn't name them. | Only what the kid asked once their help on that phone began, by when the kid asked (the seventh review's H1). |
 | The one-time link, intercepted | Someone else joining. | It works once, for 7 days at most and never after access ends; the join page shows what it gives; a parent sees whether and when the caregiver joined, and a new link stops the old one. |
-| A caregiver's name | Text the kid sees, written to mislead. | A parent writes it; at most 40 characters, one line, cleaned like the kid's own text, shown as plain text. |
+| A caregiver's name | Text the kid sees, written to mislead. | A parent writes it; at most 40 characters, one line, without control or format characters, each run of spaces one, shown as plain text (the seventh review's J5). |
 
 ## Test plan
 
@@ -245,10 +268,16 @@ Nothing new goes from the phone to the server.
   access ending exactly at its end time and the hourly clean-up's ending; a parent ending access
   (sessions and browsers go); the activity log's entries with the caregiver's name; push only to
   caregivers with `help`, current access and that phone; the policy's `caregivers`,
-  `pause.caregiver` and `commands[].caregiver`; migration 14 keeping every activity entry.
+  `pause.caregiver` and `commands[].caregiver`; migration 14 keeping every activity entry. Since
+  the seventh review (`seventh-review.test.ts`): its four H1 probes as tests of the fix (a phone
+  added later, help turned on later, a request asked offline before, words added later), with
+  help kept through other changes, off and on again, access given again, and migration 17; a lock
+  under a parent's longer pause, and the confirmations with and without `status`; names cleaned;
+  `kid_number`; the test notices' limit.
 - **Core (JVM):** the kid's lines from the policy (an expired one dropped, names cleaned and
   capped, at most 20, sorted, `locate` only as sent); Home's line for a caregiver's pause; a
-  caregiver's check named in "What Belay told your parent".
+  caregiver's check named in "What Belay told your parent"; a caregiver's lock named, and a
+  parent's, an AI app's or a failed one not (`SeventhReviewTest`).
 - **Emulator (CI):** the command line's `caregiver-add` gives a made-up caregiver status, pause
   and help, and the phone's debug state lists them with exactly that and their end, by its own
   clock; the caregiver joins with the one-time link and pauses the phone from their page over HTTP
@@ -281,7 +310,11 @@ Nothing new goes from the phone to the server.
 - Access that starts later ("Friday 5 PM to Sunday 6 PM")? For now a parent adds it when it
   starts.
 - Should a help notice wait until the phone has applied rules that list the caregiver, so the
-  kid's Help screen named them first? A phone online gets new rules within seconds, so it rarely
-  matters.
+  kid's Help screen named them first? Since the seventh review's H1, a caregiver gets only what the
+  kid asked once their help on that phone began, by when the kid asked: one asked offline before
+  then and sent later stays out. What's left is a request asked after their help began, on a phone
+  that was offline and still had the rules that didn't name them. A phone online gets new rules
+  within seconds, so it rarely matters; the stricter answer would start each caregiver's help when
+  the phone reports applying the rules that name them.
 - Should Android's managed notice name current caregivers too?
 - Phase 9 (more families): caregivers belong to one family, like everything else.

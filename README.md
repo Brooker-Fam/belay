@@ -197,7 +197,8 @@ checked on a real Pixel yet. Phase 9 (more families) isn't built either.
   websites, location history, the activity log or settings. Everything a caregiver does is in the
   activity log under their name; access ends at its time by itself, or at once when a parent ends
   it. The kid's phone lists each caregiver with what they can see and do and until when, from the
-  policy, and every pause and check names them. AI apps never see caregivers. The Pixel
+  policy, and every pause, lock and check names them; a caregiver gets only the help requests the
+  kid asked once their help on that phone began. AI apps never see caregivers. The Pixel
   checklist is [docs/phase12-checklist.md](docs/phase12-checklist.md).
 - **Phase 13: mobile data, both sides.** For a family plan with a data cap, a phone's Mobile data
   tab, both parts off until a parent turns them on. **Wi-Fi-only apps:** a parent picks apps that
@@ -209,8 +210,9 @@ checked on a real Pixel yet. Phase 9 (more families) isn't built either.
   The kid sees which apps and what it means under This phone's rules. **Mobile data use**, only
   while a parent measures it: each app's bytes on mobile data per day, from Android's own
   accounting, with the day's Wi-Fi total, and the phone app, texting and Android's own parts on
-  one line together; never which websites or networks. Bars with a table of the same numbers on
-  the parent page, `get_mobile_data` over MCP (on by default, like screen time), kept 90 days.
+  one line together; never which websites or networks, and today only counted up to noon and
+  6 PM, never by the hour. Bars with a table of the same numbers on the parent page,
+  `get_mobile_data` over MCP (on by default, like screen time; whole days only), kept 90 days.
   The Pixel checklist is [docs/phase13-checklist.md](docs/phase13-checklist.md).
 - **`setup-kit/`: setting up a phone without the Android SDK (Phase 8).** A container you
   build and run on your own computer: it makes the family's release key (once, in a folder of

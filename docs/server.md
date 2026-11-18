@@ -537,15 +537,16 @@ Two parts on a phone's **Mobile data** tab, always there, both off until a paren
   (`change_wifi_only`, for an app the phone reported); taking one off is a parent's, or a parent
   approving an AI app's proposal. At most 100 a phone. The kid's phone lists them under This
   phone's rules.
-- **Measuring** (or `mobile-data "<phone>" --measure on`): the phone sends, about hourly, how much
-  mobile data each app used each day, with the day's Wi-Fi total, Android, calls and texting
-  together on one line, apps removed since, and other devices through the phone's hotspot; never
-  which websites or networks. Only a parent turns it on or off: AI apps can't, and can't propose
-  it. The days show as bars with a table of the same numbers (mobile data, Wi-Fi, the top app),
-  and a chosen day's apps the same way, each with "Make it Wi-Fi only"; a Wi-Fi-only app that used
-  mobile data on a day that began after it was added is flagged. With Settings' "Mobile data"
-  category on (it starts on, like screen time), an AI app reads it with `get_mobile_data`
-  ([mcp.md](mcp.md)). **Kept** (Settings, "Keep mobile data use"): 90 days by default (1 to 400),
+- **Measuring** (or `mobile-data "<phone>" --measure on`): the phone sends how much mobile data
+  each app used each day, with the day's Wi-Fi total, Android, calls and texting together on one
+  line, apps removed since, and other devices through the phone's hotspot; never which websites or
+  networks. Today so far goes counted up to noon and up to 6 PM (the phone's time), and each day
+  once more when it's over: never by the hour. Only a parent turns it on or off: AI apps can't,
+  and can't propose it. The days show as bars with a table of the same numbers (mobile data,
+  Wi-Fi, the top app), and a chosen day's apps the same way, each with "Make it Wi-Fi only"; a
+  Wi-Fi-only app that used mobile data on a day that began after it was added is flagged. With
+  Settings' "Mobile data" category on (it starts on, like screen time), an AI app reads each day
+  once it's over, never today so far, with `get_mobile_data` ([mcp.md](mcp.md)). **Kept** (Settings, "Keep mobile data use"): 90 days by default (1 to 400),
   then deleted by the hourly clean-up; turning it off keeps what's there until then, and Off
   belay's Stop collecting deletes it now (the Wi-Fi-only apps stay: they're the phone's rules).
   Days sent while it's off aren't kept, and are counted.

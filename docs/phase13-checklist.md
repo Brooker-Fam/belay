@@ -82,15 +82,18 @@ at the end: no screenshots in the repository, and no phone numbers, network name
 1. On the Mobile data tab, turn measuring on. Within seconds the phone's "What your parent can
    see" lists "How much mobile data apps use", with its lines. Read them aloud; write down anything
    unclear.
-2. Use the other app on mobile data for a few minutes (a few megabytes). Within about an hour and a
-   half, the tab shows today's bar and the table row: mobile data, Wi-Fi, the top app. Compare with
-   Settings, Network and internet, SIMs, App data usage, for today: note both numbers. They can
-   differ a little at the day's edges (Android's 2-hour buckets, Q7).
+2. Use the other app on mobile data for a few minutes (a few megabytes), in the morning. Within
+   about an hour after noon (and again after 6 PM), the tab shows today's bar and the table row,
+   "Counted up to 12:00 PM" (6:00 PM): mobile data, Wi-Fi, the top app; never at another time
+   (the seventh security review's M3). Compare with Settings, Network and internet, SIMs, App
+   data usage, for today: note both numbers. They can differ a little at the day's edges and at
+   noon (Android's 2-hour buckets, Q7). Ask the AI app for today's mobile data: it says the day
+   isn't over yet, with no numbers.
 3. The day's apps: "Android, calls and texting" is one line; the phone app and texting never appear
    by themselves, even after a call and a text. Turn the phone's hotspot on, connect a laptop for a
    minute: "Other devices, through this phone's hotspot" shows after the next report.
 4. The next day, 2.5 hours after midnight or later: yesterday's row says the whole day (not "so
-   far"), and doesn't change after that.
+   far"), and doesn't change after that. The AI app now gives that day's numbers.
 5. The video app is Wi-Fi only: if it used any mobile data on a day that began after you added it
    (the download in section 4), it's flagged "Used mobile data". Note whether it was.
 6. Ask the AI app (Claude) which apps used the most mobile data this week; then to make the other
@@ -102,8 +105,9 @@ at the end: no screenshots in the repository, and no phone numbers, network name
 ## 6. Battery
 
 1. With measuring on and two apps Wi-Fi only, leave the phone a day in ordinary use. Settings,
-   Battery, Battery usage: note Belay's share. Belay reads Android's accounting about hourly, and
-   only when a step runs: no new wakeups (compare with a day before Phase 13, if you noted one).
+   Battery, Battery usage: note Belay's share. Belay reads Android's accounting only after noon,
+   after 6 PM and once for each day that ended, and only when a step runs: no new wakeups (compare
+   with a day before Phase 13, if you noted one).
 
 ## 7. After
 
@@ -122,7 +126,7 @@ at the end: no screenshots in the repository, and no phone numbers, network name
 | 3. An Android hotspot is metered; "Treat as unmetered" lifts it | | |
 | 3. An iPhone's hotspot | | |
 | 4. The download manager; Play's updates | | |
-| 5. The numbers against Settings' | | |
+| 5. The numbers against Settings'; today only up to noon and 6 PM; the AI app only whole days | | |
 | 5. Calls and texts never on their own line; the hotspot's line | | |
 | 6. Battery | | |
 

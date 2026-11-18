@@ -36,7 +36,8 @@ the table at the end: no screenshots in the repository, and no names, numbers or
    (status, pause and lock, help requests), ending in 3 days. Copy the link; it shows once.
 2. On the Pixel, within seconds: Home has "Your parent gave Grandma some access to this phone
    until …" and "What they can see and do"; What your parent can see has "Caregivers your parent
-   added" with Grandma's lines; Help says "Grandma gets your help requests too, …". Read each
+   added" with Grandma's lines, her help line ending "and your phone number, to call you back"
+   (the kid's number is set: the seventh review's J1); Help says "Grandma gets your help requests too, …". Read each
    aloud with a 12-year-old in mind; write down anything unclear.
 3. Settings > Display size and text: the largest font and display size. Every caregiver line
    still reads whole, nothing cut off. Back to normal.
@@ -50,9 +51,16 @@ the table at the end: no screenshots in the repository, and no names, numbers or
 3. Pause for 15 minutes. On the Pixel within seconds: Home's line, the pause banner and the pause
    notice say "Paused by Grandma"; apps are paused; calls, texts, 911 and 988 still work. Write
    down each wording.
-4. "Pause and lock the screen now": the Pixel's screen locks once. Pausing for less than the
-   pause on says nothing changed. There's no Resume for Grandma; resume it on the parent page.
-5. On the parent page, Activity lists "Grandma (caregiver)" for the sign-in, the pauses and the
+4. "Pause and lock the screen now": the Pixel's screen locks once, and a notice says "Grandma
+   locked the screen (…)". Pausing for less than the pause on says nothing changed. There's no
+   Resume for Grandma; resume it on the parent page.
+5. The seventh review's H2: on the parent page, pause the Pixel until you resume it. From the
+   second phone, "Pause and lock the screen now": the screen locks, Home and the pause notice
+   still say "Paused by your parent", and the lock's notice says "Grandma locked the screen (…)";
+   the caregiver page says the pause stayed as it was and that the phone says she locked it.
+   During a call, the lock's notice says it locks about 2 minutes after the call ends. Write down
+   each wording, then resume on the parent page.
+6. On the parent page, Activity lists "Grandma (caregiver)" for the sign-in, the pauses and the
    lock.
 
 ## 3. Checking where it is
@@ -75,6 +83,10 @@ the table at the end: no screenshots in the repository, and no names, numbers or
    1. Write down what iOS asked and whether the notice came.
 3. The request stays at the top of the parents' Requests page until a parent marks it seen; the
    caregiver page then says "A parent saw it".
+4. The seventh review's H1: on the parent page, change Grandma to turn help off. On the Pixel,
+   tap "I need help" with a few words (Help no longer names her). Turn her help on again: her
+   page doesn't show that request, and no notice of it comes, then or when the kid adds words to
+   it. The next "I need help" does, at once.
 
 ## 5. Ending access
 
@@ -89,15 +101,17 @@ the table at the end: no screenshots in the repository, and no names, numbers or
 
 | Step | Check | Result | Android build |
 |---|---|---|---|
-| 1.2 | Home, What your parent can see and Help name Grandma; words read aloud | pending | |
+| 1.2 | Home, What your parent can see and Help name Grandma; her card says she gets the kid's number; words read aloud | pending | |
 | 1.3 | Caregiver lines at the largest font | pending | |
 | 2.1 | The link works once; the join page says what Grandma may do | pending | |
 | 2.3 | "Paused by Grandma" on Home, the banner and the notice (wordings) | pending | |
-| 2.4 | Pause and lock locks once; shorter changes nothing; no resume | pending | |
-| 2.5 | Activity lists Grandma's sign-in, pauses and lock | pending | |
+| 2.4 | Pause and lock locks once, with "Grandma locked the screen"; shorter changes nothing; no resume | pending | |
+| 2.5 | Under a parent's pause: the pause stays "your parent", the lock's notice names Grandma, her page says so (wordings) | pending | |
+| 2.6 | Activity lists Grandma's sign-in, pauses and locks | pending | |
 | 3.2 | The check's notice and What Belay told your parent name Grandma | pending | |
 | 3.3 | Location off: no check on the card or the page | pending | |
 | 4.1 | Help notice on Android Chrome, screen off too; opens the request | pending | |
 | 4.2 | Help notice on iOS from the Home Screen (what iOS asked) | pending | |
+| 4.4 | Help off, a request, help on: that request never reaches her | pending | |
 | 5.1 | Ended: signed out, no notices, the Pixel stops listing her | pending | |
 | 5.2 | Access ends at its time by the Pixel's own clock | pending | |

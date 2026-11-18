@@ -431,7 +431,7 @@ alone, off by default; never an AI client's, not even as a proposal).
 | `day` | `"YYYY-MM-DD"` | in `zone` |
 | `zone` | string | IANA: the phone's own |
 | `from` | int | counted from: the day's start, or when measuring turned on that day |
-| `as_of` | int | counted up to: when the phone read it, or the day's end once `complete` |
+| `as_of` | int | counted up to: noon or 6 PM by the phone's clock (when measuring began, for its first report), or the day's end once `complete` |
 | `complete` | bool | the day is over, and Android's last bucket of it has closed |
 | `mobile_bytes` | int | everything on mobile data that day: every line below, and what's past the 500 apps |
 | `wifi_bytes` | int | everything on Wi-Fi that day, all apps together: one number, never per network |
@@ -451,11 +451,14 @@ Q6 to Q8):
   network, which would need location). An SDK sandbox's bytes count as its app's; a uid several
   packages share, Android's own uids and other users' go into `android_bytes`, with the apps it
   never blocks (its `never_blocked`), so a call or a text to 988 never shows by itself.
-- Today about every hour, each past day once more 2.5 hours after it ends (Android's per-app
-  buckets are 2 hours, polled every 30 minutes), at most 7 days back, and never anything from
-  before measuring turned on (`from`): Android keeps 90 days, and none of it from before the kid's
-  screen said so is sent. Each day waits in an outbox lane of its own, a newer report replacing an
-  unsent one; with `measure` off it deletes its record and every unsent day.
+- Today so far counted up to noon and up to 6 PM (its own time), once each, whenever it's read;
+  each past day once more 2.5 hours after it ends (Android's per-app buckets are 2 hours, polled
+  every 30 minutes), at most 7 days back, and never anything from before measuring turned on
+  (`from`): Android keeps 90 days, and none of it from before the kid's screen said so is sent.
+  Only at a step something other than a time passing or a call brought, so neither `as_of` nor
+  when a day arrives says when a call was on (the seventh security review's M2 and M3). Each day
+  waits in an outbox lane of its own, a newer report replacing an unsent one; with `measure` off
+  it deletes its record and every unsent day.
 
 What the server keeps: a day only while the phone's `mobile_data.measure` is on; otherwise it's
 answered `200`, counted in `accepted`, dropped, and counted for the parent page. A never-blocked

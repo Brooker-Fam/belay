@@ -14,6 +14,14 @@ for one that saved any category off, as settings.ts does for every new category 
 and network start off, so a family that saved Settings with them off gets it off too, until a
 parent ticks it); and the CLI's `wifi-only` and `mobile-data` are what CI's emulator job uses.
 
+What the seventh security review changed: today's partial day goes only counted up to noon and
+6 PM, and only at a step neither a time passing nor a call brought, and AI apps get only whole
+days (M2 and M3: "Today's partial day", below, says why); `change_wifi_only` needs the Apps
+category, as `block_app` does (M1: with every category off, its refusals told an AI app which
+apps the phone has or had); the kid's rule says exactly what always works, calls and texts to 911
+and 988 (J4: a Wi-Fi-only browser stops 988's web chat on mobile data); and an app that comes to
+share its uid with a Wi-Fi-only one lifts the first's restriction, documented (J6, below).
+
 A kid's first phone is usually on a family plan with a data cap. This phase has two parts, both
 off until a parent turns them on: **Wi-Fi-only apps** (enforcement: a parent marks apps that may
 not use mobile data, and the phone enforces it as device owner) and **mobile data use** (a new
@@ -101,12 +109,53 @@ users'), removed apps, the phone's hotspot; an SDK sandbox uid counts as its app
   turned on (the first day says from when): Android keeps 90 days of history, and none of it from
   before the kid was told is sent.
 
-`core`'s `DataUseUploads` decides what to read and send: today every hour or so (Android's numbers
-move every 30 minutes anyway), each past day once more when it's complete (2.5 hours after its
-end, once Android's last 2-hour bucket for it has closed and been polled), at most 7 days back.
-Each day waits in an outbox lane of its own (`mobile_data`), a newer report of a day replacing an
-unsent one, and goes to `POST /api/v1/mobile-data`. With `measure` off, Belay deletes its record
-and its unsent days. Reading the stats is a few queries an hour: no new wakeups, no permission.
+`core`'s `DataUseUploads` decides what to read and send: today so far, counted up to noon and up
+to 6 PM by the phone's clock, once each; each past day once more when it's complete (2.5 hours
+after its end, once Android's last 2-hour bucket for it has closed and been polled), at most 7
+days back; and, when measuring turns on, today counted from then to then (nothing yet), so the
+parent page says counting began. Only at a step something other than a time passing or a call
+brought (`StepCause.dueReads`: the hourly watchdog, an event on the phone or the server), so the
+watchdog sends what's due within the hour. Each day waits in an outbox lane of its own
+(`mobile_data`), a newer report of a day replacing an unsent one, and goes to
+`POST /api/v1/mobile-data`. With `measure` off, Belay deletes its record and its unsent days.
+Reading the stats is a few queries a day: no new wakeups, no permission.
+
+### Today's partial day (the seventh security review's M2 and M3)
+
+As first built, the phone read and sent today about every hour, counted up to the second it was
+read. Two things followed. An AI app that asks `get_mobile_data` every hour (a scheduled agent,
+say) could subtract and get each hour's mobile data and Wi-Fi: an hour with mobile data and no
+Wi-Fi is an hour the kid was away from every Wi-Fi the phone knows (home, school, a friend's), a
+record of when the kid is out with the Location category off, which it is by default (M3). And the
+read became due an hour after the last at any step, so while a lock waited for a call, with the
+policy timer stepping every minute, it went out within a minute of due all night, keeping the
+minute from before the call, where a quiet night's moved to the hourly watchdog's: the sixth
+review's G3 oracle, by "counted until" (M2).
+
+**Decided: both, the phone and the server.**
+
+- **The phone counts today so far up to noon and up to 6 PM**, its own time, once each, whenever
+  it reads it, and then the whole day once it's over. A day is told in at most three parts
+  (midnight to noon, noon to 6 PM, the evening), never by the hour, and what's sent ("counted
+  until noon") says nothing about when it was read. Two a day still let a parent catch an app
+  eating the plan the same day; the night isn't a part of its own. Android's numbers are 2-hour
+  buckets anyway, shared by time at a part's edge (Q7).
+- **The phone reads only at a step something other than a time passing or a call brought**, as
+  G3's check-ins: when a day goes says nothing about a call either. The hourly watchdog brings one
+  every hour anyway, so nothing waits long. `SeventhReviewTest` runs the review's night on a call
+  and a quiet night through `DataUseUploads.plan`: the same days, at the same steps, counted to the
+  same times.
+- **AI apps get only whole days.** `get_mobile_data` lists a day that isn't over yet without
+  numbers ("not over yet"), and its totals and the Wi-Fi-only apps' use count only whole days.
+  Even three parts of a day would tell an AI app asking often which part the kid was off Wi-Fi,
+  which is the Location category's to tell; the AI app's job here (the apps that use the cap,
+  Wi-Fi only as a suggestion) needs whole days, so the category's "no hours of the day", its reason
+  to start on, holds exactly. The parent page shows today so far: the parent chose to measure, and
+  the kid's screen says when it goes.
+
+The kid's "What your parent can see" says so: "Today's so far at noon and at 6 PM, then the whole
+day once it's over, never hour by hour", and its AI line that the parent's AI app reads only each
+day once it's over.
 
 **Room, schema 8:** one new table, `mobile_data` (one row: core's `MobileDataState` as JSON: the
 Wi-Fi-only list as applied, with uids and refusals, the report, and the uploads' state). Room
@@ -137,8 +186,8 @@ made from the exported schema with Room at version 8.
 
 | Tool | What it does |
 |---|---|
-| `get_mobile_data(device, from?, to?)` | Per day in the phone's days: the mobile total, the Wi-Fi total, the top apps on mobile data, "Android, calls and texting", removed apps and the hotspot, and totals for the period; the Wi-Fi-only apps, with any that still used mobile data after they were added. Days not sent are unknown, not zero. Scope `mobile_data`; the apps' names need the Apps scope. |
-| `change_wifi_only(device, change: {add?, remove?}, reason)` | **Write.** Adding apps only tightens, so it applies at once; anything that removes one becomes a proposal for the parent page. Refuses the apps the phone never blocks, and apps the phone never reported. |
+| `get_mobile_data(device, from?, to?)` | Each whole day in the phone's days (a day not over yet, with no numbers: "Today's partial day", above): the mobile total, the Wi-Fi total, the top apps on mobile data, "Android, calls and texting", removed apps and the hotspot, and totals for the period; the Wi-Fi-only apps, with any that still used mobile data after they were added. Days not sent are unknown, not zero. Scope `mobile_data`; the apps' names need the Apps scope. |
+| `change_wifi_only(device, change: {add?, remove?}, reason)` | **Write.** Adding apps only tightens, so it applies at once; anything that removes one becomes a proposal for the parent page. Refuses the apps the phone never blocks, and apps the phone never reported. Needs the Apps category, as `block_app` does (the seventh review's M1: with every category off, its refusal named the first app the phone never reported, so it told an AI app, silently and changing nothing, whether any app is or was on the phone, and which are its role apps). |
 
 `get_policy` says how many apps are Wi-Fi only (and which, with the Apps scope). `weekly_review`
 gains a short part about mobile data only while the `mobile_data` scope is on: the week's total,
@@ -206,7 +255,7 @@ MobileDataProtocol.kt`) and `server/src/device/schemas.ts` change with it.
 | `day` | `"YYYY-MM-DD"` | in `zone` |
 | `zone` | string | IANA: the phone's own |
 | `from` | int | counted from: the day's start, or when measuring turned on that day |
-| `as_of` | int | counted up to: when the phone read it, or the day's end once complete |
+| `as_of` | int | counted up to: noon or 6 PM by the phone's clock (when measuring began, for its first report), or the day's end once complete |
 | `complete` | bool | the day is over, and Android's last bucket of it closed |
 | `mobile_bytes` | int | everything on mobile data that day (every line below, and what's past 500 apps) |
 | `wifi_bytes` | int | everything on Wi-Fi that day, one number |
@@ -227,14 +276,16 @@ tomorrow in its zone, or is older than the family keeps.
 
 | id | Title (kid-facing) | Details |
 |---|---|---|
-| `mobile_data` | How much mobile data apps use | "How much mobile data each app uses each day, like 120 MB"; "How much the phone uses on Wi-Fi each day, all apps together"; "The phone app, your texting app and Android's own parts together, not one by one, and what devices use through this phone's hotspot"; "Not which websites, which Wi-Fi networks, or anything you send or get" |
+| `mobile_data` | How much mobile data apps use | "How much mobile data each app uses each day, like 120 MB"; "How much the phone uses on Wi-Fi each day, all apps together"; "Today's so far at noon and at 6 PM, then the whole day once it's over, never hour by hour"; "The phone app, your texting app and Android's own parts together, not one by one, and what devices use through this phone's hotspot"; "Not which websites, which Wi-Fi networks, or anything you send or get" |
 
 **AI scope** `mobile_data`, **on by default**, like `screen_time`: it's the same kind of data (how
-much each app is used, no content) with less in it than screen time (no hours of the day, no
-opens or unlocks), and far less than `network` (which names the services the kid uses, so it starts
-off). Its point is the AI's own job here: finding the apps that use the cap and suggesting Wi-Fi
-only, which it can then apply. A family that turned any category off gets it off (settings.ts),
-and measuring itself starts off for every phone. **privacy.md** gains its line and the retention.
+much each app is used, no content) with less in it than screen time (whole days only, no hours of
+the day, no opens or unlocks), and far less than `network` (which names the services the kid uses,
+so it starts off). Its point is the AI's own job here: finding the apps that use the cap and
+suggesting Wi-Fi only, which it can then apply (with the Apps category: M1). AI apps get each day
+only once it's over, never today so far ("Today's partial day", above), and the kid's screen says
+so under the card. A family that turned any category off gets it off (settings.ts), and measuring
+itself starts off for every phone. **privacy.md** gains its line and the retention.
 
 **Wi-Fi only** collects nothing; it's a rule, so it's on the kid's rules screen, not under "What
 your parent can see". The report says which apps Android restricts, which the parent set anyway.
@@ -243,7 +294,9 @@ your parent can see". The report says which apps Android restricts, which the pa
 
 - "Some apps work only on Wi-Fi" · "Your parent chose apps that can't use mobile data: %1$s. On
   Wi-Fi they work as usual, but on some Wi-Fi, like another phone's hotspot, they may not work
-  either. Calls and texts always work, and so do 911 and 988."
+  either. This never stops calls or texts: calls and texts to 911 and 988 always work." (Exactly
+  that, since the seventh review's J4: a browser made Wi-Fi only stops 988's web chat on mobile
+  data, so "911 and 988 always work" said more than the code does.)
 - "Wi-Fi only" · "These apps can't use mobile data. When the phone is on mobile data, they act like
   there's no internet." · "Wi-Fi only: your parent chose this"
 
@@ -260,11 +313,13 @@ your parent can see". The report says which apps Android restricts, which the pa
 | Get updates over mobile data | Updates come through Play, not the app: Wi-Fi only doesn't cover them. Make Play Wi-Fi only too, or use Play's own download setting. |
 | Watch videos inside another app | Counts as that app's traffic: that app's rule applies. |
 | A VPN | Locked by Phase 2's `config_vpn`. |
+| Install an app that shares a Wi-Fi-only app's uid | Belay never restricts a uid shared by two packages (Android would cut off both), so the developer's other app, signed alike with the same `sharedUserId`, takes the first off Wi-Fi only at the next step, even while it waits for a parent (the seventh review's J6); the parent sees why. Rare on today's Play. Keeping a uid restricted while every package on it is a third-party app would close it: not built. |
 | Ask the parent's AI to lift it | AI apps can only propose it; a parent approves on the parent page. |
 | Name an app to steer the AI | App labels and package names stay `untrusted`. |
 
 Other people: the AI provider sees mobile data use only while the `mobile_data` scope is on and a
-parent measures.
+parent measures, and only each day once it's over (M3); with the Apps category off, nothing about
+which apps the phone has, `change_wifi_only` included (M1).
 
 ## Test plan
 
@@ -275,8 +330,10 @@ parent measures.
   the report.
 - `DataUse.fold`: apps sorted and capped at 500, never-blocked apps and shared uids into
   "Android, calls and texting", removed apps and the hotspot apart, the total; `DataUseUploads`:
-  only since measuring turned on, today hourly, a day once more when complete (and not before
-  2.5 hours after its end), at most 7 days back, nothing while off.
+  only since measuring turned on, today counted up to noon and up to 6 PM (once each, whenever
+  it's read), a day once more when complete (and not before 2.5 hours after its end), at most 7
+  days back, nothing while off, and nothing at a step a time passing or a call brought (the
+  seventh review's night on a call against a quiet night, in `SeventhReviewTest`).
 - The kid's words: `KidRules` lists Wi-Fi only only while Android restricts an app; the data
   category only while measuring; Off belay waits for an empty list; protocol round trips, and an
   older policy without `mobile_data` still parsing.
