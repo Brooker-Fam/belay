@@ -60,6 +60,8 @@ in Play's settings: Belay doesn't set them.
   all data). That's the only way: Android has no other way to remove a release device
   owner. If a parent turned on "Lock factory reset", turn it off first on the phone's page
   (maintenance mode lifts only the debugging lock, not this one).
-- **Debug build:** `android/scripts/unprovision.sh`, no reset needed.
+- **Debug build:** `android/scripts/unprovision.sh`, no reset needed. It stops the texts test
+  first, if it's on, so Google Messages' archival setting and the app-op that came with it don't
+  outlive Belay ([phase5-checklist.md](phase5-checklist.md), section 12; platform notes T8).
 - **Reset from Settings, not from recovery mode,** while the parent account is on the
   phone: a recovery reset triggers factory reset protection and asks for that account.
