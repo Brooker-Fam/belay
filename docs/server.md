@@ -339,7 +339,9 @@ doesn't need a computer and maintenance mode for each new version.
    other parent pages take 64 KB, so a proxy in front must let a request that large through
    (Caddy does). The server keeps the 10 versions added last, and any version offered to a
    phone however old: adding an eleventh deletes the oldest of the rest, file and all, so the
-   versions never take more than about a gigabyte.
+   versions never take more than about a gigabyte. Versions are added one at a time (a second
+   upload waits its turn), an upload has the server's 5 minutes to arrive (over a slow link, use
+   the command line), and what an interrupted upload left behind is removed within an hour.
 3. Offer it to a phone: the button after adding it, the phone's page (Updating Belay), or
    `agent-offer`. The policy then carries `agent_update`, while the phone runs an older version
    code; the page warns when the phone already runs that version or a newer one, which Android

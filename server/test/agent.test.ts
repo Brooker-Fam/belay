@@ -5,7 +5,7 @@
  * here are made up: a zip's first bytes, then noise; the server doesn't look further.
  */
 import { createDecipheriv, createECDH, createHash, createHmac, randomBytes, type ECDH } from "node:crypto";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
@@ -16,7 +16,7 @@ import { runCommand } from "../src/admin.js";
 import { listAudit } from "../src/audit.js";
 import { createEnrollmentCode } from "../src/device/enroll.js";
 import { Policy } from "../src/device/schemas.js";
-import { AgentFileError, addAgentFile, offerAgent } from "../src/family/agent.js";
+import { AgentFileError, addAgentFile, cleanAgentTemp, offerAgent } from "../src/family/agent.js";
 import { type DeviceView, getDevice } from "../src/family/devices.js";
 import { buildPolicy } from "../src/family/policy.js";
 import { parseRange } from "../src/http.js";
@@ -180,6 +180,43 @@ describe("the versions the server keeps", () => {
     expect(new Set(kept)).toEqual(new Set([added[0], ...added.slice(3)]));
     expect(readdirSync(agentsDir).filter((f) => f.endsWith(".apk")).sort()).toEqual(kept.map((sha) => `${sha}.apk`).sort());
     for (const gone of added.slice(1, 3)) expect(existsSync(join(agentsDir, `${gone}.apk`))).toBe(false);
+  });
+
+  it("are added one at a time: a second add waits until the one under way is done", async () => {
+    const { t, agentsDir, apk } = await family();
+    const slow = new Readable({ read() {} });
+    slow.push(apk.bytes.subarray(0, 1000));
+    const first = addAgentFile(t.deps.db, agentsDir, t.now(), slow, { code: 3, name: null }, { parentId: null });
+    let secondDone = false;
+    const second = addAgentFile(t.deps.db, agentsDir, t.now(), apk.path, { code: 3, name: null }, { parentId: null }).then((r) => {
+      secondDone = true;
+      return r;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    // Only one temporary file at a time, and the second hasn't started.
+    expect(readdirSync(agentsDir).filter((f) => f.endsWith(".tmp"))).toHaveLength(1);
+    expect(secondDone).toBe(false);
+    slow.push(apk.bytes.subarray(1000));
+    slow.push(null);
+    await expect(first).resolves.toMatchObject({ file: { sha256: apk.sha256 }, existed: false });
+    await expect(second).resolves.toMatchObject({ existed: true });
+  });
+
+  it("leave no temporary file behind once an hour has passed, whatever stopped the add", async () => {
+    const { t, agentsDir } = await family();
+    mkdirSync(agentsDir, { recursive: true });
+    const stale = join(agentsDir, ".adding-0123abcd.tmp");
+    const fresh = join(agentsDir, ".adding-4567ef01.tmp");
+    const other = join(agentsDir, "notes.txt");
+    for (const f of [stale, fresh, other]) writeFileSync(f, "x");
+    const old = (t.now() - 2 * 3_600_000) / 1000;
+    utimesSync(stale, old, old);
+    utimesSync(other, old, old);
+    const now = (t.now()) / 1000;
+    utimesSync(fresh, now, now);
+    expect(cleanAgentTemp(agentsDir, t.now())).toBe(1);
+    expect([existsSync(stale), existsSync(fresh), existsSync(other)]).toEqual([false, true, true]);
+    expect(cleanAgentTemp(join(agentsDir, "missing"), t.now())).toBe(0);
   });
 
   it("keep a file added again, even one first added long ago", async () => {
