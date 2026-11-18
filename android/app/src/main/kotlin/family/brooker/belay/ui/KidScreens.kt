@@ -327,7 +327,9 @@ internal fun CanSeeCard(categories: List<DataCategory>, connection: Connection, 
             // Android's own notice says "your organization… may monitor network traffic" (platform notes W1).
             if (category.id == DataCategories.NETWORK_ID) Text(stringResource(R.string.network_android_says), style = MaterialTheme.typography.bodySmall)
             if (category.id in reads) {
-                Text(stringResource(R.string.can_see_ai), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                // Mobile data: the AI app gets only whole days, never today so far (the server's get_mobile_data, the seventh review's M3).
+                val ai = if (category.id == DataCategories.MOBILE_DATA_ID) R.string.can_see_ai_whole_days else R.string.can_see_ai
+                Text(stringResource(ai), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
             }
         }
         val shown = categories.map { it.id }.toSet()

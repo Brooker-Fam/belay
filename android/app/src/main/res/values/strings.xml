@@ -507,6 +507,8 @@
 
     <!-- What your parent can see. -->
     <string name="can_see_ai">Your parent\'s AI app can read this.</string>
+    <!-- Mobile data: the AI app reads each day only once it's over (the seventh review's M3). -->
+    <string name="can_see_ai_whole_days">Your parent\'s AI app can read this, but only each day once it\'s over, never today\'s so far.</string>
     <string name="can_see_ai_agreement">Your parent\'s AI app can also read your stage and your family agreement, and your answers to it.</string>
     <string name="can_see_ai_other">Your parent\'s AI app can also read: %1$s</string>
     <!-- Before the list of what an AI app always reads (core's AiAlways: the same list as docs/mcp.md's "Always included"). -->

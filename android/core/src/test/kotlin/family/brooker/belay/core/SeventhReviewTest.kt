@@ -100,6 +100,8 @@ class SeventhReviewTest {
         assertEquals(listOf(false, false, true), ranges.map { it.complete })
         // Each is read at the first step after its time, but counted up to that time: when it went says nothing.
         assertTrue(ranges.all { minuteOf(it.to) == 0 })
+        // The kid's "What your parent can see" says so.
+        assertTrue(DataCategories.MOBILE_DATA.details.any { "at noon and at 6 PM" in it && "never hour by hour" in it })
     }
 
     // ── H2: a caregiver's lock names them on the kid's phone ───────────────────────────────

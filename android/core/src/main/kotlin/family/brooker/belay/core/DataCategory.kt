@@ -203,7 +203,9 @@ object DataCategories {
      * Phase 13, while the policy's `mobile_data.measure` is on: how much mobile data each app used
      * each day, and the day's Wi-Fi total, that Belay sends (POST /api/v1/mobile-data), from
      * Android's own accounting (core's DataUse). Wi-Fi-only apps are a rule, not data: they're on
-     * the rules screen.
+     * the rules screen. Today goes counted up to noon and up to 6 PM, then whole once it's over
+     * (mobiledata.DataUseUploads, the seventh review's M3); the parent's AI app reads only whole
+     * days (the app's "What your parent can see" says so under this card).
      */
     val MOBILE_DATA = DataCategory(
         id = MOBILE_DATA_ID,
@@ -211,6 +213,7 @@ object DataCategories {
         details = listOf(
             "How much mobile data each app uses each day, like 120 MB",
             "How much the phone uses on Wi-Fi each day, all apps together",
+            "Today's so far at noon and at 6 PM, then the whole day once it's over, never hour by hour",
             "How much the phone app, your texting app and Android's own parts use, together and not one by one, " +
                 "and how much other devices use through this phone's hotspot",
             "Not which websites or Wi-Fi networks, and nothing you send or get",
