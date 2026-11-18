@@ -22,6 +22,7 @@ const NAV = [
   ["/requests", "Requests", "requests"],
   ["/proposals", "Proposals", "proposals"],
   ["/stages", "Stages", null],
+  ["/caregivers", "Caregivers", null],
   ["/timeline", "Timeline", null],
   ["/add", "Add a phone", null],
   ["/settings", "Settings", null],
