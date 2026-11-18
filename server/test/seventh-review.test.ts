@@ -17,6 +17,7 @@ import { listAudit } from "../src/audit.js";
 import { loadMigrations, migrate } from "../src/db.js";
 import { Policy } from "../src/device/schemas.js";
 import { getCaregiver, listCaregivers } from "../src/family/caregivers/store.js";
+import { setKidNumber } from "../src/family/kidside-changes.js";
 import { setMobileDataMeasure } from "../src/family/mobiledata/changes.js";
 import { wifiOnlyApps } from "../src/family/mobiledata/store.js";
 import { buildPolicy, pausePhone, resumePhone, type PolicyContext } from "../src/family/policy.js";
@@ -493,5 +494,29 @@ describe("J9: test notices are limited, a caregiver's and a parent's", () => {
     f.t.advance(HOUR);
     expect((await care.form("/care/push/test")).status).toBe(200);
     expect((await f.form("/settings/push/test")).status).toBe(200);
+  });
+});
+
+describe("J1: the kid's phone is told which caregivers get the kid's phone number", () => {
+  it("kid_number on a caregiver with help while a parent set the number, never the number itself; a new policy when it changes", async () => {
+    const f = await family();
+    const parent = { kind: "parent", parentId: f.sam.parent.id } as const;
+    await add(f);
+    await add(f, { name: "Coach Lee", can: ["status", "pause"] });
+    expect(f.policy().caregivers.map((c) => c.kid_number)).toEqual([undefined, undefined]);
+    const before = f.policy().version;
+    setKidNumber(f.ctx(), f.phone.deviceId, "+15555550123", parent);
+    const p = f.policy();
+    expect(p.version).toBe(before + 1);
+    expect(p.caregivers.map((c) => [c.name, c.kid_number])).toEqual([
+      ["Coach Lee", undefined],
+      ["Grandma", true],
+    ]);
+    expect(JSON.stringify(buildPolicy(f.t.deps.db, f.phone.deviceId, f.t.now()))).not.toContain("5555550123");
+    // Another phone without a number: nothing there.
+    await add(f, { name: "Aunt Robin", phone: [f.other.deviceId] });
+    expect(f.policy(f.other.deviceId).caregivers[0]?.kid_number).toBeUndefined();
+    setKidNumber(f.ctx(), f.phone.deviceId, null, parent);
+    expect(f.policy().caregivers.map((c) => c.kid_number)).toEqual([undefined, undefined]);
   });
 });

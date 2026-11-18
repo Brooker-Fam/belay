@@ -548,6 +548,11 @@ data class WireCaregiver(
      * checks). Words this Belay doesn't know are left out (kid.Caregivers), so it's a list of strings.
      */
     val can: List<String> = emptyList(),
+    /**
+     * The seventh review's J1: with "help", they get the kid's own phone number beside each help
+     * request, to call back (a parent set it); never the number itself, which the phone never gets.
+     */
+    @SerialName("kid_number") val kidNumber: Boolean = false,
 )
 
 /** Phase 7: a number on the emergency card. */

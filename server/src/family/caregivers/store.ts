@@ -8,6 +8,7 @@
 import type { DB } from "../../db.js";
 import { LIMITS, type Policy } from "../../device/schemas.js";
 import { nameLine } from "../../text.js";
+import { phoneHelp } from "../kidside.js";
 import { locationSettings, takesChecks } from "../location/store.js";
 
 /** What a parent may let a caregiver see and do, each a choice per caregiver, in this order. */
@@ -179,7 +180,9 @@ export function caregiverNameTaken(db: DB, name: string, exceptId?: string): boo
  * The caregivers a phone's policy lists: every one covering it whose access hasn't ended (by a
  * parent, or by the hourly clean-up at its end), the soonest end first. The phone itself stops
  * listing one at its `until`, by its own clock. `locate` only while the phone's location takes
- * checks, since only then can a caregiver check (as a parent's "Check now").
+ * checks, since only then can a caregiver check (as a parent's "Check now"). `kid_number` when
+ * one with help gets the kid's own number beside each help request ("Call", a parent set it), so
+ * the kid's card says so (the seventh review's J1): never the number, which the phone never gets.
  */
 export function caregiversFor(db: DB, deviceId: string): Policy["caregivers"] {
   const rows = db
@@ -190,9 +193,15 @@ export function caregiversFor(db: DB, deviceId: string): Policy["caregivers"] {
     .all(deviceId, MAX_CAREGIVERS);
   if (!rows.length) return [];
   const checks = takesChecks(locationSettings(db, deviceId));
+  const kidNumber = phoneHelp(db, deviceId).kidNumber !== null;
   return rows.map((r) => {
     const can: Record<CaregiverCan, boolean> = { status: r.can_status === 1, pause: r.can_pause === 1, help: r.can_help === 1, locate: r.can_locate === 1 && checks };
-    return { name: nameLine(r.name, NAME_MAX) || "A caregiver", until: r.ends_at, can: CAREGIVER_CAN.filter((k) => can[k]) };
+    return {
+      name: nameLine(r.name, NAME_MAX) || "A caregiver",
+      until: r.ends_at,
+      can: CAREGIVER_CAN.filter((k) => can[k]),
+      ...(can.help && kidNumber ? { kid_number: true as const } : {}),
+    };
   });
 }
 

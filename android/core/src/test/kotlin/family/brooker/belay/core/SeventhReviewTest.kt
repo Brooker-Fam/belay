@@ -26,6 +26,7 @@ import kotlin.test.assertTrue
  *   most three parts, however often the phone steps or anyone asks.
  * - H2: a caregiver's lock names them on the kid's phone, whoever's pause it came with.
  * - J5: a caregiver's name keeps no invisible or format character.
+ * - J1: a caregiver's card says when they get the kid's phone number with the help requests.
  */
 class SeventhReviewTest {
     private val ny: ZoneId = ZoneId.of("America/New_York")
@@ -153,5 +154,25 @@ class SeventhReviewTest {
         assertEquals("Grandma", Caregivers.name("\ufeffGran\u202ed\u200bma\u00ad"), "a byte-order mark, an override, a zero-width space, a soft hyphen")
         assertEquals("Nana", Caregivers.name("Na\u200dna\uDB40\uDC41"), "a zero-width joiner, and a tag character")
         assertEquals("Grandma", Caregivers.who("Grand\u2060ma"))
+    }
+
+    // \u2500\u2500 J1: the kid's card says when a caregiver gets their phone number \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+
+    @Test
+    fun `J1 - a caregiver with help who gets the kid's number says so on their card, and a policy without it still reads`() {
+        val until = at("2026-11-22T18:00:00")
+        // Coach Lee's kid_number means nothing without help: the server sends it only with help anyway.
+        val shown = Caregivers.current(
+            listOf(WireCaregiver("Grandma", until, listOf("status", "help"), kidNumber = true), WireCaregiver("Coach Lee", until, listOf("pause"), kidNumber = true)),
+            now,
+            locateWorks = false,
+        )
+        assertEquals(listOf("Coach Lee" to false, "Grandma" to true), shown.map { it.name to it.number })
+        val grandma = shown.single { it.name == "Grandma" }
+        assertTrue(DataCategories.caregiver(grandma, "Sunday at 6:00 PM").details.any { "and your phone number, to call you back" in it })
+        assertTrue(DataCategories.caregiver(grandma.copy(number = false), "Sunday at 6:00 PM").details.none { "phone number" in it })
+        // On the wire: kid_number, never the number; a policy from before it reads as without.
+        val json = """{"server_time":1,"policy":{"version":3,"caregivers":[{"name":"Grandma","until":$until,"can":["help"],"kid_number":true},{"name":"Coach Lee","until":$until,"can":["help"]}]}}"""
+        assertEquals(listOf(true, false), Wire.json.decodeFromString(PolicyResponse.serializer(), json).policy.caregivers.map { it.kidNumber })
     }
 }

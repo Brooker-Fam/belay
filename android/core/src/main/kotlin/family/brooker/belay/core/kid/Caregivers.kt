@@ -27,8 +27,12 @@ enum class CaregiverCan(val wire: String) {
     }
 }
 
-/** A caregiver as the kid's phone lists them: their name (cleaned), until when, and what they may do. */
-data class ShownCaregiver(val name: String, val until: Long, val can: List<CaregiverCan>)
+/**
+ * A caregiver as the kid's phone lists them: their name (cleaned), until when, what they may do,
+ * and whether they get the kid's own phone number with the help requests ([number], only with
+ * [CaregiverCan.HELP]: the seventh review's J1).
+ */
+data class ShownCaregiver(val name: String, val until: Long, val can: List<CaregiverCan>, val number: Boolean = false)
 
 /**
  * A lock_now a caregiver sent, which the phone did, for the kid's notice: "Grandma locked the
@@ -101,7 +105,7 @@ object Caregivers {
             .filter { it.until > now }
             .map { c ->
                 val can = c.can.mapNotNull(CaregiverCan::of).distinct().sorted()
-                ShownCaregiver(name(c.name) ?: UNNAMED, c.until, if (locateWorks) can else can - CaregiverCan.LOCATE)
+                ShownCaregiver(name(c.name) ?: UNNAMED, c.until, if (locateWorks) can else can - CaregiverCan.LOCATE, number = c.kidNumber && CaregiverCan.HELP in can)
             }
             .sortedWith(compareBy<ShownCaregiver> { it.until }.thenBy { it.name.lowercase() }.thenBy { it.name })
             .take(MAX)

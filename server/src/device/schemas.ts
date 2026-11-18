@@ -736,9 +736,18 @@ export const Policy = z.strictObject({
   /**
    * Phase 12: the caregivers a parent gave some access to this phone (family/caregivers), for the kid's screen: their name
    * (the parent's words), when access ends, and what they may do now (`locate` only while location takes checks).
+   * `kid_number` (the seventh review's J1): only when true, they get the kid's own number with the help requests, to call
+   * back (help on, and a parent set it); never the number itself, which the phone never gets.
    */
   caregivers: z
-    .array(z.strictObject({ name: text(40), until: time, can: z.array(z.enum(["status", "pause", "help", "locate"])).max(4) }))
+    .array(
+      z.strictObject({
+        name: text(40),
+        until: time,
+        can: z.array(z.enum(["status", "pause", "help", "locate"])).max(4),
+        kid_number: z.literal(true).optional(),
+      }),
+    )
     .max(LIMITS.maxCaregivers),
   /** Phase 5: null until a parent turns calls on (and again once they turn them off): Belay isn't the dialer. */
   calls: z

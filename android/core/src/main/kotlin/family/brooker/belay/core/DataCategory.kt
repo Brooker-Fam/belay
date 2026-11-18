@@ -254,13 +254,17 @@ object DataCategories {
      * Phase 12: someone a parent gave some access to this phone for a while (the policy's
      * `caregivers`, kid.Caregivers), for "Caregivers your parent added": their name and until when
      * ([until], in the kid's words, like "Sunday at 6:00 PM"), what they can see and do, each as
-     * the server lets them (family/caregivers), and what they never can.
+     * the server lets them (family/caregivers), and what they never can. With help, whether they
+     * get the kid's phone number too ([ShownCaregiver.number], the seventh review's J1).
      */
     fun caregiver(caregiver: ShownCaregiver, until: String): DataCategory = DataCategory(
         id = CAREGIVER_ID,
         title = "${caregiver.name}, until $until",
-        details = caregiver.can.map { CAREGIVER_CAN.getValue(it) } + CAREGIVER_CANT,
+        details = caregiver.can.map { if (it == CaregiverCan.HELP && caregiver.number) CAREGIVER_HELP_NUMBER else CAREGIVER_CAN.getValue(it) } + CAREGIVER_CANT,
     )
+
+    private const val CAREGIVER_HELP_NUMBER =
+        "Gets your \"I need help\" requests, with what you write, where this phone is if you share it, and your phone number, to call you back"
 
     private val CAREGIVER_CAN = mapOf(
         CaregiverCan.STATUS to "Can see whether this phone is online and when it last connected, its battery, and " +
