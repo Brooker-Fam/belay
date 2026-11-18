@@ -88,7 +88,14 @@ const StepItem: FC<{ view: View; step: StartStep }> = ({ view, step }) => {
               <a href={`${GUIDE}#4-get-belay-onto-the-phone`}>Get Belay onto the phone, in the guide</a>.
             </>
           }
-          links={step.state === "done" ? null : <a href="/add">Add a phone</a>}
+          links={
+            step.state === "done" ? null : (
+              // A new family's first thing to do: a button's look, for the page's main action.
+              <a class="button" href="/add">
+                Add a phone
+              </a>
+            )
+          }
         >
           <p class="small">
             {step.state === "done"
@@ -204,7 +211,7 @@ const StepItem: FC<{ view: View; step: StartStep }> = ({ view, step }) => {
               ? "Set: the daily backups are encrypted."
               : step.passphrase === "unusable"
                 ? `A passphrase is set, but it can't be used: ${step.problem ?? "it can't be read."} The daily backups fail until it's fixed.`
-                : "Not set: the daily backups aren't encrypted, so a copy isn't safe to keep anywhere else."}
+                : "Not set: the daily backups aren't encrypted."}
           </p>
         </Step>
       );

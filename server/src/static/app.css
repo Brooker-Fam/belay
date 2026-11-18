@@ -278,6 +278,8 @@ a.button.call { background: var(--bad-fill); border-color: var(--bad-fill); colo
 /* The Phones page's Getting started card. Each step's state is in words, in a chip; the ring beside
    it, with a tick once it's done, only decorates them, drawn with borders so nothing reads it out.
    role="list" keeps the list a list for VoiceOver, which drops it without list-style. */
+.card.start { margin-top: 12px; }
+.start h2.in-card + p { margin-top: 6px; }
 .start-steps { list-style: none; margin: 12px 0 0; padding: 0; }
 .start-steps > li.step { position: relative; padding: 0 0 10px 2.1rem; margin: 0 0 10px; border-bottom: 1px solid var(--line); }
 .start-steps > li.step:last-child { border-bottom: none; margin-bottom: 0; }
@@ -297,6 +299,8 @@ a.button.call { background: var(--bad-fill); border-color: var(--bad-fill); colo
 /* A step's links, each 44px tall, in a row that wraps on a phone. */
 .start-steps .links { display: flex; flex-wrap: wrap; gap: 0 18px; margin: 0; }
 .start-steps .links a { display: inline-flex; align-items: center; min-height: var(--tap); }
-.start .later { padding-left: 20px; }
-.start .later a { display: inline-block; padding: 8px 0; }
+/* Links in a sentence: padding that widens what a finger hits without spacing the lines unevenly. */
+.start .later { padding-left: 20px; line-height: 1.6; }
+.start .later li { margin: 4px 0; }
+.start .later a { padding: 6px 0; white-space: nowrap; }
 .start form.row { margin-top: 8px; }
