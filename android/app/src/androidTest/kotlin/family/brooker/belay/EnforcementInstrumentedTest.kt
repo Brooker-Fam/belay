@@ -213,11 +213,17 @@ class EnforcementInstrumentedTest {
             shell("settings put global http_proxy 127.0.0.1:9")
             awaitTrue("Belay didn't see the proxy") { PhoneFacts.proxy(context) }
         } finally {
-            // ":0" is how a global proxy set this way is cleared (ProxyTracker); then the setting goes.
+            // ":0" is how a global proxy set this way is cleared. ConnectivityService reads the
+            // setting only when it handles the change, and an empty one changes nothing (AOSP 17
+            // ProxyTracker.loadDeprecatedGlobalHttpProxy), so the setting goes only once the proxy
+            // has: deleted sooner, before the change is handled, it can leave the proxy on for good.
             shell("settings put global http_proxy :0")
-            shell("settings delete global http_proxy")
+            try {
+                awaitTrue("Belay still sees a proxy") { !PhoneFacts.proxy(context) }
+            } finally {
+                shell("settings delete global http_proxy")
+            }
         }
-        awaitTrue("Belay still sees a proxy") { !PhoneFacts.proxy(context) }
     }
 
     @Test
