@@ -381,13 +381,17 @@ object ArchivalTest {
         ", its schema couldn't be read (${e.javaClass.simpleName})"
     }
 
-    /** Belay's own restricted-messages app-op (Android grants it to the archival app, and to the dialer role). */
+    /**
+     * Belay's own restricted-messages app-op (Android allows it for the archival app, and for the
+     * dialer role). The provider lets only "allowed" read restricted rows; the tracker resets an app
+     * it no longer names to "default".
+     */
     private fun restrictedMessages(app: Context): String = try {
         when (val mode = app.getSystemService(AppOpsManager::class.java).unsafeCheckOpNoThrow(OP_READ_RESTRICTED, Process.myUid(), app.packageName)) {
             AppOpsManager.MODE_ALLOWED -> "allowed"
             AppOpsManager.MODE_IGNORED -> "not allowed"
             AppOpsManager.MODE_ERRORED -> "not allowed (errored)"
-            AppOpsManager.MODE_DEFAULT -> "default"
+            AppOpsManager.MODE_DEFAULT -> "not allowed (default)"
             AppOpsManager.MODE_FOREGROUND -> "in the foreground only"
             else -> "mode $mode"
         }
