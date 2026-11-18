@@ -8,6 +8,7 @@ import family.brooker.belay.Trigger
 import family.brooker.belay.core.EnrollProblem
 import family.brooker.belay.core.EnrollRequest
 import family.brooker.belay.core.Enrollment
+import family.brooker.belay.core.RecoveryRules
 import family.brooker.belay.core.SyncPolicy
 import family.brooker.belay.health.DeviceStatus
 import family.brooker.belay.health.HealthReader
@@ -32,11 +33,21 @@ class Enroller(private val app: Context) {
         data class Failed(val problem: EnrollProblem, val detail: String? = null) : Outcome
     }
 
+    /**
+     * [replace]: a phone that's connected may move to another server (only provision.sh's receiver
+     * asks); even then, not while Belay holds the debugging lock, unless a parent opened repair
+     * access (core's Enrollment.receiverMayReplace).
+     */
     fun enroll(typedServer: String, typedCode: String, replace: Boolean): Outcome {
         val server = Enrollment.normalizeServer(typedServer, DebugTools.CLEARTEXT_HOSTS)
             ?: return Outcome.Failed(EnrollProblem.BAD_SERVER)
         val code = Enrollment.normalizeCode(typedCode) ?: return Outcome.Failed(EnrollProblem.BAD_CODE)
-        if (!replace && ConnectionStore.read(app).connected) return Outcome.Failed(EnrollProblem.ALREADY_CONNECTED)
+        val connected = ConnectionStore.read(app).connected
+        if (!replace && connected) return Outcome.Failed(EnrollProblem.ALREADY_CONNECTED)
+        if (connected && !mayReplace()) {
+            Log.w(Agent.TAG, "enroll: refused to move a connected phone while the debugging lock is on")
+            return Outcome.Failed(EnrollProblem.LOCKED)
+        }
         val host = URI(server).host
         val device = DeviceStatus.read(app, HealthReader(app).read())
         val outcome = when (val answer = DeviceApi(server).enroll(EnrollRequest(code, device))) {
@@ -79,6 +90,20 @@ class Enroller(private val app: Context) {
             is Outcome.Failed -> Log.w(Agent.TAG, "enroll with $host failed: ${outcome.problem.code}")
         }
         return outcome
+    }
+
+    /** What Belay holds now and the repair access open now, for core's Enrollment.receiverMayReplace. */
+    private fun mayReplace(): Boolean {
+        val store = AgentStore.get(app)
+        val now = System.currentTimeMillis()
+        val policy = DebugTools.policyOverride ?: store.policy()
+        return Enrollment.receiverMayReplace(
+            connected = true,
+            held = store.applied().locks,
+            maintenanceUntil = policy?.maintenanceUntil,
+            recoveryUntil = RecoveryRules.openUntil(store.recovery(), now),
+            now = now,
+        )
     }
 
     private companion object {

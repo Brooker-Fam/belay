@@ -186,7 +186,7 @@ private fun problemText(problem: EnrollProblem): String = stringResource(
         EnrollProblem.NOT_BELAY -> R.string.enroll_problem_not_belay
         EnrollProblem.REFUSED -> R.string.enroll_problem_refused
         EnrollProblem.SERVER_ERROR -> R.string.enroll_problem_server_error
-        EnrollProblem.ALREADY_CONNECTED -> R.string.enroll_problem_already_connected
+        EnrollProblem.ALREADY_CONNECTED, EnrollProblem.LOCKED -> R.string.enroll_problem_already_connected
         EnrollProblem.PHONE_ERROR -> R.string.enroll_problem_phone_error
     },
 )

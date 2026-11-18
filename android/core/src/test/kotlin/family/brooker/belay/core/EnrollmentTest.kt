@@ -67,4 +67,20 @@ class EnrollmentTest {
         assertNull(Enrollment.parseLink("belay://enroll?server=http%3A%2F%2Fevil.example&code=7KQ2M9XA"))
         assertNull(Enrollment.parseLink("not a link"))
     }
+
+    @Test
+    fun `the adb receiver moves a connected phone only while the debugging lock is off or repair access is open`() {
+        val now = 1_000_000L
+        val locked = setOf(Lock.DEBUGGING, Lock.FACTORY_RESET)
+        // An app that adb once granted WRITE_SECURE_SETTINGS, after the debugging lock: refused.
+        assertEquals(false, Enrollment.receiverMayReplace(connected = true, held = locked, maintenanceUntil = null, recoveryUntil = null, now = now))
+        assertEquals(false, Enrollment.receiverMayReplace(true, locked, maintenanceUntil = now - 1, recoveryUntil = now, now = now), "repair access that's over")
+        // Repair access lifts it: maintenance, or the recovery key's 24 hours.
+        assertEquals(true, Enrollment.receiverMayReplace(true, locked, maintenanceUntil = now + 60_000, recoveryUntil = null, now = now))
+        assertEquals(true, Enrollment.receiverMayReplace(true, locked, maintenanceUntil = null, recoveryUntil = now + 60_000, now = now))
+        // Without the lock (a debug build never applies it, and before hardening), or not connected yet: as before.
+        assertEquals(true, Enrollment.receiverMayReplace(true, setOf(Lock.FACTORY_RESET), null, null, now))
+        assertEquals(true, Enrollment.receiverMayReplace(false, locked, null, null, now))
+        assertEquals("locked", EnrollProblem.LOCKED.code)
+    }
 }
