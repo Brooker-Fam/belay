@@ -8,6 +8,8 @@
  * without a word in its log. An AI app can't read the list or change it, not even as a proposal.
  * Made-up apps and names only.
  */
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { describe, expect, it } from "vitest";
 import { runCommand } from "../src/admin.js";
 import { listAudit } from "../src/audit.js";
@@ -17,12 +19,14 @@ import { setNetworkLog, setPrivateWebsite } from "../src/family/network/changes.
 import { registrable, typedWebsite } from "../src/family/network/domains.js";
 import { isPrivateWebsite, listPrivateWebsites, networkDays, neverKept, privateDomainsOf } from "../src/family/network/store.js";
 import { buildPolicy, RuleRefused, type PolicyContext } from "../src/family/policy.js";
+import { createPersonalToken } from "../src/oauth/store.js";
 import { updateSettings } from "../src/settings.js";
 import { deviceCall, enrollPhone, get, postForm, signIn, testServer, T0, type TestServer } from "./helpers.js";
 
 const TODAY = "2026-11-16";
+const MCP = "https://belay.example.org/mcp";
 
-const entry = (pkg: string, domain: string, lookups = 1) => ({ package: pkg, domain, lookups });
+const entry =(pkg: string, domain: string, lookups = 1) => ({ package: pkg, domain, lookups });
 const day = (entries: unknown[], over: Record<string, unknown> = {}) => ({ day: TODAY, zone: "America/New_York", as_of: T0, entries, dropped: 0, ...over });
 
 async function family(opts: { on?: boolean } = {}) {
@@ -385,5 +389,69 @@ describe("the CLI's private-website command", () => {
       expect(res.err).toContain('private-website "<phone>" <website>, or private-website "<phone>" --remove <website>');
     }
     expect((await cli(t, "private-website", "Nobody's phone", "example.org")).code).toBe(1);
+  });
+});
+
+describe("AI apps and the private websites", () => {
+  /** A family with every AI category on, network logging on, and an AI app connected. */
+  async function connected(privateSites: string[]) {
+    const f = await family({ on: true });
+    updateSettings(f.t.deps.db, { aiScopes: { network: true, apps: true, calls: true, location: true } });
+    for (const site of privateSites) f.make(site);
+    const { token } = createPersonalToken(f.t.deps.db, f.t.now(), f.sam.parent.id, "Claude", MCP);
+    const client = new Client({ name: "belay-test", version: "1.0.0" });
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(MCP), {
+        fetch: (url, init) => Promise.resolve(f.t.app.request(String(url), init)),
+        requestInit: { headers: { authorization: `Bearer ${token}` } },
+      }),
+    );
+    const call = async (name: string, args: Record<string, unknown> = {}) => {
+      const res = await client.callTool({ name, arguments: args });
+      return { text: (res.content as { text: string }[])[0]?.text ?? "", isError: res.isError === true };
+    };
+    return { ...f, client, call };
+  }
+
+  it("get_network_activity shows the same for a phone whose private websites were dropped as for one that never looked them up", async () => {
+    const withList = await connected(["example.org"]);
+    await withList.network([
+      day([entry("com.example.chat", "example.com", 4), entry("com.example.chat", "example.org", 9), entry("com.example.browser", "chat.example.org", 2)]),
+      day([entry("com.example.browser", "example.org", 5)], { day: "2026-11-15" }),
+    ]);
+    const without = await connected([]);
+    await without.network([day([entry("com.example.chat", "example.com", 4)]), day([], { day: "2026-11-15" })]);
+    const seen = await withList.call("get_network_activity", { device: "Alex's phone" });
+    expect(seen.isError).toBe(false);
+    expect(seen.text).not.toContain("example.org");
+    // Nothing says a phone has private websites, or how many lookups were dropped.
+    expect(seen.text).toBe((await without.call("get_network_activity", { device: "Alex's phone" })).text);
+    expect(JSON.parse(seen.text)).toMatchObject({ reminder: expect.stringContaining("Belay never notes 988's websites, or the websites a parent made private for a phone") });
+  });
+
+  it("no tool reads them, counts them or changes them, not even as a proposal", async () => {
+    const { client, call, phone, t, policy } = await connected(["example.org", "example.net"]);
+    const tools = (await client.listTools()).tools;
+    expect(JSON.stringify(tools.map((x) => [x.name, x.inputSchema]))).not.toMatch(/private.?(domain|website|site)/i);
+    expect(tools.find((x) => x.name === "get_network_activity")?.description).toContain("never the websites a parent made private for the phone (you can't see which, or whether there are any)");
+    expect(client.getInstructions() ?? "").toContain("Logging never notes 988's websites or a parent's private ones: you can't see which, or whether there are any.");
+    // What every read that names the phone says: never which websites, nor how many.
+    for (const [name, args] of [
+      ["list_devices", {}],
+      ["get_device_status", { device: "Alex's phone" }],
+      ["get_policy", { device: "Alex's phone" }],
+      ["get_rules", { device: "Alex's phone" }],
+      ["get_network_activity", { device: "Alex's phone" }],
+      ["get_contacts", { device: "Alex's phone" }],
+    ] as const) {
+      const res = await call(name, args);
+      expect(res.isError, `${name}: ${res.text.slice(0, 200)}`).toBe(false);
+      expect(res.text, name).not.toMatch(/(?<!belay\.)example\.(org|net)|2 private websites|private_domains/);
+    }
+    // There's no proposal for them either.
+    const proposed = await call("propose_change", { device: "Alex's phone", change: { kind: "private_websites" }, reason: "The parent asked." });
+    expect(proposed.isError).toBe(true);
+    expect(t.deps.db.prepare("SELECT COUNT(*) AS n FROM proposals WHERE device_id = ?").get(phone.deviceId)).toEqual({ n: 0 });
+    expect(policy().network_log.private_domains).toEqual(["example.net", "example.org"]);
   });
 });

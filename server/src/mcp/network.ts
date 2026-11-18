@@ -5,7 +5,10 @@
  * are their developers' words: they sit under `untrusted`. The apps' names come from the phone's
  * app list, so they need the Apps scope too, as in get_screen_time: without it, each app is the
  * package name the phone sent. No tool turns network logging on or off, and none proposes it:
- * collecting is a parent's choice alone. Every read is in the activity log.
+ * collecting is a parent's choice alone. Nor does any read or change the phone's private websites
+ * (never noted, like 988's): the server never keeps them, and nothing here says whether a phone has
+ * any, or how many lookups were dropped; the words say they may exist, the same for every phone.
+ * Every read is in the activity log.
  */
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -36,7 +39,7 @@ const MAX_APPS = 30;
 const MAX_DOMAINS = 25;
 
 export const NETWORK_REMINDER =
-  "A lookup is a fact about an app, not a verdict about the kid: apps look names up by themselves, for ads, updates and their own services, and a name looked up isn't a page visited. Report it plainly, don't guess why, and never speculate about the kid's private life from it.";
+  "A lookup is a fact about an app, not a verdict about the kid: apps look names up by themselves, for ads, updates and their own services, and a name looked up isn't a page visited. Report it plainly, don't guess why, and never speculate about the kid's private life from it. Belay never notes 988's websites, or the websites a parent made private for a phone, so read nothing into a website that isn't here.";
 
 export function registerNetworkTools(server: McpServer, deps: Deps, caller: Caller): void {
   const { db } = deps;
@@ -62,7 +65,7 @@ export function registerNetworkTools(server: McpServer, deps: Deps, caller: Call
     {
       title: "Network activity",
       description:
-        "Which websites and online services each app on one phone looked up, by name (like example.com), and how many times, day by day in the phone's own days: never the pages, messages, searches or anything typed, never what the phone app, texting app and the other apps that always work looked up, and never 988's websites. Only while a parent has network logging on for the phone. The last 7 days by default, at most 31. Needs the Network category, which is off until a parent turns it on; the apps' names need the Apps category too (without it, their package names).",
+        "Which websites and online services each app on one phone looked up, by name (like example.com), and how many times, day by day in the phone's own days: never the pages, messages, searches or anything typed, never what the phone app, texting app and the other apps that always work looked up, never 988's websites, and never the websites a parent made private for the phone (you can't see which, or whether there are any). Only while a parent has network logging on for the phone. The last 7 days by default, at most 31. Needs the Network category, which is off until a parent turns it on; the apps' names need the Apps category too (without it, their package names).",
       inputSchema: {
         device: deviceParam,
         from: day.optional().describe("The first day, like 2026-11-10. Default: 6 days before `to`."),
