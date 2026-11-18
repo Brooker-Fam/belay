@@ -5,7 +5,10 @@ the default dialer and its call permissions are granted by policy; a call from a
 rings Belay's own screen; a call from a number that isn't a contact is rejected without ringing,
 and its record (with the number) reaches the server, while the contact's record carries only the
 contact's id; a blocked number goes onto Android's own block list and comes off again; and when
-calls goes off, the dialer is given back and Belay holds no call permission. The emulator has no
+calls goes off, the dialer is given back and Belay holds no call permission. It also shows that a
+spoofed 988 caller ID is refused and recorded as a stranger's, that a call Telecom marks as
+emergency callback mode rings, that a slow decision rings, and that a lock-now sent while a call
+rings waits for the call to end (the third security review's fixes). The emulator has no
 call audio and (on the ATD image) no preloaded dialer. This checklist is for the real Pixel 8, with
 the **release** build and a SIM: real calls, Google's Phone app next to Belay, the incoming-call
 screen over the lock screen, Bluetooth, Do Not Disturb, and what happens when Belay breaks. Do
@@ -19,6 +22,8 @@ numbers: write "the second phone", not its number. Contacts get made-up names.
 at the 988 dialog, and back out. If the family wants to be sure 911 itself works through Belay,
 plan that with your local 911 center first, on its non-emergency number, and do what they say;
 nothing in this checklist needs it. Belay's own code for 911 and 988 is covered by JVM tests.
+Step 11 makes the second phone's number a test emergency number, which Android dials as a normal
+call to that phone; it never dials 911.
 
 You need: the Pixel 8 with Belay as device owner and a working SIM; a second phone to call from
 and to call (a parent's is fine); the parent page; adb over USB for the steps marked "maintenance"
@@ -126,6 +131,49 @@ and to call (a parent's is fine); the parent page; adb over USB for the steps ma
    off Android's block list.
 2. A call from a number that isn't a contact rings in Google's Phone app again.
 
+## 11. The callback window, without 911: a test emergency number
+
+Belay lets every caller ring for 2 hours after the kid calls 911, even from the lock screen before
+the first unlock after a restart (platform notes T19), and lets 911 and 988 through when the kid
+dials a caller-ID code before them (T17). Android can treat one number as an emergency number for
+testing: `cmd phone emergency-number-test-mode` (T19). Use **only the second phone's own number,
+always with `:normal`**, and only with full signal (not "Emergency calls only"): Android then
+tells the modem it's a test call that must not reach emergency services, and places it as a normal
+call to that phone. If the second phone doesn't ring within a few seconds, or either phone says
+anything about an emergency, hang up at once, clear the test number (`-c`) and stop. A restart
+clears it too. Every step here is in maintenance (adb on).
+
+1. Calls on, only contacts, callers who aren't contacts rejected, calls recorded, and the second
+   phone not a contact. Call the Pixel from it: refused, as in 3.1 (if it rings, a window from an
+   earlier step is still open: wait for its 2 hours to end). Write down the carrier's settings: `adb shell cmd phone cc get-value <key>` for
+   `imsemergency.emergency_callback_mode_supported_bool`, `emergency_number_prefix_string_array`,
+   `carrier_supports_caller_id_vertical_service_codes_bool` and
+   `allow_emergency_numbers_in_call_log_bool` (T17, T18, T11).
+2. Restart the Pixel and don't unlock it. Call it from the second phone: write down which app rings
+   (Google's Phone app is expected: Belay decides nothing before the first unlock, T19). Decline.
+3. Still locked: `adb shell cmd phone emergency-number-test-mode -a <the second phone's
+   number>:normal`, then `adb shell cmd phone emergency-number-test-mode -p`: the entry says
+   `routing=NORMAL`. If adb doesn't answer before the first unlock, write that down and go to step
+   6. If the entry says anything else, `-c` and stop.
+4. On the lock screen, tap Emergency call, type the second phone's number and call: the second
+   phone rings with the Pixel's number. Answer, and hang up after a few seconds. Then
+   `adb shell cmd phone emergency-number-test-mode -c`, and `-p` lists nothing (a call from a test
+   emergency number would ring as an emergency call, whatever Belay decides: T17).
+5. Unlock the Pixel. Call it from the second phone: Belay's incoming-call screen rings, though the
+   rules refuse that number (the 2-hour window, from the call before the unlock). While it rings,
+   `adb shell dumpsys telecom | grep -i ecbm`: write down whether the call shows `ecbm` (emergency
+   callback mode; not expected after a call routed as a normal one, and only with step 1's first
+   setting true; Belay rings such a call whatever its rules, T18). Decline. Belay's Recent tab
+   lists the call; the parent page has no record of it.
+6. Caller-ID codes (T17). Set whom the kid can call to only contacts. Make the second phone's number
+   a test emergency number again (`-a <the second phone's number>:normal`, `-p` says
+   `routing=NORMAL`). From Belay's dial pad, call `*67` then the second phone's number: Belay
+   places it (no "Your parent hasn't allowed calls to …"), and the second phone rings. Write down
+   what it shows as the caller (a US carrier hides the number for `*67`). Hang up. The same with
+   `#31#` before the number. Then `-c`. Neither call is on the parent page, and for the next 2
+   hours every caller rings (the window those calls opened).
+7. `adb shell cmd phone emergency-number-test-mode -p` lists nothing.
+
 ## Results
 
 | Step | Check | Result | Android build |
@@ -159,3 +207,10 @@ and to call (a parent's is fine); the parent page; adb over USB for the steps ma
 | 9.3 | Two SIMs: which one | pending | |
 | 10.1 | Calls off: dialer back, icon gone, restarted once, no CALL_PHONE, block list clean | pending | |
 | 10.2 | A stranger rings in Google's Phone app again | pending | |
+| 11.1 | Refused before; the four carrier settings | pending | |
+| 11.2 | Before the first unlock: which app rings for a stranger | pending | |
+| 11.3 | adb before the first unlock; the test number with `routing=NORMAL` | pending | |
+| 11.4 | Emergency call to the test number from the lock screen: the second phone rings | pending | |
+| 11.5 | After the unlock: the stranger rings Belay's screen; `ecbm` or not; no record | pending | |
+| 11.6 | `*67` and `#31#` before a test emergency number: placed under only contacts; what the second phone shows; no record | pending | |
+| 11.7 | The test number cleared | pending | |
