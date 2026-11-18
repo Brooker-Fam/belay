@@ -27,14 +27,15 @@ export interface AuditEntry {
   caregiverName: string | null;
 }
 
+/** Adds an entry to the activity log; its id (the Activity page's `#entry-<id>`). */
 export function audit(
   db: DB,
   at: number,
   actor: Actor,
   action: string,
   extra: { deviceId?: string | null; detail?: Record<string, unknown> } = {},
-): void {
-  db.prepare(
+): number {
+  const result = db.prepare(
     `INSERT INTO audit_log (at, actor, parent_id, client_name, device_id, action, detail, caregiver_id, caregiver_name)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
@@ -48,6 +49,7 @@ export function audit(
     actor.kind === "caregiver" ? actor.caregiverId : null,
     actor.kind === "caregiver" ? actor.name : null,
   );
+  return Number(result.lastInsertRowid);
 }
 
 interface Row {

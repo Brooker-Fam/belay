@@ -10,7 +10,9 @@ import { type Context, Hono } from "hono";
 import { cors } from "hono/cors";
 import type { FC } from "hono/jsx";
 import { audit } from "../audit.js";
+import { browserKind } from "../auth/browsers.js";
 import { checkPassword, createSession, loadSession } from "../auth/parents.js";
+import { signedIn } from "../auth/signins.js";
 import { pkceChallenge, randomToken, safeEqual, sha256 } from "../crypto.js";
 import type { Deps } from "../deps.js";
 import { clientAddress, type Bindings } from "../http.js";
@@ -297,10 +299,12 @@ export function oauthRoutes(deps: Deps, assets: Assets): Hono<{ Bindings: Bindin
           deps.limits.loginPerUser.hit(username.toLowerCase());
           return signInPage(c, p, client, "That username and password don't match.", 401);
         }
-        const made = createSession(db, deps.now(), parent.id);
+        // A full parent session, like the sign-in page's: every parent hears of it at once (auth/signins.ts).
+        const browser = browserKind(c.req.header("user-agent"));
+        const made = createSession(db, deps.now(), parent.id, browser);
         cookie.set(c, made.cookie);
-        audit(db, deps.now(), { kind: "parent", parentId: parent.id }, "parent.signed_in");
-        session = { parent, csrf: made.csrf, idHash: sha256(made.cookie) };
+        signedIn(deps, { kind: "parent", parent, how: "ai_app", sessionId: made.id }, browser);
+        session = { parent, csrf: made.csrf, idHash: sha256(made.cookie), id: made.id };
       }
     }
     if (!session) return signInPage(c, p, client);

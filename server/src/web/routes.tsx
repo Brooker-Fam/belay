@@ -17,10 +17,12 @@ import {
   createSession,
   endAllSessions,
   endSession,
+  endSessionById,
   getParent,
   hashPassword,
   inviteValid,
   listParents,
+  listSessions,
   loadSession,
   parentCount,
   passwordProblem,
@@ -31,6 +33,8 @@ import {
   usernameProblem,
   usernameTaken,
 } from "../auth/parents.js";
+import { browserKind } from "../auth/browsers.js";
+import { signedIn } from "../auth/signins.js";
 import { newId } from "../crypto.js";
 import type { Deps } from "../deps.js";
 import { cancelCode, createEnrollmentCode, pendingCodes } from "../device/enroll.js";
@@ -161,6 +165,7 @@ const VERSION_SAVED: Record<string, string> = {
 const SAVED: Record<string, string> = {
   settings: "Settings saved.",
   password: "Password changed. You were signed out on your other browsers.",
+  signed_out: "Signed out. That browser has to sign in again, with your password.",
   revoked: "Disconnected. Its tokens stopped working.",
   removed: "Removed.",
   renamed: "Renamed.",
@@ -364,8 +369,10 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
     }).immediate();
     if (!parentId) return message(c, "This setup link doesn't work", "Belay may already be set up.", 400, { href: "/login", label: "Sign in" });
     updateSettings(db, { timezone: values.timezone });
-    audit(db, now, { kind: "parent", parentId }, "parent.setup");
-    cookie.set(c, createSession(db, now, parentId).cookie);
+    const browser = browserKind(c.req.header("user-agent"));
+    const session = createSession(db, now, parentId, browser);
+    cookie.set(c, session.cookie);
+    signedIn(deps, { kind: "parent", parent: { id: parentId, name: values.name }, how: "setup", sessionId: session.id }, browser);
     deps.log("The first parent account was created.");
     // The Phones page, where Getting started walks the new family through the rest.
     return c.redirect("/");
@@ -396,9 +403,11 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
       deps.limits.loginPerUser.hit(username.toLowerCase());
       return render(c, <LoginPage view={view(c)} username={username} next={next} error="That username and password don't match." />, 401);
     }
-    const now = deps.now();
-    cookie.set(c, createSession(db, now, parent.id).cookie);
-    audit(db, now, { kind: "parent", parentId: parent.id }, "parent.signed_in");
+    // Every parent hears of it at once, with the kind of browser (auth/signins.ts: the second bypass audit's B1).
+    const browser = browserKind(c.req.header("user-agent"));
+    const session = createSession(db, deps.now(), parent.id, browser);
+    cookie.set(c, session.cookie);
+    signedIn(deps, { kind: "parent", parent, how: "password", sessionId: session.id }, browser);
     return c.redirect(next);
   });
 
@@ -427,8 +436,10 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
       return id;
     }).immediate();
     if (!parentId) return message(c, "This invite doesn't work", "It was used already or expired. Ask for a new one.", 400);
-    audit(db, now, { kind: "parent", parentId }, "parent.joined");
-    cookie.set(c, createSession(db, now, parentId).cookie);
+    const browser = browserKind(c.req.header("user-agent"));
+    const session = createSession(db, now, parentId, browser);
+    cookie.set(c, session.cookie);
+    signedIn(deps, { kind: "parent", parent: { id: parentId, name: values.name }, how: "invite", sessionId: session.id }, browser);
     return c.redirect("/");
   });
 
@@ -1114,6 +1125,7 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
         grants={listGrants(db)}
         mcpUrl={`${config.publicUrl}/mcp`}
         push={{ publicKey: vapidKeys(db).publicKey, browsers: listSubscriptions(db, me(c).parent.id) }}
+        signedIn={{ browsers: listSessions(db, me(c).parent.id, deps.now()), current: me(c).id }}
         digest={<DigestCard view={view(c)} digest={getDigest(db)} meId={me(c).parent.id} browsers={listSubscriptions(db, me(c).parent.id).length} />}
         start={start.hiddenAt !== null && start.essential.done < start.essential.of ? <StartHiddenCard view={view(c)} /> : undefined}
         message={extra.message ?? SAVED[c.req.query("saved") ?? ""]}
@@ -1236,6 +1248,20 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
     cookie.clear(c);
     audit(db, deps.now(), { kind: "parent", parentId: session.parent.id }, "parent.signed_out_everywhere");
     return c.redirect("/login");
+  });
+
+  /** Signs one of this parent's own browsers out, from Settings → Your account (the second bypass audit's B1); never another parent's. */
+  app.post("/settings/browsers/:id/sign-out", (c) => {
+    const session = me(c);
+    const id = c.req.param("id");
+    const ended = endSessionById(db, session.parent.id, id);
+    if (!ended) return c.redirect("/settings#browsers");
+    audit(db, deps.now(), { kind: "parent", parentId: session.parent.id }, "parent.signed_out_browser", { detail: { browser: ended.browser } });
+    if (id === session.id) {
+      cookie.clear(c);
+      return c.redirect("/login");
+    }
+    return c.redirect("/settings?saved=signed_out#browsers");
   });
 
   app.post("/settings/invite", (c) => {

@@ -12,6 +12,7 @@
  * point the server anywhere else.
  */
 import { createCipheriv, createECDH, createHmac, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, sign, type JsonWebKey, type KeyObject } from "node:crypto";
+import { browserKindOf } from "./auth/browsers.js";
 import { newId } from "./crypto.js";
 import type { DB } from "./db.js";
 import type { Deps } from "./deps.js";
@@ -224,9 +225,8 @@ export function removeSubscription(db: DB, parentId: string, which: { id: string
   return toSubscription(row);
 }
 
-/** "Safari on iPhone", from the browser's User-Agent and its push service, for Settings. */
+/** "Safari on iPhone", from the browser's User-Agent (auth/browsers.ts) and, when it names no browser, its push service, for Settings. */
 export function browserName(userAgent: string | undefined, endpoint: string): string {
-  const ua = userAgent ?? "";
   const host = (() => {
     try {
       return new URL(endpoint).hostname;
@@ -234,38 +234,37 @@ export function browserName(userAgent: string | undefined, endpoint: string): st
       return "";
     }
   })();
-  const os = /iPhone/.test(ua)
-    ? "iPhone"
-    : /iPad/.test(ua)
-      ? "iPad"
-      : /Android/.test(ua)
-        ? "Android"
-        : /CrOS/.test(ua)
-          ? "a Chromebook"
-          : /Macintosh|Mac OS X/.test(ua)
-            ? "a Mac"
-            : /Windows/.test(ua)
-              ? "Windows"
-              : /Linux/.test(ua)
-                ? "Linux"
-                : null;
   const byHost = host.endsWith("apple.com") ? "Safari" : host.endsWith("mozilla.com") ? "Firefox" : host.endsWith("windows.com") ? "Edge" : "Chrome";
-  const browser = /Edg\//.test(ua) ? "Edge" : /Firefox\/|FxiOS/.test(ua) ? "Firefox" : /Chrome\/|CriOS/.test(ua) ? "Chrome" : /Safari\//.test(ua) ? "Safari" : byHost;
-  return os ? `${browser} on ${os}` : browser;
+  const { browser, device } = browserKindOf(userAgent);
+  return device ? `${browser ?? byHost} on ${device}` : (browser ?? byHost);
 }
 
 // ── Sending ─────────────────────────────────────────────────────────────
 
 /**
  * What the service worker shows: a title, a line, and the parent page to open on a tap. An urgent
- * one (the kid's "I need help") goes with Web Push's high urgency, and stays on the screen until
- * the parent acts on it.
+ * one (the kid's "I need help", a new sign-in) goes with Web Push's high urgency, and stays on the
+ * screen until the parent acts on it. The service worker shows one notice per page, the newest
+ * (`sw.js`'s tag: the page, a request's own card counted as the Requests page), so a notice that
+ * must never be replaced by a later one opens a page of its own: a sign-in's opens its own browser
+ * in Settings, or its own line on the Activity page (auth/signins.ts).
  */
 export interface Notice {
   title: string;
   body: string;
   /** A tapped notice opens this page: one request's own card (`#request-<id>`) when it's about one; a caregiver's, their own page (Phase 12). */
-  url: "/" | "/requests" | "/requests#help" | `/requests#request-${string}` | "/proposals" | "/settings" | `/devices/${string}` | "/care" | `/care#${string}`;
+  url:
+    | "/"
+    | "/requests"
+    | "/requests#help"
+    | `/requests#request-${string}`
+    | "/proposals"
+    | "/settings"
+    | `/settings#browser-${string}`
+    | `/activity#entry-${number}`
+    | `/devices/${string}`
+    | "/care"
+    | `/care#${string}`;
   urgent?: boolean;
 }
 

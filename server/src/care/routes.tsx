@@ -28,7 +28,9 @@ import {
   joinWithLink,
   loadCareSession,
 } from "../auth/caregivers.js";
+import { browserKind } from "../auth/browsers.js";
 import { passwordProblem, usernameProblem } from "../auth/parents.js";
+import { signedIn } from "../auth/signins.js";
 import type { Deps } from "../deps.js";
 import { CARE_PAUSE_MINUTES, careActor, careCounted, careLimited, careLocate, carePause, careSaved } from "../family/caregivers/changes.js";
 import { listCareSubscriptions, removeCareSubscription, saveCareSubscription, sendToCaregiver } from "../family/caregivers/push.js";
@@ -165,7 +167,8 @@ export function careRoutes(deps: Deps, assets: Assets): Hono<CareEnv> {
     }
     cookie.set(c, createCareSession(db, now, caregiver.id).cookie);
     careSignedIn(db, now, caregiver.id);
-    audit(db, now, careActor(caregiver), "caregiver.signed_in");
+    // The parents hear of it at once, as of their own (auth/signins.ts).
+    signedIn(deps, { kind: "caregiver", caregiver, how: "password" }, browserKind(c.req.header("user-agent")));
     return c.redirect(next);
   });
 
@@ -193,7 +196,7 @@ export function careRoutes(deps: Deps, assets: Assets): Hono<CareEnv> {
     const joined = await joinWithLink(db, now, token, username, password);
     if (!joined.ok) return joined.why === "username" ? again("Another caregiver has that username. Choose another.") : linkBroken(c);
     cookie.set(c, joined.cookie);
-    audit(db, now, careActor(joined.caregiver), "caregiver.joined", before.joined ? { detail: { again: true } } : {});
+    signedIn(deps, { kind: "caregiver", caregiver: joined.caregiver, how: before.joined ? "join_again" : "join" }, browserKind(c.req.header("user-agent")));
     return c.redirect("/care");
   });
 

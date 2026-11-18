@@ -56,11 +56,15 @@ function what(e: AuditEntry, tz: string): string {
   const d = e.detail ?? {};
   const device = e.deviceName ? ` (${e.deviceName})` : "";
   const until = typeof d.until === "number" ? formatDateTime(d.until, tz) : "the end they chose";
+  // A sign-in's kind of browser, Belay's own words (auth/browsers.ts); none on entries from before the second bypass audit's B1.
+  const on = str(d.browser) ? ` on ${str(d.browser)}` : "";
   switch (e.action) {
     case "parent.setup":
-      return "set up Belay";
+      return `set up Belay${on ? `, signed in${on}` : ""}`;
     case "parent.signed_in":
-      return "signed in";
+      return `signed in${on}${d.to === "connect_ai" ? ", to connect an AI app" : ""}`;
+    case "parent.signed_out_browser":
+      return `signed out one of their browsers: ${str(d.browser) || "one from before Belay noted which"}`;
     case "parent.signed_out_everywhere":
       return "signed out on every browser";
     case "parent.password_changed":
@@ -70,7 +74,7 @@ function what(e: AuditEntry, tz: string): string {
     case "parent.invited":
       return "invited another parent";
     case "parent.joined":
-      return "joined as a parent";
+      return `joined as a parent${on ? `, signed in${on}` : ""}`;
     case "parent.removed":
       return `removed ${str(d.name) || "a parent"}`;
     case "code.created":
@@ -132,9 +136,9 @@ function what(e: AuditEntry, tz: string): string {
     case "caregiver.link":
       return `made a new sign-in link for ${caregiverWords(d).name}${d.joined === true ? ", to choose a new password" : ""}`;
     case "caregiver.joined":
-      return d.again === true ? "chose a new password with a sign-in link" : "joined as a caregiver";
+      return `${d.again === true ? "chose a new password with a sign-in link" : "joined as a caregiver"}${on ? `, signed in${on}` : ""}`;
     case "caregiver.signed_in":
-      return "signed in to their caregiver page";
+      return `signed in to their caregiver page${on}`;
     case "caregiver.limited":
       return `was refused: they tried to ${d.what === "checks" ? "check where the phone is" : "pause or lock the phone"} more than ${str(d.limit)} times in an hour${device}`;
     case "token.created":
@@ -356,7 +360,7 @@ export const ActivityPage: FC<{ view: View; entries: AuditEntry[]; includeReads:
           <h2>{formatDayKey(day.key)}</h2>
           <div class="card">
             {day.entries.map((e) => (
-              <div class="change">
+              <div class="change" id={`entry-${e.id}`}>
                 <Time ms={e.at} tz={view.tz}>
                   {formatTime(e.at, view.tz)}
                 </Time>

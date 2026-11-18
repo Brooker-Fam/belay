@@ -1,5 +1,5 @@
 import type { Child, FC } from "hono/jsx";
-import type { Parent } from "../../auth/parents.js";
+import type { Parent, SignedInBrowser } from "../../auth/parents.js";
 import type { Grant } from "../../oauth/store.js";
 import type { PushSubscription } from "../../push.js";
 import { ACTIVITY_DAYS, AI_SCOPES, CALL_DAYS, LOCATION_DAYS, MAP_SITES, MAX_PARENT_NUMBERS, MOBILE_DATA_DAYS, NETWORK_DAYS, OFF_BY_DEFAULT, type Settings, USAGE_MONTHS } from "../../settings.js";
@@ -66,6 +66,42 @@ const Notifications: FC<{ view: View; publicKey: string; browsers: PushSubscript
   </div>
 );
 
+/**
+ * Settings → Your account: where this parent is signed in, the kind of browser each says it is,
+ * and Sign out for each (the second bypass audit's B1). Every new sign-in is pushed to every
+ * parent at once (auth/signins.ts); its notice opens its own row here.
+ */
+const SignedInBrowsers: FC<{ view: View; browsers: SignedInBrowser[]; current: string }> = ({ view, browsers, current }) => (
+  <div class="card" id="browsers">
+    <h3>Where you're signed in</h3>
+    <p class="small">
+      Each browser signed in as you, with the kind of browser it says it is. Belay tells every parent about each new sign-in at once, on the browsers
+      where notifications are on. One you don't know: sign it out here, then change your password below.
+    </p>
+    {browsers.map((b) => (
+      <div class="row spread" id={`browser-${b.id}`}>
+        <span>
+          <strong>{b.browser ?? "A browser from before Belay noted which"}</strong>
+          {b.id === current && <span class="chip">this browser</span>}
+          <br />
+          <span class="small muted">
+            signed in <Time ms={b.createdAt} tz={view.tz} />, until <Time ms={b.expiresAt} tz={view.tz} />
+          </span>
+        </span>
+        {b.id === current ? (
+          <PostButton view={view} action="/logout" kind="quiet">
+            Sign out
+          </PostButton>
+        ) : (
+          <PostButton view={view} action={`/settings/browsers/${b.id}/sign-out`} kind="danger" confirm={`Sign out ${b.browser ?? "that browser"}?`}>
+            Sign out
+          </PostButton>
+        )}
+      </div>
+    ))}
+  </div>
+);
+
 export const SettingsPage: FC<{
   view: View;
   settings: Settings;
@@ -74,13 +110,15 @@ export const SettingsPage: FC<{
   grants: Grant[];
   mcpUrl: string;
   push: { publicKey: string; browsers: PushSubscription[] };
+  /** This parent's signed-in browsers, and which one this is. */
+  signedIn: { browsers: SignedInBrowser[]; current: string };
   /** The daily summary's form (web/pages/server.tsx). */
   digest?: Child;
   /** Bringing back Getting started, once this parent hid it (web/pages/start.tsx). */
   start?: Child;
   message?: string;
   error?: string;
-}> = ({ view, settings, parents, meId, grants, mcpUrl, push, digest, start, message, error }) => {
+}> = ({ view, settings, parents, meId, grants, mcpUrl, push, signedIn, digest, start, message, error }) => {
   const apps = grants.filter((g) => g.kind === "oauth");
   const tokens = grants.filter((g) => g.kind === "pat");
   return (
@@ -285,6 +323,7 @@ export const SettingsPage: FC<{
 
       <h2 id="account">Your account</h2>
       {start}
+      <SignedInBrowsers view={view} browsers={signedIn.browsers} current={signedIn.current} />
       <div class="card">
         <ChangePasswordForm view={view} />
       </div>

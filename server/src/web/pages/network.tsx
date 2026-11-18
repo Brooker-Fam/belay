@@ -161,7 +161,7 @@ export interface NetworkPageData extends NetworkCardData {
  */
 export function restartWhileLogging(device: DeviceView, settings: NetworkSettings | null): number | null {
   const at = device.facts?.last_boot_at;
-  if (at === undefined || at === null || !settings) return null;
+  if (at === undefined || !settings) return null;
   return settings.enabledAt !== null && settings.enabledAt <= at ? at : null;
 }
 

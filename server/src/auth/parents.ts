@@ -23,6 +23,17 @@ export interface Session {
   parent: Parent;
   csrf: string;
   idHash: string;
+  /** The session's name on its parent's Settings page, for its Sign out (never the cookie or its hash). */
+  id: string;
+}
+
+/** One of a parent's signed-in browsers, as Settings lists it. */
+export interface SignedInBrowser {
+  id: string;
+  /** "Chrome on Android" (auth/browsers.ts), or null for a sign-in from before Belay noted it. */
+  browser: string | null;
+  createdAt: number;
+  expiresAt: number;
 }
 
 /** Why a new password won't do, or null. Long is what matters (NIST SP 800-63B): no composition rules. */
@@ -154,36 +165,65 @@ export function useInvite(db: DB, token: string, now: number): boolean {
 
 // ── Sessions ────────────────────────────────────────────────────────────
 
-/** A new session: the cookie value goes to the browser; only its hash is kept. */
-export function createSession(db: DB, now: number, parentId: string): { cookie: string; csrf: string } {
+/**
+ * A new session: the cookie value goes to the browser; only its hash is kept, with the kind of
+ * browser it was signed in on ("Chrome on Android", auth/browsers.ts), for Settings' list. A
+ * sign-in route tells the parents of it (auth/signins.ts).
+ */
+export function createSession(db: DB, now: number, parentId: string, browser: string | null = null): { cookie: string; csrf: string; id: string } {
   const cookie = randomToken(32);
   const csrf = randomToken(32);
-  db.prepare("INSERT INTO sessions (id_hash, parent_id, csrf, created_at, expires_at) VALUES (?, ?, ?, ?, ?)").run(
+  const id = newId();
+  db.prepare("INSERT INTO sessions (id_hash, id, parent_id, csrf, browser, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(
     sha256(cookie),
+    id,
     parentId,
     csrf,
+    browser,
     now,
     now + SESSION_TTL_MS,
   );
   db.prepare("DELETE FROM sessions WHERE expires_at <= ?").run(now);
-  return { cookie, csrf };
+  return { cookie, csrf, id };
 }
 
 export function loadSession(db: DB, cookie: string | undefined, now: number): Session | null {
   if (!cookie || cookie.length > 100) return null;
   const idHash = sha256(cookie);
   const row = db
-    .prepare<[string, number], { csrf: string; id: string; name: string; username: string; created_at: number }>(
-      `SELECT s.csrf, p.id, p.name, p.username, p.created_at FROM sessions s JOIN parents p ON p.id = s.parent_id
+    .prepare<[string, number], { csrf: string; session_id: string; id: string; name: string; username: string; created_at: number }>(
+      `SELECT s.csrf, s.id AS session_id, p.id, p.name, p.username, p.created_at FROM sessions s JOIN parents p ON p.id = s.parent_id
        WHERE s.id_hash = ? AND s.expires_at > ?`,
     )
     .get(idHash, now);
   if (!row) return null;
-  return { parent: { id: row.id, name: row.name, username: row.username, createdAt: row.created_at }, csrf: row.csrf, idHash };
+  return { parent: { id: row.id, name: row.name, username: row.username, createdAt: row.created_at }, csrf: row.csrf, idHash, id: row.session_id };
 }
 
 export function endSession(db: DB, idHash: string): void {
   db.prepare("DELETE FROM sessions WHERE id_hash = ?").run(idHash);
+}
+
+/** A parent's signed-in browsers, newest first: their sessions that haven't expired. */
+export function listSessions(db: DB, parentId: string, now: number): SignedInBrowser[] {
+  return db
+    .prepare<[string, number], { id: string; browser: string | null; created_at: number; expires_at: number }>(
+      "SELECT id, browser, created_at, expires_at FROM sessions WHERE parent_id = ? AND expires_at > ? ORDER BY created_at DESC, rowid DESC",
+    )
+    .all(parentId, now)
+    .map((r) => ({ id: r.id, browser: r.browser, createdAt: r.created_at, expiresAt: r.expires_at }));
+}
+
+/** Signs one of a parent's browsers out, by its id: only that parent's own. The browser it was, or null. */
+export function endSessionById(db: DB, parentId: string, id: string): SignedInBrowser | null {
+  const row = db
+    .prepare<[string, string], { id: string; browser: string | null; created_at: number; expires_at: number }>(
+      "SELECT id, browser, created_at, expires_at FROM sessions WHERE id = ? AND parent_id = ?",
+    )
+    .get(id, parentId);
+  if (!row) return null;
+  db.prepare("DELETE FROM sessions WHERE id = ? AND parent_id = ?").run(id, parentId);
+  return { id: row.id, browser: row.browser, createdAt: row.created_at, expiresAt: row.expires_at };
 }
 
 /** Signs a parent out on every browser, except `keep` when given. */
