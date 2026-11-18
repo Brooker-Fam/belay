@@ -82,6 +82,23 @@ class NetworkLogTest {
     }
 
     @Test
+    fun `the private websites' digest says whether the list changed, never which names are on it`() {
+        assertNull(NetworkLog.digest(emptySet()))
+        val one = NetworkLog.digest(setOf("example.org", "example.net"))
+        assertEquals(one, NetworkLog.digest(linkedSetOf("example.net", "example.org")))
+        assertTrue(one != null && Regex("^[0-9a-f]{64}$").matches(one), one)
+        assertTrue(one != NetworkLog.digest(setOf("example.org")))
+        assertTrue(one != NetworkLog.digest(setOf("example.org", "example.net", "example.com")))
+        // It's state the phone keeps, without the names.
+        val state = NetworkLogState(enabledAt = 1, privateDigest = one)
+        val json = Json.encodeToString(NetworkLogState.serializer(), state)
+        assertFalse("example" in json)
+        assertEquals(state, Json.decodeFromString(NetworkLogState.serializer(), json))
+        // Kept from before private websites: none cleared yet.
+        assertNull(Json.decodeFromString(NetworkLogState.serializer(), """{"enabledAt":1}""").privateDigest)
+    }
+
+    @Test
     fun `the policy's network_log is off unless it says on, and the report carries enabled and paused`() {
         val old = Wire.json.decodeFromString(PolicyResponse.serializer(), """{"server_time":1,"policy":{"version":3}}""").policy
         assertFalse(old.networkLog.enabled)

@@ -2,6 +2,7 @@ package family.brooker.belay.core.network
 
 import family.brooker.belay.core.screentime.WireNetworkLogStatus
 import kotlinx.serialization.Serializable
+import java.security.MessageDigest
 
 /**
  * What the phone keeps about network logging between steps (Room's network_state row, as JSON),
@@ -29,6 +30,11 @@ data class NetworkLogState(
     val lastBatchLookups: Int = 0,
     /** `enforcement.network_log` as the last step made it; null when there's nothing to say. */
     val report: WireNetworkLogStatus? = null,
+    /**
+     * The family's private websites the days kept were last cleared of, as [NetworkLog.digest]
+     * (never the names): when the policy's list changes, a step clears them again.
+     */
+    val privateDigest: String? = null,
 )
 
 /**
@@ -71,6 +77,16 @@ object NetworkLog {
 
     /** Android refused to hand a batch over at [at]. */
     fun refused(state: NetworkLogState, at: Long): NetworkLogState = state.copy(refusedAt = at)
+
+    /**
+     * The family's private websites ([Domains.privateSet]) as one value that says whether the list
+     * changed, and never which names are on it: a SHA-256, hex, of the names in order; null for none.
+     */
+    fun digest(private: Set<String>): String? {
+        if (private.isEmpty()) return null
+        val bytes = MessageDigest.getInstance("SHA-256").digest(private.sorted().joinToString("\n").toByteArray(Charsets.UTF_8))
+        return bytes.joinToString("") { "%02x".format(it) }
+    }
 
     /**
      * `enforcement.network_log`: null while the policy has logging off and Android's is off too;

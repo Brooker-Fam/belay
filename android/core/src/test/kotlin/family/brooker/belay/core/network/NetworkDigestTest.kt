@@ -5,6 +5,8 @@ import java.time.ZoneId
 import java.time.ZonedDateTime
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /** Android's DNS lookups to counts per app, per domain, per local day. Made-up apps and names only. */
@@ -83,7 +85,7 @@ class NetworkDigestTest {
                 NetworkDigest.Skip.NEVER_BLOCKED to 2,
                 NetworkDigest.Skip.SHARED_UID to 2,
                 NetworkDigest.Skip.NO_APP to 2,
-                NetworkDigest.Skip.CRISIS_988 to 3,
+                NetworkDigest.Skip.PRIVATE to 3,
                 NetworkDigest.Skip.NOT_A_DOMAIN to 4,
             ),
             batch.skipped,
@@ -168,5 +170,71 @@ class NetworkDigestTest {
         val stored = mapOf("2026-11-17" to NetworkDay("2026-11-17", zone.id, at(8), mapOf(NetworkKey(chat, "example.com") to NetworkWireLimits.MAX_COUNT)))
         val merged = NetworkDigest.merge(stored, NetworkDigest.reduce(listOf(lookup(chat, "example.com")), never, zone, now), zone).single()
         assertEquals(NetworkWireLimits.MAX_COUNT, merged.counts.getValue(NetworkKey(chat, "example.com")))
+    }
+
+    // The family's private websites: a helpline's or a counselor's site, never kept, like 988's.
+    private val private = Domains.privateSet(listOf("example.org", "help.example.net"))
+
+    @Test
+    fun `the family's private websites are never kept, and are counted with 988's under one reason`() {
+        val batch = NetworkDigest.reduce(
+            listOf(
+                lookup(chat, "example.com", at(9)),
+                lookup(chat, "www.example.net", at(10)),
+                lookup(chat, "example.org", at(11)),
+                lookup(chat, "Chat.CDN.Example.ORG.", at(12)),
+                lookup(game, "help.example.net", at(13)),
+                lookup(game, "a.help.example.net", at(13)),
+                lookup(game, "988lifeline.org", at(14)),
+                // A day with only private lookups isn't a day at all.
+                lookup(game, "example.org", at(9, day = 16)),
+            ),
+            never, zone, now, private,
+        )
+        // A private "help.example.net" never counts as "example.net"; the rest of the site does.
+        assertEquals(mapOf("2026-11-17" to mapOf(NetworkKey(chat, "example.com") to 1, NetworkKey(chat, "example.net") to 1)), batch.days)
+        assertEquals(mapOf(NetworkDigest.Skip.PRIVATE to 6), batch.skipped)
+        assertEquals(2, batch.kept)
+        // Nothing about them moves a day: its newest time is the newest lookup kept.
+        assertEquals(at(10), batch.newest.getValue("2026-11-17"))
+        // Without the list, they're kept as any website is (988's never).
+        val open = NetworkDigest.reduce(listOf(lookup(chat, "www.example.org"), lookup(game, "988lifeline.org")), never, zone, now)
+        assertEquals(mapOf(NetworkKey(chat, "example.org") to 1), open.days.getValue("2026-11-17"))
+        assertEquals(mapOf(NetworkDigest.Skip.PRIVATE to 1), open.skipped)
+    }
+
+    @Test
+    fun `a day kept from before a website was private loses it at the next batch, and the day sent never names it`() {
+        val stored = mapOf(
+            "2026-11-17" to NetworkDay(
+                "2026-11-17", zone.id, at(8),
+                mapOf(NetworkKey(chat, "example.org") to 9, NetworkKey(game, "example.org") to 1, NetworkKey(chat, "example.com") to 5),
+                overflow = 2,
+            ),
+        )
+        val batch = NetworkDigest.reduce(listOf(lookup(chat, "example.com"), lookup(chat, "www.example.org")), never, zone, now, private)
+        val merged = NetworkDigest.merge(stored, batch, zone, private).single()
+        assertEquals(mapOf(NetworkKey(chat, "example.com") to 6), merged.counts)
+        assertEquals(2, merged.overflow)
+        val wire = NetworkDigest.wire(merged)
+        assertEquals(listOf(WireNetworkEntry(chat, "example.com", 6)), wire.entries)
+        // `dropped` is the phone's cut and overflow, never the private lookups.
+        assertEquals(2, wire.dropped)
+        assertFalse("example.org" in Wire.json.encodeToString(WireNetworkDay.serializer(), wire))
+    }
+
+    @Test
+    fun `without takes a day's private websites out, and says when there were none`() {
+        val day = NetworkDay(
+            "2026-11-17", zone.id, at(12),
+            mapOf(NetworkKey(chat, "example.org") to 3, NetworkKey(chat, "example.com") to 5, NetworkKey(game, "988.ca") to 1),
+            overflow = 4,
+        )
+        assertEquals(day.copy(counts = mapOf(NetworkKey(chat, "example.com") to 5)), NetworkDigest.without(day, private))
+        // 988's go with an empty list too; a day with nothing private is left as it is.
+        assertEquals(day.copy(counts = mapOf(NetworkKey(chat, "example.org") to 3, NetworkKey(chat, "example.com") to 5)), NetworkDigest.without(day, emptySet()))
+        val clean = day.copy(counts = mapOf(NetworkKey(chat, "example.com") to 5))
+        assertNull(NetworkDigest.without(clean, private))
+        assertNull(NetworkDigest.without(clean, emptySet()))
     }
 }

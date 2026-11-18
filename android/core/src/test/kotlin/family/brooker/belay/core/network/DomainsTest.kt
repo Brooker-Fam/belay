@@ -76,5 +76,38 @@ class DomainsTest {
         assertFalse(Domains.crisis("my988lifeline.org"))
         assertFalse(Domains.crisis(Domains.of("988lifeline.org.example.com") ?: ""))
         assertFalse(Domains.crisis("example.com"))
+        // And never kept with no private websites at all.
+        assertTrue(Domains.neverKept("chat.988lifeline.org", emptySet()))
+        assertFalse(Domains.neverKept("example.com", emptySet()))
+    }
+
+    @Test
+    fun `the family's private websites are never kept, with any name under them, like 988's`() {
+        val private = Domains.privateSet(listOf("example.org", "help.example.net"))
+        for (name in listOf("example.org", "www.example.org", "chat.cdn.example.org", "help.example.net", "a.help.example.net")) {
+            assertTrue(Domains.neverKept(name, private), name)
+        }
+        // Its registrable part matches as the whole name does.
+        assertTrue(Domains.neverKept(Domains.registrable("chat.cdn.example.org"), private))
+        // Only those names: one that merely contains one, or ends with it without a dot, is another website;
+        // and a name listed under a site keeps the rest of the site.
+        for (name in listOf("myexample.org", "example.org.example.com", "example.com", "www.example.net", "example.net", "elp.example.net")) {
+            assertFalse(Domains.neverKept(name, private), name)
+        }
+        // 988's websites stay never kept beside them.
+        assertTrue(Domains.neverKept("988.ca", private))
+    }
+
+    @Test
+    fun `the policy's private websites are read as hostnames, at most 100, anything else left out`() {
+        assertEquals(
+            setOf("example.org", "xn--bcher-kva.example", "help.example.net"),
+            Domains.privateSet(listOf("Example.ORG.", " example.org ", "Bücher.example", "help.example.net", "192.0.2.10", "not a name", "", "localhost", "printer.local")),
+        )
+        assertEquals(emptySet(), Domains.privateSet(emptyList()))
+        val many = (1..150).map { "site$it.example" }
+        assertEquals(NetworkWireLimits.MAX_PRIVATE_DOMAINS, Domains.privateSet(many).size)
+        assertTrue("site100.example" in Domains.privateSet(many))
+        assertFalse("site101.example" in Domains.privateSet(many))
     }
 }
