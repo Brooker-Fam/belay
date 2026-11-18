@@ -292,6 +292,40 @@ describe("migration 13 (no lock tells of a call)", () => {
   });
 });
 
+describe("migration 14 (caregivers)", () => {
+  it("keeps every activity entry, with who did it, and every pause and command; a caregiver's entry keeps their name", () => {
+    const db = phase2();
+    migrate(
+      db,
+      loadMigrations().filter((m) => m.version <= 13),
+    );
+    const entry = db.prepare("INSERT INTO audit_log (at, actor, parent_id, client_name, device_id, action, detail) VALUES (?, ?, ?, ?, ?, ?, ?)");
+    entry.run(T, "parent", "parent-1", null, "phone-1", "phone.paused", '{"minutes":30}');
+    entry.run(T + 1, "ai", "parent-1", "Claude", "phone-1", "app.blocked", null);
+    entry.run(T + 2, "phone", null, null, "phone-1", "request.made", '{"kind":"help"}');
+    entry.run(T + 3, "server", null, null, null, "caregiver.access_ended", null);
+    db.prepare("INSERT INTO policies (device_id, version, changed_at, paused, pause_until, pause_note) VALUES ('phone-1', 3, ?, 1, ?, 'Dinner')").run(T, T + 3_600_000);
+    db.prepare("INSERT INTO commands (id, device_id, kind, issued_at, expires_at, issued_by, client_name) VALUES ('c-1', 'phone-1', 'lock_now', ?, ?, 'parent-1', 'Claude')").run(T, T + 600_000);
+    migrate(db);
+    expect(db.pragma("user_version", { simple: true })).toBe(loadMigrations().at(-1)?.version);
+    expect(db.prepare("SELECT id, at, actor, parent_id, client_name, device_id, action, detail, caregiver_id, caregiver_name FROM audit_log ORDER BY id").all()).toEqual([
+      { id: 1, at: T, actor: "parent", parent_id: "parent-1", client_name: null, device_id: "phone-1", action: "phone.paused", detail: '{"minutes":30}', caregiver_id: null, caregiver_name: null },
+      { id: 2, at: T + 1, actor: "ai", parent_id: "parent-1", client_name: "Claude", device_id: "phone-1", action: "app.blocked", detail: null, caregiver_id: null, caregiver_name: null },
+      { id: 3, at: T + 2, actor: "phone", parent_id: null, client_name: null, device_id: "phone-1", action: "request.made", detail: '{"kind":"help"}', caregiver_id: null, caregiver_name: null },
+      { id: 4, at: T + 3, actor: "server", parent_id: null, client_name: null, device_id: null, action: "caregiver.access_ended", detail: null, caregiver_id: null, caregiver_name: null },
+    ]);
+    expect(db.prepare("SELECT paused, pause_until, pause_note, pause_caregiver FROM policies").get()).toEqual({ paused: 1, pause_until: T + 3_600_000, pause_note: "Dinner", pause_caregiver: null });
+    expect(db.prepare("SELECT id, client_name, caregiver_id, caregiver_name FROM commands").all()).toEqual([{ id: "c-1", client_name: "Claude", caregiver_id: null, caregiver_name: null }]);
+    // A caregiver's entry outlives their account, under their name.
+    db.prepare("INSERT INTO caregivers (id, name, can_status, can_pause, can_help, can_locate, access_from, ends_at, created_at, updated_at) VALUES ('cg-1', 'Grandma', 1, 1, 1, 0, ?, ?, ?, ?)").run(T, T + 86_400_000, T, T);
+    db.prepare("INSERT INTO audit_log (at, actor, device_id, action, caregiver_id, caregiver_name) VALUES (?, 'caregiver', 'phone-1', 'phone.paused', 'cg-1', 'Grandma')").run(T + 4);
+    db.prepare("DELETE FROM caregivers WHERE id = 'cg-1'").run();
+    expect(db.prepare("SELECT actor, caregiver_id, caregiver_name FROM audit_log WHERE id = 5").get()).toEqual({ actor: "caregiver", caregiver_id: null, caregiver_name: "Grandma" });
+    // The index the activity page and the clean-up use is there again.
+    expect(db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'audit_log'").all()).toEqual([{ name: "audit_log_at" }]);
+  });
+});
+
 describe("the migrations", () => {
   it("are numbered once each: two with one number are refused, as parallel work merged would make them", () => {
     const versions = loadMigrations().map((m) => m.version);

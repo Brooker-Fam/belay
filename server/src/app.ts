@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { routePath } from "hono/route";
+import { careRoutes } from "./care/routes.js";
 import type { Deps } from "./deps.js";
 import { deviceRoutes } from "./device/routes.js";
 import type { Bindings } from "./http.js";
@@ -24,6 +25,8 @@ export function createApp(deps: Deps): Hono<{ Bindings: Bindings }> {
   app.route("/api/v1", deviceRoutes(deps));
   app.route("/", oauthRoutes(deps, assets));
   app.route("/", mcpRoutes(deps));
+  // Phase 12: a caregiver's own pages. Their catch-all answers every /care path, so none reaches a parent page.
+  app.route("/care", careRoutes(deps, assets));
   // The parent pages last: their middleware covers every path the routes above don't answer.
   app.route("/", webRoutes(deps, assets));
 

@@ -235,6 +235,30 @@ server's CLI), and the phone shows each one.
 | A parent stopping collecting, or deleting, to hide something from the other parent | Data gone without a trace. | Each stop is in the activity log with its category and what went, and needs a parent's session. |
 | A parent deleting requests | Hiding a help request, or leaving the kid's answers dangling. | Help requests no parent has seen, and requests still waiting, stay. A request the kid's phone still lists keeps a bare record with its answer, so the phone never shows it as waiting again. |
 
+## Caregivers (Phase 12)
+
+A parent can give someone who looks after the kid for a while (a grandparent, a babysitter, a
+coach on a trip) limited access, until a time at most 30 days ahead
+([design](design/phase12-caregivers.md)): a separate kind of account with its own pages under
+`/care`, never a parent's.
+
+| What they could do | What Belay does |
+|---|---|
+| Talk a caregiver into giving more time, letting an app through or ending a pause | Nothing a caregiver can do loosens anything: their pages have no resume, more time, apps, answers or lock lifting, and the server's types let a caregiver only pause (never shorter, always with an end), lock and check. "More time from a caregiver" would need principle 2 changed: a family decision. |
+| Pretend to be a caregiver, or rename one, on the phone | The kid's screens list only the policy's caregivers, each name a parent's words, shown as plain text on one line of at most 40 characters, without characters that hide or reorder text. |
+| Keep a caregiver from seeing a help request | It goes to every parent as before: a caregiver gets it too, never instead. Only a parent marks it seen. |
+
+| Who | Risk | What Belay does |
+|---|---|---|
+| Someone with a caregiver's password or session (a stolen account, a shared tablet) | Watching the kid, pausing the phone, reading help requests. | Only the phones and the things a parent chose, until the end (30 days at most): never the app list, screen time, calls, websites, earlier fixes or places. Passwords of at least 15 characters (argon2id), sign-in limited per address and per username, sessions of 7 days, CSRF tokens and an Origin check on every form. Pauses and locks only tighten, at most 6 an hour; each check posts a notice on the kid's phone naming the caregiver, at most 6 an hour. Every sign-in and action is in the activity log, and a parent ends access at once. |
+| A caregiver reaching for parent data | The app list, settings, the activity log, MCP. | A separate account table, session table and cookie that no parent page, form, upload, OAuth step, MCP call or device API call reads; the caregiver pages ask one function, for every request, whether this caregiver may do this to this phone now; no MCP, OAuth grant or token for caregivers. A test walks every route the server registers with a caregiver's session (in their cookie, in a parent's cookie, as a Bearer token) and expects exactly what no credentials get. |
+| A caregiver learning about another caregiver, or other phones | Who else has access, the family's other phones. | Never shown: another phone is "no such phone", a pause says only until when (not who else set it), and a check shows only that caregiver's own, for 15 minutes. |
+| An ended caregiver with an open session, or a browser still subscribed | Acting or hearing after access ended. | Every caregiver request and every notice checks the end time, so nothing works a second after it; ending deletes sessions and browsers at once (a parent) or within the hour (the clean-up), and nothing works in between. |
+| The one-time link, intercepted | Someone else joining as the caregiver. | It works once, for 7 days at most and never after access ends; only its hash is kept; the join page says what it gives; a parent sees whether and when the caregiver joined and last signed in, and a new link stops an unused one (using one signs the caregiver out everywhere else). |
+| A parent who wants to watch the kid through a "caregiver" in secret | Hidden access. | Not possible: the policy lists every caregiver with access to the phone, the kid's phone shows each one with what they can see and do, and every pause and check names them. |
+| A caregiver's name | Text the kid sees, written to mislead. | A parent writes it: 1 to 40 characters, one line, cleaned like the kid's own text on the server and again on the phone, shown as plain text. |
+| An AI app | Adding a caregiver, or seeing who has access. | AI apps can't see, add or change caregivers, not even as a proposal: giving someone access to the kid's phone is a parent's decision, out of band. |
+
 ## Other people
 
 | Who | Risk | What Belay does |

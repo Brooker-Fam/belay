@@ -50,6 +50,9 @@ export const LoginPage: FC<{ view: View; error?: string; username?: string; next
       <button type="submit">Sign in</button>
     </form>
     <p class="muted small">Forgot your password? Whoever runs the server can reset it (see docs/server.md).</p>
+    <p class="muted small">
+      Looking after a phone for a while, as a caregiver? <a href="/care/login">Sign in here</a>.
+    </p>
   </Layout>
 );
 

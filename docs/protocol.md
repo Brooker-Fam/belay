@@ -617,6 +617,48 @@ What the server does with them:
   no category for.
   Changing them gives every phone a new version.
 
+## Caregivers (Phase 12, both sides)
+
+Someone a parent gives limited access to a phone for a while: a grandparent for a weekend, a
+babysitter, a coach on a trip ([design](design/phase12-caregivers.md)). A caregiver is never a
+parent: they sign in to their own pages on the server (`/care`), see only what a parent chose,
+and nothing they do loosens a rule. The kid's phone always shows who has access.
+
+- **`caregivers`:** each caregiver with access to this phone: `name` (the parent's words, one
+  line, at most 40 characters), `until` (when access ends) and `can`, what they may do, in this
+  order: `status` (whether the phone is online, when it last connected, its battery, and whether
+  it's paused or on a schedule), `pause` (pause it, or pause it and lock the screen now),
+  `help` (the kid's "I need help" requests) and `locate` (check where it is now).
+- **`pause.caregiver`:** the caregiver who set the pause in force, by name, only when one did.
+- **`commands[].caregiver`:** the caregiver who sent a `lock_now` or `locate_now`, by name, only
+  when one did; never with `via`.
+- **The phone** lists a caregiver only until their `until`, by its own clock, even before a new
+  policy comes: on "What your parent can see" (what each can see and do, what they can't, and
+  until when), one line each on Home, and on Help (who else gets the kid's help requests). It
+  says "Paused by Grandma" for a caregiver's pause, and names the caregiver in a check's notice
+  and in "What Belay told your parent". It shows each name as plain text, on one line, at most
+  40 characters, without the characters that hide or reorder text; leaves out a `can` word it
+  doesn't know; and leaves out `locate` while the policy's location doesn't take checks. A phone
+  that doesn't know these fields ignores them; one that does reads an absent `caregiver` as none.
+- Nothing new goes from the phone to the server.
+
+What the server does with them:
+
+- **`caregivers`** lists every caregiver whose phones include this one and whose access a parent
+  hasn't ended (with "End access now", or the hourly clean-up at `until`), the soonest end first,
+  then by name; at most 20 (the server keeps at most 20). Each name is cleaned as the kid's own
+  text is (no control characters, nothing that hides or reorders text). `until` is at most 30
+  days after a parent set or renewed it. `locate` is there only while the phone's location is
+  `on_demand` or `periodic`, so only while a check works. Adding, changing, renewing, ending or
+  removing a caregiver gives each phone it touches a new version, and so does the clean-up.
+- **A caregiver's pause** always has an `until` (15 minutes to 4 hours ahead) and only ever makes
+  a pause longer, as an AI app's does: against a pause at least as long, nothing changes. It never
+  has a note of theirs; a longer pause keeps a parent's note. A pause a parent, an AI app or the
+  CLI sets in its place has no `caregiver`. Only a parent resumes.
+- **A caregiver's `lock_now`** comes with their pause, as an AI app's does; their `locate_now` is
+  a parent's "Check now", only while the phone takes checks. At most 6 pauses and locks, and 6
+  checks, an hour per caregiver and phone.
+
 ## Screen time rules (Phase 3, both sides)
 
 The phone counts app time itself from Android's usage events (`queryEvents`, with the
@@ -817,6 +859,7 @@ server decides whether a change tightens or loosens.
 | `ai_reads` | string[] | Phase 7: the data categories the AI app may read |
 | `help_seen` | `[{request_id, at, by?}]` | Phase 7: the last 30 days |
 | `parent_numbers` | `[{name, number}]` | Phase 7: at most 4; `number` in E.164, `name` at most 40 characters |
+| `caregivers` | `[{name, until, can: ("status"\|"pause"\|"help"\|"locate")[]}]` | Phase 12: at most 20, the soonest `until` first; `name` is a parent's words, at most 40 characters (see "Caregivers") |
 | `calls` | `{mode: "open"\|"contacts", unknown, withheld: "reject"\|"voicemail"\|"ring", outgoing: "contacts"\|"any", quiet, log}`? | Phase 5; null: Belay isn't the dialer |
 | `contacts` | `[{id, name, numbers: [E.164], calls, texts, parent}]` | Phase 5: at most 500; `name` at most 60 characters, at most 5 numbers |
 | `private_numbers` | string[] | Phase 5: E.164 numbers Belay never records or reads, beyond 988 and emergency numbers; at most 50 |
@@ -825,6 +868,9 @@ server decides whether a change tightens or loosens.
 | `off_belay` | `{how, position: "on"\|"next"\|"later"}`? | Phase 11: the family's last stage, for the kid's "My stage": the family's words for when it comes (at most 1000 characters, or null), and where it is for this phone |
 
 The `commands` kinds gain `locate_now` (Phase 4).
+
+Phase 12 adds `caregiver?` to `pause` and to each `commands` entry: the caregiver's name (at most
+40 characters), only when a caregiver set the pause or sent the command (see "Caregivers").
 
 **Location** (Phase 4; the rules are above)
 

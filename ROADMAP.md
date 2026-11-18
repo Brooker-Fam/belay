@@ -139,6 +139,9 @@ phase's Pixel checklist is in `docs/`.
   provisions the emulator with the kit's runner.
 - **Phase 10:** another user or profile is reported, and removed when a parent asks.
 - **Phase 11:** off belay: the last stage, stopping collection with deletion, the hand-over.
+- **Phase 12:** caregivers: limited, time-boxed access a parent gives a grandparent, a babysitter
+  or a coach, which the kid's phone always lists (the phone's side tested on the JVM, not yet on
+  the emulator).
 - **Across phases:**
   - three security reviews and three checks of their fixes, with their fixes in (the third's on
     the phone too: a spoofed caller ID is a stranger's, 911 and 988 go through with a caller-ID
@@ -281,3 +284,20 @@ with a release build, ending in a reset from Settings.
 - The last stage, visible from the start: blocking stops, then collection stops, then the parent
   hands the phone over: restrictions and reset protection lifted, data backed up to the kid's own
   account, a reset from Settings, and the server's data deleted.
+
+### Phase 12: caregivers ([design](docs/design/phase12-caregivers.md)) (built)
+
+Built: the server's side (the Caregivers page, the caregiver's own pages under `/care`, a test that
+walks every other route with a caregiver's session, access that ends by itself, help notices to
+caregivers) and the kid's side (each caregiver on What your parent can see, Home and Help, and a
+caregiver's pause and check named), with the policy's `caregivers`; the phone's words are tested on
+the JVM, not yet in the emulator job. **Still open:**
+[docs/phase12-checklist.md](docs/phase12-checklist.md) on the Pixel, with a caregiver on another
+phone and an iPhone; the design's open questions (a caregiver marking help seen, access that
+starts later, naming caregivers in Android's managed notice).
+
+
+- A parent gives someone who looks after the kid for a while their own sign-in, for some phones,
+  until a time at most 30 days ahead: the phone's status, pausing or locking it (only ever
+  tighter), the kid's "I need help", and checking where it is now (off by default). Never anything
+  that loosens; the kid always sees who has access, with what, until when.

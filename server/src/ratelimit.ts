@@ -64,6 +64,9 @@ export class RateLimiter {
  */
 export const AI_PER_HOUR = { checks: 6, locks: 6 } as const;
 
+/** Phase 12: how many times an hour one caregiver may check where a phone is, and pause or lock it, per phone: as an AI app. */
+export const CARE_PER_HOUR = AI_PER_HOUR;
+
 /** The limits the server applies. */
 export interface Limiters {
   /** Failed enrollment codes, per client address. */
@@ -139,6 +142,14 @@ export interface Limiters {
   aiLimitedLog: RateLimiter;
   /** One "was refused" line in the activity log per connection, phone, tool and reason an hour (mcp/limits.ts's aiRefused). */
   aiRefusedLog: RateLimiter;
+  /**
+   * Phase 12: what a caregiver does that reaches the kid, per caregiver and phone, as an AI app's
+   * (family/caregivers/changes.ts): checks of where the phone is, and pauses and locks together.
+   */
+  careChecks: RateLimiter;
+  careLocks: RateLimiter;
+  /** One "too many" line in the activity log per caregiver, phone and kind an hour. */
+  careLimitedLog: RateLimiter;
 }
 
 export function createLimiters(now: () => number): Limiters {
@@ -166,5 +177,8 @@ export function createLimiters(now: () => number): Limiters {
     aiLocks: new RateLimiter(AI_PER_HOUR.locks, 60 * MIN, now),
     aiLimitedLog: new RateLimiter(1, 60 * MIN, now),
     aiRefusedLog: new RateLimiter(1, 60 * MIN, now),
+    careChecks: new RateLimiter(CARE_PER_HOUR.checks, 60 * MIN, now),
+    careLocks: new RateLimiter(CARE_PER_HOUR.locks, 60 * MIN, now),
+    careLimitedLog: new RateLimiter(1, 60 * MIN, now),
   };
 }

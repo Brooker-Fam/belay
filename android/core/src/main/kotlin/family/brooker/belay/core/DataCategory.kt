@@ -1,5 +1,7 @@
 package family.brooker.belay.core
 
+import family.brooker.belay.core.kid.CaregiverCan
+import family.brooker.belay.core.kid.ShownCaregiver
 import family.brooker.belay.core.location.LocationRules
 import family.brooker.belay.core.location.WireLocation
 import family.brooker.belay.core.location.WireLocationMode
@@ -219,5 +221,34 @@ object DataCategories {
                 null
             },
         ),
+    )
+
+    /** Phase 12: a caregiver's card isn't a kind of data Belay collects, and no AI scope has this id. */
+    const val CAREGIVER_ID = "caregiver"
+
+    /**
+     * Phase 12: someone a parent gave some access to this phone for a while (the policy's
+     * `caregivers`, kid.Caregivers), for "Caregivers your parent added": their name and until when
+     * ([until], in the kid's words, like "Sunday at 6:00 PM"), what they can see and do, each as
+     * the server lets them (family/caregivers), and what they never can.
+     */
+    fun caregiver(caregiver: ShownCaregiver, until: String): DataCategory = DataCategory(
+        id = CAREGIVER_ID,
+        title = "${caregiver.name}, until $until",
+        details = caregiver.can.map { CAREGIVER_CAN.getValue(it) } + CAREGIVER_CANT,
+    )
+
+    private val CAREGIVER_CAN = mapOf(
+        CaregiverCan.STATUS to "Can see whether this phone is online and when it last connected, its battery, and " +
+            "whether it's paused or on a schedule",
+        CaregiverCan.PAUSE to "Can pause this phone, or pause it and lock the screen, for up to 4 hours at a time. " +
+            "Only your parent can end a pause early.",
+        CaregiverCan.HELP to "Gets your \"I need help\" requests, with what you write, and where this phone is if you share it",
+        CaregiverCan.LOCATE to "Can check where this phone is right now. You get a notification every time.",
+    )
+
+    private val CAREGIVER_CANT = listOf(
+        "Can't see your apps, your screen time, your calls, the websites apps look up, or where this phone has been",
+        "Can't give you more time or let an app through. Only your parent can.",
     )
 }

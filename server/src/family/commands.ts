@@ -33,6 +33,8 @@ export interface Command {
   issuedBy: string | null;
   /** The AI app a parent used to send it, by the name it registered with: untrusted. Null when a person sent it. */
   via: string | null;
+  /** Phase 12: the caregiver who sent it (a lock_now or locate_now), by the name a parent gave them then; null otherwise. */
+  caregiver: string | null;
   result: "done" | "failed" | "expired" | null;
   /** The phone's clock. */
   resultAt: number | null;
@@ -49,6 +51,7 @@ interface CommandRow {
   expires_at: number | null;
   issued_by_name: string | null;
   client_name: string | null;
+  caregiver_name: string | null;
   result: Command["result"];
   result_at: number | null;
   problem: string | null;
@@ -66,6 +69,7 @@ function toCommand(r: CommandRow, now: number): Command {
     expiresAt: r.expires_at,
     issuedBy: r.issued_by_name,
     via: r.client_name,
+    caregiver: r.caregiver_name,
     result: r.result,
     resultAt: r.result_at,
     problem: r.problem,
@@ -74,7 +78,8 @@ function toCommand(r: CommandRow, now: number): Command {
   };
 }
 
-const SELECT = `SELECT c.id, c.kind, c.issued_at, c.expires_at, p.name AS issued_by_name, c.client_name, c.result, c.result_at, c.problem, c.reported_at, c.replaced_at
+const SELECT = `SELECT c.id, c.kind, c.issued_at, c.expires_at, p.name AS issued_by_name, c.client_name, c.caregiver_name, c.result, c.result_at, c.problem,
+    c.reported_at, c.replaced_at
   FROM commands c LEFT JOIN parents p ON p.id = c.issued_by`;
 
 /** The phone's commands, newest first; of one kind, if given. */

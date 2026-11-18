@@ -123,7 +123,8 @@ export const PauseCard: FC<{ view: View; device: DeviceView; rules: Rules }> = (
       {pause && (
         <>
           <p>
-            <strong>Paused</strong> {pause.until === null ? "until you resume it" : <>until <Time ms={pause.until} tz={view.tz} /></>}.
+            <strong>Paused</strong> {pause.until === null ? "until you resume it" : <>until <Time ms={pause.until} tz={view.tz} /></>}
+            {pause.caregiver !== null && <>, by {pause.caregiver} (a caregiver: the phone names them)</>}.
           </p>
           {pause.note && (
             <>
