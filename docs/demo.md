@@ -60,8 +60,9 @@ numbers (in North America's 555-01xx range, which is kept for fiction).
   Robin removed, 15 more minutes of games given one evening, a restart, and a few calls.
 - **Waiting for you:** Lantern Chat, a chat app Robin asked for, with why, and 30 more minutes of
   games.
-- **Off, as for every new family:** location and network logging. You can turn them on, to see
-  their pages; the simulated phone says it can't do them (below).
+- **Off, as for every new family:** location, network logging and measuring mobile data, and no
+  app is Wi-Fi only. You can turn them on, to see their pages; the simulated phone says what it
+  can't do (below).
 - **No caregivers.** Add one on the Caregivers page and open their link in a private window to
   see a caregiver's pages under `/care`, which carry the banner too; the terminal shows Robin's
   phone listing them, as the kid's screen does.
@@ -97,6 +98,9 @@ What it can't do, it says in its own words, as Belay on a real phone reports wha
   for a real phone that can't find where it is.
 - **Network logging:** it can't note which websites its apps look up, so it sends nothing: the
   phone's page shows that as a problem from the phone.
+- **Mobile data:** it has none, so measuring it sends nothing: the phone's page shows that as a
+  problem from the phone. The apps you make Wi-Fi only, it keeps off mobile data, as the Mobile
+  data tab shows.
 - **Updating Belay:** it can't install a new version, so an update offered to it fails.
 
 There's no kid's screen: what Robin would see (an answer, a pause, "Time's up") is in the lines the
@@ -128,9 +132,9 @@ Run it, start Claude Code, and ask what you'd ask about your own kid's phone:
 - "Allow Lantern Chat." Loosening, so it's only a proposal: it waits on the Proposals page until
   you approve it there.
 
-As for any family, Claude reads apps, the phone's status, requests, screen time and the stage and
-agreement; calls, location and network activity stay hidden from it until you turn them on in
-Settings → "What AI apps may read". The name `belay-demo` keeps it apart from a real Belay you
+As for any family, Claude reads apps, the phone's status, requests, screen time, mobile data and
+the stage and agreement; calls, location and network activity stay hidden from it until you turn
+them on in Settings → "What AI apps may read". The name `belay-demo` keeps it apart from a real Belay you
 connect as `belay`; `claude mcp remove belay-demo` takes it away.
 
 **claude.ai and the Claude desktop app** connect only to a server on a public HTTPS address
