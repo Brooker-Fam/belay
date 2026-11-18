@@ -32,6 +32,7 @@ schemas in `server/src/device/schemas.ts`. Change all three together.
 | `POST /api/v1/locations` | 64 KB, at most 200 fixes and 200 place events (Phase 4) |
 | `POST /api/v1/calls` | 128 KB, at most 500 records (Phase 5) |
 | `POST /api/v1/network` | 512 KB, at most 31 days of at most 5000 entries (Phase 3, network logging) |
+| `POST /api/v1/mobile-data` | 256 KB, at most 31 days of at most 500 apps (Phase 13) |
 
 Errors: `{"error": "<code>", "error_description": "<words>"}` with
 
@@ -400,6 +401,89 @@ Also accepted and dropped: a day that isn't a real date, one the phone can't hav
 (after tomorrow in its `zone`), and one older than the family keeps (30 days by default).
 `accepted` counts every day in the call. The endpoint is rate limited per phone apart from the
 phone's other calls (30 a minute).
+
+## `POST /api/v1/mobile-data`
+
+Phase 13, mobile data use. How many bytes each app used on mobile data, one local day per entry,
+with the day's Wi-Fi total, only while the policy's `mobile_data.measure` is on (a parent's choice
+alone, off by default; never an AI client's, not even as a proposal).
+
+```json
+{ "days": [ { "day": "2026-11-17", "zone": "America/Los_Angeles", "from": 1794808800000,
+              "as_of": 1794867161711, "complete": false,
+              "mobile_bytes": 412000000, "wifi_bytes": 2100000000,
+              "apps": [ { "package": "com.example.video", "bytes": 350000000 } ],
+              "android_bytes": 52000000, "removed_bytes": 0, "hotspot_bytes": 0 } ] }
+```
+→ `200 {"server_time", "accepted"}`.
+
+**MobileDataDay**
+
+| Field | Type | |
+|---|---|---|
+| `day` | `"YYYY-MM-DD"` | in `zone` |
+| `zone` | string | IANA: the phone's own |
+| `from` | int | counted from: the day's start, or when measuring turned on that day |
+| `as_of` | int | counted up to: when the phone read it, or the day's end once `complete` |
+| `complete` | bool | the day is over, and Android's last bucket of it has closed |
+| `mobile_bytes` | int | everything on mobile data that day: every line below, and what's past the 500 apps |
+| `wifi_bytes` | int | everything on Wi-Fi that day, all apps together: one number, never per network |
+| `apps` | `[{package, bytes}]` | at most 500, most first; never an app the phone never blocks |
+| `android_bytes` | int | Android's own parts, shared uids, other users' and the apps the phone never blocks (the phone app, texting, the keyboard…), together |
+| `removed_bytes` | int | apps removed since: Android keeps their use as removed apps |
+| `hotspot_bytes` | int | what other devices used through this phone's own hotspot |
+
+Bytes are received plus sent, 0 to 10^14. Idempotent by `day`: a day sent again replaces the
+stored one, apps and all, so the phone always sends the whole day as it has it.
+
+What the phone does (Android 17's `NetworkStatsManager`, read as device owner; docs/platform-notes.md
+Q6 to Q8):
+
+- It reads `querySummary(TYPE_MOBILE, null, from, to)` (every app's uid on every mobile network,
+  metered ones) and `querySummaryForDevice(TYPE_WIFI, null, from, to)` (the Wi-Fi total; never per
+  network, which would need location). An SDK sandbox's bytes count as its app's; a uid several
+  packages share, Android's own uids and other users' go into `android_bytes`, with the apps it
+  never blocks (its `never_blocked`), so a call or a text to 988 never shows by itself.
+- Today about every hour, each past day once more 2.5 hours after it ends (Android's per-app
+  buckets are 2 hours, polled every 30 minutes), at most 7 days back, and never anything from
+  before measuring turned on (`from`): Android keeps 90 days, and none of it from before the kid's
+  screen said so is sent. Each day waits in an outbox lane of its own, a newer report replacing an
+  unsent one; with `measure` off it deletes its record and every unsent day.
+
+What the server keeps: a day only while the phone's `mobile_data.measure` is on; otherwise it's
+answered `200`, counted in `accepted`, dropped, and counted for the parent page. A never-blocked
+app's own line (the phone's `never_blocked`, and the well-known dialers, texting and emergency apps)
+is never kept: its bytes are added to `android_bytes`, so the day's total stays right. Also
+accepted and dropped: a day that isn't a real date, one the phone can't have counted yet (after
+tomorrow in its `zone`), and one older than the family keeps (90 days by default, 1 to 400).
+`accepted` counts every day in the call.
+
+## Wi-Fi-only apps (Phase 13, both sides)
+
+The policy's `mobile_data.wifi_only` (at most 100 package names, sorted): apps that may not use
+mobile data. The phone enforces it as device owner with
+`DevicePolicyManager.setMeteredDataDisabledPackages` (docs/platform-notes.md Q1 to Q5): Android
+keeps each one off every metered network (mobile data; Wi-Fi marked metered; another Android
+phone's hotspot), whether the app is in front or not, and Data Saver's exemptions, the app's own
+data switches, and resetting network settings or app preferences don't lift it.
+
+- **Never restricted**, whatever the list says: Belay, and every package the phone never blocks
+  (its `never_blocked`: the dialers, the texting app, emergency apps, the home screen, Settings,
+  the keyboard in use, and Android's own packages without a launcher icon, Carrier Services and
+  Play services among them), so calls, texts (RCS needs data), 911 and 988 always work; and any
+  package that shares its uid with another (Android restricts by uid). Each one the list names
+  that's on the phone is a problem in the report, in the parent's words.
+- **Waiting quietly:** a package that isn't installed (it's restricted once it is), and one Belay
+  hid (Android refuses a hidden app; it's restricted once it's unblocked).
+- Belay calls Android only when its list differs from what Android has, or an app on it was
+  installed again under a new uid (Android resolves a package to its uid when Belay calls). A
+  package Android refused is a problem, and isn't asked for again until something changes.
+- The report's `mobile_data.wifi_only` is what Android keeps off mobile data for Belay now; the
+  kid's rules screen lists those apps, never more.
+- On the server: adding an app tightens (a parent, or an AI client for an app the phone has
+  reported); taking one off loosens, so it's a parent's, or a parent approving an AI client's
+  proposal (kind `mobile_data`). The server refuses, for everyone, the apps it knows the phone
+  never blocks and Android's own parts the phone reported (system apps without a launcher icon).
 
 ## Calls rules (Phase 5, both sides)
 
@@ -790,6 +874,7 @@ server decides whether a change tightens or loosens.
 | `stage` | `{name, number, since, next?: {name, unlocks: string[], how?, screen_time?}}`? | Phase 3, for the kid's screen; `unlocks` and `how` are the family's words |
 | `agreement` | `{version, sections: [{title, text}], kid_agreed_at?, parents_agreed_at?}`? | Phase 3; at most 20 sections of 2000 characters |
 | `network_log` | `{enabled, private_domains}` | Phase 3: whether the phone logs which domains its apps look up (`POST /network`); off unless a parent turns it on, never an AI app. `private_domains`: the family's private websites, at most 100 registrable domains (lowercase hostnames, checked like a `network` entry's `domain`) the phone never keeps a lookup of, or of a name under one, like 988's websites; a parent's alone, sent whether logging is on or off. A phone that doesn't know it reads `{enabled}` as before |
+| `mobile_data` | `{wifi_only: string[], measure: bool}` | Phase 13, always sent: the Wi-Fi-only apps (above), at most 100 package names, sorted; `measure`: send `POST /mobile-data`. Both off by default; a phone that doesn't know it ignores it, and a phone that does reads a policy without it as both off |
 | `location` | Location? | Phase 4; null or `mode: off`: no location at all |
 | `ai_reads` | string[] | Phase 7: the data categories the AI app may read |
 | `help_seen` | `[{request_id, at, by?}]` | Phase 7: the last 30 days |
@@ -865,6 +950,7 @@ The answers in `requests` gain `minutes?` (Phase 3: an approved `more_time`).
 | `network_log` | `{enabled, paused}`? | Phase 3: null while the policy's `network_log` is off and Android's logging is too; `enabled`: Android logs for Belay; `paused`: Android paused it, while another user or profile is on the phone |
 | `location` | `{permission, location_on, last_fix_at?, problem?}`? | Phase 4: null while location is off |
 | `calls` | `{dialer, problem?}`? | Phase 5: whether Belay is the default dialer |
+| `mobile_data` | `{wifi_only: string[]}`? | Phase 13: the packages Android keeps off mobile data for Belay now (`getMeteredDataDisabledPackages`), sorted, at most 100; null while the policy lists none and Android has none |
 
 **CallRecord** (phone → server, Phase 5): `{id, at, direction: "in"|"out", contact_id?, number?,
 duration_s, outcome: "answered"|"missed"|"rejected"|"voicemail"|"not_placed", reason?:

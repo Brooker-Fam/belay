@@ -149,6 +149,34 @@ private. Against: it's one more list to keep true, it can never be complete (a s
 false comfort), and parents see less on the Network tab. The family's own list stays for
 everything else (a local helpline, a counselor). Not built: it needs the family's yes.
 
+## The kid and mobile data (Phase 13)
+
+Wi-Fi only is enforcement: Android keeps an app off every metered network for Belay, as device
+owner, offline too. Mobile data use is a record, only while a parent measures it.
+
+| What they could do | What Belay does |
+|---|---|
+| Turn the app's "Background data" or "Unrestricted data usage" on in Settings | They show "Disabled by admin", and neither would lift it: Android's admin restriction isn't one Data Saver or the app's switches clear (platform notes Q2, Q4, Q5). |
+| Reset app preferences, or the phone's network settings | Neither touches the admin's restriction (Q5). |
+| Open the app while it's in front | Being in front lifts Data Saver's and the user's restrictions, never the admin's (Q2). |
+| Mark a Wi-Fi network "Treat as unmetered" | The kid can, for any Wi-Fi, a parent's hotspot included: Wi-Fi-only apps then use it, and the hotspot's data (Q3). Belay can't see it (it would need the network's name, which needs location). The parent's own phone shows its hotspot's use; `DISALLOW_CONFIG_WIFI` would stop it, but also stop joining any new Wi-Fi, so it isn't used. |
+| Use a hotspot Android doesn't know is metered | Android's own hotspot says so in its DHCP answer (Q3); an iPhone's may not, and Wi-Fi-only apps then work on it. For the Pixel checklist. |
+| Share the phone's own mobile data through its hotspot | Not stopped (no tethering lock is set); the day's report shows what other devices used on a line of its own, and a parent sees it. |
+| Download through Android's download manager | A Wi-Fi-only app's download it hands to the download manager is the download manager's job, so it may use mobile data (Q9); it's still counted under the app, and the parent page flags a Wi-Fi-only app that used mobile data. |
+| Get app updates over mobile data | Updates come through Play, not the app: Wi-Fi only doesn't cover them. The parent page suggests making Play Wi-Fi only too, or Play's own download preference. |
+| Watch videos inside another app | It's that app's traffic: that app's rule applies. |
+| Use a VPN to get around it | VPN apps are locked by Phase 2's `config_vpn`; a VPN app's traffic is still the app's own uid. |
+| Reinstall a Wi-Fi-only app to get a new uid | Belay keeps each restricted app's uid and asks Android again when one changes (Android resolves a package to its uid when it's asked: Q2). |
+| Install an app that shares its uid with a Wi-Fi-only one | Belay never restricts a package that shares its uid (Android would cut off the others too), and the parent hears why. |
+| Name an app to steer the parent's AI | App labels and package names stay `untrusted` (principle 3). |
+
+| Who | Risk | What Belay does |
+|---|---|---|
+| The parent's AI app, steered by a prompt injection | Taking an app off Wi-Fi only, or turning measuring on or off. | Taking one off is only a proposal a parent approves on the parent page; no tool or proposal turns measuring on or off, in either direction. Adding one only tightens, and never the phone app, texting, the keyboard, the home screen or Android's own parts, so it can't cut off calls, texts, 911 or 988. |
+| The AI provider | Learning how much each app is used. | Only while the `mobile_data` scope is on (by default, like screen time) and a parent measures: bytes per app per day, never sites, networks or times of day; app names only with the Apps scope. |
+| An unsafe adult in the home | Learning that the kid called or texted 988. | The phone app and texting are never on a line of their own: their bytes are with Android's own, on the phone and on the server. |
+| Whoever gets a phone's token | Made-up mobile data use, or a flood of it. | Kept only while a parent measures; at most 31 days of at most 500 apps in 256 KB a call, one day per date (sent again, it replaces the stored one), only dates the phone can have counted and the family keeps (90 days by default), and never a never-blocked app's own line. Package names are checked as package names. |
+
 ## The kid and location (Phase 4)
 
 Off by default; on demand, or periodic with places, worked out on the phone, and lost mode. The
@@ -245,7 +273,7 @@ server's CLI), and the phone shows each one.
 | Whoever gets a phone's token (a stolen or sold phone) | Sending fake data, including text meant for the parent's AI; filling the server's disk. | The parent disconnects the phone on its page: the token stops at once, and deleting the phone deletes what it sent. Until then, what it can make the server keep is capped per phone: new requests and fixes an hour (then `429`), new app changes an hour (then accepted and not kept), requests that wait for no one, fixes, arrivals, app changes, apps that aren't on the phone any more and the record of its app lists in all (then the oldest go, never an app a parent decided on or reviewed), at most as many apps as an app list holds, and usage only for dates it can have counted ([server.md](server.md#what-a-phone-can-make-the-server-keep)). A made-up "the recovery key was used" is taken only for the phone's current key, once, and the parents are told it's what the phone reports. Tokens are stored only as hashes. What the phone says reaches an AI client in plain fields only in Android's own formats (a release, a patch date, a declared permission); the rest, the model's name and a failed lock's words included, is in `untrusted` fields. |
 | The same, with screen time (Phase 3) | Made-up usage, or a flood of it. | Usage is the phone's own report, so it can be wrong like any report. The server takes at most 31 days of at most 500 apps in 256 KB a call, rate limited per phone, keeps one day per date and zone (sent again, it replaces the stored one only when it's at least as new), in at most 3 zones and only for dates the phone can have counted by then (a day of clock skew allowed), keeps nothing while measuring is off, and never keeps the time of the apps it never blocks. Apps and a zone that isn't a real one reach an AI client only as `untrusted`. |
 | An app developer | Prompt injection through app names, versions or store text. | Untrusted fields, capped lengths, strict package-name format, and instructions that say it's data. |
-| The AI provider | Seeing family data. | Only what the tools return, only the categories the parents allow, every read in the activity log. The server itself never calls an AI. Where the phone is: nothing while the Location category is off (the default for every family); who calls the kid and other people's numbers: nothing while the Calls category is off (also the default); which websites apps look up: nothing while the Network category is off (also the default). |
+| The AI provider | Seeing family data. | Only what the tools return, only the categories the parents allow, every read in the activity log. The server itself never calls an AI. Where the phone is: nothing while the Location category is off (the default for every family); who calls the kid and other people's numbers: nothing while the Calls category is off (also the default); which websites apps look up: nothing while the Network category is off (also the default); how much mobile data apps use (Phase 13): only while a parent measures, and the Mobile data category is on (by default). |
 | Someone with a parent's account (Phase 4) | Tracking the kid in secret. | Not possible in secret: every check is in the activity log and on the kid's phone, with a notice each time, and the kid sees whether location is shared, how often, and the places' names. |
 | A map or address service (Phase 4) | Learning where the kid is. | The server never calls one: fixes are described by the family's own places, by the server. "Open in a map" is a link the parent's browser follows only when clicked, to the site the family picked. |
 | Google, with the combined provider (Phase 4) | Seeing location requests. | With `fused` (Android's combined provider, Google's on a Pixel), Google's location service handles the request, under Google's settings; the parent page says so. With GPS only, the default, only the phone's own receiver is used. |

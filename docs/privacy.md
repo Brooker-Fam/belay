@@ -143,6 +143,36 @@ On the server: a day sent while network logging is off isn't kept, and the looku
 phone never blocks aren't kept even if a phone sends them. AI apps read it only with Settings'
 "Network" category on, which starts off for every family.
 
+**How much mobile data apps use (Phase 13), only while a parent measures it.** Off by default,
+for every phone. Only a parent turns it on, on the phone's Mobile data page (or the server's CLI,
+acting as one), never an AI app, and no AI app can propose it. While it's on, Belay reads
+Android's own accounting (`NetworkStatsManager`, which a device owner reads for every app) and
+sends, for each local day:
+
+- each app's bytes on mobile data, received and sent together (at most 500 apps, the most first);
+- the phone's total on Wi-Fi that day: one number for every app together;
+- one line for the phone app, the texting app, the keyboard, the home screen, Belay and Android's
+  own parts together (with apps that share a connection, and other users' apps), never one by
+  one, so a call or a text to 988 never shows by itself; one for apps removed since; and one for
+  what other devices used through this phone's own hotspot.
+- Never: which websites or online services, which Wi-Fi networks (asking per network would need
+  location, and Belay never does), when in the day, or anything inside the traffic. Android
+  doesn't count those, and Belay never asks.
+- Nothing from before measuring turned on: Android keeps 90 days of history, and Belay sends none
+  of it from before the kid's screen said so.
+
+**Wi-Fi-only apps (Phase 13)** collect nothing: they're a rule (an app that may not use mobile
+data), not data, so they're on the kid's This phone's rules, not under "What your parent can
+see". The phone reports which apps Android keeps off mobile data, which the parent set anyway.
+
+On the server: a day sent while measuring is off isn't kept, and a never-blocked app's own line
+isn't kept even if a phone sends one (its bytes go with Android's). AI apps read it with
+Settings' "Mobile data" category, which starts on, like screen time: it's the same kind of data
+(how much each app is used) with less in it (no hours of the day, no opens, no unlocks), far
+less than network activity (which names the services the kid uses, so it starts off), and its
+point is the AI app's job here: finding the apps that use the family's data plan, and suggesting
+Wi-Fi only. A family that turned any category off before gets it off, marked new in Settings.
+
 **Where this phone is (Phase 4), only while a parent has location on.** Off by default: with
 location off, Belay doesn't even hold the location permission (it's denied by policy, so Settings
 shows Belay without it and nobody can grant it). Only a parent turns it on, on the phone's
@@ -216,7 +246,8 @@ same rules as its own: never one with 911, 988, an emergency or a private number
 **Not collected in Phase 1:** messages, calls, contacts, photos, files, browsing, searches,
 location (Phase 4 adds it, off by default), what's on the screen, or how long apps are used. Later phases add some of these
 only as listed in [ROADMAP.md](../ROADMAP.md), each shown to the kid on the phone first,
-and some (location, calls, network activity) off by default for AI.
+and some (location, calls, network activity) off by default for AI. Phase 13 adds mobile data
+use, off for every phone until a parent measures it.
 
 ## When it's sent
 
@@ -241,6 +272,10 @@ and some (location, calls, network activity) off by default for AI.
 - Phase 3, network logging: each day's list as soon as Android hands Belay a batch of lookups
   (every 90 minutes at most, sooner on a busy phone). When a parent turns it off, the phone drops
   the days it hasn't sent yet. Days the server gets while it's off are dropped, and only counted.
+- Phase 13, while measuring mobile data: today about every hour (Android's own numbers move every
+  30 minutes), and each day once more 2.5 hours after it ends; at most a week back after a phone
+  was off. When a parent turns it off, the phone drops the days it hasn't sent yet. Days the
+  server gets while it's off are dropped, and only counted.
 
 The camera is used only to scan the enrollment QR code, only if the person scanning
 allows it, and only while that screen is open. Camera frames are never stored or sent.
@@ -273,7 +308,9 @@ allows it, and only while that screen is open. Camera frames are never stored or
   text with 911, 988 or a private number from any other. Network logging (Phase 3) keeps the
   counts of today and the two days before (which app looked up which name, how many times), and
   where Android's batches stand; all of it goes, with the days not sent yet, when a parent turns
-  it off.
+  it off. Mobile data use (Phase 13) keeps only which days it sent; Android keeps its own
+  accounting (90 days), as it does on every phone. The Wi-Fi-only apps are kept as Belay last
+  gave them to Android.
 - **On the family's server:** one SQLite database in `/data`, on a machine the family
   controls ([server.md](server.md)). Nothing goes to Belay's authors or anyone else. There
   are no analytics, telemetry, ads or crash-reporting SDKs, in the agent or the server.
@@ -334,7 +371,10 @@ sends outside the family's server, and the parent page says so where you choose 
   only with the Apps category on too (without it, their package names, as the phone sent them).
   Which websites are private is never shown to an AI app, nor whether there are any, nor how many
   lookups were dropped (though one that read the network activity before a website was made
-  private can see its entries go: above).
+  private can see its entries go: above). **Mobile data use** (Phase 13) is on for AI apps by
+  default, like screen time (above for why): each day's mobile data and Wi-Fi totals and each
+  app's bytes, the apps' own names only with the Apps category too. Which apps are Wi-Fi only is
+  a rule, shown with the phone's rules (by name only with Apps).
 
 ## What the kid sees (Phase 2)
 
@@ -390,6 +430,21 @@ sends outside the family's server, and the parent page says so where you choose 
   if you want to know."), and loses it when it's off. Android shows its own notice too, at most twice ("Your organization manages
   this device and may monitor network traffic"), and Belay's list explains that "your
   organization" means the parent, through Belay.
+
+## What the kid sees (Phase 13)
+
+- **What your parent can see** gains "How much mobile data apps use" the moment a parent turns
+  measuring on ("How much mobile data each app uses each day, like 120 MB"; the day's Wi-Fi total,
+  all apps together; that the phone app, texting and Android's own parts are counted together,
+  not one by one, with what devices use through the phone's hotspot; and "Not which websites or
+  Wi-Fi networks, and nothing you send or get"), and loses it when it's off.
+- **This phone's rules** gains "Some apps work only on Wi-Fi" while Android keeps an app off
+  mobile data for Belay, naming them, with what it means: they act offline on mobile data, may
+  not work on some Wi-Fi like another phone's hotspot, and this never stops calls or texts; 911
+  and 988 always work. A Wi-Fi only card lists each app, "Wi-Fi only: your parent chose this".
+  Only what Android restricts now: an app the policy lists that isn't installed, or that Belay
+  can't restrict, isn't listed. Off belay's "Belay blocks nothing now" waits until no app is
+  Wi-Fi only.
 
 ## What the kid sees (Phase 4)
 
@@ -530,6 +585,12 @@ then deleted by the hourly clean-up. Turning network logging off stops new days;
 stay until they age out (the phone page says how many). The private websites stay until a parent
 removes them, or deletes the phone. The AI scope "network" is off by default for every family.
 
+Mobile data use (Phase 13) is kept 90 days by default, three billing cycles (the family chooses 1
+to 400 in Settings), then deleted by the hourly clean-up. Turning measuring off stops new days;
+the ones kept stay until they age out (the Mobile data page says how many). The Wi-Fi-only apps
+stay until a parent takes them off, or deletes the phone. The AI scope "mobile_data" is on by
+default (above).
+
 **Stopping collecting (Phase 11).** A parent can stop one kind of data for a phone, on its page,
 at any time, and the server deletes what it keeps of it at once, after a confirmation that lists
 exactly what goes (counted then: if more arrives before the parent confirms, the list is shown
@@ -547,6 +608,8 @@ again). It's in the activity log, with what went. Only a parent does it, never a
 - **Websites and services apps look up (Phase 3):** network logging turns off (the phone turns
   Android's off and deletes what it counted), and every day of network activity goes. The private
   websites stay: they're the phone's rules.
+- **Mobile data use (Phase 13):** measuring turns off, and every day of mobile data use goes. The
+  Wi-Fi-only apps stay: they're the phone's rules, and collect nothing.
 - **Apps:** every app change, every review and its notes, the apps that aren't on the phone any
   more (but one a parent blocked or allowed, which its decision names), and the record of the app
   lists the phone sent. The phone keeps sending its app list and changes while Belay is on it (its
