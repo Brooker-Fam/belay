@@ -153,10 +153,10 @@ account ids, the email addresses of the accounts Play may use (only how many) an
 or which numbers are private.
 
 Every tool call is in the activity log (Activity → "Also show what AI apps read"). So is each
-change `change_calls` refuses, and each schedule `change_screen_time` refuses as too short,
-shown with the changes ("Claude via MCP … was refused: it tried to change calls with phone
-numbers while AI access to calls is off"), once an hour per connection, phone and reason,
-naming no number, contact or rule.
+change `change_calls` refuses (one that would change nothing aside), and each schedule
+`change_screen_time` refuses as too short, shown with the changes ("Claude via MCP … was
+refused: it tried to change calls with phone numbers while AI access to calls is off"), once an
+hour per connection, phone and reason, naming no number, contact or rule.
 
 Each connection may send 300 JSON-RPC messages a minute. A request may carry a batch of at
 most 20, and each message in it counts. What reaches the kid is limited too, per connection and
