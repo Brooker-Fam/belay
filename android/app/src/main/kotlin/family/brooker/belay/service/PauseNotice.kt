@@ -12,12 +12,13 @@ import androidx.core.app.NotificationManagerCompat
 import family.brooker.belay.Agent
 import family.brooker.belay.R
 import family.brooker.belay.core.WirePause
+import family.brooker.belay.core.kid.Caregivers
 import family.brooker.belay.ui.Screen
 import family.brooker.belay.ui.Screens
 
 /**
- * Phase 7: while a parent has the phone paused, a quiet notice says so, with until when, and
- * "I need help" (the help screen is never blocked). Shown once per pause (its end and note), taken
+ * Phase 7: while a parent (or Phase 12's caregiver, named) has the phone paused, a quiet notice
+ * says so, with until when, and "I need help" (the help screen is never blocked). Shown once per pause (its end and note), taken
  * away when the pause ends; Android also takes it away at the pause's end (setTimeoutAfter).
  */
 object PauseNotice {
@@ -33,14 +34,22 @@ object PauseNotice {
             shownFor = null
             return
         }
-        val key = "${pause.until}:${pause.note}"
+        // Phase 12: a caregiver's pause names them ("Paused by Grandma").
+        val by = Caregivers.who(pause.caregiver)
+        val key = "${pause.until}:${pause.note}:$by"
         if (key == shownFor) return
         if (context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
         ScreenTimeNotice.ensureChannel(context)
-        val text = until?.let { context.getString(R.string.pause_notice_until, it) } ?: context.getString(R.string.pause_notice)
+        val text = when {
+            by != null && until != null -> context.getString(R.string.pause_notice_by_until, by, until)
+            by != null -> context.getString(R.string.pause_notice_by, by)
+            until != null -> context.getString(R.string.pause_notice_until, until)
+            else -> context.getString(R.string.pause_notice)
+        }
+        val title = by?.let { context.getString(R.string.pause_notice_title_by, it) } ?: context.getString(R.string.pause_notice_title)
         val builder = NotificationCompat.Builder(context, ScreenTimeNotice.CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(context.getString(R.string.pause_notice_title))
+            .setContentTitle(title)
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setContentIntent(open(context, Screen.HOME, 0))

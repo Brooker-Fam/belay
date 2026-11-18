@@ -398,6 +398,9 @@ internal fun ToldCard(told: List<ToldEntry>, words: KidWords) {
             if (i > 0) HorizontalDivider()
             val text = when (entry.kind) {
                 ToldKind.CHECK -> when {
+                    // Phase 12: a caregiver's check, by their name.
+                    entry.caregiver != null && !entry.sent -> stringResource(R.string.told_check_by_not_sent, entry.caregiver.orEmpty())
+                    entry.caregiver != null -> stringResource(R.string.told_check_by, entry.caregiver.orEmpty())
                     !entry.sent -> stringResource(R.string.told_check_not_sent)
                     entry.via != null -> stringResource(R.string.told_check_via, entry.via.orEmpty())
                     else -> stringResource(R.string.told_check)
