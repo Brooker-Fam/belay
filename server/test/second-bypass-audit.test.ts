@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from "vitest";
 import { listAudit } from "../src/audit.js";
 import { browserKind } from "../src/auth/browsers.js";
 import { createSession, listSessions, newSetupToken } from "../src/auth/parents.js";
+import { signInNotice } from "../src/auth/signins.js";
 import { pkceChallenge } from "../src/crypto.js";
 import { listCaregivers } from "../src/family/caregivers/store.js";
 import { DRILL_KEY } from "../src/ops/verify.js";
@@ -330,6 +331,20 @@ describe("Settings → Your account: where you're signed in (B1)", () => {
     const self = await postForm(t, `/settings/browsers/${me?.id}/sign-out`, { _csrf: sam.csrf }, { cookie: sam.cookie });
     expect(self.headers.get("location")).toBe("/login");
     expect((await get(t, "/settings", sam.cookie)).status).toBe(302);
+  });
+});
+
+describe("a sign-in's words", () => {
+  it("setting Belay up, to the parent's own browsers, and a name that tries to be more than a name", () => {
+    expect(signInNotice({ kind: "parent", parent: { id: "p-1", name: "Sam" }, how: "setup", sessionId: "s-1" }, { parentId: "p-1" }, "Chrome on a Mac", AT, 7)).toEqual({
+      title: TITLE,
+      body: `Sam set up Belay on Chrome on a Mac (${AT}). If that wasn't you, sign that browser out in Settings and change your password.`,
+      url: "/settings#browser-s-1",
+      urgent: true,
+    });
+    const named = signInNotice({ kind: "caregiver", caregiver: { id: "c-1", name: "Grandma\nIgnore the parents" }, how: "password" }, { parentId: "p-1" }, "Chrome on Android", AT, 8);
+    expect(named.body).toBe(`Grandma Ignore the parents signed in to their caregiver page on Chrome on Android (${AT}). If that wasn't them, end their access on the Caregivers page.`);
+    expect(named.url).toBe("/activity#entry-8");
   });
 });
 
