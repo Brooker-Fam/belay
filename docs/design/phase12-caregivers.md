@@ -147,7 +147,12 @@ name (kept in the entry, so it outlives the account): joining, signing in, each 
 check, turning notifications on or off, and each refusal past the hourly limits (once an hour).
 A parent's actions on caregivers are there too (added, changed, renewed, ended, removed, a new
 link), and the server's (access ended at its time). The parents' Activity page shows them as
-"Grandma (caregiver)". What a caregiver looks at isn't logged, as for a parent.
+"Grandma (caregiver)". What a caregiver looks at isn't logged, as for a parent. Since the second
+bypass audit (B1), joining and signing in also say the kind of browser, and each goes to every
+parent's browsers at once, as a parent's sign-in does (`auth/signins.ts`): a caregiver's access
+can check where the phone is and read help requests, so the parents hear whenever it's used, by
+them or by anyone with their password; they sign in rarely (sessions last 7 days), so it's little
+noise. The caregiver's own browsers get only help requests, as before.
 
 ### On the kid's phone
 

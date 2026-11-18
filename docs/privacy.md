@@ -353,7 +353,8 @@ form to anyone, and makes only two kinds of outbound request:
   counts and kinds of problems ("2 things need you: a phone has been silent 14 hours, the
   last backup failed"): no phone's or app's name, and nothing the kid wrote. A help request's
   notice carries the kid's words, and an arrival's the place's name, encrypted like the rest;
-  never coordinates.
+  never coordinates. A sign-in's notice carries who signed in, the kind of browser and the time,
+  never the address it came from.
 
 Where the phone is never leaves the family's server either. The server describes a fix by the
 family's own places, by itself, and calls no map, tile or address service. "Open in a map" is a
@@ -369,7 +370,16 @@ sends outside the family's server, and the parent page says so where you choose 
 
 ## Who can see it
 
-- **Parents,** on the parent page, with their own accounts.
+- **Parents,** on the parent page, with their own accounts. Each sign-in, a parent's or a
+  caregiver's, is in the activity log with the kind of browser it was on, as the browser says
+  ("Chrome on Android": a few of Belay's own words from its User-Agent, never the User-Agent
+  itself), and goes to every parent's browsers at once, as a notice with who, that kind of
+  browser and the time. A parent's sessions keep that kind too, for the list of where they're
+  signed in in Settings. The address a request comes from (its IP address) is used only to slow
+  down password guessing, in the server's memory, and is never kept: not in the activity log, not
+  in a session, not in a notice (the second bypass audit's B1). It would rarely tell a parent
+  anything (at home, the kid's phone and the parents' share one), and it would say where each
+  parent signs in from, for as long as the log is kept.
 - **AI apps a parent connects** (like Claude), through MCP, and only the categories the
   parents allow in Settings: apps, device status, (from Phase 2) requests, the kid's own
   words, and (from Phase 3) screen time, and the stage and agreement, all on by default (a
@@ -625,8 +635,8 @@ requests and agreement, from Phase 4 where it was and its places, from Phase 5 i
 private and blocked numbers and call records, and from Phase 11 its hand-over. One kind at a
 time, a parent can also stop collecting it and delete it sooner (below). The server's daily
 backups still hold it until they age out, 14 days
-later, as do any copies the family made. Expired sessions, codes and tokens are deleted
-automatically. The activity log (who did what: parents, AI apps and what they read, the phones)
+later, as do any copies the family made. Expired sessions (with the kind of browser each was
+signed in on), codes and tokens are deleted automatically. The activity log (who did what: parents, AI apps and what they read, the phones)
 is kept so parents can see what happened, 400 days by default (the family chooses 30 to 3,650 in
 Settings; never less than a month, so what one parent did doesn't vanish before the other could
 see it, and changing it is in the log too); then the hourly clean-up deletes older entries, a

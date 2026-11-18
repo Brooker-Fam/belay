@@ -121,7 +121,9 @@ checked on a real Pixel yet. Phase 9 (more families) isn't built either.
   timeline, adding a phone, settings, the activity log), and OAuth 2.1 plus MCP for Claude.
   **Phase 2:** each phone's rules (protection in one step, new apps ask or allow, allow or
   block per app, pause, web filter and Chrome, locked settings, maintenance, hardening), the
-  kid's requests, AI proposals, and end-to-end encrypted Web Push to parents' browsers. Over
+  kid's requests, AI proposals, and end-to-end encrypted Web Push to parents' browsers, which
+  also tells every parent at once of every sign-in, a caregiver's too, with the kind of browser
+  it was on (Settings lists each parent's signed-in browsers, with Sign out for each). Over
   MCP, an AI client can block an app or pause the phone; anything that loosens is only a
   proposal a parent approves on the parent page. **Phase 3:** each phone's screen-time rules
   (limits, schedules, exempt apps, self-serve, and measuring, which only a parent turns on),

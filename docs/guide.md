@@ -201,6 +201,14 @@ the phone uses it ([pixel.md](pixel.md#which-google-account)).
 For the parents' Belay passwords, the key's password, the backup passphrase, the parent-owned
 account, and each phone's recovery key (section 6).
 
+Keep your Belay password away from your kid, like the parent-owned account's. Their phone shows
+the server's address, and with your password its browser can do everything you can: approve
+their own requests, unblock apps, end a pause. Let the password manager fill it in rather than
+typing it where they can see, and don't sign in on their phone. Belay tells every parent at once
+about each new sign-in, on the browsers with notifications on (Settings → Notifications), saying
+when and on what kind of browser: one you didn't make means someone has your password. Sign that
+browser out in Settings → Your account, and change your password.
+
 ## 3. Set up the server
 
 The shortest path is a small VPS with Docker, and Caddy for the certificate
@@ -774,7 +782,9 @@ the apps, screen time, calls, websites, where the phone has been, your places, t
 settings, stages, the agreement or other caregivers, and Claude can't see, add or change
 caregivers. Your kid's phone lists each one with what they can see and do and until when (on
 What your parent can see, with a line on Home), and names them on each pause, lock and check.
-Everything they do is on **Activity**, under their name. **End access now** signs them out and
+Everything they do is on **Activity**, under their name, and each time they sign in every parent
+gets a notice, so you know when their access is used, by them or by anyone who has their
+password. **End access now** signs them out and
 stops their notifications at once; at its end, access stops by itself. On an iPhone, a caregiver
 gets notifications only once they add their page to the Home Screen and open it from there.
 
@@ -787,6 +797,9 @@ lock, check and notifications from another phone ([phase12-checklist.md](phase12
   ("2 things need you: a phone has been silent 14 hours, the last backup failed").
 - **Activity:** who did what, a parent, Claude, a caregiver or the server, kept 400 days by
   default; "Also show what AI apps read" adds every read.
+- **Sign-ins:** every parent gets a notice at once when anyone signs in, a parent or a caregiver,
+  with the kind of browser it was on ("Chrome on Android", as the browser says) and when. Settings
+  → Your account lists where you're signed in, with **Sign out** for each.
 - **Timeline:** the apps installed, updated and removed, on every phone.
 
 ## 8. When something goes wrong

@@ -136,6 +136,17 @@ words or where the phone is to a help request no parent has seen yet. Phase 12: 
 each caregiver who gets that phone's help requests, opening their own page
 ([Caregivers](#caregivers-phase-12)).
 
+**A new sign-in** goes to every parent's browsers at once, whoever signed in and however: the
+sign-in page, the sign-in screen an AI app opens to connect, the first-run setup link, an invite,
+and a caregiver's sign-in or link. It says who, on what kind of browser, and when, like
+`Sam signed in on Chrome on Android (Nov 18, 2026, 3:41 PM)`, and what to do if it wasn't them;
+the kind of browser is what the browser says it is (its User-Agent, in a few words), so the time
+is what tells you. Urgent, like a help request, and no limit holds one back: making one takes a
+password, a setup link or an invite. Each opens a page of its own (your own sign-in's row in
+Settings, or its line on the Activity page), so a later notice never takes its place on the
+screen. Never the address it came from (the second bypass audit's B1). Settings → Your account
+lists the browsers you're signed in on, with the kind of each and Sign out for each.
+
 **Arrivals and departures** (Phase 4), for a place a parent asked to hear about:
 `Sam's phone arrived at School`, with the time when the phone sent it late, at most one per
 place and direction every 10 minutes. It opens the phone's Location page.
@@ -162,7 +173,8 @@ that's down for that whole hour skips the day rather than send it late.
   (Requests or Proposals). A request for more time names the limit and quotes the kid's
   reason, like `Sam's phone asks for 15 more minutes for Games: "One more level, please"`,
   and so does wanting to talk about the family agreement. Notices about the server and the
-  daily summary name no phone or app, and open the Phones page. Each is encrypted for that browser (RFC 8291, `aes128gcm`):
+  daily summary name no phone or app, and open the Phones page. A sign-in's notice names the
+  parent or caregiver, the kind of browser and the time, never the address it came from. Each is encrypted for that browser (RFC 8291, `aes128gcm`):
   only the browser can read it, not the push service.
 - The push service does see the browser's subscription address, when each notice is sent
   and how long it is, the server's VAPID public key, and a token signed with it (RFC 8292)
@@ -724,7 +736,11 @@ server's); AI apps can't see, add or change caregivers, not even as a proposal.
   `__Host-belay_care` with https) and a separate table, lasting 7 days and never past their
   access; no parent page, form, upload, OAuth step, MCP call or device API call takes it, and a
   test walks every route to check. Sign-in is limited per address and per username, as a
-  parent's. The parents' sign-in page links to the caregivers' one.
+  parent's. The parents' sign-in page links to the caregivers' one. Each sign-in, and each use
+  of a link, goes to every parent's browsers at once, with the kind of browser, as a parent's
+  does ([Notifications](#notifications)): their access can see the kid's help requests and check
+  where the phone is, so a parent hears whenever it's used, by them or by anyone with their
+  password.
 - **Notifications:** a caregiver who gets help requests turns notifications on on their own page,
   in each browser, as a parent does (on an iPhone, from the Home Screen: the caregiver pages have
   their own web app manifest, which opens `/care`). Only the kid's "I need help" goes to them, the
@@ -736,8 +752,8 @@ server's); AI apps can't see, add or change caregivers, not even as a proposal.
   kid's phone check it. The hourly clean-up then marks it ended, deletes their sessions, browsers
   and unused link, and gives their phones new policies without them. **End access now** does all
   of that at once. A pause they set stays until its end; a parent can resume it.
-- **The activity log** shows everything a caregiver does as "Grandma (caregiver)": joining,
-  signing in, each pause, lock and check, notifications on and off, and being refused past the
+- **The activity log** shows everything a caregiver does as "Grandma (caregiver)": joining and
+  signing in (with the kind of browser), each pause, lock and check, notifications on and off, and being refused past the
   hourly limits (once an hour); and each parent's change to caregivers. A phone's page says when
   a caregiver set the pause in force, and its Location tab names a caregiver's checks.
 
@@ -927,8 +943,8 @@ backup.
 6. On the real parent page, under "This server" on the Phones page, choose "We did a restore
    drill".
 
-`--drill` marks the copy as a drill's: it sends no notifications, and its parent page says
-what it is. The phones and AI apps never reach it, since they use the real server's address.
+`--drill` marks the copy as a drill's: it sends no notifications (not even for signing in to
+it), and its parent page says what it is. The phones and AI apps never reach it, since they use the real server's address.
 
 ### Off-site copies
 
