@@ -66,6 +66,11 @@ numbers (in North America's 555-01xx range, which is kept for fiction).
 - **No caregivers.** Add one on the Caregivers page and open their link in a private window to
   see a caregiver's pages under `/care`, which carry the banner too; the terminal shows Robin's
   phone listing them, as the kid's screen does.
+- **Getting started**, after the phone on the Phones page, as a family would see it a week in:
+  the phone, its rules and Claude (the token the demo made) are ticked; notifications aren't
+  (turn them on in Settings to see the tick), and nor is the backup passphrase, which the demo's
+  backups never have, so the card stays until you hide it. What AI apps may read was never
+  saved, so it says the defaults apply.
 
 Times follow your computer's timezone, so school and bedtime are at your local times, and the Phones
 page shows the phone checking in now.
@@ -94,8 +99,8 @@ phone's side the way Belay's agent does on a real phone, with no Android behind 
 What it can't do, it says in its own words, as Belay on a real phone reports what it couldn't do:
 
 - **Location:** it has no GPS. With location on, the phone's Location page shows what it says, and
-  a check ("Check now") fails with it. The page waits its minute for an answer first, as it would
-  for a real phone that can't find where it is.
+  a check ("Check now") fails with it: the page shows its words as soon as it answers, within a
+  few seconds, as it would for a real phone that can't find where it is.
 - **Network logging:** it can't note which websites its apps look up, so it sends nothing: the
   phone's page shows that as a problem from the phone.
 - **Mobile data:** it has none, so measuring it sends nothing: the phone's page shows that as a

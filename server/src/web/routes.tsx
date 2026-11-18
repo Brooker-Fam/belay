@@ -76,6 +76,7 @@ import { callSettings, contactWithNumber, hasNumber } from "../family/calls/stor
 import { listAppRequests, pendingRequestCount, recentAppRequests, recentRequests, unseenHelp } from "../family/requests.js";
 import { phoneHelp } from "../family/kidside.js";
 import { changeFamilySettings } from "../family/kidside-changes.js";
+import { gettingStarted } from "../family/start.js";
 import { phoneLabels, phoneRules as screenRules } from "../family/screentime/rules.js";
 import { clientAddress, type Bindings } from "../http.js";
 import { createPersonalToken, getGrant, listGrants, revokeAllGrants, revokeGrant } from "../oauth/store.js";
@@ -120,7 +121,9 @@ import { AskAgainPage, MAINTENANCE_HOURS, PAUSE_MINUTES } from "./pages/rules.js
 import { DigestCard, ServerCard } from "./pages/server.js";
 import { HelpBanner } from "./pages/help.js";
 import { SettingsPage, ShownOncePage } from "./pages/settings.js";
+import { GettingStartedCard, StartHiddenCard } from "./pages/start.js";
 import { TimelinePage } from "./pages/timeline.js";
+import { startWebRoutes } from "./start.js";
 import type { View } from "./ui.js";
 import { FormReader, UploadError, type UploadProblem } from "./upload.js";
 
@@ -362,7 +365,8 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
     audit(db, now, { kind: "parent", parentId }, "parent.setup");
     cookie.set(c, createSession(db, now, parentId).cookie);
     deps.log("The first parent account was created.");
-    return c.redirect("/add");
+    // The Phones page, where Getting started walks the new family through the rest.
+    return c.redirect("/");
   });
 
   app.get("/login", (c) => {
@@ -467,7 +471,8 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
       protectedOn: getRules(db, device.id).protectedAt !== null,
     }));
     const pending = pendingCodes(db, now).filter((p) => !p.deviceId);
-    if (devices.length === 0 && pending.length === 0) return c.redirect("/add");
+    // A new family's first page: Getting started, its first step adding the phone.
+    const start = gettingStarted(deps, me(c).parent.id);
     return render(
       c,
       <DevicesPage
@@ -475,6 +480,7 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
         devices={devices}
         pending={pending}
         help={<HelpBanner requests={unseenHelp(db)} showDevice={true} />}
+        start={start.shown ? <GettingStartedCard view={view(c)} start={start} /> : undefined}
         server={<ServerCard view={view(c)} health={serverHealth(deps)} />}
       />,
     );
@@ -1094,8 +1100,9 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
     return c.redirect("/add");
   });
 
-  const settingsPage = (c: WebContext, extra: { message?: string; error?: string } = {}, status: ContentfulStatusCode = 200) =>
-    render(
+  const settingsPage = (c: WebContext, extra: { message?: string; error?: string } = {}, status: ContentfulStatusCode = 200) => {
+    const start = gettingStarted(deps, me(c).parent.id);
+    return render(
       c,
       <SettingsPage
         view={view(c)}
@@ -1106,11 +1113,13 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
         mcpUrl={`${config.publicUrl}/mcp`}
         push={{ publicKey: vapidKeys(db).publicKey, browsers: listSubscriptions(db, me(c).parent.id) }}
         digest={<DigestCard view={view(c)} digest={getDigest(db)} meId={me(c).parent.id} browsers={listSubscriptions(db, me(c).parent.id).length} />}
+        start={start.hiddenAt !== null && start.essential.done < start.essential.of ? <StartHiddenCard view={view(c)} /> : undefined}
         message={extra.message ?? SAVED[c.req.query("saved") ?? ""]}
         error={extra.error}
       />,
       status,
     );
+  };
 
   app.get("/settings", (c) => settingsPage(c));
 
@@ -1335,6 +1344,8 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
   app.route("/", caregiverWebRoutes(deps, { view, message }));
   // Phase 13: a phone's Mobile data tab (web/mobiledata.tsx).
   app.route("/", mobileDataWebRoutes(deps, { view, message }));
+  // The Phones page's Getting started card: hiding it, and bringing it back (web/start.ts).
+  app.route("/", startWebRoutes(deps));
 
   app.get("/activity", (c) => {
     const includeReads = c.req.query("reads") === "1";

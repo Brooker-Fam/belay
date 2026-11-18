@@ -15,7 +15,7 @@ import type { Deps } from "../deps.js";
 import { type DeviceRow, findDeviceByName, listDevices } from "../family/devices.js";
 import { locateNow } from "../family/location/changes.js";
 import { describeFix, distanceWords } from "../family/location/describe.js";
-import { checkAnswer, latestFix, listPlaceEvents } from "../family/location/fixes.js";
+import { checkOutcome, latestFix, listPlaceEvents } from "../family/location/fixes.js";
 import { type FixView, type LocationSettings, listPlaces, locationSettings } from "../family/location/store.js";
 import { type Changer, type PolicyContext, RuleRefused } from "../family/policy.js";
 import { AI_PER_HOUR } from "../ratelimit.js";
@@ -160,13 +160,31 @@ export function registerLocationTools(server: McpServer, deps: Deps, caller: Cal
         if (error instanceof RuleRefused) return refusal(error.message);
         throw error;
       }
-      // Counted as soon as the check is sent, before waiting for its fix: the kid's phone shows it either way.
+      // Counted as soon as the check is sent, before waiting for its answer: the kid's phone shows it either way.
       aiCounted(deps, caller, "locate_now", row.id);
-      const answered = await deps.fixWaiters.wait(row.id, () => checkAnswer(db, row.id, command) !== null, deps.locateWaitMs, extra.signal);
-      const fix = answered ? checkAnswer(db, row.id, command) : null;
+      // The phone's answer, either way: its fix, or its word that it couldn't (or got the check too late). Whichever comes first ends the wait.
+      await deps.fixWaiters.wait(row.id, () => checkOutcome(db, row.id, command) !== null, deps.locateWaitMs, extra.signal);
+      const outcome = checkOutcome(db, row.id, command);
       const via = oneLine(caller.clientName, 60) || "an AI app";
       const notice = `The kid's phone shows: "Your parent checked where this phone is, using ${via}."`;
-      if (!fix) {
+      if (outcome?.kind === "failed") {
+        return result({
+          phone: row.name,
+          asked: iso(deps.now()),
+          answer: "The phone answered: it couldn't find where it is, so there's no fix. get_location still shows the latest fix Belay has.",
+          ...(outcome.problem ? { untrusted: { why_belay_on_the_phone_says: outcome.problem } } : {}),
+          kid_notice: notice,
+        });
+      }
+      if (outcome?.kind === "expired") {
+        return result({
+          phone: row.name,
+          asked: iso(deps.now()),
+          answer: "The phone answered: it got the check too late, by its own clock, so it didn't check where it is. Check again only if the parent still wants to know.",
+          kid_notice: notice,
+        });
+      }
+      if (outcome?.kind !== "fix") {
         return result({
           phone: row.name,
           asked: iso(deps.now()),
@@ -175,7 +193,7 @@ export function registerLocationTools(server: McpServer, deps: Deps, caller: Cal
         });
       }
       logRead("where the phone is (a check)", row.id);
-      return result({ phone: row.name, answer: "The phone answered.", fix: fixEntry(row.id, fix), kid_notice: notice });
+      return result({ phone: row.name, answer: "The phone answered.", fix: fixEntry(row.id, outcome.fix), kid_notice: notice });
     },
   );
 

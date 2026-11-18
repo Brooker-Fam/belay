@@ -110,7 +110,8 @@ checked on a real Pixel yet. Phase 9 (more families) isn't built either.
   phone is first unlocked: then Belay records those calls from Android's call log, by the same
   rules, and the parents see how long the phone stayed locked.
 - **`server/`: the family's server.** Node and SQLite in one Docker image. The device API,
-  the parent pages (phones and their health, apps with "new" badges and reviews, the
+  the parent pages (phones and their health, a Getting started card that ticks off a new
+  family's setup steps from what the server sees, apps with "new" badges and reviews, the
   timeline, adding a phone, settings, the activity log), and OAuth 2.1 plus MCP for Claude.
   **Phase 2:** each phone's rules (protection in one step, new apps ask or allow, allow or
   block per app, pause, web filter and Chrome, locked settings, maintenance, hardening), the
@@ -132,8 +133,9 @@ checked on a real Pixel yet. Phase 9 (more families) isn't built either.
   only if a parent turns that on too (it starts off for every family).
 - **Phases 4 and 7 on the server: location, and the kid's side.** Location is off until a
   parent turns it on, on the phone's Location and help page: on demand (a parent's "Check
-  now", which waits for the phone's fix) or every 15 to 120 minutes within set hours, with
-  the family's places, arrivals and departures (pushed to the parents if they ask), keeping
+  now", which waits for the phone's answer: its fix, or why it couldn't) or every 15 to 120
+  minutes within set hours, with the family's places, arrivals and departures (pushed to the
+  parents if they ask), keeping
   location on, the provider (GPS only by default), and lost mode. A fix is described by the
   family's places ("At School, within 40 m"), worked out on the server, with an "Open in a
   map" link only the parent's browser follows: no map, tile or address service is ever

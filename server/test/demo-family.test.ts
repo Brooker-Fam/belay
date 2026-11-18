@@ -16,6 +16,7 @@ import { recentRequests } from "../src/family/requests.js";
 import { currentAgreement } from "../src/family/screentime/agreement.js";
 import { listStages, phoneRules, phoneStage } from "../src/family/screentime/rules.js";
 import { usageDays } from "../src/family/screentime/usage.js";
+import { setOpsOptions } from "../src/ops/options.js";
 import { getSettings } from "../src/settings.js";
 import { APPS, PHONE_NAME } from "../demo/family.js";
 import { type Seeded, seedDemo } from "../demo/seed.js";
@@ -113,6 +114,22 @@ describe("the demo's family", () => {
     expect(device?.enforcement?.policy_version).toBe(policyVersion(t.deps.db, seeded.deviceId));
     expect(seeded.phone.policy?.version).toBe(policyVersion(t.deps.db, seeded.deviceId));
     expect(device?.problems).toEqual([]);
+  });
+
+  it("shows Getting started as the family has it, a week in: the phone and its rules done, notifications and the backup passphrase left", async () => {
+    // As npm run demo starts the server's work: no backup passphrase, whatever the shell says.
+    setOpsOptions(t.deps, { env: {} });
+    const html = await (await get(t, "/", cookie)).text();
+    const card = /<section class="card start"[\s\S]*?<\/section>/.exec(html)?.[0] ?? "";
+    expect(card).toContain("2 of the 4 essential steps are done");
+    expect(card).toContain(`${PHONE_NAME.replace("'", "&#39;")} is enrolled.`);
+    expect(card).toContain(`${PHONE_NAME.replace("'", "&#39;")} applied its rules.`);
+    expect(card).toContain("Not on in any of your browsers yet.");
+    expect(card).toContain("Not set: the daily backups aren&#39;t encrypted");
+    // The phone's own parts go to the demo phone's pages, which have its week.
+    expect(card).toContain(`href="/devices/${seeded.deviceId}/calls"`);
+    // After the phone's card: its status first.
+    expect(html.indexOf(`href="/devices/${seeded.deviceId}"`)).toBeLessThan(html.indexOf('id="start"'));
   });
 
   const pages = (): [string, string][] => {

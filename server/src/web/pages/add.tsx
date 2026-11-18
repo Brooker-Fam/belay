@@ -4,7 +4,8 @@ import type { PendingCode } from "../../device/enroll.js";
 import { formatDuration, formatTime } from "../../time.js";
 import { Csrf, Layout, Notice, PostButton, type View } from "../ui.js";
 
-const DOCS = "https://github.com/brooker-fam/belay/blob/main/docs";
+/** The docs, on GitHub: the server doesn't serve them. */
+export const DOCS = "https://github.com/brooker-fam/belay/blob/main/docs";
 
 export const AddPage: FC<{ view: View; pending: PendingCode[]; error?: string }> = ({ view, pending, error }) => (
   <Layout view={view} title="Add a phone">

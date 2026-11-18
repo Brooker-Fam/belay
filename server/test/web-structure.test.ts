@@ -120,7 +120,36 @@ const after = async (path: string, fields: Record<string, string | string[]>) =>
 };
 
 const PAGES: [string, () => Promise<string>][] = [
-  ["Phones", () => page("/")],
+  [
+    "Phones",
+    async () => {
+      const html = await page("/");
+      // Getting started is there too: the backup passphrase is a step left.
+      expect(html).toContain('<ol class="start-steps" role="list">');
+      return html;
+    },
+  ],
+  [
+    "Phones, for a new family: Getting started, and no phone yet",
+    async () => {
+      const fresh = testServer();
+      const parent = await signIn(fresh);
+      const res = await get(fresh, "/", parent.cookie);
+      expect(res.status).toBe(200);
+      return res.text();
+    },
+  ],
+  [
+    "Settings, with Getting started hidden",
+    async () => {
+      const fresh = testServer();
+      const parent = await signIn(fresh);
+      await postForm(fresh, "/start/hide", { _csrf: parent.csrf }, { cookie: parent.cookie });
+      const html = await (await get(fresh, "/settings", parent.cookie)).text();
+      expect(html).toContain("Show Getting started again");
+      return html;
+    },
+  ],
   ["a phone", () => page(base)],
   ["an app waiting, with the kid's request", () => page(`${base}/apps/com.example.racers`)],
   ["an app", () => page(`${base}/apps/com.example.blocks`)],

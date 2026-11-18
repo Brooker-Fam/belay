@@ -94,6 +94,10 @@ function what(e: AuditEntry, tz: string): string {
       return "changed the settings";
     case "settings.digest":
       return d.on === true ? `turned their daily summary on${typeof d.hour === "number" ? `, at ${hourLabel(d.hour)}` : ""}` : "turned their daily summary off";
+    case "start.hidden":
+      return "hid Getting started on their Phones page";
+    case "start.shown":
+      return "brought Getting started back on their Phones page";
     case "backup.drill":
       return "did a restore drill: restored a backup into a scratch server, signed in and saw the phones";
     case "backup.verified":

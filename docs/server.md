@@ -46,7 +46,10 @@ Any small Linux VPS with Docker works (1 GB of memory is plenty).
    docker compose logs belay
    ```
 5. Open the link (it works once, for 24 hours) and create the first parent account. You
-   can invite a second parent from Settings.
+   can invite a second parent from Settings. The Phones page's **Getting started** card then
+   lists the steps after this one ([guide.md](guide.md#3-set-up-the-server)), each ticked off
+   from what the server sees, until the essential ones are done or a parent hides it (for
+   themselves: Settings brings it back).
 
 Caddy gets and renews the certificate on its own. `Caddyfile` and `.env` stay out of git:
 they name your server. **Don't edit `docker-compose.yml`:** your own changes (the backup
@@ -569,7 +572,8 @@ Only a parent changes any of it, there or with the CLI; AI apps can't, and can't
   location on, its own words for a fix that failed) is there too, and a phone that should share
   where it is but can't is flagged on the phone's page and in the daily summary.
 - **Check now** sends a check (`locate_now`, which lasts 2 minutes) and waits up to a minute
-  for the phone's fix, then shows it. **Checks** lists every one of the last 30 days, a
+  for the phone's answer: its fix, or its own words for why it couldn't (or that it got the
+  check too late), shown as soon as either comes. **Checks** lists every one of the last 30 days, a
   parent's or their AI app's: the same list the kid sees on the phone, where each check also
   posts a notice.
 - **Places** (at most 20): a name the kid sees (at most 40 characters), a center from
@@ -836,7 +840,8 @@ sudo chown 1000 backup-passphrase.txt && sudo chmod 600 backup-passphrase.txt
 
 A passphrase that's set but unusable (shorter than 15 characters, or a file that can't be
 read) fails the backup, with the reason on the parent page; Belay never falls back to an
-unencrypted one. A new passphrase applies to new backups; older ones keep the one they were
+unencrypted one. Until a usable one is set, the Phones page's Getting started card lists it as
+a step left, with that reason. A new passphrase applies to new backups; older ones keep the one they were
 made with. After turning encryption on, the unencrypted ones age out within 14 days, or
 delete them.
 

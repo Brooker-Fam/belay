@@ -92,6 +92,8 @@ export function deviceRoutes(deps: Deps): Hono<DeviceEnv> {
     );
     // Once per update offered: the report's news, in the server's words.
     for (const tell of done.result.tell) notifyParents(deps, tell.kind === "update_failed" ? updateFailedNotice(phone, tell.version) : recoveryUsedNotice(phone));
+    // A check the phone couldn't do (or got too late) is answered too: whoever waits on it stops now.
+    if (done.result.checks.length > 0) deps.fixWaiters.arrived(phone.id);
   };
 
   app.post("/enroll", limit(LIMITS.enrollBytes), async (c) => {
