@@ -21,9 +21,11 @@ import family.brooker.belay.service.ManagedNotice
  * enables it only while the test is on (docs/phase5-checklist.md, T8).
  *
  * WRITE_SMS doesn't keep other apps out, whatever the docs hope: Android 17 keeps it as a removed
- * permission, which any app that asks for it holds (docs/platform-notes.md T8). So an update is only
- * counted, never trusted, and a message URI is read only in the phone's own message store, and only
- * for its rows' ids, to count them.
+ * permission, which any app that asks for it holds (docs/platform-notes.md T8), and neither a started
+ * service nor this broadcast tells Belay who sent it. So an update is only counted, never trusted:
+ * Belay reads only one message's URI, `content://sms/<id>` or `content://mms/<id>`, through one it
+ * builds itself, and only for the row's id, to count it; and the record keeps a few updates at most
+ * (ArchivalLog, the eighth review's K1).
  */
 class ArchivalService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null

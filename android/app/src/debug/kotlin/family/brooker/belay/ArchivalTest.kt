@@ -8,7 +8,7 @@ import android.app.PendingIntent
 import android.app.admin.DevicePolicyManager
 import android.content.BroadcastReceiver
 import android.content.ComponentName
-import android.content.ContentResolver
+import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
 import android.content.RestrictionsManager
@@ -59,8 +59,11 @@ import java.util.concurrent.TimeUnit
  * - The archival service, and a receiver for the same update (the docs call it a broadcast too),
  *   are enabled; the manifest has them disabled.
  *
- * Each update is kept as ArchivalLog keeps it: never a value from a message (a message URI's rows are
- * only counted, from their ids), and nothing is sent.
+ * Each update is kept as ArchivalLog keeps it: never a value from a message (a message's rows are only
+ * counted, from their ids), and nothing is sent. Any app can send one (WRITE_SMS keeps none out), so
+ * an update is a hint, never proof: Belay reads only one message's URI, `content://sms/<id>` or
+ * `content://mms/<id>`, through a URI it builds itself, and keeps at most a few names and updates
+ * (the eighth review's K1; ArchivalLog.messageUri, ArchivalLog.MAX_UPDATES).
  * Stopping (over adb, at the end of the time box, or for "Release this phone") takes it all back in
  * the other order: the configuration first, then the service, and READ_SMS last, after the answer is
  * out (denying a granted permission restarts Belay, platform notes L7). While it's on, the managed
@@ -150,9 +153,10 @@ object ArchivalTest {
     }
 
     /**
-     * An update from Google Messages (ArchivalService, ArchivalUpdateReceiver), on the test's thread:
-     * when it came, how, its extras' names (never their values) and, for a message URI, how many rows a
-     * query of it gives, asking only for their ids. Kept only while the test is on. [done] runs
+     * An update, from Google Messages or any app (ArchivalService, ArchivalUpdateReceiver), on the
+     * test's thread: when it came, how, its extras' names (never their values) and, for one message's
+     * URI, how many rows a query of it gives, asking only for their ids. Kept only while the test is
+     * on, and past ArchivalLog.MAX_UPDATES only counted, with nothing in it read. [done] runs
      * afterwards, there.
      */
     fun update(context: Context, via: ArchivalVia, intent: Intent?, done: () -> Unit) {
@@ -163,6 +167,9 @@ object ArchivalTest {
                 val state = state(app)
                 if (intent?.action != ArchivalLog.ACTION || !ArchivalLog.isOn(state, at)) {
                     Log.i(Agent.TAG, "archival test: an update by ${via.name.lowercase()} while the test is off, not kept")
+                } else if (!ArchivalLog.takes(state, at)) {
+                    // Past the cap: counted, with nothing in it read or kept.
+                    save(app, ArchivalLog.record(state, ArchivalLog.update(at, via, emptyList(), null)))
                 } else {
                     val extras = intent.extras
                     // Extras another app can't unparcel still leave the update counted, with no names.
@@ -326,17 +333,26 @@ object ArchivalTest {
     private fun components(app: Context) = listOf(ComponentName(app, ArchivalService::class.java), ComponentName(app, ArchivalUpdateReceiver::class.java))
 
     /**
-     * What an update's message URI gives Belay: only a URI in the phone's message store is read, once,
-     * and only the rows' ids ([BaseColumns._ID]), to count them, so no message's text, sender or anything
-     * else in it ever reaches Belay. The URI isn't kept.
+     * What an update's message URI gives Belay: only one message's URI is read (ArchivalLog.messageUri:
+     * `content://sms/<id>` or `content://mms/<id>`, nothing else), once, through a URI Belay builds from
+     * the store and the id alone, never the one it was sent; and only the row's id ([BaseColumns._ID]),
+     * to count it, so no message's text, sender or anything else in it ever reaches Belay. Any other URI
+     * is refused before the message store is asked anything: some write to it, or ignore the columns
+     * asked for (the eighth review's K1). The URI isn't kept.
      */
     private fun read(app: Context, extras: Bundle): UriRead {
-        val uri = try {
-            BundleCompat.getParcelable(extras, ArchivalLog.EXTRA_URI, Uri::class.java) ?: extras.getString(ArchivalLog.EXTRA_URI)?.let(Uri::parse)
+        val sent = try {
+            BundleCompat.getParcelable(extras, ArchivalLog.EXTRA_URI, Uri::class.java)?.toString() ?: extras.getString(ArchivalLog.EXTRA_URI)
         } catch (e: RuntimeException) {
             null
         } ?: return UriRead(ArchivalRead.NOT_A_URI)
-        if (uri.scheme != ContentResolver.SCHEME_CONTENT || !ArchivalLog.readable(uri.authority)) return UriRead(ArchivalRead.NOT_MESSAGES)
+        val message = ArchivalLog.messageUri(sent) ?: return ArchivalLog.notRead(sent)
+        val store = when (message.store) {
+            "sms" -> Telephony.Sms.CONTENT_URI
+            "mms" -> Telephony.Mms.CONTENT_URI
+            else -> return ArchivalLog.notRead(sent)
+        }
+        val uri = ContentUris.withAppendedId(store, message.id)
         return try {
             app.contentResolver.query(uri, ID_ONLY, null, null, null)?.use { cursor -> ArchivalLog.read(cursor.count) }
                 ?: UriRead(ArchivalRead.NO_CURSOR)
