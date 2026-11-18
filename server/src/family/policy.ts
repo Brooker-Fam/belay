@@ -16,7 +16,7 @@ import { type Actor, audit } from "../audit.js";
 import { newId } from "../crypto.js";
 import type { DB } from "../db.js";
 import { Policy, googleAccount } from "../device/schemas.js";
-import { cleanText, oneLine } from "../text.js";
+import { cleanText, nameLine, oneLine } from "../text.js";
 import { addRequestedContact } from "./calls/approve.js";
 import { callsFor, contactsFor, numbersOf } from "./calls/store.js";
 import { deviceFacts } from "./devices.js";
@@ -602,7 +602,7 @@ function commandsFor(db: DB, deviceId: string): Policy["commands"] {
       ...c,
       via: client_name === null ? null : oneLine(client_name, 60) || "an AI app",
       // Phase 12: the caregiver who sent it, only then, for the kid's notice ("Grandma checked where this phone is").
-      ...(caregiver_name === null ? {} : { caregiver: oneLine(caregiver_name, 40) || "a caregiver" }),
+      ...(caregiver_name === null ? {} : { caregiver: nameLine(caregiver_name, 40) || "a caregiver" }),
     }));
 }
 
@@ -620,7 +620,7 @@ export function buildPolicy(db: DB, deviceId: string, now: number): Policy {
     },
     // Phase 12: a caregiver's pause names them, for the kid's screen ("Paused by Grandma").
     pause: pause
-      ? { until: pause.until, note: kidWords(pause.note, LIMITS.pauseNote), ...(pause.caregiver === null ? {} : { caregiver: oneLine(pause.caregiver, 40) || "a caregiver" }) }
+      ? { until: pause.until, note: kidWords(pause.note, LIMITS.pauseNote), ...(pause.caregiver === null ? {} : { caregiver: nameLine(pause.caregiver, 40) || "a caregiver" }) }
       : null,
     restrictions: { ...rules.restrictions },
     web: { private_dns: rules.privateDns, chrome: rules.chrome ? { ...rules.chrome } : null, hide_browsers: rules.hideBrowsers },

@@ -45,14 +45,21 @@ object Caregivers {
     /** For a name with nothing left once cleaned: the server never sends one, but no caregiver goes unlisted. */
     const val UNNAMED = "A caregiver"
 
-    /** Control characters, and the ones that hide or reorder text (zero-width, direction marks and overrides). */
-    private val HIDDEN = Regex("[\\p{Cc}\\u200B-\\u200F\\u202A-\\u202E\\u2066-\\u2069\\uFEFF]")
-    private val SPACES = Regex("\\s+")
+    /**
+     * Every control and format character (Unicode Cc and Cf): zero-width spaces and joiners, the
+     * word joiner, direction marks, overrides and isolates, the Arabic letter mark, the byte-order
+     * mark, the soft hyphen, tags. None shows, and some reorder what's around them.
+     */
+    private val HIDDEN = Regex("[\\p{Cc}\\p{Cf}]")
+
+    /** A run of spaces of any kind, line and paragraph separators too (Unicode's, not only ASCII's). */
+    private val SPACES = Regex("[\\s\\p{Z}]+")
 
     /**
-     * A caregiver's name as the kid sees it: one line, without the characters that hide or reorder
-     * text, at most 40 characters (never half of a pair that makes one character); null when nothing
-     * is left.
+     * A caregiver's name as the kid sees it: one line, without a control, invisible or format
+     * character, each run of spaces one space (as the server's text.ts nameLine, the seventh
+     * review's J5: so "Grand", a word joiner and "ma" is "Grandma"), at most 40 characters (never half
+     * of a pair that makes one character); null when nothing is left.
      */
     fun name(raw: String?): String? {
         if (raw == null) return null

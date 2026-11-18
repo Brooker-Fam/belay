@@ -7,7 +7,7 @@
  */
 import type { DB } from "../../db.js";
 import { LIMITS, type Policy } from "../../device/schemas.js";
-import { oneLine } from "../../text.js";
+import { nameLine } from "../../text.js";
 import { locationSettings, takesChecks } from "../location/store.js";
 
 /** What a parent may let a caregiver see and do, each a choice per caregiver, in this order. */
@@ -192,7 +192,7 @@ export function caregiversFor(db: DB, deviceId: string): Policy["caregivers"] {
   const checks = takesChecks(locationSettings(db, deviceId));
   return rows.map((r) => {
     const can: Record<CaregiverCan, boolean> = { status: r.can_status === 1, pause: r.can_pause === 1, help: r.can_help === 1, locate: r.can_locate === 1 && checks };
-    return { name: oneLine(r.name, NAME_MAX) || "A caregiver", until: r.ends_at, can: CAREGIVER_CAN.filter((k) => can[k]) };
+    return { name: nameLine(r.name, NAME_MAX) || "A caregiver", until: r.ends_at, can: CAREGIVER_CAN.filter((k) => can[k]) };
   });
 }
 

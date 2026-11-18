@@ -20,7 +20,7 @@ import { newId } from "../../crypto.js";
 import type { DB } from "../../db.js";
 import type { Deps } from "../../deps.js";
 import { CARE_PER_HOUR } from "../../ratelimit.js";
-import { oneLine } from "../../text.js";
+import { nameLine } from "../../text.js";
 import { locateNow } from "../location/changes.js";
 import { type CaregiverActor, type Changed, type Person, type PolicyContext, RuleRefused, changePolicies, lockPhone, pausePhone } from "../policy.js";
 import {
@@ -53,9 +53,13 @@ export interface CaregiverInput {
   can: Record<CaregiverCan, boolean>;
 }
 
-/** A caregiver's name as it's kept and shown: one line, without the characters that hide or reorder text. */
+/**
+ * A caregiver's name as it's kept and shown: one line, without a control, invisible or format
+ * character, its spaces one each (text.ts's nameLine), so two caregivers who look alike to the kid
+ * are one name, and taken (the seventh review's J5).
+ */
 export function cleanCaregiverName(text: string): string {
-  return oneLine(text, 200);
+  return nameLine(text, 200);
 }
 
 const canList = (can: Record<CaregiverCan, boolean>): CaregiverCan[] => CAREGIVER_CAN.filter((k) => can[k]);

@@ -17,6 +17,24 @@ export function oneLine(value: string, max: number): string {
 }
 
 /**
+ * A name a parent gives someone the kid sees named (Phase 12's caregivers), stricter than oneLine:
+ * no control or format character at all (Unicode Cc and Cf: zero-width spaces and joiners, the
+ * word joiner, direction marks, overrides and isolates, the Arabic letter mark, the byte-order
+ * mark, the soft hyphen, tags), and every run of spaces, line or paragraph separators of any kind
+ * one space, so two names that look the same are the same (the seventh review's J5). At most
+ * `max` characters, never half of a pair that makes one. The kid's phone cleans it the same way.
+ */
+export function nameLine(value: string, max: number): string {
+  const plain = value
+    .replace(/\s+/gu, " ")
+    .replace(/[\p{Cc}\p{Cf}]/gu, "")
+    .replace(/\s+/gu, " ")
+    .trim();
+  const capped = plain.slice(0, max);
+  return (/[\uD800-\uDBFF]$/.test(capped) ? capped.slice(0, -1) : capped).trim();
+}
+
+/**
  * Whether a name a parent typed to confirm something (a hand-over, the locks that can strand a
  * phone) is the phone's name, as a person means it: case, spaces around and between words, and the
  * curly quotes a phone's keyboard puts in for ' and " don't count. "Sam’s  phone" is "Sam's phone".

@@ -314,3 +314,33 @@ describe("M1: change_wifi_only needs the Apps category, as block_app does", () =
     await f.client.close();
   });
 });
+
+describe("J5: a caregiver's name keeps no invisible or format character, so two that look alike are one", () => {
+  it("a word joiner, an Arabic letter mark, a line separator or a no-break space doesn't make a second Grandma", async () => {
+    const f = await family();
+    await add(f);
+    // "Grand" + WORD JOINER + "ma", "Grandma" + ARABIC LETTER MARK, a byte-order mark and a zero-width joiner: taken, as "Grandma" is.
+    for (const name of ["Grand\u2060ma", "Grandma\u061c", "\ufeffGrand\u200dma"]) {
+      const res = await f.form("/caregivers", { name, phone: [f.phone.deviceId], can: ["status"], until: THURSDAY_6PM });
+      expect(res.status, name).toBe(400);
+      expect(await res.text()).toContain("Another caregiver has that name already.");
+    }
+    // A line separator and a no-break space are spaces, and a run of them is one.
+    await add(f, { name: "Coach\u2028Lee" });
+    await add(f, { name: "Aunt\u00a0\u2003 Robin\u2029" });
+    expect(listCaregivers(f.t.deps.db).map((c) => c.name).sort()).toEqual(["Aunt Robin", "Coach Lee", "Grandma"]);
+    expect(f.policy().caregivers.map((c) => c.name).sort()).toEqual(["Aunt Robin", "Coach Lee", "Grandma"]);
+  });
+
+  it("the policy cleans a name kept before the same way, and the pause's and the lock's", async () => {
+    const f = await family();
+    const { token, id } = await add(f);
+    const care = await join(f, token);
+    f.t.deps.db.prepare("UPDATE caregivers SET name = ? WHERE id = ?").run("Grand\u2060ma\u202e", id);
+    expect((await care.form(`/care/phones/${f.phone.deviceId}/pause`, { minutes: "30", lock: "1" })).status).toBe(302);
+    const p = f.policy();
+    expect(p.caregivers.map((c) => c.name)).toEqual(["Grandma"]);
+    expect(p.pause?.caregiver).toBe("Grandma");
+    expect(p.commands.map((c) => c.caregiver)).toEqual(["Grandma"]);
+  });
+});
