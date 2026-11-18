@@ -26,8 +26,8 @@ down.
   [platform-notes.md](platform-notes.md#phase-0-results)): Android's and Belay's words word for
   word, and the Android build (Settings > About phone > Android version > Build number).
 - **Stop point** marks a result that changes the plan. **Your decision** marks a step from the
-  project's [Ask before](../CLAUDE.md#ask-before) list: this page asks you each time, and never takes
-  one for you. **Your call** marks the other choices that are yours.
+  project's [Ask before](../CLAUDE.md#ask-before) list: this page asks you each time, and never
+  takes one for you. **Your call** marks the other choices that are yours.
 
 ## Your decisions
 

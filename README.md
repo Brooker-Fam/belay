@@ -9,11 +9,13 @@ Open-source, AI-first parental controls for a kid's first Android phone.
 real Pixel.** Phases 1 to 8 and 10 to 13 are built: the phone reports its apps to the family's
 own server, new apps wait until a parent approves them, the web is filtered, and the settings
 that undo Belay are locked when a parent turns protection on; screen time, location, calls,
-the kid's help button, self-updates, backups, the setup kit, the hand-over at the end,
-caregivers, and Wi-Fi-only apps with mobile data use are there too. Phase 5's texts and Phase 9 (more families) aren't built yet. A parent manages it
-by asking Claude or on the parent page. Locking factory reset and USB debugging is a separate
-step a parent takes when ready. What a determined kid can still do is in
-[docs/threat-model.md](docs/threat-model.md); the phase checklists, from
+the kid's help button, self-updates and the recovery key, backups, Android's own Parental
+Controls reported and removed, the setup kit, the hand-over at the end, caregivers, and
+Wi-Fi-only apps with mobile data use are there too. Phase 5's texts aren't built (they wait on
+one Pixel test, which debug builds carry), nor is Phase 9 (more families). A parent manages it
+by asking Claude or on the parent page. Locking factory reset and USB debugging, and setting
+reset protection, is a separate step a parent takes when ready. What a determined kid can still
+do is in [docs/threat-model.md](docs/threat-model.md); the phase checklists, from
 [docs/phase0-checklist.md](docs/phase0-checklist.md) on, are the real-phone checks still to do
 before it's safe to hand over, in the order [docs/pixel-day.md](docs/pixel-day.md) runs them, and
 [ROADMAP.md](ROADMAP.md) has what comes next.
@@ -224,14 +226,20 @@ checked on a real Pixel yet. Phase 9 (more families) isn't built either.
   page on `localhost` that sets up the phone from Chrome over USB (WebUSB, with Tango).
   `provision.sh` and the kit run the same provisioning plan, held to the same fixtures; not yet
   tried with a real Pixel 8.
-- **CI:** Android build, unit tests and lint, an Android 17 emulator job that provisions
-  the agent and checks it end to end, the server's tests and Docker image, and the setup
-  kit's tests, with an informational emulator job that provisions with the kit's runner.
-- **Docs:** [the guide for parents](docs/guide.md), [running the server](docs/server.md),
-  [connecting Claude](docs/mcp.md), [privacy](docs/privacy.md), the
-  [threat model](docs/threat-model.md), the [device API](docs/protocol.md), and
-  [platform notes](docs/platform-notes.md): every Android behavior Belay relies on, checked
-  against the docs and the Android 17 source.
+- **CI** ([docs/emulator.md](docs/emulator.md#what-ci-runs)): the Android build, unit tests,
+  lint and a check that the release APK has no debug-only parts; an Android 17 emulator job, on
+  two images, that provisions the agent and runs each phase's phone side end to end against a
+  real server; the server's tests (among them, a check that every Markdown link in the
+  repository resolves), its Docker image on amd64 and arm64, and an encrypted backup restored
+  with Docker Compose on a new machine; and the setup kit's tests, with an informational
+  emulator job that provisions with the kit's runner.
+- **Docs:** [the guide for parents](docs/guide.md), [the demo](docs/demo.md),
+  [running the server](docs/server.md), [connecting Claude](docs/mcp.md),
+  [privacy](docs/privacy.md), the [threat model](docs/threat-model.md), the
+  [device API](docs/protocol.md), [the setup kit](docs/setup-kit.md), the
+  [designs](docs/design/README.md), the Pixel checklists in [the order to run
+  them](docs/pixel-day.md), and [platform notes](docs/platform-notes.md): every Android behavior
+  Belay relies on, checked against the docs and the Android 17 source.
 
 ## Principles
 
@@ -320,13 +328,13 @@ they install this week?"
 
 | Path | What |
 |---|---|
-| `android/core` | Plain Kotlin: package records, inventory diffs, the reconcile plan, the device API types, the outbox policy. JVM tests. |
-| `android/app` | The agent: device owner, receivers, services, sync, enrollment, the screens. |
+| `android/core` | Plain Kotlin: the device API types and the rules the phone enforces (apps, screen time, calls, location, network logging, mobile data), package records, inventory diffs, the reconcile plan, the outbox policy, and the kid's words. JVM tests. |
+| `android/app` | The agent: device owner, receivers, services, sync, enrollment, enforcement, Belay's phone app, location, self-update, the screens; debug-only parts in `src/debug`. |
 | `android/scripts` | Provisioning (its plan, `provision-plan.json`, and the plan's fixture tests), release key, QR test, the emulator tests. |
 | `setup-kit/` | Setting up a phone without the Android SDK: the plan's second interpreter, the page, the container ([docs/setup-kit.md](docs/setup-kit.md)). Vitest tests. |
-| `server/` | The family's server: device API, parent pages, OAuth and MCP. Vitest tests. |
-| `docs/` | [the guide for parents](docs/guide.md), [server](docs/server.md), [MCP](docs/mcp.md), [privacy](docs/privacy.md), [threat model](docs/threat-model.md), [device API](docs/protocol.md), [platform notes](docs/platform-notes.md), [emulator](docs/emulator.md), [Pixel 8](docs/pixel.md), [Phase 0](docs/phase0-checklist.md), [Phase 1](docs/phase1-checklist.md), [Phase 2](docs/phase2-checklist.md), [Phase 3](docs/phase3-checklist.md), [Phase 4](docs/phase4-checklist.md), [Phase 5](docs/phase5-checklist.md), [Phase 6](docs/phase6-checklist.md), [Phase 7](docs/phase7-checklist.md), [Phase 11](docs/phase11-checklist.md), [Phase 12](docs/phase12-checklist.md) and [Phase 13](docs/phase13-checklist.md) checklists, [signing](docs/signing.md), [prior art](docs/prior-art.md) |
-| `ROADMAP.md` | Phases 2 to 5 and later. |
+| `server/` | The family's server: device API, parent pages, caregivers' pages, OAuth and MCP, backups and health; and the demo ([docs/demo.md](docs/demo.md)). Vitest tests. |
+| `docs/` | [the guide for parents](docs/guide.md), [demo](docs/demo.md), [server](docs/server.md), [MCP](docs/mcp.md), [privacy](docs/privacy.md), [threat model](docs/threat-model.md), [device API](docs/protocol.md), [platform notes](docs/platform-notes.md), [emulator](docs/emulator.md), [Pixel 8](docs/pixel.md), [setup kit](docs/setup-kit.md), [designs](docs/design/README.md), the [Pixel day](docs/pixel-day.md) that orders the [Phase 0](docs/phase0-checklist.md), [Phase 1](docs/phase1-checklist.md), [Phase 2](docs/phase2-checklist.md), [Phase 3](docs/phase3-checklist.md), [Phase 4](docs/phase4-checklist.md), [Phase 5](docs/phase5-checklist.md), [Phase 6](docs/phase6-checklist.md), [Phase 7](docs/phase7-checklist.md), [Phase 11](docs/phase11-checklist.md), [Phase 12](docs/phase12-checklist.md) and [Phase 13](docs/phase13-checklist.md) checklists, [signing](docs/signing.md), [prior art](docs/prior-art.md) |
+| `ROADMAP.md` | Every phase: what's built, where it was checked, and what's still open. |
 | `CLAUDE.md` | Conventions and commands, for people and for Claude. |
 
 ## License
