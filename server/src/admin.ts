@@ -1128,9 +1128,8 @@ async function run(argv: string[], io: CliIO): Promise<void> {
       // Its only line on stdout is the one-time link, for scripts: it's shown only now.
       const usage = `Usage: caregiver-add "<phone>" ["<phone>" ...] --name <words> --until <time> [--can ${CAREGIVER_CAN.join(",")}]`;
       const canFlag = flags.get("can");
-      if (!positional.length || canFlag === true || [...flags.keys()].some((k) => k !== "name" && k !== "until" && k !== "can")) {
-        throw new CliError(`Name the phones first, in quotes, like "Sam's phone", then who and until when.\n\n${usage}`);
-      }
+      if (!positional.length) throw new CliError(`Name the phones first, in quotes, like "Sam's phone", then who and until when.\n\n${usage}`);
+      if (canFlag === true || [...flags.keys()].some((k) => k !== "name" && k !== "until" && k !== "can")) throw new CliError(usage);
       const rows = positional.map((typed): DeviceRow => {
         const row = findDeviceByName(db, typed);
         if (row) return row;

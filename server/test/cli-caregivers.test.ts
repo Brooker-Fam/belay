@@ -147,6 +147,10 @@ describe("caregiver-add", () => {
       expect(refused.out, args.join(" ")).toBe("");
       expect(refused.err, args.join(" ")).toContain(words);
     }
+    // A flag it doesn't take is only that: the usage, not a word about phones.
+    expect((await cli(t, "caregiver-add", "CI phone", "--name", "Coach Lee", "--lock", ...until)).err).toBe(
+      'Usage: caregiver-add "<phone>" ["<phone>" ...] --name <words> --until <time> [--can status,pause,help,locate]',
+    );
     expect(listCaregivers(t.deps.db).map((c) => c.name)).toEqual(["Grandma"]);
     // Exactly 30 days is fine, as on the page.
     expect((await cli(t, "caregiver-add", "CI phone", "--name", "Coach Lee", "--can", "status", "--until", "2026-12-16T10:00")).code).toBe(0);
