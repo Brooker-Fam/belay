@@ -4,7 +4,9 @@
  * proposal for a parent; and lock_phone, which tightens (the family_check_in prompt is in
  * prompts.ts). Names the family wrote (limits, schedules, stages, the agreement) and app names
  * are in `untrusted` fields; screen time is under the `screen_time` scope, the stage and
- * agreement under `agreement`. Every call is in the activity log.
+ * agreement under `agreement`. The apps under the rules are the Apps scope's: without it, the
+ * rules count them, and change_screen_time takes none (the eighth review's K2). Every call is in
+ * the activity log.
  */
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -84,7 +86,20 @@ const isTotal = (l: Limit) => l.packages.includes("*");
 
 /** With the Apps category off: the rules' apps, counted, never named. */
 const APPS_HIDDEN =
-  "A parent turned off AI access to apps in Belay's settings, so the apps under each rule are only counted: their names and package names are hidden. The names of limits and schedules are the family's (or the one Belay gave a limit after its apps), as the kid sees them.";
+  "A parent turned off AI access to apps in Belay's settings, so the apps under each rule are only counted: their names and package names are hidden. The names of limits and schedules are the family's (or the one Belay gave a limit after its apps), as the kid sees them. While it's off, change_screen_time takes no apps, and renames no limit on some apps.";
+
+/**
+ * Whether a change names an app (the eighth review's K2): a limit's apps other than "*" (every app),
+ * an exempt app, or one a schedule leaves open. With the Apps category off, change_screen_time
+ * refuses it before anything looks at an app, in block_app's words, whatever the apps: a limit is
+ * named after its apps as the phone names them, which the answer, get_rules and the kid's rules
+ * screen would show, and a limit on the texting app or the dialer is refused with why.
+ */
+const namesApps = (change: { limits?: { packages?: string[] }[]; schedules?: { allow?: string[] }[]; exempt_add?: string[]; exempt_remove?: string[] }): boolean =>
+  (change.limits ?? []).some((l) => (l.packages ?? []).some((pkg) => pkg !== "*")) ||
+  (change.schedules ?? []).some((s) => (s.allow ?? []).length > 0) ||
+  (change.exempt_add ?? []).length > 0 ||
+  (change.exempt_remove ?? []).length > 0;
 
 export function registerScreenTimeTools(server: McpServer, deps: Deps, caller: Caller): void {
   const { db } = deps;
@@ -366,7 +381,7 @@ export function registerScreenTimeTools(server: McpServer, deps: Deps, caller: C
     {
       title: "Change screen time",
       description:
-        `Changes one phone's screen-time rules: add or change limits (by id from get_rules) and schedules, remove them, add or remove exempt apps, set self-serve, or what happens when Belay can't count. The server decides: a change that only tightens (a lower or new limit, more apps under a limit, a schedule that starts earlier, ends later or runs on more days, fewer apps left open or exempt, less self-serve, pausing apps when Belay can't count) applies at once, within seconds when the phone is online; use it only when the parent asks. Anything else, or a mix, becomes a proposal a parent approves or rejects on the parent page, and so does anything about a schedule that locks the screen (a new one, a lock turned on, a change to one that locks): lock_phone locks the phone now, a few times an hour. A schedule you add or change must run at least ${AI_MIN_SCHEDULE_MINUTES} minutes: a shorter one is refused, not proposed. Moving the phone to another stage (stage, alone; needs the Stage and agreement category) is always a proposal, and to Off belay, the last stage, not even that: only a parent moves a phone there. Measuring isn't something you can change. The kid sees each limit's and schedule's name, so Belay names one you add or rename, never in your words: a limit after its apps ("Chess Club and Puzzle Pop"; a daily total is "Screen time"), a schedule after its kind (School, Bedtime, Schedule). Only a parent gives one a name of their own, on the parent page.`,
+        `Changes one phone's screen-time rules: add or change limits (by id from get_rules) and schedules, remove them, add or remove exempt apps, set self-serve, or what happens when Belay can't count. The server decides: a change that only tightens (a lower or new limit, more apps under a limit, a schedule that starts earlier, ends later or runs on more days, fewer apps left open or exempt, less self-serve, pausing apps when Belay can't count) applies at once, within seconds when the phone is online; use it only when the parent asks. Anything else, or a mix, becomes a proposal for a parent, on the parent page, and so does anything about a schedule that locks the screen (a new one, a lock turned on, a change to one that locks): lock_phone locks now, a few times an hour. A schedule you add or change runs at least ${AI_MIN_SCHEDULE_MINUTES} minutes, or it's refused, not proposed. Moving it to another stage (stage, alone; needs the Stage and agreement category) is always a proposal; to Off belay, the last stage, refused: only a parent moves a phone there. You can't change measuring. The kid sees each limit's and schedule's name, so Belay names one you add or rename, never in your words: a limit after its apps (a daily total: "Screen time"), a schedule after its kind (School, Bedtime, Schedule); only a parent names one freely, on the parent page. Naming apps (under a limit, exempt, or open in a schedule), or renaming a limit on some, needs the Apps category.`,
       inputSchema: {
         device: deviceParam,
         change: z
@@ -402,6 +417,20 @@ export function registerScreenTimeTools(server: McpServer, deps: Deps, caller: C
       // The kid sees the names: Belay writes them for what the AI app adds or renames (names.ts).
       const appNames = appNamesOn(db, row.id);
       const renames = (given: string | undefined, current: string) => given !== undefined && oneLine(given, NAME_MAX).toLowerCase() !== current.toLowerCase();
+      // First, before anything looks at an app (the eighth review's K2): with the Apps category off, a
+      // change that names apps, or renames a limit on some (Belay would name it after them), gets
+      // block_app's refusal, the same whatever the apps. The activity log keeps it, once an hour.
+      const appsOff = scopeOff("apps");
+      if (appsOff) {
+        const renamesApps = (change.limits ?? []).some((input) => {
+          const limit = input.id === undefined ? undefined : p.rules.limits.find((l) => l.id === input.id);
+          return limit !== undefined && renames(input.name, limit.name) && !(input.packages ?? limit.packages).includes("*");
+        });
+        if (namesApps(change) || renamesApps) {
+          aiRefused(deps, caller, "change_screen_time", row.id, "apps");
+          return appsOff;
+        }
+      }
       const tooMany = () =>
         listProposals(db, { deviceId: row.id, status: "pending", limit: MAX_PENDING_PROPOSALS }).length >= MAX_PENDING_PROPOSALS
           ? refusal(`${MAX_PENDING_PROPOSALS} proposals for ${row.name} are already waiting. Ask the parent to look at them on the Proposals page first.`)

@@ -151,7 +151,9 @@ review's G3 oracle, by "counted until" (M2).
   which is the Location category's to tell; the AI app's job here (the apps that use the cap,
   Wi-Fi only as a suggestion) needs whole days, so the category's "no hours of the day", its reason
   to start on, holds exactly. The parent page shows today so far: the parent chose to measure, and
-  the kid's screen says when it goes.
+  the kid's screen says when it goes. Left (the eighth review's K7): a whole day arrives a few
+  hours after it ends, once the phone is online, so whether a recent day is there says roughly
+  whether the phone was online then, no finer than the last check-in every AI app sees.
 
 The kid's "What your parent can see" says so: "Today's so far at noon and at 6 PM, then the whole
 day once it's over, never hour by hour", and its AI line that the parent's AI app reads only each
@@ -187,7 +189,7 @@ made from the exported schema with Room at version 8.
 | Tool | What it does |
 |---|---|
 | `get_mobile_data(device, from?, to?)` | Each whole day in the phone's days (a day not over yet, with no numbers: "Today's partial day", above): the mobile total, the Wi-Fi total, the top apps on mobile data, "Android, calls and texting", removed apps and the hotspot, and totals for the period; the Wi-Fi-only apps, with any that still used mobile data after they were added. Days not sent are unknown, not zero. Scope `mobile_data`; the apps' names need the Apps scope. |
-| `change_wifi_only(device, change: {add?, remove?}, reason)` | **Write.** Adding apps only tightens, so it applies at once; anything that removes one becomes a proposal for the parent page. Refuses the apps the phone never blocks, and apps the phone never reported. Needs the Apps category, as `block_app` does (the seventh review's M1: with every category off, its refusal named the first app the phone never reported, so it told an AI app, silently and changing nothing, whether any app is or was on the phone, and which are its role apps). |
+| `change_wifi_only(device, change: {add?, remove?}, reason)` | **Write.** Adding apps only tightens, so it applies at once; anything that removes one becomes a proposal for the parent page. Refuses the apps the phone never blocks, and apps the phone never reported. Needs the Apps category, as `block_app` does (the seventh review's M1: with every category off, its refusal named the first app the phone never reported, so it told an AI app, silently and changing nothing, whether any app is or was on the phone, and which are its role apps); so does a change to screen time that names apps (the eighth review's K2). |
 
 `get_policy` says how many apps are Wi-Fi only (and which, with the Apps scope). `weekly_review`
 gains a short part about mobile data only while the `mobile_data` scope is on: the week's total,

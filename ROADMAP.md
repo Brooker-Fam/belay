@@ -146,13 +146,14 @@ phase's Pixel checklist is in `docs/`.
 - **Phase 13:** mobile data: Wi-Fi-only apps the phone keeps off every metered network, and
   opt-in mobile data use per app per day, never which websites or networks.
 - **Across phases:**
-  - three security reviews and four checks of their fixes, the fourth of the new phases too
-    (caregivers, mobile data and the demo), with their fixes in (the third's on
-    the phone too: a spoofed caller ID is a stranger's, 911 and 988 go through with a caller-ID
-    code, the callback window opens before the first unlock, and screen locks wait for a call
-    to end; the first check's on the phone too: calls before the first unlock after a restart are
-    recorded afterwards, only a call an app can't make up holds a screen lock off, a parent's
-    number whose caller-ID check fails goes to voicemail, and only the codes that hide or show
+  - three security reviews and five checks of their fixes, the fourth of the new phases too
+    (caregivers, mobile data and the demo) and the fifth of the work since (the texts test,
+    Getting started, checks that stop waiting, caregivers on the command line), with their fixes
+    in (the third's on the phone too: a spoofed caller ID is a stranger's, 911 and 988 go through
+    with a caller-ID code, the callback window opens before the first unlock, and screen locks
+    wait for a call to end; the first check's on the phone too: calls before the first unlock
+    after a restart are recorded afterwards, only a call an app can't make up holds a screen lock
+    off, a parent's number whose caller-ID check fails goes to voicemail, and only the codes that hide or show
     the number come off; the second's: a 911 or 988 callback still on at the unlock is never
     sent, a lock now's result never tells of a call, and an app's own call holds no lock; the
     third's: every 911 call before the unlock keeps its own callback window, a phone that can't
@@ -161,7 +162,11 @@ phase's Pixel checklist is in `docs/`.
     fourth's: a caregiver gets only the help requests the kid asked once their help on that
     phone began, a caregiver's lock names them on the kid's phone, an AI app needs the Apps
     category to make an app Wi-Fi only, today's mobile data goes only at noon and 6 PM and AI
-    apps get only whole days, and a caregiver's name keeps no invisible characters);
+    apps get only whole days, and a caregiver's name keeps no invisible characters; the fifth's:
+    with the Apps category off an AI app's change to screen time takes no apps, so its answers
+    name none, the texts test reads only one message's URI and `unprovision.sh` stops it first, a
+    check is answered only by itself or a check that took its place, and a caregiver's page says
+    a lock names them only if the phone can lock);
   - an audit of how a kid could get around Belay on Android 17: a proxy and wireless debugging
     are reported, Chrome ignores proxies, and the time zone stays automatic;
   - limits on what an AI app can do to the kid's phone (checks, pauses, locks, and schedules

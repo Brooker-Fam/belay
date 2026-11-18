@@ -349,15 +349,22 @@ describe("screen time over MCP with the Apps category off", () => {
     for (const app of ["Block Party", "com.example.blocks", "Chatter", "com.example.chat", "com.example.maps"]) expect(text).not.toContain(app);
   });
 
-  it("change_screen_time's words count the apps it changed; get_screen_time shows the apps' packages, not their names", async () => {
-    const { t, phone, call } = await family();
+  it("change_screen_time takes no apps (the eighth review's K2) and its words name none; get_screen_time shows the apps' packages, not their names", async () => {
+    const { t, phone, call, policy } = await family();
     updateSettings(t.deps.db, { aiScopes: { apps: false } });
-    const done = await call("change_screen_time", { device: "Alex's phone", change: { limits: [{ id: "l-games", packages: ["com.example.blocks", "com.example.chat"] }] }, reason: "The parent asked." });
-    expect(done.json).toMatchObject({ status: "done: it only tightens, so it applies at once", changes: [{ effect: "tightens", untrusted: { change: expect.stringMatching(/^1 app now counts toward Games/) } }] });
-    expect(done.text).not.toContain("Chatter");
-    const proposed = await call("change_screen_time", { device: "Alex's phone", change: { exempt_add: ["com.example.blocks"] }, reason: "x" });
-    expect(proposed.json.changes).toEqual([{ effect: "loosens", untrusted: { change: "1 app never counts toward a limit" } }]);
-    expect(proposed.text).not.toContain("Block Party");
+    const before = policy().version;
+    // A change that names an app gets block_app's refusal, word for word: nothing changes, nothing is proposed.
+    const blocked = await call("block_app", { device: "Alex's phone", package: "com.example.chat" });
+    for (const change of [{ limits: [{ id: "l-games", packages: ["com.example.blocks", "com.example.chat"] }] }, { exempt_add: ["com.example.blocks"] }]) {
+      const refused = await call("change_screen_time", { device: "Alex's phone", change, reason: "The parent asked." });
+      expect(refused).toEqual({ json: {}, text: blocked.text, isError: true });
+    }
+    expect(policy().version).toBe(before);
+    expect(listProposals(t.deps.db, { deviceId: phone.deviceId, status: "pending" })).toEqual([]);
+    // One that names none still applies, in words that count no app.
+    const done = await call("change_screen_time", { device: "Alex's phone", change: { limits: [{ id: "l-games", minutes: 30 }] }, reason: "The parent asked." });
+    expect(done.json).toMatchObject({ status: "done: it only tightens, so it applies at once", changes: [{ effect: "tightens", untrusted: { change: expect.stringMatching(/^Games\..*: 30 min a day instead of 1 h, every day$/) } }] });
+    expect(done.text).not.toContain("Block Party");
     await deviceCall(t, phone.token, "usage", {
       days: [{ day: "2026-11-16", zone: "America/New_York", as_of: T0, complete: false, screen_minutes: 30, unlocks: 2, by_hour: Array(24).fill(0), apps: [{ package: "com.example.blocks", minutes: 30, opens: 2 }], gaps: [] }],
     });

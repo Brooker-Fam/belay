@@ -22,6 +22,8 @@ import { loadMigrations, migrate } from "../src/db.js";
 import { Policy } from "../src/device/schemas.js";
 import { setCalls } from "../src/family/calls/changes.js";
 import { buildPolicy } from "../src/family/policy.js";
+import { setPhoneRules } from "../src/family/screentime/changes.js";
+import { NO_RULES } from "../src/family/screentime/rules.js";
 import { createPersonalToken } from "../src/oauth/store.js";
 import { AI_SCOPES, type AiScope, updateSettings } from "../src/settings.js";
 import { device, deviceCall, enrollPhone, pkg, signIn, snapshot, testServer, T0 } from "./helpers.js";
@@ -165,15 +167,25 @@ const ALWAYS_KEYS: Record<string, Record<string, string>> = {
  * category off which apps the phone has or had). Each is called as a parent might ask, with every
  * category off. One that answers is held key by key to the list, like the read tools above (`keys`);
  * one without `keys` must refuse in a category's words, the same for an app on the phone, one
- * removed since and one never on it. Every write tool is here, so a new one is held to this too.
- * A limit change_screen_time adds is named as the kid sees it: after its apps, as the phone names
- * them (get_rules' which_apps says so), on the kid's rules screen and in the activity log.
+ * removed since and one never on it. Every write tool is here, so a new one is held to this too,
+ * and no answer names an app the phone reported. change_screen_time is called with apps too (the
+ * eighth review's K2: a limit it added was named after the apps it listed, as the phone names
+ * them): under a new limit and one a parent made, exempt, open during a schedule, and a rename of a
+ * parent's limit on some apps, which Belay would name after them.
  */
 const WRITE_CALLS: { tool: string; args: (app: string) => Record<string, unknown>; keys?: Record<string, string> }[] = [
   { tool: "block_app", args: (app) => ({ package: app }) },
   { tool: "mark_apps_reviewed", args: (app) => ({ packages: [app] }) },
   { tool: "change_wifi_only", args: (app) => ({ change: { add: [app, "zzzz.not.an.app"] }, reason: "It uses most of the plan." }) },
   { tool: "propose_change", args: (app) => ({ change: { kind: "allow_app", package: app }, reason: "They asked for it." }) },
+  { tool: "change_screen_time", args: (app) => ({ change: { limits: [{ packages: [app], minutes: 1440 }] }, reason: "A daily cap." }) },
+  { tool: "change_screen_time", args: (app) => ({ change: { limits: [{ packages: ["*", app], minutes: 600 }] }, reason: "A daily total." }) },
+  { tool: "change_screen_time", args: (app) => ({ change: { limits: [{ id: "l-homework", packages: ["com.example.video", app] }] }, reason: "One more app." }) },
+  { tool: "change_screen_time", args: (app) => ({ change: { limits: [{ packages: [app], minutes: 60 }], self_serve: { minutes: 30, times: 3 } }, reason: "A cap, and some self-serve." }) },
+  { tool: "change_screen_time", args: (app) => ({ change: { exempt_add: [app] }, reason: "Homework." }) },
+  { tool: "change_screen_time", args: (app) => ({ change: { exempt_remove: [app] }, reason: "Not homework." }) },
+  { tool: "change_screen_time", args: (app) => ({ change: { schedules: [{ kind: "bedtime", start: "21:00", end: "07:00", allow: [app] }] }, reason: "Bedtime." }) },
+  { tool: "change_screen_time", args: () => ({ change: { limits: [{ id: "l-homework", name: "Belay's name" }] }, reason: "Its apps' names." }) },
   { tool: "locate_now", args: () => ({}) },
   {
     tool: "pause_phone",
@@ -216,11 +228,15 @@ describe("G4: what an AI app reads with every category off is what the kid's pho
     await deviceCall(t, phone.token, "inventory", snapshot([pkg("com.example.video", { label: "Video Tube" })], T0 + MIN));
     const parentId = (t.deps.db.prepare("SELECT id FROM parents").get() as { id: string }).id;
     setCalls({ db: t.deps.db, now: t.now() }, phone.deviceId, { enabled: true }, { kind: "parent", parentId });
+    // A parent's limit on an app, with a name of their own: an AI app with Apps off sees it as "Homework" on 1 app.
+    const homework = { id: "l-homework", name: "Homework", packages: ["com.example.video"], minutes: 60, by_day: null };
+    setPhoneRules({ db: t.deps.db, now: t.now() }, phone.deviceId, { ...NO_RULES, limits: [homework] }, { kind: "parent", parentId });
     const writes = (await client.listTools()).tools.filter((tool) => tool.annotations?.readOnlyHint !== true).map((tool) => tool.name);
     expect([...new Set(WRITE_CALLS.map((w) => w.tool))].sort()).toEqual(writes.sort());
     for (const w of WRITE_CALLS) {
       const at = (app: string) => call(w.tool, { device: "Alex's phone", ...w.args(app) });
       const answer = await at("com.example.video");
+      for (const label of ["Video Tube", "Secret Diary"]) expect(answer.text, `${w.tool} ${JSON.stringify(w.args("com.example.video"))}`).not.toContain(label);
       if (!w.keys) {
         expect(answer.isError, w.tool).toBe(true);
         expect(answer.text, w.tool).toMatch(/^A parent turned off AI access to [a-z ]+ in Belay's settings[ (),a-z]*, so this isn't available\./);
@@ -230,6 +246,10 @@ describe("G4: what an AI app reads with every category off is what the kid's pho
       expect(answer.isError, `${w.tool}: ${answer.text}`).toBe(false);
       expect(Object.keys(answer.json).filter((k) => !(k in (w.keys ?? {}))), w.tool).toEqual([]);
     }
+    // The parent's limit is as they made it, and nothing an AI app tried put an app's name in the rules.
+    const rules = (await call("get_rules", { device: "Alex's phone" })).json;
+    expect(rules.limits.find((l: { id: string }) => l.id === "l-homework")).toMatchObject({ apps: 1, minutes_a_day: 60, untrusted: { name: "Homework" } });
+    for (const label of ["Video Tube", "Secret Diary"]) expect(JSON.stringify(rules)).not.toContain(label);
   });
 
   it("every key of every tool that answers with every category off is one of those items", async () => {

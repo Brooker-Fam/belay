@@ -34,6 +34,7 @@ const str = (v: unknown): string => (typeof v === "string" || typeof v === "numb
 /** What an AI app tried that the server refused (mcp/limits.ts's aiRefused), after "it tried". */
 function refusedWords(tool: string, why: string): string {
   if (tool === "change_screen_time") {
+    if (why === "apps") return "to change screen time with apps while AI access to apps is off";
     return why === "short_schedule" ? `to add or change a schedule shorter than ${AI_MIN_SCHEDULE_MINUTES} minutes` : "a change to screen time that Belay doesn't allow an AI app";
   }
   switch (why) {

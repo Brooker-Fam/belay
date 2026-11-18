@@ -135,7 +135,7 @@ relying on something new, it goes here first, with a source.
 | T20 | Whether a call is on: Telecom's `isInManagedCall` for the dialer, and the audio mode | Confirmed: neither needs a permission; an app's self-managed call isn't a managed one, and only `MODE_IN_CALL` can't be set by an app | AOSP; Emulator (Phase 5 CI); Pixel pending |
 | T21 | `WRITE_SECURE_SETTINGS` granted over adb outlives the debugging lock | Confirmed; it can't turn adb back on | AOSP |
 | T22 | Calls before the first unlock are in Android's call log after it | Confirmed: its direct-boot copy is moved in before the first read | AOSP; Emulator (Phase 5 CI, a restart with a PIN); Pixel pending |
-| T8 | Google Messages' RCS archival for a device owner set up over adb, with no managed Google Play | Confirmed in AOSP for any device owner (both flags on in Android 17); Google Messages' side untested; `WRITE_SMS` keeps no app out | Docs; AOSP; Emulator (the debug switch sets nothing without Google Messages); Pixel pending (Phase 5 checklist, 12) |
+| T8 | Google Messages' RCS archival for a device owner set up over adb, with no managed Google Play | Confirmed in AOSP for any device owner (both flags on in Android 17); Google Messages' side untested; `WRITE_SMS` keeps no app out, and an update can't show who sent it; releasing device owner or uninstalling leaves the archival tracker naming Belay | Docs; AOSP; Emulator (the debug switch sets nothing without Google Messages); Pixel pending (Phase 5 checklist, 12) |
 | O1 | Handing over: clearing reset protection, and what a reset from Settings does on a fully managed phone | Confirmed in AOSP; Pixel pending (Phase 11 checklist) | AOSP |
 | Q1 | A device owner keeps apps off metered networks with `setMeteredDataDisabledPackages`; it refuses admins and apps not installed or hidden | Confirmed | AOSP; Docs; Emulator (Phase 13 CI) |
 | Q2 | Android enforces it per uid on every metered network; being in front, Data Saver's exemption and the app's switches don't lift it | Confirmed: uids resolved at each call and at boot | AOSP |
@@ -2724,6 +2724,37 @@ that the debug build's switch sets nothing where Google Messages isn't installed
 - The foreground service types page [2026-11-16]: a short service needs only `FOREGROUND_SERVICE`,
   runs "about 3 minutes", and must stop before its timeout or Android calls it not responding;
   `Service.callOnTimeout` calls `onTimeout(startId)` and then `onTimeout(startId, fgsType)`.
+- Nothing tells the archival app who sent an update (read 2026-11-18 for the eighth security review,
+  K1): `Service` has no way to learn who started it, and a receiver's `getSentFromUid` and
+  `getSentFromPackage` are `INVALID_UID` and null unless the sender shared its identity
+  (`BroadcastQueueImpl` passes them only when `BroadcastRecord.shareIdentity`, which only the
+  sender's `BroadcastOptions.setShareIdentityEnabled` sets). The developer page says only that the
+  extra is "the message URI", "which can be used to fetch the message that triggered the broadcast".
+- What a URI under those authorities does when queried (`SmsProvider`, `MmsProvider`,
+  `MmsSmsProvider`, K1). One message's: `SmsProvider.insert` returns `content://sms/<id>` for every
+  box, `MmsProvider.insert` `content://mms/<id>`, and a query of either (`SMS_ALL_ID`, `MMS_ALL_ID`)
+  reads that row by its id with the columns asked for, writing nothing. Others don't stay reads, or
+  bring more than was asked for: `content://mms-sms/threadID?recipient=…` adds a canonical address
+  for a recipient it doesn't know (`getSingleAddressId`, for any caller with `READ_SMS`) and, for a
+  caller allowed restricted messages, an empty conversation (`insertThread`); `canonical-addresses`
+  returns every address whatever columns were asked for, and a provider's cursor reaches the caller
+  with its first window of rows filled (`CursorToBulkCursorAdaptor.getBulkCursorDescriptor` sends it
+  with the count); `sms/icc` reads the SIM; `sms/raw` purges old rows when the SMS app asks. Each
+  authority needs `READ_SMS` (TelephonyProvider's manifest).
+- The app-op after the test, and across installs (K3). `RcsArchivalAppTracker` listens only for
+  `ACTION_PACKAGE_ADDED`, never `PACKAGE_REMOVED`: when the package it names in memory
+  (`mArchivalPackages`) is installed, it sets that package's `OP_READ_RESTRICTED_MESSAGES` to
+  allowed. `AppOpsService` removes a package's modes when it's uninstalled (`ACTION_PACKAGE_REMOVED`
+  without `EXTRA_REPLACING`: `packageRemovedLocked`, `removePackage`), and keeps them over an
+  update. Releasing device owner drops the configuration from the policy engine
+  (`removePoliciesForAdmin`) and an uninstall tells the tracker nothing, so until system_server
+  restarts, the SMS role changes or an admin sets the SMS app's restrictions again, the tracker still
+  names `family.brooker.belay`, and the next install of that package, a release build too, is
+  allowed the op as it's installed. That mode is kept past a restart, since the tracker's rebuilt
+  memory names no package to put back to default. A release build declares no `READ_SMS`, without
+  which TelephonyProvider reads nothing, so it can't use the op. A phone released while the test was
+  on is clean again after uninstalling Belay and restarting before the next install, or a factory
+  reset.
 
 Untested: whether Google Messages honors `messages_archival` from a device owner set up over adb
 with no managed Google Play (Android's side reads exactly what `setApplicationRestrictions` stores);
@@ -2736,12 +2767,19 @@ and classes). For a time box, an hour unless asked, it names Belay in Google Mes
 (keeping any other key), holds `READ_SMS` by policy (DeviceOwnerSetup plans it like a tied permission:
 denied by policy otherwise, so the dialer role can't grant it), and enables the service the docs
 describe and a receiver for the same action. Each update keeps only when it came, how, its extras'
-names and, for a URI in the phone's message store, its row count, never a value: Belay queries it
-for the rows' ids alone (`_id`), to count them, so nothing in a message reaches Belay's process.
+names and, for one message's URI, its row count, never a value. It reads only `content://sms/<id>`
+or `content://mms/<id>`, exactly, through a URI it builds from the store and the id, never the one it
+was sent, for the row's id alone (`_id`), to count it, so nothing in a message reaches Belay's
+process; any other URI is refused before the store is asked (the eighth review's K1: it read any URI
+under the three authorities, and some of those write or ignore the columns). Since an update can't
+show who sent it, the record says so first, and any app can fill it only so far: 8 names of 64
+printable ASCII characters an update, the last 20 updates, and past 100 only counted, nothing read.
 Stopping takes the configuration back first, through `setApplicationRestrictions` so the tracker hears
-of it, then the service, then `READ_SMS`, last (that restarts Belay, L7). The test runs with calls
-off, since the dialer role would hold the app-op anyway. For texts themselves: the archival service
-must take an update as a hint and read only the message store, since any app can start it.
+of it, then the service, then `READ_SMS`, last (that restarts Belay, L7). "Release this phone" and
+`unprovision.sh` stop it before device owner goes, `unprovision.sh` waiting for the switch's answer
+(K3). The test runs with calls off, since the dialer role would hold the app-op anyway. For texts
+themselves: the archival service must take an update as a hint and read only one message's URI,
+since any app can start it.
 
 ## Off belay (Phase 11)
 

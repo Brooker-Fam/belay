@@ -57,11 +57,12 @@ export type RefusingTool = "change_calls" | "change_screen_time";
 
 /**
  * Why the server refused an AI app's change, for the activity log (web/pages/activity.tsx words
- * each): it named phone numbers while a parent keeps calls from AI apps (`numbers`), it was a
- * parent's alone (`parents_only`), it was about texts, which Belay doesn't manage yet (`texts`), a
- * schedule was too short (`short_schedule`), or anything else Belay doesn't allow it (`other`).
+ * each): it named phone numbers while a parent keeps calls from AI apps (`numbers`), or apps while
+ * a parent keeps apps from them (`apps`), it was a parent's alone (`parents_only`), it was about
+ * texts, which Belay doesn't manage yet (`texts`), a schedule was too short (`short_schedule`), or
+ * anything else Belay doesn't allow it (`other`).
  */
-export type RefusedWhy = "numbers" | "parents_only" | "texts" | "short_schedule" | "other";
+export type RefusedWhy = "numbers" | "apps" | "parents_only" | "texts" | "short_schedule" | "other";
 
 /**
  * Puts an AI app's refused change in the activity log (`ai.refused`), so a parent sees what it

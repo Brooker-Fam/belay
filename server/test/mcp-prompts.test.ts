@@ -43,7 +43,8 @@ const but = (scope: AiScope) => ALL.filter((s) => s !== scope);
 const WEEKLY_TOOLS: Record<Exclude<AiScope, "agreement">, { asks: string; never: string[] }> = {
   requests: { asks: "list_requests with kind help", never: ["list_requests"] },
   device_status: { asks: "get_device_status", never: ["get_device_status"] },
-  apps: { asks: "get_app_changes", never: ["get_app_changes", "list_unreviewed_apps", "get_installed_apps", "mark_apps_reviewed", "block_app", "propose_change"] },
+  // change_wifi_only needs Apps too: with it off, the mobile data section names the parent page instead.
+  apps: { asks: "get_app_changes", never: ["get_app_changes", "list_unreviewed_apps", "get_installed_apps", "mark_apps_reviewed", "block_app", "propose_change", "change_wifi_only"] },
   calls: { asks: "get_calls", never: ["get_calls", "get_contacts", "change_calls"] },
   location: { asks: "get_place_events", never: ["get_place_events", "get_location", "locate_now"] },
   network: { asks: "get_network_activity", never: ["get_network_activity"] },
@@ -189,10 +190,16 @@ describe("family_check_in", () => {
     expect(none).toContain("Say what could loosen next, like another rule in get_rules");
     expect(none).toContain("A parent turned off AI access to screen time, the stage and agreement, the kid's requests, and mobile data use in Belay's settings: say so in one line, and leave them out.");
     expect(none.match(/^\d+\. /gm)).toEqual(["1. ", "2. ", "3. ", "4. "]);
-    // The other categories aren't part of it, on or off.
-    for (const scope of ["apps", "device_status", "location", "calls", "network"] as const) {
+    // The other categories aren't part of it, on or off, but Apps: without it change_wifi_only would refuse, so it isn't named.
+    for (const scope of ["device_status", "location", "calls", "network"] as const) {
       expect(await prompt("family_check_in", but(scope), args), scope).toBe(await prompt("family_check_in", ALL, args));
     }
+    const noApps = await prompt("family_check_in", but("apps"), args);
+    expect(noApps).not.toContain("change_wifi_only");
+    expect(noApps).toContain("only as a suggestion: a parent lets one use mobile data again, on the parent page.");
+    expect(noApps.replace("a parent lets one use mobile data again, on the parent page", "letting one use mobile data again is a proposal (change_wifi_only) that a parent approves")).toBe(
+      await prompt("family_check_in", ALL, args),
+    );
   });
 });
 

@@ -159,7 +159,7 @@ New tools (`READ` unless noted; text from the kid or app developers stays under 
 |---|---|
 | `get_screen_time(device, from?, to?)` | Per day: screen minutes, unlocks, the hours the phone was used, top apps with minutes and opens, gaps and why. Default the last 7 days. Scope `screen_time`. |
 | `get_rules(device)` | The stage, limits, schedules, exempt apps, self-serve, today's state ("Games: 20 min left"), pending requests. Always available (rules aren't the kid's data), but app names are `untrusted`. |
-| `change_screen_time(device, change)` | **Write.** A change to limits, schedules, `exempt`, `allow` or self-serve. The server classifies it: if it only tightens, it applies; otherwise it becomes a proposal and the tool says a parent must approve it on the parent page. |
+| `change_screen_time(device, change)` | **Write.** A change to limits, schedules, `exempt`, `allow` or self-serve. The server classifies it: if it only tightens, it applies; otherwise it becomes a proposal and the tool says a parent must approve it on the parent page. Without the `apps` scope it takes no apps (under a limit, exempt, or open during a schedule) and renames no limit on some apps, refused alike whatever the apps: Belay names a limit after its apps as the phone names them, so its answer would name them (the eighth security review's K2). |
 | `lock_phone(device, minutes, note?)` | **Write, tightens.** Pauses the phone now for 5 to 240 minutes and locks the screen; calls, texts, Belay, 911 and 988 still work. |
 | `get_network_activity(device, from?, to?)` | Domains per app per day. Scope `network`, off by default. |
 

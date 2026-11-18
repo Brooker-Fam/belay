@@ -5,6 +5,11 @@
 # remove test-only admins. To remove a release build, factory reset the phone from
 # Settings (docs/pixel.md, "Returning the phone to normal").
 #
+# First it stops the debug build's texts test (docs/phase5-checklist.md, section 12), and
+# waits for its answer, while Belay is still the device owner: that takes Google Messages'
+# archival setting back and the restricted-messages app-op with it, which releasing or
+# uninstalling doesn't (docs/platform-notes.md T8).
+#
 # Usage: android/scripts/unprovision.sh [--serial S] [--keep-app] [--dry-run] [--yes]
 #
 #   --keep-app   release device owner but leave the app installed
@@ -16,6 +21,45 @@ set -euo pipefail
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 usage() { sed -n '2,/^set -euo/p' "${BASH_SOURCE[0]}" | sed '$d' | sed 's/^# \{0,1\}//'; }
+
+# The texts test (T8) off, with the debug build's adb switch, before device owner goes: its stop
+# takes Google Messages' configuration back with setApplicationRestrictions, which is how Android's
+# archival tracker hears of it and puts Belay's restricted-messages app-op back to default.
+# Releasing device owner drops the configuration without telling the tracker, and uninstalling
+# tells it nothing either, so the next install of family.brooker.belay, a release build too,
+# would be allowed that app-op again (platform notes T8). `am broadcast` waits for the switch's
+# answer (a stopped Belay gets it too); a debug build from before the test has no switch (result=0).
+stop_texts_test() {
+  local out result
+  local -a cmd=(am broadcast --include-stopped-packages -a "$PKG.DEBUG_ARCHIVAL" -n "$PKG/.DebugArchivalReceiver" --es command stop)
+  say "Stopping the texts test, if it's on..."
+  if [ "$DRY_RUN" = 1 ]; then
+    run adb shell "${cmd[@]}"
+    return 0
+  fi
+  out="$(adb shell "${cmd[@]}" 2>&1 | tr -d '\r')" || true
+  result="$(sed -n 's/^Broadcast completed: //p' <<<"$out")"
+  case "$result" in
+    'result=-1, data="'*) info "$(sed 's/^result=-1, data="//; s/"$//' <<<"$result")" ;;
+    'result=0') warn "The texts test's switch didn't answer: a debug build from before the test has none, so there's nothing to stop." ;;
+    *)
+      die "The texts test didn't stop, so nothing else changed." "$out" \
+        "Try again in a minute. If it never stops, a factory reset takes everything back (docs/pixel.md)."
+      ;;
+  esac
+}
+
+# A stop denies READ_SMS by policy next, which restarts Belay (platform notes L7): wait for it
+# while Belay is still the device owner, at most half a minute.
+wait_for_read_sms() {
+  [ "$DRY_RUN" = 1 ] && return 0
+  local _
+  for _ in $(seq 1 30); do
+    ash dumpsys package "$PKG" | contains 'android.permission.READ_SMS: granted=true' || return 0
+    sleep 1
+  done
+  if [ "$KEEP_APP" = 1 ]; then warn "Belay still holds READ_SMS: it keeps it until it's uninstalled."; fi
+}
 
 KEEP_APP=0
 while [ $# -gt 0 ]; do
@@ -43,7 +87,9 @@ fi
 confirm "Release Belay as device owner$([ "$KEEP_APP" = 0 ] && printf ' and uninstall it')?" ||
   die "Nothing changed: you said no."
 
+stop_texts_test
 if is_belay_owner; then
+  wait_for_read_sms
   say "Releasing device owner..."
   run adb shell dpm remove-active-admin "$ADMIN"
 else

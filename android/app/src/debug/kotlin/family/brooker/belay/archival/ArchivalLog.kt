@@ -22,6 +22,14 @@ import java.time.temporal.ChronoUnit
  * the names of its extras and, when one names a message, whether reading it worked and how many rows
  * it has: only the rows' ids are read, to count them. Never a value: no text, sender, recipient,
  * thread, URI or anything else from a message, and nothing about it is sent to the server.
+ *
+ * Any app can send an update (WRITE_SMS keeps none out: docs/platform-notes.md T8), and Android
+ * doesn't tell Belay which app sent one, so an update proves nothing about Google Messages, and the
+ * record says so ([ArchivalTestState.senders]). What one can do is bounded (the eighth review's K1):
+ * Belay reads only one message's URI, of the one shape [ArchivalLog.messageUri] takes, through a URI
+ * it builds itself; and an update keeps at most [ArchivalLog.MAX_NAMES] names of
+ * [ArchivalLog.MAX_NAME_LENGTH] printable ASCII characters, the record the last
+ * [ArchivalLog.MAX_KEPT] updates, and after [ArchivalLog.MAX_UPDATES] a test only counts them.
  */
 
 /** How an update reached Belay: the foreground service the docs describe, or a broadcast. */
@@ -49,6 +57,13 @@ enum class ArchivalRead {
     @SerialName("failed")
     FAILED,
 
+    /**
+     * In the phone's message store ([ArchivalLog.MESSAGE_STORES]), but not one message's URI
+     * ([ArchivalLog.messageUri]): refused, without asking the store anything.
+     */
+    @SerialName("not_one_message")
+    NOT_ONE_MESSAGE,
+
     /** Not the phone's message store ([ArchivalLog.MESSAGE_STORES]): Belay doesn't read it. */
     @SerialName("not_messages")
     NOT_MESSAGES,
@@ -69,7 +84,16 @@ data class UriRead(
     val error: String? = null,
 )
 
-/** One update from Google Messages. */
+/**
+ * A message the test reads: the row [id] of the phone's [store] ("sms" or "mms"), as
+ * [ArchivalLog.messageUri] found it in an update.
+ */
+data class MessageUri(val store: String, val id: Long) {
+    /** The URI Belay queries, built from [store] and [id] alone. */
+    val uri: String get() = "content://$store/$id"
+}
+
+/** One update, from Google Messages or any other app ([ArchivalLog.SENDERS]). */
 @Serializable
 data class ArchivalUpdate(
     val at: Long,
@@ -98,9 +122,15 @@ data class ArchivalCounts(
     /** [ArchivalRead.NO_CURSOR] or [ArchivalRead.FAILED]. */
     @SerialName("read_failed")
     val readFailed: Int = 0,
+    /** [ArchivalRead.NOT_ONE_MESSAGE]: refused. */
+    @SerialName("not_one_message")
+    val notOneMessage: Int = 0,
     /** [ArchivalRead.NOT_MESSAGES] or [ArchivalRead.NOT_A_URI]. */
     @SerialName("not_read")
     val notRead: Int = 0,
+    /** Updates past [ArchivalLog.MAX_UPDATES]: counted here alone, nothing in them read or kept. */
+    @SerialName("past_the_cap")
+    val pastTheCap: Int = 0,
     @SerialName("first_at")
     val firstAt: Long? = null,
     @SerialName("last_at")
@@ -128,6 +158,8 @@ enum class ArchivalStop {
 /** The test's whole state: Belay's only record of it (no_backup/debug-archival-test.json). */
 @Serializable
 data class ArchivalTestState(
+    /** What every reader of the record needs first: an update proves nothing about who sent it. */
+    val senders: String = ArchivalLog.SENDERS,
     val on: Boolean = false,
     @SerialName("started_at")
     val startedAt: Long? = null,
@@ -154,15 +186,22 @@ object ArchivalLog {
     /** The extra that sometimes names the message the event was about. */
     const val EXTRA_URI = "com.google.android.apps.messaging.EXTRA_ARCHIVAL_URI"
 
-    /** The Telephony provider's message stores (TelephonyProvider's manifest): the only URIs Belay reads. */
+    /** The Telephony provider's message stores (TelephonyProvider's manifest). */
     val MESSAGE_STORES: Set<String> = setOf("sms", "mms", "mms-sms")
+
+    /** The record's first words (the eighth review's K1): it can't prove who sent an update. */
+    const val SENDERS =
+        "Any app can send these updates: WRITE_SMS keeps no app out, and Android doesn't tell Belay which app sent one, so none of them proves that Google Messages sent it."
 
     const val DEFAULT_MINUTES = 60
     const val MAX_MINUTES = 120
-    const val MAX_KEPT = 50
-    const val MAX_NAMES = 20
-    const val MAX_NAME_LENGTH = 80
+    const val MAX_KEPT = 20
+    const val MAX_NAMES = 8
+    const val MAX_NAME_LENGTH = 64
     const val MAX_ERROR_LENGTH = 60
+
+    /** A test reads and keeps this many updates at most; it only counts the rest ([ArchivalCounts.pastTheCap]). */
+    const val MAX_UPDATES = 100
 
     /** The state file's form: every field written, unknown ones ignored. */
     val JSON = Json {
@@ -196,15 +235,38 @@ object ArchivalLog {
     /** Still marked on, but its time is up: the next look turns it off. */
     fun expired(state: ArchivalTestState, now: Long): Boolean = state.on && !isOn(state, now)
 
-    /** Whether Belay reads a URI with this authority: only the phone's message store. */
-    fun readable(authority: String?): Boolean = authority in MESSAGE_STORES
+    /**
+     * The one shape of URI the test reads (the eighth review's K1): one message's, `content://sms/<id>`
+     * or `content://mms/<id>`, exactly: the URI AOSP 17's SmsProvider and MmsProvider give a message they
+     * store (`insert`), whose query reads that one row by its id, for the columns asked for (SMS_ALL_ID,
+     * MMS_ALL_ID). Anything else is refused before the store is asked: no query string, fragment, user,
+     * port or other path. The same authorities answer URIs that write to the store (MmsSmsProvider's
+     * `threadID` adds an address and an empty conversation for a recipient it doesn't know), that ignore
+     * the columns asked for (canonical addresses, conversations), that read the SIM (`sms/icc`), or that
+     * act on a query string. Belay then queries a URI it builds from [MessageUri.store] and
+     * [MessageUri.id] alone, never the one it was sent ([MessageUri.uri]).
+     */
+    fun messageUri(uri: String?): MessageUri? {
+        val match = MESSAGE_URI.matchEntire(uri ?: return null) ?: return null
+        return MessageUri(match.groupValues[1], match.groupValues[2].toLong())
+    }
+
+    /** Why a URI that isn't one message's ([messageUri]) wasn't read: in the phone's message store, or not. */
+    fun notRead(uri: String): UriRead = UriRead(if (IN_A_STORE.containsMatchIn(uri)) ArchivalRead.NOT_ONE_MESSAGE else ArchivalRead.NOT_MESSAGES)
+
+    /** Whether the test still reads and keeps an update: on, and fewer than [MAX_UPDATES] so far. */
+    fun takes(state: ArchivalTestState, at: Long): Boolean = isOn(state, at) && state.counts.updates < MAX_UPDATES
+
+    private val MESSAGE_URI = Regex("content://(sms|mms)/([1-9][0-9]{0,17})")
+    private val IN_A_STORE = Regex("^content://(" + MESSAGE_STORES.joinToString("|") { Regex.escape(it) } + ")([/?#]|$)")
 
     /**
-     * A name another app chose, as the test keeps it: at most [max] characters, with control
-     * characters as "?". It's only ever shown, never followed.
+     * A name another app chose, as the test keeps it: at most [max] characters (the last a "…" where
+     * it's cut), printable ASCII, with anything else as "?", so it can't look like other words or
+     * reorder a line. It's only ever shown, never followed.
      */
     fun clean(name: String, max: Int = MAX_NAME_LENGTH): String {
-        val shown = name.map { if (it.isISOControl() || it.isSurrogate()) '?' else it }.joinToString("")
+        val shown = name.map { if (it in ' '..'~') it else '?' }.joinToString("")
         return if (shown.length <= max) shown else shown.take(max - 1) + "…"
     }
 
@@ -223,10 +285,14 @@ object ArchivalLog {
         return ArchivalUpdate(at, via, clean.take(MAX_NAMES), (clean.size - MAX_NAMES).coerceAtLeast(0), uri)
     }
 
-    /** [update] counted, and kept among the last [MAX_KEPT], while the test is on; nothing otherwise. */
+    /**
+     * [update] counted, and kept among the last [MAX_KEPT], while the test is on; past [MAX_UPDATES],
+     * only counted ([ArchivalCounts.pastTheCap]); nothing while it's off.
+     */
     fun record(state: ArchivalTestState, update: ArchivalUpdate): ArchivalTestState {
         if (!isOn(state, update.at)) return state
         val c = state.counts
+        if (!takes(state, update.at)) return state.copy(counts = c.copy(pastTheCap = c.pastTheCap + 1, lastAt = update.at))
         val outcome = update.uri?.outcome
         val counts = c.copy(
             updates = c.updates + 1,
@@ -236,6 +302,7 @@ object ArchivalLog {
             read = c.read + if (outcome == ArchivalRead.READ) 1 else 0,
             rows = c.rows + (update.uri?.rows ?: 0),
             readFailed = c.readFailed + if (outcome == ArchivalRead.NO_CURSOR || outcome == ArchivalRead.FAILED) 1 else 0,
+            notOneMessage = c.notOneMessage + if (outcome == ArchivalRead.NOT_ONE_MESSAGE) 1 else 0,
             notRead = c.notRead + if (outcome == ArchivalRead.NOT_MESSAGES || outcome == ArchivalRead.NOT_A_URI) 1 else 0,
             firstAt = c.firstAt ?: update.at,
             lastAt = update.at,
@@ -243,7 +310,10 @@ object ArchivalLog {
         return state.copy(counts = counts, updates = (state.updates + update).takeLast(MAX_KEPT))
     }
 
-    /** The test in one line, for the adb switch: whether it's on, until when, and the counts. Never a name. */
+    /**
+     * The test in one line, for the adb switch: whether it's on, until when, and the counts, ending with
+     * the record's own caveat ([SENDERS]). Never a name.
+     */
     fun summary(state: ArchivalTestState, now: Long, zone: ZoneId): String {
         val c = state.counts
         val stopped = state.stoppedAt
@@ -255,9 +325,10 @@ object ArchivalLog {
             else -> "off: never started"
         }
         val counted = "updates: ${c.updates} (service ${c.byService}, broadcast ${c.byBroadcast}); " +
-            "with a message URI: ${c.withUri} (read ${c.read}, rows ${c.rows}, failed ${c.readFailed}, not read ${c.notRead})"
+            "with a message URI: ${c.withUri} (read ${c.read}, rows ${c.rows}, failed ${c.readFailed}, not one message's ${c.notOneMessage}, not read ${c.notRead})" +
+            if (c.pastTheCap > 0) "; ${c.pastTheCap} more past the first $MAX_UPDATES, only counted" else ""
         val times = c.firstAt?.let { first -> "; first ${time(first, zone)}, last ${time(c.lastAt ?: first, zone)}" }.orEmpty()
-        return "$standing; $counted$times"
+        return "$standing; $counted$times; any app can send an update, and Android doesn't say which did"
     }
 
     private fun why(stop: ArchivalStop?): String = when (stop) {

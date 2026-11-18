@@ -59,17 +59,23 @@ const NAME_MAX = 60;
 /** A caregiver's check shows its answer this long after they asked: it's about where the phone is now, never where it was. */
 const CHECK_SHOWN_MS = 15 * 60_000;
 
-/** Each true in every case it's given for (careSaved): a lock always names them on the phone, a pause only while it's theirs. */
+/**
+ * Each true in every case it's given for (careSaved): a pause names them on the phone while it's
+ * theirs, and a lock only once the phone has locked its screen. A phone that can't lock (until it
+ * restarts after an update to Belay: the sixth review's G2) stays paused and names no one for the
+ * lock, so the words for a lock say "if it can" (the eighth review's K8).
+ */
 const SAVED: Record<string, string> = {
   paused: "Paused. The phone gets it within seconds if it's online, and shows your name.",
-  locked: "Paused, and the screen locks (during a call, about 2 minutes after the call ends). The phone gets it within seconds if it's online, and shows your name.",
+  locked:
+    "Paused. The phone gets it within seconds if it's online, and shows your name. If it can lock its screen, it locks it too (during a call, about 2 minutes after the call ends).",
   kept: "The phone was paused at least that long already, so nothing changed.",
   locked_kept:
-    "The screen locks (during a call, about 2 minutes after the call ends), and the phone says you locked it. It was paused at least that long already, so that pause stays as it was. The phone gets it within seconds if it's online.",
+    "The phone was paused at least that long already, so that pause stays as it was. If it can lock its screen, it locks it (during a call, about 2 minutes after the call ends) and says you locked it. It gets it within seconds if it's online.",
   paused_any:
     "The phone is paused for at least that long now. It gets it within seconds if it's online. If a longer pause was on already, that one stays as it was, with its own words on the phone.",
   locked_any:
-    "The screen locks (during a call, about 2 minutes after the call ends), and the phone says you locked it. The phone is paused for at least that long now. It gets it within seconds if it's online.",
+    "The phone is paused for at least that long now. If it can lock its screen, it locks it (during a call, about 2 minutes after the call ends) and says you locked it. It gets it within seconds if it's online.",
   push_on: "Notifications are on for this browser.",
   push_off: "Notifications are off for this browser.",
 };

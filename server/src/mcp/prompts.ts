@@ -2,8 +2,9 @@
  * The MCP prompts: weekly_review, review_app, review_request and family_check_in. They follow
  * the categories a parent lets AI apps read (settings.ts), as the tools do, read each time a
  * prompt is asked for: a prompt never asks for a category that's off, and says in one line that
- * it's off instead. Text from the kid, the family or app developers goes in as data, labeled
- * untrusted; each prompt that names a phone's app is in the activity log, like a tool's read.
+ * it's off instead, and suggests no tool that would refuse (change_wifi_only needs Apps). Text
+ * from the kid, the family or app developers goes in as data, labeled untrusted; each prompt that
+ * names a phone's app is in the activity log, like a tool's read.
  */
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
@@ -89,7 +90,7 @@ function weeklyReviewText(on: Scopes): string {
     on.network &&
       `Network: call get_network_activity for each phone for the last 7 days (it says whether network logging is on). For each app, give the week's top few domains with how many times each was looked up, as facts. ${NETWORK_REMINDER}`,
     on.mobile_data &&
-      `Mobile data: for each phone, call get_mobile_data for the last 14 days (it says whether measuring is on). Give this week's mobile data total and the change from the week before, the top few apps on mobile data, and any Wi-Fi-only app that still used mobile data, as facts. If one app uses most of it, you may suggest making it Wi-Fi only (change_wifi_only, only if the parent agrees). ${MOBILE_DATA_REMINDER}`,
+      `Mobile data: for each phone, call get_mobile_data for the last 14 days (it says whether measuring is on). Give this week's mobile data total and the change from the week before, the top few apps on mobile data, and any Wi-Fi-only app that still used mobile data, as facts. If one app uses most of it, you may suggest making it Wi-Fi only (${on.apps ? "change_wifi_only, only if the parent agrees" : "a parent does it on the parent page"}). ${MOBILE_DATA_REMINDER}`,
     on.screen_time &&
       "Screen time: for each phone that has screen-time rules, call get_rules and get_screen_time for the last 14 days. Give this week's totals against the limits (how many days each limit was kept), what changed from last week, and anything Belay couldn't count, with why. Screen time is a number, not a verdict about the kid: report it plainly, don't guess why, and don't moralize.",
   ].filter((s): s is string => typeof s === "string");
@@ -133,7 +134,7 @@ function familyCheckInText(on: Scopes, device: string): string {
       `${loosened.length || on.agreement ? "Then what else" : "Say what"} could loosen next, like ${on.screen_time ? "a limit the kid kept every day, or " : ""}another rule in get_rules: only as a suggestion, since a parent decides.`,
     ].join(" "),
     on.mobile_data &&
-      "Wi-Fi only, from get_mobile_data: which apps can't use mobile data, and whether one could again (rules are built to loosen), only as a suggestion: letting one use mobile data again is a proposal (change_wifi_only) that a parent approves. Mobile data use is a number, not a verdict about the kid.",
+      `Wi-Fi only, from get_mobile_data: which apps can't use mobile data, and whether one could again (rules are built to loosen), only as a suggestion: ${on.apps ? "letting one use mobile data again is a proposal (change_wifi_only) that a parent approves" : "a parent lets one use mobile data again, on the parent page"}. Mobile data use is a number, not a verdict about the kid.`,
     on.requests &&
       `The kid's own requests this month: what they asked for and how each was answered, without judging the asking. Don't read out the words of an "I need help" or a "Talk to my parent": say only that there was one, and leave it to the parent to follow up. If a help request hasn't been seen, tell the parent to look at it now.`,
     "Ask three open questions for the kid, like what they'd like to change, what's been hard, and what they're proud of. Listen; don't argue with the answers.",

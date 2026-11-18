@@ -234,8 +234,9 @@ const PauseForm: FC<{ view: CareView; phone: CarePhone }> = ({ view, phone }) =>
       </button>
     </div>
     <p class="muted small">
-      Apps pause; calls, texts, 911 and 988 still work. The kid's phone names you for your pause and for each lock. A pause only ever gets longer here (a
-      longer one already on stays as it is), and only a parent can end one early.
+      Apps pause; calls, texts, 911 and 988 still work. The kid's phone names you for your pause, and for each lock once it has locked the screen: a phone
+      that can't lock it yet (it may need to restart after an update to Belay) stays paused, and names no one for the lock. A pause only ever gets longer
+      here (a longer one already on stays as it is), and only a parent can end one early.
     </p>
   </form>
 );
