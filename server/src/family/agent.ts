@@ -1,7 +1,8 @@
 /**
  * Phase 6: updating Belay from the family's server (docs/design/phase6-reliability.md).
  *
- * A person adds an APK of Belay with the CLI (agent-add): the server keeps the file as
+ * A parent adds an APK of Belay on a phone's page ("Add a version of Belay", which streams the
+ * upload here: web/upload.ts), or a person with the CLI (agent-add): the server keeps the file as
  * agents/<sha256>.apk in its data directory, with the version code and name the person gives
  * it. It doesn't parse the APK; the phone checks the package, the version and the signing
  * certificate before installing (docs/protocol.md, "Updates"). A parent then offers one version
@@ -52,9 +53,9 @@ export function agentPath(dir: string, sha256: string): string {
 }
 
 /**
- * Adds a version of Belay: the file (a path, or a stream such as stdin) is written to a temporary
- * file in the store while it's hashed, at most LIMITS.maxAgentBytes, then renamed to
- * <sha256>.apk. The same file added again keeps one copy.
+ * Adds a version of Belay: the file (a path, or a stream such as stdin or a parent's upload) is
+ * written to a temporary file in the store while it's hashed, at most LIMITS.maxAgentBytes, then
+ * renamed to <sha256>.apk. The same file added again keeps one copy.
  */
 export async function addAgentFile(
   db: DB,
