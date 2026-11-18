@@ -92,7 +92,7 @@ review's G3).
 { "server_time": 1794867161711, "policy": { "version": 0 } }
 ```
 
-From Phase 2 the answer carries the whole current [Policy](#policy) (Phase 1 servers sent
+From Phase 2 the answer carries the whole current [Policy](#objects) (Phase 1 servers sent
 `{"version": 0}`, which enforces nothing). The phone also reports what it enforces in
 `status.enforcement`.
 
