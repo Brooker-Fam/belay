@@ -11,8 +11,9 @@ relying on something new, it goes here first, with a source.
 - **Verified on:**
   - *Docs/AOSP*: read in documentation or source code, not yet seen on a device.
   - *Emulator*: checked by CI on the API 37.0 emulator (`android/scripts/ci-emulator-test.sh`).
-  - *Pixel 8*: checked on the real phone with the Phase 0 checklist. All Pixel 8 results
-    are still **pending**; see [Phase 0 results](#phase-0-results).
+  - *Pixel 8*: checked on the real phone with the Pixel checklists, in the order of
+    [pixel-day.md](pixel-day.md). All Pixel 8 results are still **pending**; Phase 0's go in
+    [Phase 0 results](#phase-0-results).
 
 ## Summary
 
@@ -26,7 +27,7 @@ relying on something new, it goes here first, with a source.
 | A1 | A Family Link child account can't sit next to a device owner | Very likely; unconfirmed by Google | Sources only |
 | A2 | A parent-owned regular Google account works with Play on a fully managed phone | Third-party sources only | Pixel 8 pending (step 3) |
 | A3 | The Android Management API isn't open to parental control | Confirmed | Docs |
-| A4 | Play's `allowed_accounts` managed configuration keeps Play to the accounts listed | Confirmed in the docs; Android stores it whether Play is there or not | Docs; AOSP; Emulator pending (Phase 2 CI); Pixel pending (Phase 2 checklist) |
+| A4 | Play's `allowed_accounts` managed configuration keeps Play to the accounts listed | Confirmed in the docs; Android stores it whether Play is there or not | Docs; AOSP; Emulator (Phase 2 CI: set and taken back, on images without Play); Pixel pending (Phase 2 checklist) |
 | K1 | Manifest receivers only get `PACKAGE_FULLY_REMOVED` and `PACKAGE_DATA_CLEARED` | Confirmed | Docs; AOSP; Emulator |
 | K2 | `getChangedPackages` resets every boot; key it to `BOOT_COUNT` | Confirmed | Docs; AOSP |
 | K3 | Seeing every package needs `QUERY_ALL_PACKAGES`, no device-owner exemption | Confirmed | Docs; AOSP; Emulator |
@@ -50,9 +51,9 @@ relying on something new, it goes here first, with a source.
 | N1 | HTTPS only, the system's CAs; plain http only in debug builds, to the emulator's host | Confirmed; CT through OkHttp unproven | Docs; Emulator (cleartext path) |
 | N2 | Compose's EmojiCompat would ask Play services for a font; Belay turns it off | Confirmed | androidx source |
 | E1 | Enrolling over adb: a receiver only the shell can reach, and its answer | Confirmed | AOSP; Emulator (Phase 1 CI) |
-| C1 | Suspending apps: who can't be suspended, and what suspension does | Confirmed | AOSP; Emulator pending (Phase 2 CI) |
+| C1 | Suspending apps: who can't be suspended, and what suspension does | Confirmed | AOSP; Emulator (Phase 2 CI) |
 | C2 | What a suspended app shows the kid | Confirmed; check the title on the Pixel | AOSP |
-| C3 | Hiding apps: killed, "removed" broadcast, invisible to plain queries | Confirmed | AOSP; Emulator pending (Phase 2 CI) |
+| C3 | Hiding apps: killed, "removed" broadcast, invisible to plain queries | Confirmed | AOSP; Emulator (Phase 2 CI: hidden, and listed only with `-u`) |
 | C4 | User restrictions: API levels, unknown keys, what debugging and SIM locks really do | Confirmed; corrects M2 | AOSP; SDK |
 | C5 | The unknown-sources restrictions don't block `adb install` | Confirmed for 37.0; 37.2's new key unverified | AOSP |
 | C6 | Private DNS: device owner only, check in Belay's process, offline and other-user traps | Confirmed | AOSP |
@@ -62,13 +63,13 @@ relying on something new, it goes here first, with a source.
 | C10 | Reading the phone, SMS, emergency, browser and keyboard apps without permissions | Confirmed | AOSP |
 | C11 | Android's own Parental Controls profile: detectable, not identifiable | Confirmed | AOSP |
 | H1 | Settings' network reset and "Reset app preferences" get around no lock Belay holds | Confirmed; the second turns usage access off | AOSP |
-| H2 | A proxy (Wi-Fi, APN, global) gets around Private DNS; Chrome's `ProxySettings` direct ignores it; Belay can read it | Confirmed | AOSP; Chromium; Emulator pending (Phase 2 CI); Pixel pending |
+| H2 | A proxy (Wi-Fi, APN, global) gets around Private DNS; Chrome's `ProxySettings` direct ignores it; Belay can read it | Confirmed | AOSP; Chromium; Emulator (Phase 2 CI: Belay sees a global proxy come and go); Pixel pending |
 | H3 | Approved apps as accessibility services, keyboards, listeners or device admins can't undo Belay; profiles can't be made | Confirmed | AOSP; Docs |
 | H4 | Chrome's configuration survives clearing its storage and "Uninstall updates" | Confirmed in AOSP; the factory Chrome's version to check | AOSP; Chromium; Pixel pending |
 | H5 | What browses without being a browser, and what the DNS filter covers | Partly: the captive-portal login bypasses Private DNS by design | AOSP; Docs; Pixel pending |
 | H6 | Wireless debugging is adb without a computer; apps can read whether it's on, not USB debugging | Confirmed | AOSP |
 | H7 | Google Play Instant | Gone since December 2025 | Docs |
-| H8 | The date and time lock covers the time zone but keeps the current one; Belay keeps it automatic | Confirmed | AOSP; Emulator pending (Phase 2 CI) |
+| H8 | The date and time lock covers the time zone but keeps the current one; Belay keeps it automatic | Confirmed | AOSP; Emulator (Phase 2 CI) |
 | H9 | Guest mode, the lock screen's dialer, pinning and picture-in-picture, the assistant while suspended | Confirmed, except the assistant, which may still answer | AOSP; Pixel pending |
 | H10 | Offline, nothing in the policy expires | Confirmed | Belay's code |
 | H11 | Bluetooth, Quick Share, USB transfer and drives: no APK installs | Confirmed | AOSP; SDK |
@@ -78,70 +79,70 @@ relying on something new, it goes here first, with a source.
 | U3 | The usage-limit observers aren't open to Belay | Contradicted | AOSP |
 | U4 | The kid can turn usage access off, and back on | Confirmed | AOSP |
 | U5 | How usage events behave at boots, clock changes and query edges | Confirmed in source | AOSP |
-| U6 | Screen on, off and unlocked reach registered receivers only; clock and zone changes reach manifest ones | Confirmed | AOSP; Docs; Emulator pending (Phase 3 CI) |
-| U7 | Watching Belay's own usage access with `startWatchingMode` | Confirmed | AOSP; Emulator pending (Phase 3 CI) |
+| U6 | Screen on, off and unlocked reach registered receivers only; clock and zone changes reach manifest ones | Confirmed | AOSP; Docs; not checked on its own on the emulator; Pixel pending (Phase 3 checklist, 1.4) |
+| U7 | Watching Belay's own usage access with `startWatchingMode` | Confirmed | AOSP; Emulator (Phase 3 CI, `ScreenTimeInstrumentedTest`) |
 | U8 | `queryEvents(UsageEventsQuery)`: its period check, and where keyguard events come from | Confirmed | AOSP; SDK |
 | U9 | Settings opens Belay's own usage access switch for a `package:` address | Confirmed in AOSP Settings; not documented | AOSP |
-| S5 | `lockNow` needs `<force-lock/>` on Android 17's first release; an update gets it at the next boot | Confirmed | AOSP; Emulator pending (Phase 3 CI) |
+| S5 | `lockNow` needs `<force-lock/>` on Android 17's first release; an update gets it at the next boot | Confirmed | AOSP; Emulator (Phase 3 CI: listed, and lock now locks; an update's restart unchecked) |
 | S6 | Exact alarms: the Doze allowlist exempts Belay; `USE_EXACT_ALARM` as the backup | Confirmed | AOSP |
 | S7 | Telling from a shell whether the screen is off or locked | Confirmed | AOSP |
-| W1 | Network logging for a device owner: what's logged, batches, Android's notice | Confirmed, with limits | AOSP; Docs; Emulator pending (Phase 3 CI) |
-| W6 | `dpm force-network-logs` closes a batch now, from the shell | Confirmed: throttled to 10 s, refused while logging is off | AOSP; Docs; Emulator pending (Phase 3 CI) |
+| W1 | Network logging for a device owner: what's logged, batches, Android's notice | Confirmed, with limits | AOSP; Docs; Emulator (Phase 3 CI: on, a batch, off; the notice is the Pixel's) |
+| W6 | `dpm force-network-logs` closes a batch now, from the shell | Confirmed: throttled to 10 s, refused while logging is off | AOSP; Docs; Emulator (Phase 3 CI: a batch now, and the refusal) |
 | W7 | What a DNS event says: the hostname as the app asked, the uid's name, reverse lookups | Confirmed | AOSP (DnsResolver, libcore); Docs |
 | W8 | Another user or profile pauses logging; any of the last 5 batches can be taken by token | Confirmed | AOSP; Docs |
 | W9 | `onNetworkLogsAvailable` is an explicit foreground broadcast to the admin receiver | Confirmed | AOSP |
-| I2 | A device owner's PackageInstaller session installs with nobody confirming; no downgrades | Confirmed | AOSP; Docs; Emulator pending (Phase 6 CI) |
+| I2 | A device owner's PackageInstaller session installs with nobody confirming; no downgrades | Confirmed | AOSP; Docs; Emulator (Phase 6 CI) |
 | I3 | Developer verification has no device-owner bypass | Confirmed in AOSP; Google's wording doesn't settle Belay's case | AOSP; Docs (drafts) |
 | I5 | Only the shell can install a test-only APK | Confirmed: `INSTALL_FAILED_TEST_ONLY` for every app | AOSP |
 | I6 | An APK's package, version code and signing certificates, read before installing | Confirmed | AOSP |
-| I7 | Updating itself kills Belay; `MY_PACKAGE_REPLACED` starts the new one | Confirmed | AOSP; Emulator pending (Phase 6 CI) |
+| I7 | Updating itself kills Belay; `MY_PACKAGE_REPLACED` starts the new one | Confirmed | AOSP; Emulator (Phase 6 CI) |
 | V1 | Android's own Parental Controls profile shows as `type=profile.SUPERVISING` | Confirmed (the shell's format) | AOSP |
-| V2 | A device owner can list and remove other users and profiles | Confirmed, with one exception | AOSP; Docs; Emulator pending (Phase 10 CI) |
+| V2 | A device owner can list and remove other users and profiles | Confirmed, with one exception | AOSP; Docs; Emulator (Phase 10 CI, `OtherUsersInstrumentedTest`) |
 | V4 | Telling the restrictions Belay set from everyone else's | Confirmed | AOSP; Docs |
 | E2 | `pm create-user` on the CI emulators | Confirmed: up to 4 users on both images | AOSP (goldfish) |
 | X1 | Tango (ya-webadb) runs adb over WebUSB in Chromium, from `localhost`; one program at a time holds the ADB interface | Confirmed; Windows' driver unverified | Docs; package source; the kit's tests; Pixel 8 pending |
 | X2 | `adb install` is a streamed `package install`, and Tango's is the same | Confirmed | AOSP; package source |
 | X3 | An APK's signing certificate, read without apksigner, as apksigner prints it | Confirmed | apksigner 37.0.0; the kit's tests |
 | X4 | The SDK packages AGP 9.5.1 builds Belay with | Confirmed | AGP 9.5.1; Google's SDK repository |
-| L1 | An adb-provisioned device owner grants itself location, background included; Android tells the kid | Confirmed | AOSP; Emulator pending (Phase 4 CI) |
-| L2 | `setLocationEnabled` and `DISALLOW_CONFIG_LOCATION` for a device owner | Confirmed; Android posts its own notice when location goes on | AOSP; Docs; Emulator pending (Phase 4 CI) |
+| L1 | An adb-provisioned device owner grants itself location, background included; Android tells the kid | Confirmed | AOSP; Emulator (Phase 4 CI: granted by policy; the notice is the Pixel's) |
+| L2 | `setLocationEnabled` and `DISALLOW_CONFIG_LOCATION` for a device owner | Confirmed; Android posts its own notice when location goes on | AOSP; Docs; Emulator (Phase 4 CI; the notice is the Pixel's) |
 | L3 | "gps", "network" and "fused" with the platform API only | Partly: on a Pixel, "network" and "fused" are (expected to be) Play services | AOSP |
 | L4 | Platform geofencing | Partly: it uses the fused provider; Belay computes places itself | AOSP |
 | L5 | No `location` foreground service needed | Confirmed | AOSP; Docs |
 | L6 | The kid sees when location is used | Confirmed for GPS-level requests (the status bar icon) | AOSP |
-| L7 | Losing a granted permission stops and restarts the app | Confirmed: every runtime permission but notifications | AOSP; Emulator pending (Phase 4 CI) |
+| L7 | Losing a granted permission stops and restarts the app | Confirmed: every runtime permission but notifications | AOSP; Emulator (Phase 4 CI) |
 | L8 | `getCurrentLocation` with a 60-second timeout | **Contradicted**: Android caps one call at 30 s; Belay makes two | AOSP |
 | L9 | A test can set a known GPS point on the emulator | Only with a mock provider; CI sets it with `adb emu geo fix` | AOSP (goldfish) |
 | L10 | `setDeviceOwnerLockScreenInfo` for lost mode | Confirmed | AOSP; Docs |
-| G1 | Calling and texting 911, 988 and a parent while every other app is suspended | Confirmed: ACTION_DIAL and ACTION_SENDTO to the default apps, which Belay never suspends | AOSP; Docs; Emulator pending (Phase 7 CI) |
+| G1 | Calling and texting 911, 988 and a parent while every other app is suspended | Confirmed: ACTION_DIAL and ACTION_SENDTO to the default apps, which Belay never suspends | AOSP; Docs; Emulator (Phase 7 CI: the apps stay open; nothing is called) |
 | G2 | Android's own emergency information has an intent on Android 17 | Confirmed: `android.telephony.action.EMERGENCY_ASSISTANCE`, the emergency role's activity | AOSP |
-| T1 | Belay as the default dialer (`setDefaultDialerApplication`) | Confirmed: requirements listed; does nothing without telephony | AOSP; Docs; Emulator pending (Phase 5 CI) |
+| T1 | Belay as the default dialer (`setDefaultDialerApplication`) | Confirmed: requirements listed; does nothing without telephony | AOSP; Docs; Emulator (Phase 5 CI) |
 | T2 | 911 works when Belay is the dialer | Confirmed: the preloaded dialer takes every emergency call | AOSP; Docs |
 | T3 | Android treats 988 like 911 | **Contradicted**: 988 is an ordinary number to Android | AOSP |
-| T4 | Call screening sees every incoming call | **Contradicted**: not withheld callers, and a screening app the kid picks replaces the dialer's | AOSP; Docs; Emulator pending (Phase 5 CI) |
-| T5 | The dialer decides whether a call rings | Confirmed with `IN_CALL_SERVICE_RINGING`; Do Not Disturb's verdict needs `READ_CONTACTS` | AOSP; Docs; Emulator pending (Phase 5 CI) |
-| T6 | Blocked numbers, and blocking after an emergency call | Confirmed: the default dialer may write the list; blocking pauses 2 h | AOSP; Docs; Emulator pending (Phase 5 CI) |
-| T10 | Giving the dialer role back, without being killed | Confirmed: a dialer that stops qualifying is dropped; policy-fixed grants stay | AOSP; Emulator pending (Phase 5 CI) |
+| T4 | Call screening sees every incoming call | **Contradicted**: not withheld callers, and a screening app the kid picks replaces the dialer's | AOSP; Docs; not on the emulator (its calls all show a number); Pixel pending (Phase 5 checklist, 4) |
+| T5 | The dialer decides whether a call rings | Confirmed with `IN_CALL_SERVICE_RINGING`; Do Not Disturb's verdict needs `READ_CONTACTS` | AOSP; Docs; Emulator (Phase 5 CI: who rings; Do Not Disturb is the Pixel's) |
+| T6 | Blocked numbers, and blocking after an emergency call | Confirmed: the default dialer may write the list; blocking pauses 2 h | AOSP; Docs; Emulator (Phase 5 CI: on and off the list) |
+| T10 | Giving the dialer role back, without being killed | Confirmed: a dialer that stops qualifying is dropped; policy-fixed grants stay | AOSP; Emulator (Phase 5 CI) |
 | T11 | Seeing a 911 or 988 call Belay's dialer didn't place | Partly: `NEW_OUTGOING_CALL` always; the call log for 988, for 911 only if the carrier allows | AOSP; Docs |
 | T12 | Missed-call notifications for the calls Belay lets ring | Confirmed: Android posts them; a refused call isn't "missed" | AOSP |
 | T13 | `isEmergencyNumber` without permissions | Confirmed; it throws while the phone process is down | AOSP |
-| T14 | Denying `CALL_PHONE` to other apps leaves emergency calls working | Confirmed | AOSP; Emulator pending (Phase 5 CI) |
-| T15 | CI: no preloaded dialer on ATD; the emulator console simulates incoming calls | Confirmed | AOSP; Docs; Emulator pending (Phase 5 CI) |
+| T14 | Denying `CALL_PHONE` to other apps leaves emergency calls working | Confirmed | AOSP; Emulator (Phase 5 CI: denied; no emergency call is made) |
+| T15 | CI: no preloaded dialer on ATD; the emulator console simulates incoming calls | Confirmed | AOSP; Docs; Emulator (Phase 5 CI) |
 | T16 | Call audio routes and the SIM choice for an in-call app | Confirmed: the endpoint API from API 34 | AOSP; Pixel pending |
 | T17 | What Android counts as an emergency call: the whole number, so "*67911" isn't one, and a caller ID showing 911 is | Confirmed: Belay takes the caller-ID codes Android knows (`*67`, `*82`, `#31#`, `*31#`) off itself; the network decides what "*67911" reaches | AOSP; Pixel pending (Phase 5 checklist, a test number) |
 | T18 | What Telecom tells an in-call service about an emergency | Confirmed: emergency callback mode and a network-identified emergency call, both skip filtering; emergency SMS mode can't be read | AOSP; Pixel pending (the carrier's setting) |
 | T19 | A call to 911 before the first unlock reaches a direct-boot-aware receiver | Confirmed; before that unlock Telecom finds no service of Belay's | AOSP; Emulator (the storage); Pixel pending (a test number) |
 | T20 | Whether a call is on: Telecom's `isInManagedCall` for the dialer, and the audio mode | Confirmed: neither needs a permission; an app's self-managed call isn't a managed one, and only `MODE_IN_CALL` can't be set by an app | AOSP; Emulator (Phase 5 CI); Pixel pending |
 | T21 | `WRITE_SECURE_SETTINGS` granted over adb outlives the debugging lock | Confirmed; it can't turn adb back on | AOSP |
-| T22 | Calls before the first unlock are in Android's call log after it | Confirmed: its direct-boot copy is moved in before the first read | AOSP; Emulator pending (Phase 5 CI); Pixel pending |
+| T22 | Calls before the first unlock are in Android's call log after it | Confirmed: its direct-boot copy is moved in before the first read | AOSP; Emulator (Phase 5 CI, a restart with a PIN); Pixel pending |
 | T8 | Google Messages' RCS archival for a device owner set up over adb, with no managed Google Play | Confirmed in AOSP for any device owner (both flags on in Android 17); Google Messages' side untested; `WRITE_SMS` keeps no app out | Docs; AOSP; Emulator (the debug switch sets nothing without Google Messages); Pixel pending (Phase 5 checklist, 12) |
 | O1 | Handing over: clearing reset protection, and what a reset from Settings does on a fully managed phone | Confirmed in AOSP; Pixel pending (Phase 11 checklist) | AOSP |
-| Q1 | A device owner keeps apps off metered networks with `setMeteredDataDisabledPackages`; it refuses admins and apps not installed or hidden | Confirmed | AOSP; Docs; Emulator pending (Phase 13 CI) |
+| Q1 | A device owner keeps apps off metered networks with `setMeteredDataDisabledPackages`; it refuses admins and apps not installed or hidden | Confirmed | AOSP; Docs; Emulator (Phase 13 CI) |
 | Q2 | Android enforces it per uid on every metered network; being in front, Data Saver's exemption and the app's switches don't lift it | Confirmed: uids resolved at each call and at boot | AOSP |
 | Q3 | Metered: mobile data, Wi-Fi marked metered, another Android phone's hotspot; "Treat as unmetered" wins | Confirmed; an iPhone's hotspot unknown | AOSP; Pixel pending (Phase 13 checklist) |
 | Q4 | The app sees no network; Settings shows its data switches "Disabled by admin" | Confirmed | AOSP; Pixel pending |
 | Q5 | Resetting network settings or app preferences, Data Saver and Background data don't undo it | Confirmed | AOSP |
-| Q6 | A device owner reads every app's mobile data from `NetworkStatsManager`, without usage access | Confirmed | AOSP; Docs; Emulator pending (Phase 13 CI) |
+| Q6 | A device owner reads every app's mobile data from `NetworkStatsManager`, without usage access | Confirmed | AOSP; Docs; Emulator (Phase 13 CI) |
 | Q7 | Per-app stats in 2-hour buckets, kept 90 days, polled every 30 minutes; a query polls first, rate-limited | Confirmed | AOSP |
 | Q8 | Removed apps, the phone's hotspot, Android's own and shared uids, the SDK sandbox | Confirmed | AOSP |
 | Q9 | Downloads through Android's download manager, and Play's updates, aren't the app's traffic | Partly: to check on the Pixel | AOSP |
@@ -159,6 +160,10 @@ From Phase 1 the same job runs end to end against a real Belay server on the run
 instrumented tests passed, and the server received the fixture app's install, update and
 removal, each "noticed right away". The ATD image's enrollment failed on timing (E1);
 with the retry, run 15 passed the same end-to-end path on the ATD image (required).
+
+Every phase's part of the job ([emulator.md](emulator.md#what-ci-runs)) passed on both images in
+run 87 (2026-11-18); the entries marked "Emulator (Phase N CI …)" say what that part shows, and
+what it leaves to the Pixel.
 
 ---
 
@@ -324,8 +329,9 @@ told "Google does not see parental controls as a valid business case for amapi"
 
 ### A4. Play's `allowed_accounts`
 
-**Confirmed in the docs and AOSP; untested on a phone.** Verified on: Docs; AOSP. Read on
-2026-11-17.
+**Confirmed in the docs and AOSP; untested on a phone.** Verified on: Docs; AOSP; Emulator (Phase 2
+CI: `EnforcementInstrumentedTest` sets the configuration and takes it back, with made-up accounts,
+on images without Play). Read on 2026-11-17.
 
 - developer.android.com/work/dpc/security, "Restrict accounts in Google Play": "Your DPC can set a
   list of accounts people can use in Google Play", for fully managed devices and work profiles,
@@ -814,7 +820,8 @@ unless another project is named. The emulator checks are in `ScreenTimeInstrumen
 
 ### U6. What wakes screen time: screen on and off, unlocking, clock and zone changes
 
-**Confirmed.** Verified on: AOSP; Docs; Emulator pending (Phase 3 CI).
+**Confirmed.** Verified on: AOSP; Docs. Not checked on its own on the emulator: CI's screen time
+counts from usage events with the screen kept on. Pixel pending (Phase 3 checklist, 1.4).
 
 - `core/java/android/content/Intent.java`: `ACTION_SCREEN_ON` and `ACTION_SCREEN_OFF` "You cannot
   receive this through components declared in manifests, only by explicitly registering for it
@@ -831,7 +838,8 @@ and zone changes go to a manifest receiver (`ClockChangedReceiver`).
 
 ### U7. Watching Belay's own usage access
 
-**Confirmed.** Verified on: AOSP; Emulator pending (Phase 3 CI, `ScreenTimeInstrumentedTest`).
+**Confirmed.** Verified on: AOSP; Emulator (Phase 3 CI, `ScreenTimeInstrumentedTest`: turning usage
+access off is noticed, and back on too).
 
 - `core/java/android/app/AppOpsManager.java` `startWatchingMode(String op, String packageName,
   OnOpChangedListener)`: "Monitor for changes to the operating mode for the given op in the given
@@ -878,7 +886,8 @@ Check the button on the Pixel.
 ### S5. `lockNow` and `<force-lock/>`, and what an update changes
 
 **Confirmed; moved from the drafts with the flag's value and the update question.** Verified on:
-AOSP; Emulator pending (Phase 3 CI).
+AOSP; Emulator (Phase 3 CI: `force-lock` is listed after provisioning, and lock now locks the
+screen; what an update's restart changes isn't checked there).
 
 - `services/devicepolicy/.../DevicePolicyManagerService.lockNow`: with the flag
   `lock_now_coexistence` the check is `mPermissions.enforce({MANAGE_DEVICE_POLICY_LOCK,
@@ -920,10 +929,12 @@ AOSP; Emulator pending (Phase 3 CI).
 Belay's consequence: `res/xml/device_admin.xml` declares `<force-lock/>`. A `lock_now` command or
 a schedule with `lock` calls `lockNow` once (core's `Commands.plan`, `Upkeep.locks`); a refusal
 is reported, for "force-lock" in plain words: "Android lets Belay lock the screen only after the
-phone restarts once with this version of Belay." The family's Pixel, provisioned before Phase 3,
-needs one restart after the update. The kid knows their own PIN, so it's a nudge. Every step asks
-`hasGrantedPolicy` first (`enforce/ScreenLock.cannotLock`, and Belay also remembers a force-lock
-refusal until it restarts), so while the answer is no, no lock waits for a call, every
+phone restarts once with this version of Belay." A phone provisioned before Phase 3 needs one
+restart after the update; one first set up with a later build, as the family's Pixel will be, has
+`<force-lock/>` by the end of `provision.sh`, whose restart reads it (Phase 3 checklist, 0.1). The
+kid knows their own PIN, so it's a nudge. Every step asks `hasGrantedPolicy` first
+(`enforce/ScreenLock.cannotLock`, and Belay also remembers a force-lock refusal until it
+restarts), so while the answer is no, no lock waits for a call, every
 `lock_now` is failed in those words without a try, call or not, a schedule's or lost mode's lock
 is recorded as it comes, and the phone reports the same words among its problems the whole time
 (the sixth review's G2: a lock that waited for a call used to be reported done, and never
@@ -972,7 +983,8 @@ block; the Pixel's in [phase3-checklist.md](phase3-checklist.md) §7.
 
 ### W1. Network logging for a device owner
 
-**Confirmed, with limits.** Verified on: AOSP; Docs; Emulator pending (Phase 3 CI).
+**Confirmed, with limits.** Verified on: AOSP; Docs; Emulator (Phase 3 CI: logging turned on and
+off, and an app's lookup in a batch; Android's notice is the Pixel's to show).
 
 - `core/java/android/app/admin/DevicePolicyManager.java`, `setNetworkLoggingEnabled`: for a device
   owner from Android 8 (also a managed profile's owner, and a delegate); "Network logs contain DNS
@@ -1014,8 +1026,8 @@ their own DNS aren't logged: the parent page says it's a record, not a filter.
 
 ### W6. `dpm force-network-logs`
 
-**Confirmed.** Verified on: AOSP; Docs; Emulator pending (Phase 3 CI). For CI, which can't wait
-90 minutes.
+**Confirmed.** Verified on: AOSP; Docs; Emulator (Phase 3 CI: a batch at once with logging on,
+and the refusal with it off). For CI, which can't wait 90 minutes.
 
 - `cmds/dpm/dpm.sh` is `cmd device_policy "$@"`. `DevicePolicyManagerServiceShellCommand` has
   `force-network-logs` ("Makes all network logs available to the DPC and triggers
@@ -1353,8 +1365,8 @@ switch stays) but would stop the kid uninstalling, force-stopping or clearing an
 ### H2. Proxies: Wi-Fi, the APN, and a global one
 
 **A proxy gets around Private DNS; Chrome can be told to ignore it, and Belay reports one.**
-Verified on: AOSP; Chromium source; Emulator pending (Phase 2 CI: `EnforcementInstrumentedTest`
-sets a global proxy, and Chrome's configuration); Pixel pending.
+Verified on: AOSP; Chromium source; Emulator (Phase 2 CI: `EnforcementInstrumentedTest` sets a
+global proxy, which Belay sees come and go, and Chrome's configuration); Pixel pending.
 
 - An HTTP proxy resolves the names it's asked for itself, so an app that uses one doesn't look
   them up on the phone, and Private DNS never sees them. A proxy given by IP address needs no
@@ -1502,7 +1514,7 @@ H6's.
 ### H8. The time zone
 
 **The date and time lock covers the zone, but keeps the zone the phone has; Belay keeps it
-automatic.** Verified on: AOSP; Emulator pending (Phase 2 CI: `EnforcementInstrumentedTest`).
+automatic.** Verified on: AOSP; Emulator (Phase 2 CI: `EnforcementInstrumentedTest`).
 
 - The time zone detector refuses user configuration (manual zone, and the automatic switch)
   while `DISALLOW_CONFIG_DATE_TIME` holds
@@ -1577,7 +1589,8 @@ new entries. The emulator checks run in CI (`SelfUpdateInstrumentedTest`,
 
 ### I2. Silent installs by the device owner
 
-**Confirmed.** Verified on: AOSP; Docs; Emulator pending (Phase 6 CI).
+**Confirmed.** Verified on: AOSP; Docs; Emulator (Phase 6 CI: Belay's own update, and
+`SelfUpdateInstrumentedTest`'s session on the fixture app).
 
 - `services/core/.../pm/PackageInstallerSession.computeUserActionRequirement`: "Device owners and
   affiliated profile owners are allowed to silently install packages": when
@@ -1658,7 +1671,8 @@ over adb in maintenance mode.
 
 ### I7. An update kills Belay, and `MY_PACKAGE_REPLACED` starts the new one
 
-**Confirmed.** Verified on: AOSP; Emulator pending (Phase 6 CI).
+**Confirmed.** Verified on: AOSP; Emulator (Phase 6 CI: the new version records the update as its
+own and starts its service).
 
 - `PackageInstaller.SessionParams.setDontKillApp` only applies to `MODE_INHERIT_EXISTING`
   sessions that add splits: "By default, all installs will result in the package's running
@@ -1692,7 +1706,8 @@ name on the Pixel is to check ([phase6-checklist.md](phase6-checklist.md) §5).
 
 ### V2. Other users or profiles on a device-owner phone
 
-**Confirmed, with one exception.** Verified on: AOSP; Docs; Emulator pending (Phase 10 CI).
+**Confirmed, with one exception.** Verified on: AOSP; Docs; Emulator (Phase 10 CI,
+`OtherUsersInstrumentedTest`: a user made with `pm create-user` is counted, and removed).
 
 - DevicePolicyManager reference [2026-09-16]: `getSecondaryUsers` "Called by a device owner to
   list all secondary users on the device. Managed profiles are not considered as secondary
@@ -1857,7 +1872,8 @@ relies on them; the rest are new. The emulator checks run in CI (`LocationInstru
 
 ### L1. Location, granted by policy
 
-**Confirmed.** Verified on: AOSP; Emulator pending (Phase 4 CI).
+**Confirmed.** Verified on: AOSP; Emulator (Phase 4 CI: granted by policy, and fixed; Android's
+notice is the Pixel's to show).
 
 - `services/devicepolicy/.../DevicePolicyManagerService.setDeviceOwner`: `if (isAdb(caller)) {
   activeAdmin.mAdminCanGrantSensorsPermissions = true; mPolicyCache.setAdminCanGrantSensorsPermissions(true); … }`.
@@ -1885,7 +1901,8 @@ explains Android's "your organization" wording.
 
 ### L2. `setLocationEnabled` and `DISALLOW_CONFIG_LOCATION`
 
-**Confirmed.** Verified on: AOSP; Docs; Emulator pending (Phase 4 CI).
+**Confirmed.** Verified on: AOSP; Docs; Emulator (Phase 4 CI: `keep_on` turns location on and sets
+`no_config_location`, and location off clears it).
 
 - `DevicePolicyManagerService.setLocationEnabled`: the default device owner only
   (`checkCallAuthorization(isDefaultDeviceOwner)`); it calls `LocationManager.setLocationEnabledForUser`,
@@ -1940,7 +1957,8 @@ managed notice ("Shares where this phone is every 30 minutes, 7:00 AM to 9:00 PM
 
 ### L7. Losing a granted permission stops and restarts the app
 
-**Confirmed.** Verified on: AOSP; Emulator pending (Phase 4 CI).
+**Confirmed.** Verified on: AOSP; Emulator (Phase 4 CI: location off takes the permission away,
+and Android restarts Belay).
 
 - `services/permission/.../permission/PermissionService.kt`, `onPermissionFlagsChanged`: a runtime
   permission going from granted to not granted adds the uid to `runtimePermissionRevokedUids`;
@@ -2003,7 +2021,9 @@ screen and takes it away when lost mode ends. The Pixel checklist records where 
 
 ### G1. Calls and texts to 911, 988 and a parent while apps are suspended
 
-**Confirmed.** Verified on: AOSP; Docs; Emulator pending (Phase 7 CI, `KidSideInstrumentedTest`).
+**Confirmed.** Verified on: AOSP; Docs; Emulator (Phase 7 CI, `KidSideInstrumentedTest`: the
+dialer, the texting app and emergency information stay open while a pause holds the rest; nothing
+is called).
 
 - `Intent.ACTION_DIAL` with a `tel:` number needs no permission and opens the dialer with the
   number filled in. T2: an emergency call always goes through the preloaded dialer, and
@@ -2055,7 +2075,7 @@ emergency call is to a test number Android routes as a normal call (T19).
 
 ### T1. Belay as the default dialer
 
-**Confirmed.** Verified on: AOSP; Docs; Emulator pending (Phase 5 CI).
+**Confirmed.** Verified on: AOSP; Docs; Emulator (Phase 5 CI).
 
 - `services/devicepolicy/.../DevicePolicyManagerService.setDefaultDialerApplication` (API 34; the
   device owner, or the profile owner of an organization-owned phone): returns without doing anything
@@ -2120,8 +2140,8 @@ too), next to 911 and whatever Android reports as an emergency number (T13).
 
 ### T4. Call screening and withheld numbers
 
-**Contradicted** (that screening sees every incoming call). Verified on: AOSP; Docs; Emulator
-pending (Phase 5 CI).
+**Contradicted** (that screening sees every incoming call). Verified on: AOSP; Docs. Not on the
+emulator: its calls all show a number. Pixel pending (Phase 5 checklist, 4).
 
 - CallScreeningService reference [2026-09-16]: only `tel:` calls; "Calls with a …
   PRESENTATION_RESTRICTED, PRESENTATION_UNKNOWN, PRESENTATION_UNAVAILABLE or PRESENTATION_PAYPHONE
@@ -2144,7 +2164,8 @@ emergency callback mode skips screening and always rings (T18).
 
 ### T5. The dialer decides whether a call rings
 
-**Confirmed.** Verified on: AOSP; Docs; Emulator pending (Phase 5 CI).
+**Confirmed.** Verified on: AOSP; Docs; Emulator (Phase 5 CI: a contact's call rings Belay's
+screen, and another number's never rings; Do Not Disturb is the Pixel's to show).
 
 - InCallService reference: with the meta-data `android.telecom.IN_CALL_SERVICE_RINGING`, the app "is
   responsible for playing the ringtone for incoming calls".
@@ -2170,7 +2191,8 @@ ringtone is on the Pixel checklist.
 
 ### T6. Blocked numbers
 
-**Confirmed.** Verified on: AOSP; Docs; Emulator pending (Phase 5 CI).
+**Confirmed.** Verified on: AOSP; Docs; Emulator (Phase 5 CI: a number goes on Android's list and
+comes off it).
 
 - BlockedNumberContract [2026-08-03]: "Only the system, the default SMS application, and the default
   phone app … and carrier apps can read, and write"; "The platform blocks calls, and messages from
@@ -2192,7 +2214,8 @@ list as the shell, with `content query`.
 
 ### T10. Giving the dialer role back
 
-**Confirmed.** Verified on: AOSP; Emulator pending (Phase 5 CI).
+**Confirmed.** Verified on: AOSP; Emulator (Phase 5 CI: `calls --off`, and
+`CallsInstrumentedTest` giving the role away and taking it back).
 
 - `services/core/.../role/RoleServicePlatformHelperImpl.computePackageStateHash` covers every
   package's enabled and disabled components, and `RoleService` (`packages/modules/Permission`)
@@ -2276,7 +2299,8 @@ process that's down never stops an emergency number working.
 
 ### T14. `CALL_PHONE` for other apps
 
-**Confirmed.** Verified on: AOSP; Emulator pending (Phase 5 CI).
+**Confirmed.** Verified on: AOSP; Emulator (Phase 5 CI: other apps are denied `CALL_PHONE`; no
+emergency call is ever made).
 
 - `core/res/AndroidManifest.xml`: `CALL_PHONE` is a dangerous permission (`costsMoney`); a device
   owner can deny it to another app with `setPermissionGrantState` (R2).
@@ -2294,7 +2318,7 @@ off. Emergency calls don't depend on it. A call another app starts anyway still 
 
 ### T15. The CI emulator: no preloaded dialer, and calls from the console
 
-**Confirmed.** Verified on: AOSP; Docs; Emulator pending (Phase 5 CI).
+**Confirmed.** Verified on: AOSP; Docs; Emulator (Phase 5 CI).
 
 - The ATD image's product (`device/generic/goldfish`, `product/slim_handheld.mk`) inherits
   `telephony_system_ext.mk` but not `telephony_product.mk` (`platform/build`, `target/product/`),
@@ -2568,7 +2592,7 @@ turn adb back on.
 
 **Confirmed in AOSP.** Verified on: AOSP (read 2026-11-18 for the fourth review's N1, and again
 for the fifth review's F1, P1 and P2); Emulator
-pending (`ci-emulator-test.sh`, a call before the unlock; `CallsInstrumentedTest`, the read);
+(`ci-emulator-test.sh`, a call before the unlock, with a PIN; `CallsInstrumentedTest`, the read);
 Pixel pending (Phase 5 checklist, 11.2 and 11.5).
 
 - Telecom's `util/CallLogUtils.addCall` → `addEntryAndRemoveExpiredEntries` writes each call to
@@ -2773,7 +2797,8 @@ Pixel's checks are in [phase13-checklist.md](phase13-checklist.md).
 
 ### Q1. `setMeteredDataDisabledPackages` for a device owner
 
-**Confirmed.** Verified on: AOSP; Docs; Emulator pending (Phase 13 CI).
+**Confirmed.** Verified on: AOSP; Docs; Emulator (Phase 13 CI: on Android's list for Belay, and
+off it).
 
 - `DevicePolicyManager.setMeteredDataDisabledPackages(admin, packageNames)`, API 28: "Called by a
   device or profile owner to restrict packages from using metered data", returning "a list of
@@ -2882,7 +2907,8 @@ nothing, and the app only seems to lose its connection.
 
 ### Q6. Reading per-app mobile data as device owner
 
-**Confirmed.** Verified on: AOSP; Docs; Emulator pending (Phase 13 CI).
+**Confirmed.** Verified on: AOSP; Docs; Emulator (Phase 13 CI: read as device owner, and a day
+sent).
 
 - `NetworkStatsAccess.checkAccessLevel`: a device owner (`isDeviceOwnerApp`), a carrier-privileged
   app and the network stack get `Level.DEVICE` ("can access usage for any uid"); usage access

@@ -115,11 +115,12 @@ requests through end-to-end encrypted Web Push.
 
 ## Later phases
 
-Designed, not built: each has a design in [docs/design/](docs/design/README.md) with what
-Android 17 allows (checked against AOSP and the docs), the protocol, privacy, threat model
-changes, tests and the family's decisions. Build order: Phase 2; then Phase 10's detection
-and Phase 6's self-update and recovery key; then Phase 3 with Phase 7's core; Phase 4;
-Phase 5 (calls, then texts); Phases 8, 9 and 11 when they're needed.
+Each has a design in [docs/design/](docs/design/README.md) with what Android 17 allows
+(checked against AOSP and the docs), the protocol, privacy, threat model changes, tests and the
+family's decisions. The designs' build order was Phase 2; then Phase 10's detection and Phase
+6's self-update and recovery key; then Phase 3 with Phase 7's core; Phase 4; Phase 5 (calls,
+then texts); Phases 8, 9 and 11 when they're needed. All of it is built but Phase 5's texts and
+Phase 9, and Phases 12 and 13 came after.
 
 **Built since Phase 2** (on `main`, run end to end in CI on two Android 17 emulator images; none
 of it yet on a real Pixel). The contracts are in [docs/protocol.md](docs/protocol.md), and each
@@ -183,9 +184,10 @@ phase's Pixel checklist is in `docs/`.
 ### Phase 3: screen time, schedules and stages ([design](docs/design/phase3-screen-time.md)) (built)
 
 Built and run end to end in CI, opt-in network logging included. **Still open:**
-[docs/phase3-checklist.md](docs/phase3-checklist.md) on the Pixel (after updating, the phone
-needs one restart before lock now works: platform notes, S5; network logging's step 7 is
-Pixel-only: Android's own notice, and a real browser's lookups).
+[docs/phase3-checklist.md](docs/phase3-checklist.md) on the Pixel (network logging's step 7 is
+Pixel-only: Android's own notice, and a real browser's lookups). A phone updated from before
+Phase 3 needs one restart before lock now works (platform notes, S5); the family's Pixel, first
+set up with a later build, has what lock now needs from the start.
 
 
 - Per-app time counted on the phone from usage events (the system's usage-limit observers are
@@ -214,7 +216,8 @@ on the Pixel, including the battery cost per mode.
 ### Phase 5: calls and texts ([design](docs/design/phase5-calls-texts.md)) (calls built)
 
 Calls are built and run end to end in CI (a contact's call rings Belay's screen, a stranger's
-is refused and recorded, Belay becomes and stops being the phone app). **Still open:**
+is refused and recorded, Belay becomes and stops being the phone app, and a call before the
+first unlock after a restart is recorded from Android's call log). **Still open:**
 [docs/phase5-checklist.md](docs/phase5-checklist.md) on the Pixel, and texts, after the Pixel
 test of Google Messages' archival hook (T8), which debug builds now carry (the checklist's section 12).
 
@@ -277,7 +280,9 @@ Windows (and Windows' USB driver).
 
 Built: Belay reports other users and restrictions it didn't set, puts lifted suspensions back,
 and a parent can remove another user or profile from the phone's page (`remove_other_users`).
-**Still open:** setting up Android's own Parental Controls on the real Pixel.
+Run in CI: a user made with `pm create-user` is counted and removed. **Still open:** setting up
+Android's own Parental Controls on the real Pixel ([docs/phase6-checklist.md](docs/phase6-checklist.md),
+sections 4 and 5).
 
 
 - Android 17's built-in Parental Controls create a hidden supervising profile even when adding

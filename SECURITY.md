@@ -21,9 +21,10 @@ Only the `main` branch is supported.
   including prompt injection that gets an AI client to do something a parent didn't ask
   for, and anything that sends family data anywhere but the family's server.
 
-Phase 1 doesn't restrict the phone yet: a kid can still factory reset it, install anything
-or browse anything ([docs/threat-model.md](docs/threat-model.md)). That's known and planned
-for Phase 2 (ROADMAP.md), not a vulnerability.
+What Belay restricts is the family's choice: until a parent turns protection on, new apps and
+the web aren't restricted, and until a parent locks factory reset (off by default), a kid can
+reset the phone from Settings. What a kid can still do with all of it on is in
+[docs/threat-model.md](docs/threat-model.md). Those are known, not vulnerabilities.
 
 ## Secrets this project never holds
 

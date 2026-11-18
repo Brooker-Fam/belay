@@ -273,7 +273,7 @@ checked on a real Pixel yet. Phase 9 (more families) isn't built either.
 │ inventory, changes,     │ app     │ parent pages            │        ├─────────────────┤
 │ managed notice, outbox  │ lists   │ activity log            │ ◀───── │ parent page     │
 └─────────────────────────┘ ◀────── └─────────────────────────┘  web   └─────────────────┘
-                            policy (empty until Phase 2)
+                            policy (the family's rules)
 ```
 
 ## Quickstart
@@ -315,10 +315,10 @@ For development, without Docker: `cd server && npm ci --ignore-scripts && BELAY_
   scripts/provision.sh --debug --server https://belay.example.org --code 7KQ2M9XA
   ```
 
-For a real Pixel 8, follow [docs/pixel.md](docs/pixel.md), then the
-[Phase 0](docs/phase0-checklist.md) and [Phase 1](docs/phase1-checklist.md) checklists; a
-release build needs the release key first ([docs/signing.md](docs/signing.md)), which the
-setup kit makes for you.
+For a real Pixel 8, follow [docs/pixel.md](docs/pixel.md); to check everything on it first,
+[docs/pixel-day.md](docs/pixel-day.md) runs every checklist in order, from the
+[Phase 0 checklist](docs/phase0-checklist.md) on. A release build needs the release key first
+([docs/signing.md](docs/signing.md)), which the setup kit makes for you.
 
 **3. Claude.** Add a custom connector with the URL `https://belay.example.org/mcp`, sign
 in, and approve ([docs/mcp.md](docs/mcp.md)). Then ask: "Is Sam's phone OK, and what did

@@ -253,10 +253,11 @@ same rules as its own: never one with 911, 988, an emergency or a private number
 2 hours after the kid contacted 911 or 988 only on the phone.
 
 **Not collected in Phase 1:** messages, calls, contacts, photos, files, browsing, searches,
-location (Phase 4 adds it, off by default), what's on the screen, or how long apps are used. Later phases add some of these
-only as listed in [ROADMAP.md](../ROADMAP.md), each shown to the kid on the phone first,
-and some (location, calls, network activity) off by default for AI. Phase 13 adds mobile data
-use, off for every phone until a parent measures it.
+location, what's on the screen, or how long apps are used. The phases since, all built but Phase
+5's texts, add some of these, only as this page says and only while a parent has each on: how
+long apps are used (Phase 3), the websites apps look up (Phase 3's network logging), location
+(Phase 4), calls (Phase 5) and mobile data use (Phase 13). Each is shown to the kid on the phone
+first, and location, calls and network activity are off by default for AI.
 
 ## When it's sent
 
