@@ -138,6 +138,9 @@ describe("joining and signing in", () => {
     // Whose family it is: the parent who added them, and the phones.
     expect(page).toContain("Sam gave you some access to Alex&#39;s phone");
     expect(page).not.toContain("Check where the phone is now");
+    // Before joining there's nothing to sign in with: no username, no password.
+    expect((await postForm(f.t, "/care/login", { username: "grandma", password: PASSWORD })).status).toBe(401);
+    expect((await postForm(f.t, "/care/login", { username: "", password: "" })).status).toBe(401);
     // A short password, or two that differ, isn't taken.
     expect((await postForm(f.t, `/care/join/${token}`, { username: "grandma", password: "short", repeat: "short" })).status).toBe(400);
     const care = await join(f, token);
