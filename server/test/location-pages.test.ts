@@ -126,7 +126,7 @@ describe("the Location and help tab", () => {
     expect(html).toContain("The phone answered:");
     expect(html).toContain("40.10000, -73.20000");
     // The checks list, the same the kid sees: who checked, and the fix that answered.
-    expect(html).toContain("Every time a parent, or their AI app, checked where the phone is");
+    expect(html).toContain("Every time a parent, their AI app, or a caregiver checked where the phone is");
     expect(html).toMatch(/<span>Sam<\/span><div class="small"><span class="fix"><strong>40\.10000, -73\.20000<\/strong>/);
     // A check the phone couldn't do (from the CLI): the phone's own words, quoted.
     const failed = locateNow({ db: t.deps.db, now: t.now() }, phone.deviceId, { kind: "server" }).result.command;

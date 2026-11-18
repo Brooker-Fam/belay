@@ -37,6 +37,8 @@ export const LIMITS = {
   maxPlaces: 20,
   /** Phase 7. */
   maxParentNumbers: 4,
+  /** Phase 12: caregivers per server, ended ones too, so at most this many in a phone's policy. */
+  maxCaregivers: 20,
   /** Phase 5: `POST /api/v1/calls`, and the approved contacts. */
   callsBytes: 128 * 1024,
   maxCalls: 500,
@@ -634,7 +636,8 @@ export const Policy = z.strictObject({
     new_apps: z.enum(["allow", "ask"]),
     decisions: z.array(z.strictObject({ package: packageName, state: z.enum(["allowed", "blocked"]) })),
   }),
-  pause: z.strictObject({ until: time.nullable(), note: text(500).nullable() }).nullable(),
+  /** Phase 12's `caregiver`: the caregiver who set the pause (their name), only when one did (not a parent, an AI app or the CLI). */
+  pause: z.strictObject({ until: time.nullable(), note: text(500).nullable(), caregiver: text(40).optional() }).nullable(),
   restrictions: z.strictObject({
     safe_boot: z.boolean(),
     add_user: z.boolean(),
@@ -701,6 +704,8 @@ export const Policy = z.strictObject({
       expires_at: time.nullable(),
       /** The AI app a parent used to ask (its name), for the kid's notice; null when a person asked. */
       via: text(60).nullable(),
+      /** Phase 12: the caregiver who sent a lock_now or locate_now (their name), for the kid's notice; only when one did. */
+      caregiver: text(40).optional(),
     }),
   ),
   /** Phase 3: null measures nothing and limits nothing (family/screentime). */
@@ -728,6 +733,13 @@ export const Policy = z.strictObject({
   help_seen: z.array(z.strictObject({ request_id: clientId, at: time, by: text(60).nullable() })).max(200),
   /** Phase 7: the numbers on the phone's emergency card. */
   parent_numbers: z.array(z.strictObject({ name: text(40), number: e164 })).max(LIMITS.maxParentNumbers),
+  /**
+   * Phase 12: the caregivers a parent gave some access to this phone (family/caregivers), for the kid's screen: their name
+   * (the parent's words), when access ends, and what they may do now (`locate` only while location takes checks).
+   */
+  caregivers: z
+    .array(z.strictObject({ name: text(40), until: time, can: z.array(z.enum(["status", "pause", "help", "locate"])).max(4) }))
+    .max(LIMITS.maxCaregivers),
   /** Phase 5: null until a parent turns calls on (and again once they turn them off): Belay isn't the dialer. */
   calls: z
     .strictObject({

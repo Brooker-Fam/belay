@@ -18,6 +18,8 @@ data class FixWant(
     val via: String? = null,
     /** help: the request the fix goes in. */
     val requestId: String? = null,
+    /** Phase 12, locate_now: the caregiver who sent it, by their name (kid.Caregivers.who); never with [via]. */
+    val caregiver: String? = null,
 ) {
     /** Each command, each help request, lost mode and periodic mode want at most one fix at a time. */
     val key: String
@@ -114,11 +116,13 @@ data class ToldEntry(
     /** Lost mode: how many fixes it sent, and when the last one was. */
     val count: Int = 0,
     val lastAt: Long? = null,
+    /** Phase 12: a check a caregiver sent, by their name ("Grandma checked where this phone is"); never with [via]. */
+    val caregiver: String? = null,
 )
 
 @Serializable
 enum class ToldKind {
-    /** A parent (or their AI app) asked where the phone is. */
+    /** A parent (or their AI app, or Phase 12's caregiver) asked where the phone is. */
     CHECK,
 
     /** Lost mode: where the phone is, every 5 minutes. */

@@ -18,6 +18,7 @@ import { recordAgreementAnswers } from "../family/screentime/changes.js";
 import { phoneRow, phoneRules } from "../family/screentime/rules.js";
 import { retentionCutoff, saveUsage } from "../family/screentime/usage.js";
 import { bearerToken, checkJson, clientAddress, parseRange, readJson, readJsonBody, type Bindings } from "../http.js";
+import { notifyCaregivers } from "../family/caregivers/push.js";
 import { helpNotice, notifyParents, placeNotice, recoveryUsedNotice, requestsNotice, updateFailedNotice } from "../push.js";
 import type { Verdict } from "../ratelimit.js";
 import { getSettings } from "../settings.js";
@@ -253,12 +254,17 @@ export function deviceRoutes(deps: Deps): Hono<DeviceEnv> {
     if (saved.made) limits.requestsPerPhone.hit(phone.id, saved.made);
     // The kid's answers to the agreement: the policy's kid_agreed_at follows, in a new version.
     recordAgreementAnswers(ctx, phone.id, saved.agreement);
-    // "I need help" is urgent: each one, at once, to every parent, apart from the other notices' limit.
+    // "I need help" is urgent: each one, at once, to every parent, apart from the other notices' limit, and
+    // (Phase 12) to each caregiver who gets this phone's help requests now.
+    const tell = (notice: ReturnType<typeof helpNotice>) => {
+      notifyParents(deps, notice);
+      notifyCaregivers(deps, phone.id, notice);
+    };
     for (const h of saved.created.filter((r) => r.kind === "help")) {
-      if (limits.helpNoticesPerPhone.hit(phone.id).ok) notifyParents(deps, helpNotice(phone.name, { reason: h.reason, shared: h.shared === true, withdrawn: h.withdrawn === true }));
+      if (limits.helpNoticesPerPhone.hit(phone.id).ok) tell(helpNotice(phone.name, { reason: h.reason, shared: h.shared === true, withdrawn: h.withdrawn === true }));
     }
     for (const h of saved.helpUpdated) {
-      if (limits.helpNoticesPerPhone.hit(phone.id).ok) notifyParents(deps, helpNotice(phone.name, { reason: h.reason, shared: h.shared, update: true }));
+      if (limits.helpNoticesPerPhone.hit(phone.id).ok) tell(helpNotice(phone.name, { reason: h.reason, shared: h.shared, update: true }));
     }
     // A few notices an hour per phone at most: a burst of requests still shows on the parent page.
     // Asking again for what's already waiting isn't news, and nor is one withdrawn before it arrived.

@@ -15,8 +15,9 @@ parent approves it. Nothing loosens without a parent. The AI can't answer the ki
 requests, turn measuring screen time on or off, change whether or how the phone shares where
 it is (or its places, or lost mode), or touch factory reset, debugging, reset protection or
 maintenance mode, not even as a proposal; nor (Phase 11) move a phone to Off belay, the last
-stage, stop collecting a kind of data, or hand a phone over. Where the phone is stays hidden
-from it until a parent turns on the Location category in Settings.
+stage, stop collecting a kind of data, or hand a phone over; nor (Phase 12) see, add or change
+caregivers. Where the phone is stays hidden from it until a parent turns on the Location
+category in Settings.
 
 ## Connect Claude (web, desktop and mobile)
 
@@ -318,6 +319,10 @@ too, since whoever holds a phone's token can send any text.
   needs the phone's name typed.
 - So do updating Belay, the recovery key, and removing other users or profiles from a phone
   (Phase 6 and 10): the tools only read how they're going.
+- Caregivers (Phase 12) have no tool at all: giving someone access to the kid's phone is a
+  parent's decision, on the parent page's Caregivers page. A pause a caregiver set reads, to an AI
+  app, like any other pause (until when), and their actions are in the activity log, which no
+  tool reads.
 
 ## Prompts
 

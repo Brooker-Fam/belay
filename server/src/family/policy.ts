@@ -8,7 +8,9 @@
  * callers: an AI app may block an app or pause the phone (never shorter), and nothing else;
  * hardening (factory reset, debugging, reset protection) is only turned on by setHardening,
  * which only the parent page calls, after the parent types the phone's name. Phase 11's
- * hand-over (liftForHandover, family/offbelay) lifts it again, a person's action too.
+ * hand-over (liftForHandover, family/offbelay) lifts it again, a person's action too. Phase 12's
+ * caregivers (family/caregivers) only pause and lock the phone, like an AI app (never shorter, and
+ * with no note), and the kid's phone names them: the types keep them out of everything else.
  */
 import { type Actor, audit } from "../audit.js";
 import { newId } from "../crypto.js";
@@ -18,6 +20,7 @@ import { cleanText, oneLine } from "../text.js";
 import { addRequestedContact } from "./calls/approve.js";
 import { callsFor, contactsFor, numbersOf } from "./calls/store.js";
 import { deviceFacts } from "./devices.js";
+import { caregiversFor } from "./caregivers/store.js";
 import { aiReadsFor, helpSeenFor, parentNumbersFor } from "./kidside.js";
 import { locationFor } from "./location/store.js";
 import { networkLogFor } from "./network/store.js";
@@ -218,6 +221,8 @@ export interface Pause {
   note: string | null;
   /** When this pause was set or last changed (null: before the server kept it), so a proposal to resume knows which pause it meant. */
   setAt: number | null;
+  /** Phase 12: the caregiver who set it (their name then), or null: a parent, an AI app or the CLI did. */
+  caregiver: string | null;
 }
 
 export interface Rules {
@@ -253,6 +258,7 @@ interface PolicyRow {
   pause_until: number | null;
   pause_note: string | null;
   pause_set_at: number | null;
+  pause_caregiver: string | null;
   restrictions: string;
   private_dns: string | null;
   chrome: string | null;
@@ -315,7 +321,7 @@ export function getRules(db: DB, deviceId: string): Rules {
     changedAt: row.changed_at,
     protectedAt: row.protected_at,
     newApps: row.new_apps,
-    pause: row.paused === 1 ? { until: row.pause_until, note: row.pause_note, setAt: row.pause_set_at } : null,
+    pause: row.paused === 1 ? { until: row.pause_until, note: row.pause_note, setAt: row.pause_set_at, caregiver: row.pause_caregiver } : null,
     restrictions,
     privateDns: row.private_dns,
     chrome: row.chrome !== null && chrome.success ? chrome.data : null,
@@ -331,12 +337,13 @@ export function getRules(db: DB, deviceId: string): Rules {
 
 function saveRules(db: DB, deviceId: string, rules: Rules, now: number): void {
   db.prepare(
-    `INSERT INTO policies (device_id, version, changed_at, protected_at, new_apps, paused, pause_until, pause_note, pause_set_at, restrictions,
-       private_dns, chrome, hide_browsers, maintenance_until, frp_accounts, play_accounts, support_message, ask_first_at, new_apps_at)
-     VALUES (@device_id, 0, @now, @protected_at, @new_apps, @paused, @pause_until, @pause_note, @pause_set_at, @restrictions,
-       @private_dns, @chrome, @hide_browsers, @maintenance_until, @frp_accounts, @play_accounts, @support_message, @ask_first_at, @new_apps_at)
+    `INSERT INTO policies (device_id, version, changed_at, protected_at, new_apps, paused, pause_until, pause_note, pause_set_at, pause_caregiver,
+       restrictions, private_dns, chrome, hide_browsers, maintenance_until, frp_accounts, play_accounts, support_message, ask_first_at, new_apps_at)
+     VALUES (@device_id, 0, @now, @protected_at, @new_apps, @paused, @pause_until, @pause_note, @pause_set_at, @pause_caregiver,
+       @restrictions, @private_dns, @chrome, @hide_browsers, @maintenance_until, @frp_accounts, @play_accounts, @support_message, @ask_first_at, @new_apps_at)
      ON CONFLICT (device_id) DO UPDATE SET protected_at = excluded.protected_at, new_apps = excluded.new_apps, paused = excluded.paused,
-       pause_until = excluded.pause_until, pause_note = excluded.pause_note, pause_set_at = excluded.pause_set_at, restrictions = excluded.restrictions,
+       pause_until = excluded.pause_until, pause_note = excluded.pause_note, pause_set_at = excluded.pause_set_at,
+       pause_caregiver = excluded.pause_caregiver, restrictions = excluded.restrictions,
        private_dns = excluded.private_dns, chrome = excluded.chrome, hide_browsers = excluded.hide_browsers,
        maintenance_until = excluded.maintenance_until, frp_accounts = excluded.frp_accounts, play_accounts = excluded.play_accounts,
        support_message = excluded.support_message, ask_first_at = excluded.ask_first_at, new_apps_at = excluded.new_apps_at`,
@@ -349,6 +356,7 @@ function saveRules(db: DB, deviceId: string, rules: Rules, now: number): void {
     pause_until: rules.pause?.until ?? null,
     pause_note: rules.pause?.note ?? null,
     pause_set_at: rules.pause?.setAt ?? null,
+    pause_caregiver: rules.pause?.caregiver ?? null,
     restrictions: JSON.stringify(Object.fromEntries(RESTRICTIONS.filter((r) => rules.restrictions[r]).map((r) => [r, true]))),
     private_dns: rules.privateDns,
     chrome: rules.chrome ? JSON.stringify(rules.chrome) : null,
@@ -586,11 +594,16 @@ function recoveryCheck(db: DB, deviceId: string): Policy["recovery"] {
  */
 function commandsFor(db: DB, deviceId: string): Policy["commands"] {
   return db
-    .prepare<[string], Omit<Policy["commands"][number], "via"> & { client_name: string | null }>(
-      "SELECT id, kind, issued_at, expires_at, client_name FROM commands WHERE device_id = ? AND result IS NULL AND replaced_at IS NULL ORDER BY issued_at, rowid",
+    .prepare<[string], Omit<Policy["commands"][number], "via" | "caregiver"> & { client_name: string | null; caregiver_name: string | null }>(
+      "SELECT id, kind, issued_at, expires_at, client_name, caregiver_name FROM commands WHERE device_id = ? AND result IS NULL AND replaced_at IS NULL ORDER BY issued_at, rowid",
     )
     .all(deviceId)
-    .map(({ client_name, ...c }) => ({ ...c, via: client_name === null ? null : oneLine(client_name, 60) || "an AI app" }));
+    .map(({ client_name, caregiver_name, ...c }) => ({
+      ...c,
+      via: client_name === null ? null : oneLine(client_name, 60) || "an AI app",
+      // Phase 12: the caregiver who sent it, only then, for the kid's notice ("Grandma checked where this phone is").
+      ...(caregiver_name === null ? {} : { caregiver: oneLine(caregiver_name, 40) || "a caregiver" }),
+    }));
 }
 
 /** The policy for one phone, as the device API sends it. */
@@ -605,7 +618,10 @@ export function buildPolicy(db: DB, deviceId: string, now: number): Policy {
       new_apps: rules.newApps,
       decisions: [...currentDecisions(db, deviceId).values()].map((d) => ({ package: d.package, state: d.state })),
     },
-    pause: pause ? { until: pause.until, note: kidWords(pause.note, LIMITS.pauseNote) } : null,
+    // Phase 12: a caregiver's pause names them, for the kid's screen ("Paused by Grandma").
+    pause: pause
+      ? { until: pause.until, note: kidWords(pause.note, LIMITS.pauseNote), ...(pause.caregiver === null ? {} : { caregiver: oneLine(pause.caregiver, 40) || "a caregiver" }) }
+      : null,
     restrictions: { ...rules.restrictions },
     web: { private_dns: rules.privateDns, chrome: rules.chrome ? { ...rules.chrome } : null, hide_browsers: rules.hideBrowsers },
     maintenance_until: activeMaintenance(rules, now),
@@ -630,6 +646,8 @@ export function buildPolicy(db: DB, deviceId: string, now: number): Policy {
     ai_reads: aiReadsFor(db),
     help_seen: helpSeenFor(db, deviceId, now),
     parent_numbers: parentNumbersFor(db, deviceId),
+    // Phase 12 (family/caregivers): who else a parent gave some access to this phone, for the kid's screen.
+    caregivers: caregiversFor(db, deviceId),
     // Phase 5 (family/calls): calls only once a parent turns them on; the lists always.
     calls: callsFor(db, deviceId),
     contacts: contactsFor(db, deviceId),
@@ -655,9 +673,17 @@ function policyBytes(contentJson: string, version: number, issuedAt: number): nu
 // ── Changing it ──────────────────────────────────────────────────────────
 
 /** Who changes a rule: a parent, an AI app a parent connected, or the server's CLI. */
-export type Changer = Exclude<Actor, { kind: "phone" }>;
+export type Changer = Exclude<Actor, { kind: "phone" } | { kind: "caregiver" }>;
 /** Who may loosen a rule: a person. AI apps only propose (family/proposals.ts). */
 export type Person = Exclude<Changer, { kind: "ai" }>;
+/** Phase 12: a caregiver a parent gave limited access (family/caregivers), by the name the parent gave them. */
+export type CaregiverActor = Extract<Actor, { kind: "caregiver" }>;
+/**
+ * Who may pause or lock a phone, or check where it is: a Changer, or a caregiver. Only pausePhone,
+ * lockPhone, insertCommandRow and location's locateNow take one: every other change takes a
+ * Changer or a Person, so a caregiver can't make it.
+ */
+export type Tightener = Changer | CaregiverActor;
 
 export interface PolicyContext {
   db: DB;
@@ -999,35 +1025,42 @@ export function clearPreDecisions(ctx: PolicyContext, deviceId: string, which: {
  * a parent resumes it). An AI app can only make a pause longer, never shorter (against a pause
  * at least as long, nothing changes: `kept`), and never writes the note the kid sees: its pause
  * keeps the note there is, a parent's, or has none, and the kid's phone says it in Belay's words.
+ * Phase 12: so does a caregiver, whose pause always has an end, and whose name the kid's phone
+ * shows ("Paused by Grandma until 5:30 PM").
  */
 export function pausePhone(
   ctx: PolicyContext,
   deviceId: string,
   input: { minutes: number | null; note?: string | null },
-  who: Changer,
+  who: Tightener,
 ): Changed<{ until: number | null; kept: boolean }> {
   return mutate(ctx, deviceId, who, (rules, log) => applyPause(ctx.now, rules, input, who, log));
 }
 
 /** pausePhone's change, on rules being changed. */
-function applyPause(now: number, rules: Rules, input: { minutes: number | null; note?: string | null }, who: Changer, log: Log): { until: number | null; kept: boolean } {
+function applyPause(now: number, rules: Rules, input: { minutes: number | null; note?: string | null }, who: Tightener, log: Log): { until: number | null; kept: boolean } {
+  // An AI app and a caregiver only ever tighten, and write nothing the kid sees.
+  const onlyLonger = who.kind === "ai" || who.kind === "caregiver";
+  if (who.kind === "caregiver" && input.minutes === null) throw new Error("A caregiver's pause always ends: only a parent pauses until they resume it");
   const current = activePause(rules, now);
   const minutes = input.minutes === null ? null : Math.min(Math.max(1, Math.round(input.minutes)), LIMITS.maxPauseMinutes);
   let until = minutes === null ? null : now + minutes * 60_000;
-  const kept = who.kind === "ai" && current !== null && (current.until === null || (until !== null && current.until >= until));
-  // The kid sees the note: a person's words only, never an AI app's.
-  const given = who.kind !== "ai" && input.note !== undefined && input.note !== null ? clean(input.note, LIMITS.pauseNote) : undefined;
+  const kept = onlyLonger && current !== null && (current.until === null || (until !== null && current.until >= until));
+  // The kid sees the note: a parent's words only, never an AI app's or a caregiver's.
+  const given = !onlyLonger && input.note !== undefined && input.note !== null ? clean(input.note, LIMITS.pauseNote) : undefined;
   let note: string | null;
   let setAt: number | null = now;
+  let caregiver: string | null = who.kind === "caregiver" ? who.name : null;
   if (kept) {
     until = current.until;
     note = current.note;
     setAt = current.setAt;
+    caregiver = current.caregiver;
   } else {
-    // An AI app's longer pause keeps the note there is.
-    note = given !== undefined ? given : who.kind === "ai" ? (current?.note ?? null) : null;
+    // An AI app's or a caregiver's longer pause keeps the note there is.
+    note = given !== undefined ? given : onlyLonger ? (current?.note ?? null) : null;
   }
-  rules.pause = { until, note, setAt };
+  rules.pause = { until, note, setAt, caregiver };
   log("phone.paused", { until, minutes, note: note ?? undefined, ...(kept ? { kept: true } : {}) });
   return { until, kept };
 }
@@ -1040,16 +1073,21 @@ export const LOCK_MINUTES = { min: 5, max: 240 } as const;
 export type CommandKind = "remove_other_users" | "lock_now" | "locate_now";
 
 /** A one-shot command's row (family/commands.ts): the phone runs each id once. */
-export function insertCommandRow(db: DB, deviceId: string, kind: CommandKind, now: number, expiresAt: number | null, who: Changer): string {
+export function insertCommandRow(db: DB, deviceId: string, kind: CommandKind, now: number, expiresAt: number | null, who: Tightener): string {
+  if (who.kind === "caregiver" && kind === "remove_other_users") throw new Error("A caregiver only locks the phone or checks where it is");
   const id = newId();
-  db.prepare("INSERT INTO commands (id, device_id, kind, issued_at, expires_at, issued_by, client_name) VALUES (?, ?, ?, ?, ?, ?, ?)").run(
+  db.prepare(
+    "INSERT INTO commands (id, device_id, kind, issued_at, expires_at, issued_by, client_name, caregiver_id, caregiver_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+  ).run(
     id,
     deviceId,
     kind,
     now,
     expiresAt,
-    parentOf(who),
+    who.kind === "caregiver" ? null : parentOf(who),
     who.kind === "ai" ? who.clientName : null,
+    who.kind === "caregiver" ? who.caregiverId : null,
+    who.kind === "caregiver" ? who.name : null,
   );
   return id;
 }
@@ -1060,7 +1098,7 @@ export function insertCommandRow(db: DB, deviceId: string, kind: CommandKind, no
  * which the phone runs once if it gets it within 10 minutes; one still waiting is replaced. Calls,
  * texts, 911, 988 and Belay keep working, as in any pause. Tightening, so an AI app may.
  */
-export function lockPhone(ctx: PolicyContext, deviceId: string, input: { minutes: number; note?: string | null }, who: Changer): Changed<{ until: number | null; kept: boolean; command: string }> {
+export function lockPhone(ctx: PolicyContext, deviceId: string, input: { minutes: number; note?: string | null }, who: Tightener): Changed<{ until: number | null; kept: boolean; command: string }> {
   const minutes = Math.min(Math.max(LOCK_MINUTES.min, Math.round(input.minutes)), LOCK_MINUTES.max);
   return mutate(ctx, deviceId, who, (rules, log) => {
     const { db, now } = ctx;

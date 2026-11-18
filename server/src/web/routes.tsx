@@ -102,6 +102,7 @@ import { sameName } from "../text.js";
 import { isValidTimeZone } from "../time.js";
 import type { Assets } from "./assets.js";
 import { callsWebRoutes } from "./calls.js";
+import { caregiverWebRoutes } from "./caregivers.js";
 import { locationWebRoutes, whereFor } from "./location.js";
 import { networkCardData, networkWebRoutes } from "./network.js";
 import { mobileDataWebRoutes } from "./mobiledata.js";
@@ -1329,6 +1330,8 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
   app.route("/", offBelayWebRoutes(deps, { view, message }));
   // Phase 3: network logging's switch and a phone's Network tab (web/network.tsx).
   app.route("/", networkWebRoutes(deps, { view, message }));
+  // Phase 12: the Caregivers page (web/caregivers.tsx).
+  app.route("/", caregiverWebRoutes(deps, { view, message }));
   // Phase 13: a phone's Mobile data tab (web/mobiledata.tsx).
   app.route("/", mobileDataWebRoutes(deps, { view, message }));
 

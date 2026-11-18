@@ -28,6 +28,7 @@ import family.brooker.belay.core.KidRules.Rule
 import family.brooker.belay.core.WireLimits
 import family.brooker.belay.core.WirePause
 import family.brooker.belay.core.WireRequestStatus
+import family.brooker.belay.core.kid.Caregivers
 import family.brooker.belay.enforce.KidView
 
 /*
@@ -46,7 +47,9 @@ internal fun PausedBanner(pause: WirePause) {
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(stringResource(R.string.paused_title), style = MaterialTheme.typography.titleLarge)
+            // Phase 12: a caregiver's pause names them; only a parent ends it early.
+            val by = Caregivers.who(pause.caregiver)
+            Text(by?.let { stringResource(R.string.paused_title_by, it) } ?: stringResource(R.string.paused_title), style = MaterialTheme.typography.titleLarge)
             Text(
                 pause.until?.let { stringResource(R.string.paused_until, formatTime(it)) }
                     ?: stringResource(R.string.paused_until_resumed),
@@ -55,6 +58,7 @@ internal fun PausedBanner(pause: WirePause) {
             pause.note?.takeIf { it.isNotBlank() }?.let {
                 Text(stringResource(R.string.paused_note, it), style = MaterialTheme.typography.bodyLarge)
             }
+            if (by != null) Text(stringResource(R.string.paused_by_only_parent), style = MaterialTheme.typography.bodyMedium)
             Text(stringResource(R.string.paused_still_work), style = MaterialTheme.typography.bodyMedium)
         }
     }

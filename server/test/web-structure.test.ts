@@ -7,10 +7,11 @@
 import { readFileSync } from "node:fs";
 import { beforeAll, describe, expect, it } from "vitest";
 import { createInvite, newSetupToken } from "../src/auth/parents.js";
+import { addCaregiver } from "../src/family/caregivers/changes.js";
 import { createProposal } from "../src/family/proposals.js";
 import { listStages, phoneRules } from "../src/family/screentime/rules.js";
 import { updateSettings } from "../src/settings.js";
-import { browserFor, deviceCall, enrollPhone, event, fix, get, north, pkg, postForm, signIn, snapshot, SPOT, testServer, T0, type TestServer } from "./helpers.js";
+import { browserFor, deviceCall, enrollPhone, event, fix, get, north, PASSWORD, pkg, postForm, signIn, snapshot, SPOT, testServer, T0, type TestServer } from "./helpers.js";
 import { parseHtml, elements, structureProblems } from "./html.js";
 
 let t: TestServer;
@@ -19,6 +20,10 @@ let form: (path: string, fields: Record<string, string | string[]>) => Response 
 let base: string;
 let stageId: string;
 let invite: string;
+/** Phase 12: a caregiver's link to join with, one who joined (their cookie), and their id. */
+let careLink: string;
+let careCookie: string;
+let caregiverId: string;
 
 beforeAll(async () => {
   t = testServer();
@@ -92,6 +97,14 @@ beforeAll(async () => {
   createProposal(db, t.now(), phone.deviceId, { kind: "allow_app", package: "com.example.racers" }, "A racing game the kid asked for.", { parentId: sam.parent.id, clientName: "Claude" });
   browserFor(t, sam.parent.id, () => []);
   invite = createInvite(db, t.now(), sam.parent.id);
+  // Phase 12: two caregivers, one who joined (every choice on) and one who hasn't yet.
+  const parent = { kind: "parent", parentId: sam.parent.id } as const;
+  const all = { status: true, pause: true, help: true, locate: true };
+  const grandma = addCaregiver({ db, now: t.now() }, { name: "Grandma", phones: [phone.deviceId], can: all, endsAt: t.now() + 3 * 86_400_000 }, parent);
+  caregiverId = grandma.caregiver.id;
+  careLink = addCaregiver({ db, now: t.now() }, { name: "Coach Lee", phones: [phone.deviceId], can: { ...all, locate: false }, endsAt: t.now() + 86_400_000 }, parent).link;
+  const joined = await postForm(t, `/care/join/${grandma.link}`, { username: "grandma", password: PASSWORD, repeat: PASSWORD });
+  careCookie = (joined.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
 });
 
 const page = async (path: string, withCookie = true) => {
@@ -136,6 +149,20 @@ const PAGES: [string, () => Promise<string>][] = [
   ["an invite to show once", () => after("/settings/invite", {})],
   ["Sign in", () => page("/login", false)],
   ["Join", () => page(`/invite/${invite}`, false)],
+  ["Caregivers", () => page("/caregivers")],
+  ["a caregiver", () => page(`/caregivers/${caregiverId}`)],
+  ["a caregiver's link to show once", () => after(`/caregivers/${caregiverId}/link`, {})],
+  ["Caregivers, with a problem", () => after("/caregivers", { name: "", until: "" })],
+  ["a caregiver's sign-in", () => page("/care/login", false)],
+  ["a caregiver joining", () => page(`/care/join/${careLink}`, false)],
+  [
+    "a caregiver's own page",
+    async () => {
+      const res = await get(t, "/care", careCookie);
+      expect(res.status).toBe(200);
+      return res.text();
+    },
+  ],
   [
     "Sign in, with a problem",
     async () => {

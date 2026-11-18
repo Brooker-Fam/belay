@@ -10,7 +10,7 @@
  *   checks the scope), and only while the phone takes checks: on demand or periodic. The kid gets
  *   a notice for every one, naming the AI app when one asked.
  */
-import { insertCommandRow, type Changed, type Changer, type Person, type PolicyContext, RuleRefused, changePolicy } from "../policy.js";
+import { insertCommandRow, type Changed, type Person, type PolicyContext, RuleRefused, type Tightener, changePolicy } from "../policy.js";
 import { LOCATE_NOW_MS } from "../commands.js";
 import { clockMinutes } from "../screentime/days.js";
 import { oneLine } from "../../text.js";
@@ -222,9 +222,10 @@ export function setLost(ctx: PolicyContext, deviceId: string, input: { message: 
  * A check of where the phone is now: a locate_now command, which the phone runs once if it gets it
  * within 2 minutes, answering with a fix that names it. One still waiting is replaced, so a phone
  * that's offline doesn't collect them. Only while the phone takes checks (on demand or periodic).
- * A person's, or an AI app's (the policy names it, for the kid's notice), in the activity log.
+ * A person's, an AI app's or (Phase 12) a caregiver's (the policy names either, for the kid's
+ * notice), in the activity log.
  */
-export function locateNow(ctx: PolicyContext, deviceId: string, who: Changer): Changed<{ command: string; expiresAt: number }> {
+export function locateNow(ctx: PolicyContext, deviceId: string, who: Tightener): Changed<{ command: string; expiresAt: number }> {
   const { db, now } = ctx;
   if (!takesChecks(locationSettings(db, deviceId))) {
     throw new RuleRefused("Location is off for this phone, so it doesn't answer a check. A parent can turn it on, on the phone's Location page.");

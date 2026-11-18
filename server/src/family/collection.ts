@@ -75,6 +75,8 @@ export const RECORDS: readonly string[] = [
   "mobile_data_settings",
   "wifi_only_apps",
   "handovers",
+  // Phase 12: which phones a caregiver's access covers (a parent's choice, not collected data).
+  "caregiver_phones",
   "enrollment_codes",
   "audit_log",
 ];

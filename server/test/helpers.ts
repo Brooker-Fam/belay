@@ -7,6 +7,7 @@ import { openDatabase } from "../src/db.js";
 import { makeDeps, type Deps } from "../src/deps.js";
 import { createEnrollmentCode } from "../src/device/enroll.js";
 import type { Device, Event, Fix, Package } from "../src/device/schemas.js";
+import { saveCareSubscription } from "../src/family/caregivers/push.js";
 import { saveSubscription } from "../src/push.js";
 
 export const T0 = Date.UTC(2026, 10, 16, 15, 0, 0); // Mon Nov 16 2026, 10:00 in New York
@@ -219,12 +220,14 @@ function decrypt(message: Buffer, browser: ECDH, auth: Buffer): string {
  * A browser a parent turned notifications on in, and what the server pushed to it: each notice
  * decrypted as the browser would, with the push's headers.
  */
-export function browserFor(t: TestServer, parentId: string, fetchCalls: () => [url: string | URL | Request, init?: RequestInit][]) {
+export function browserFor(t: TestServer, parentId: string, fetchCalls: () => [url: string | URL | Request, init?: RequestInit][], as: "parent" | "caregiver" = "parent") {
   const keys = createECDH("prime256v1");
   keys.generateKeys();
   const auth = randomBytes(16);
   const endpoint = `https://fcm.googleapis.com/fcm/send/${randomBytes(6).toString("hex")}`;
-  saveSubscription(t.deps.db, t.now(), parentId, { endpoint, p256dh: b64(keys.getPublicKey()), auth: b64(auth) }, "Chrome on Android");
+  // Phase 12: a caregiver's browser (parentId is then the caregiver's id), kept apart from the parents'.
+  const save = as === "parent" ? saveSubscription : saveCareSubscription;
+  save(t.deps.db, t.now(), parentId, { endpoint, p256dh: b64(keys.getPublicKey()), auth: b64(auth) }, "Chrome on Android");
   return {
     notices: (): { title: string; body: string; url: string; urgent?: boolean; urgency: string }[] =>
       fetchCalls()

@@ -187,19 +187,21 @@ export function latestFix(db: DB, deviceId: string, opts: { real?: boolean } = {
 
 /**
  * The newest fix answering this check, or a later one (a newer check takes a waiting one's place,
- * and its fix answers both), or null while none has come.
+ * and its fix answers both), or null while none has come. With `withinMs` (Phase 12, a
+ * caregiver's check), only a check issued that soon after this one answers it: never a later one.
  */
-export function checkAnswer(db: DB, deviceId: string, commandId: string): FixView | null {
+export function checkAnswer(db: DB, deviceId: string, commandId: string, opts: { withinMs?: number } = {}): FixView | null {
   const row = db
-    .prepare<[string, string, string], FixRow>(
+    .prepare<[string, string, string, number, string, string], FixRow>(
       `SELECT ${FIX_COLUMNS.split(", ")
         .map((c) => `f.${c}`)
         .join(", ")} FROM fixes f JOIN commands c ON c.device_id = f.device_id AND c.id = f.command_id
        WHERE f.device_id = ? AND f.reason = 'on_demand' AND c.kind = 'locate_now'
          AND c.issued_at >= (SELECT issued_at FROM commands WHERE device_id = ? AND id = ?)
+         AND c.issued_at <= ? + (SELECT issued_at FROM commands WHERE device_id = ? AND id = ?)
        ORDER BY MIN(f.at, f.received_at + ${FIX_SKEW_MS}) DESC, f.rowid DESC LIMIT 1`,
     )
-    .get(deviceId, deviceId, commandId);
+    .get(deviceId, deviceId, commandId, opts.withinMs ?? Number.MAX_SAFE_INTEGER, deviceId, commandId);
   return row ? toFix(row) : null;
 }
 
