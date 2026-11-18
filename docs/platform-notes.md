@@ -2012,7 +2012,8 @@ the drafts. The emulator checks run in CI (`CallFlowInstrumentedTest`, `CallsIns
 `LockedCallsInstrumentedTest` and `ci-emulator-test.sh`'s Phase 5 block); the Pixel's are in
 [phase5-checklist.md](phase5-checklist.md). No test calls or texts 911 or 988, on the emulator or
 anywhere else: those paths are JVM tests (`AlwaysAllowedTest`, `CallRulesTest`, `CallRecordsTest`,
-`PhoneNumbersTest`, `ThirdReviewCallsTest`) and checks that don't dial; the Pixel checklist's one
+`PhoneNumbersTest`, `ThirdReviewCallsTest`, `FourthReviewCallsTest`, `CallsAfterRestartTest`) and
+checks that don't dial; the Pixel checklist's one
 emergency call is to a test number Android routes as a normal call (T19).
 
 ### T1. Belay as the default dialer
