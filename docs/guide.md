@@ -711,12 +711,13 @@ you turn them on ([server.md](server.md#mobile-data-phase-13)).
   the phone keeps them off mobile data, and off any other Wi-Fi it counts as metered, like
   another phone's hotspot (Bluetooth tethering too); on your home Wi-Fi, or a wired adapter,
   they work as usual. Their notifications can still arrive on mobile data, through Google's one
-  shared connection for every app's notifications; what the app then loads waits for Wi-Fi. Your kid sees which apps and
-  why, under This phone's rules. Belay never does this to the phone app, texting, the keyboard,
-  the home screen or Android's own parts, so calls, texts, 911 and 988 always work. It doesn't
-  cover a download an app hands to Android's download manager, or app updates through Play:
-  make Google Play Wi-Fi only too, or set Play's own download preference. Claude can add an app
-  when you ask; letting one use mobile data again is a proposal you approve.
+  shared connection for every app's notifications; what the app then loads waits for Wi-Fi.
+  Your kid sees which apps and why, under This phone's rules. Belay never does this to the
+  phone app, texting, the keyboard, the home screen or Android's own parts, so calls, texts, 911
+  and 988 always work. It doesn't cover a download an app hands to Android's download manager,
+  or app updates through Play: make Google Play Wi-Fi only too, or set Play's own download
+  preference. Claude can add an app when you ask; letting one use mobile data again is a
+  proposal you approve.
 - **Measure mobile data:** the phone sends how much mobile data each app used each day, with the
   day's Wi-Fi total: never which websites or networks. Today's so far comes at noon and at 6 PM,
   never hour by hour. Only a parent turns it on or off, and Claude needs the Apps category to make
