@@ -58,6 +58,26 @@ beforeAll(async () => {
   // Network logging, and a day of it.
   await form(`${base}/network`, { on: "1" });
   await call("network", { days: [{ day: "2026-11-16", zone: "America/New_York", as_of: T0, entries: [{ package: "com.example.chat", domain: "chat.example.com", lookups: 12 }], dropped: 0 }] });
+  // Phase 13: a Wi-Fi-only app, measuring, and a day of mobile data use.
+  await form(`${base}/mobile-data/wifi-only`, { package: "com.example.chat" });
+  await form(`${base}/mobile-data/measure`, { on: "1" });
+  await call("mobile-data", {
+    days: [
+      {
+        day: "2026-11-16",
+        zone: "America/New_York",
+        from: T0 - 3_600_000,
+        as_of: T0,
+        complete: false,
+        mobile_bytes: 25_000_000,
+        wifi_bytes: 900_000_000,
+        apps: [{ package: "com.example.chat", bytes: 20_000_000 }],
+        android_bytes: 5_000_000,
+        removed_bytes: 0,
+        hotspot_bytes: 0,
+      },
+    ],
+  });
   // The kid's requests, one of each, and an AI app's proposal.
   await call("requests", {
     requests: [
@@ -97,6 +117,7 @@ const PAGES: [string, () => Promise<string>][] = [
   ["Location and help", () => page(`${base}/location`)],
   ["Calls", () => page(`${base}/calls`)],
   ["Network", () => page(`${base}/network`)],
+  ["Mobile data", () => page(`${base}/mobile-data`)],
   ["Stop collecting", () => page(`${base}/collection/location`)],
   ["Requests", () => page("/requests")],
   ["Proposals", () => page("/proposals")],

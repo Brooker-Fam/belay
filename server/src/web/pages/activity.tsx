@@ -151,6 +151,17 @@ function what(e: AuditEntry): string {
       const which = n === 1 ? "a website" : `${n} websites`;
       return e.action === "network.private_added" ? `made ${which} private: network logging never notes ${n === 1 ? "it" : "them"}${device}` : `took ${which} off the private websites${device}`;
     }
+    case "mobile_data.measure_on":
+    case "mobile_data.measure_off":
+      return `${e.action === "mobile_data.measure_on" ? "turned on" : "turned off"} measuring mobile data (how much mobile data each app uses)${device}`;
+    case "mobile_data.wifi_only_added":
+    case "mobile_data.wifi_only_removed": {
+      // App names are their developers' words: escaped like the rest, and never more than a few.
+      const apps = Array.isArray(d.apps) ? d.apps.map(str).filter(Boolean) : [];
+      const which = apps.length === 0 ? "an app" : apps.length <= 3 ? apps.join(", ") : `${apps.slice(0, 3).join(", ")} and ${apps.length - 3} more`;
+      const approved = str(d.proposal) ? ", approving an AI app's proposal" : "";
+      return e.action === "mobile_data.wifi_only_added" ? `made ${which} Wi-Fi only (no mobile data)${device}` : `let ${which} use mobile data again${approved}${device}`;
+    }
     case "screen_time.settings":
       return `changed which time zone the phone's days follow, or when they start${device}`;
     case "stage.moved":

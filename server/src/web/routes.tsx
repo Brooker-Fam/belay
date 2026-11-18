@@ -83,13 +83,28 @@ import { serverHealth } from "../ops/health.js";
 import { getDigest } from "../ops/notify.js";
 import { opsWebRoutes } from "../ops/web.js";
 import { browserName, listSubscriptions, removeSubscription, saveSubscription, sendNotice, subscriptionProblem, vapidKeys } from "../push.js";
-import { ACTIVITY_DAYS, AI_SCOPES, type AiScope, CALL_DAYS, LOCATION_DAYS, type LocationRetention, MAP_SITES, type MapSite, NETWORK_DAYS, USAGE_MONTHS, getSettings, updateSettings } from "../settings.js";
+import {
+  ACTIVITY_DAYS,
+  AI_SCOPES,
+  type AiScope,
+  CALL_DAYS,
+  LOCATION_DAYS,
+  type LocationRetention,
+  MAP_SITES,
+  MOBILE_DATA_DAYS,
+  type MapSite,
+  NETWORK_DAYS,
+  USAGE_MONTHS,
+  getSettings,
+  updateSettings,
+} from "../settings.js";
 import { sameName } from "../text.js";
 import { isValidTimeZone } from "../time.js";
 import type { Assets } from "./assets.js";
 import { callsWebRoutes } from "./calls.js";
 import { locationWebRoutes, whereFor } from "./location.js";
 import { networkCardData, networkWebRoutes } from "./network.js";
+import { mobileDataWebRoutes } from "./mobiledata.js";
 import { offBelayData, offBelayWebRoutes } from "./offbelay.js";
 import { NetworkCard } from "./pages/network.js";
 import { OffBelaySection } from "./pages/offbelay.js";
@@ -1132,6 +1147,12 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
     if (networkDays !== undefined && (!Number.isInteger(networkDays) || networkDays < NETWORK_DAYS.min || networkDays > NETWORK_DAYS.max)) {
       return settingsPage(c, { error: `Keep network activity ${NETWORK_DAYS.min} to ${NETWORK_DAYS.max} days.` }, 400);
     }
+    // Phase 13: how long mobile data use is kept (left out: as it is).
+    const mobileDataDaysText = first(body, "mobile_data_days");
+    const mobileDataDays = mobileDataDaysText === "" ? undefined : Number(mobileDataDaysText);
+    if (mobileDataDays !== undefined && (!Number.isInteger(mobileDataDays) || mobileDataDays < MOBILE_DATA_DAYS.min || mobileDataDays > MOBILE_DATA_DAYS.max)) {
+      return settingsPage(c, { error: `Keep mobile data use ${MOBILE_DATA_DAYS.min} to ${MOBILE_DATA_DAYS.max} days.` }, 400);
+    }
     // How long the activity log is kept (left out: as it is).
     const activityText = first(body, "activity_days");
     const activityDays = activityText === "" ? undefined : Number(activityText);
@@ -1152,6 +1173,7 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
         ...(site !== "" ? { mapSite: site as MapSite } : {}),
         ...(callDays !== undefined ? { callDays } : {}),
         ...(networkDays !== undefined ? { networkDays } : {}),
+        ...(mobileDataDays !== undefined ? { mobileDataDays } : {}),
         ...(activityDays !== undefined ? { activityDays } : {}),
       },
       asParent(c),
@@ -1307,6 +1329,8 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
   app.route("/", offBelayWebRoutes(deps, { view, message }));
   // Phase 3: network logging's switch and a phone's Network tab (web/network.tsx).
   app.route("/", networkWebRoutes(deps, { view, message }));
+  // Phase 13: a phone's Mobile data tab (web/mobiledata.tsx).
+  app.route("/", mobileDataWebRoutes(deps, { view, message }));
 
   app.get("/activity", (c) => {
     const includeReads = c.req.query("reads") === "1";

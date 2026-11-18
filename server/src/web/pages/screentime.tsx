@@ -36,7 +36,7 @@ const width = (value: number, max: number) => `w${value <= 0 || max <= 0 ? 0 : M
 
 // ── Tabs ─────────────────────────────────────────────────────────────
 
-export const PhoneTabs: FC<{ view: View; device: DeviceView; current: "apps" | "usage" | "rules" | "agreement" | "location" | "calls" | "network" }> = ({
+export const PhoneTabs: FC<{ view: View; device: DeviceView; current: "apps" | "usage" | "rules" | "agreement" | "location" | "calls" | "network" | "mobile_data" }> = ({
   device,
   current,
 }) => (
@@ -65,6 +65,10 @@ export const PhoneTabs: FC<{ view: View; device: DeviceView; current: "apps" | "
         Network
       </a>
     )}
+    {/* Phase 13: always (Wi-Fi only works without measuring). */}
+    <a href={`/devices/${device.id}/mobile-data`} aria-current={current === "mobile_data" ? "page" : undefined}>
+      Mobile data
+    </a>
   </nav>
 );
 
