@@ -133,7 +133,7 @@ object ArchivalTest {
                     "start" -> start(app, ArchivalLog.minutes(minutes))
                     "stop" -> stop(app, ArchivalStop.ADB)
                     "status", null -> Answer(true, "${ArchivalLog.summary(state(app), System.currentTimeMillis(), ZoneId.systemDefault())}; ${facts(app)}")
-                    else -> Answer(false, "Say --es do start, stop or status.")
+                    else -> Answer(false, "Say --es command start, stop or status.")
                 }
             } catch (e: RuntimeException) {
                 Log.e(Agent.TAG, "archival test: $what failed", e)
