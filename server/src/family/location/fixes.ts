@@ -187,8 +187,10 @@ export function latestFix(db: DB, deviceId: string, opts: { real?: boolean } = {
 
 /**
  * The newest fix answering this check, or a later one (a newer check takes a waiting one's place,
- * and its fix answers both), or null while none has come. With `withinMs` (Phase 12, a
- * caregiver's check), only a check issued that soon after this one answers it: never a later one.
+ * and its fix answers both), or null while none has come. With `withinMs`, only a check issued
+ * that soon after this one answers it: never a later one. Every page and tool passes
+ * LOCATE_NOW_MS, a check's own lifetime: a caregiver's (Phase 12), and a parent's and an AI app's
+ * since the eighth review's K6, so an old check isn't answered hours later by another's.
  */
 export function checkAnswer(db: DB, deviceId: string, commandId: string, opts: { withinMs?: number } = {}): FixView | null {
   const row = db

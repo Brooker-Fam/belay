@@ -7,6 +7,7 @@
 import { type Context, Hono } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { Deps } from "../deps.js";
+import { LOCATE_NOW_MS } from "../family/commands.js";
 import { getDevice } from "../family/devices.js";
 import { phoneHelp } from "../family/kidside.js";
 import { markHelpSeen, setKidNumber, setPhoneParentNumbers } from "../family/kidside-changes.js";
@@ -84,7 +85,8 @@ export function locationWebRoutes(deps: Deps, h: LocationWebHelpers): Hono<WebEn
     const device = getDevice(db, deviceId, getSettings(db), now);
     if (!device) return noPhone(c);
     const checkedId = extra.checked ?? c.req.query("check");
-    const checked = checkedId ? { command: checkedId, outcome: checkOutcome(db, device.id, checkedId) } : null;
+    // Only this check's answer, or one of a check that took its place in its 2 minutes, as a caregiver's (the eighth review's K6).
+    const checked = checkedId ? { command: checkedId, outcome: checkOutcome(db, device.id, checkedId, { withinMs: LOCATE_NOW_MS }) } : null;
     return render(
       c,
       <LocationPage
@@ -174,7 +176,7 @@ export function locationWebRoutes(deps: Deps, h: LocationWebHelpers): Hono<WebEn
       if (error instanceof RuleRefused) return page(c, device.id, { error: error.message }, 400);
       throw error;
     }
-    await deps.fixWaiters.wait(device.id, () => checkOutcome(db, device.id, command) !== null, deps.locateWaitMs, c.req.raw.signal);
+    await deps.fixWaiters.wait(device.id, () => checkOutcome(db, device.id, command, { withinMs: LOCATE_NOW_MS }) !== null, deps.locateWaitMs, c.req.raw.signal);
     return c.redirect(`/devices/${device.id}/location?check=${encodeURIComponent(command)}#where`);
   });
 

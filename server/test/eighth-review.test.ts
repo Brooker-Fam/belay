@@ -9,22 +9,31 @@
  *   word, the same for an app on the phone, one removed since and one never there, and the
  *   activity log keeps it; one that names no app works as before. sixth-review.test.ts's walk of
  *   the write tools calls it with apps too.
+ * - K6: a parent's check that got no answer was answered, hours later, by another check's
+ *   failure. The parent page and MCP take a check's answer from it, or from a check that took its
+ *   place in its 2 minutes, as the caregiver page does.
  */
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { describe, expect, it } from "vitest";
 import { listAudit } from "../src/audit.js";
 import { Policy } from "../src/device/schemas.js";
+import { addCaregiver } from "../src/family/caregivers/changes.js";
+import { LOCATE_NOW_MS } from "../src/family/commands.js";
+import { locateNow, setLocation } from "../src/family/location/changes.js";
+import { checkOutcome } from "../src/family/location/fixes.js";
 import { buildPolicy, type PolicyContext } from "../src/family/policy.js";
 import { listProposals } from "../src/family/proposals.js";
 import { setPhoneRules } from "../src/family/screentime/changes.js";
 import { NO_RULES } from "../src/family/screentime/rules.js";
 import { createPersonalToken } from "../src/oauth/store.js";
 import { AI_SCOPES, type AiScope, updateSettings } from "../src/settings.js";
-import { deviceCall, enrollPhone, get, pkg, signIn, snapshot, testServer, T0 } from "./helpers.js";
+import { device, deviceCall, enrollPhone, fix, get, pkg, signIn, snapshot, testServer, T0 } from "./helpers.js";
 
 const MCP = "https://belay.example.org/mcp";
 const MIN = 60_000;
+const HOUR = 60 * MIN;
+const DAY = 24 * HOUR;
 /** Every AI category off, those added later included. */
 const NO_SCOPES = Object.fromEntries(Object.keys(AI_SCOPES).map((key) => [key, false])) as Record<AiScope, boolean>;
 /** The names the phone gave its apps: no answer with Apps off says them. */
@@ -136,5 +145,53 @@ describe("K2: with the Apps category off, change_screen_time takes no apps, so n
     expect((await screenTime({ limits: [{ packages: ["com.example.diary"], minutes: 1440 }] })).json.changes).toEqual([
       { effect: "tightens", untrusted: { change: "New limit: Secret Diary, 24 h a day, every day" } },
     ]);
+  });
+});
+
+describe("K6: a parent's check is answered by itself, or by a check that took its place in its 2 minutes", () => {
+  async function parentFamily() {
+    const t = testServer();
+    updateSettings(t.deps.db, { timezone: "America/New_York" });
+    const sam = await signIn(t);
+    const phone = await enrollPhone(t, "Alex's phone");
+    const parent = { kind: "parent" as const, parentId: sam.parent.id };
+    const ctx = (): PolicyContext => ({ db: t.deps.db, now: t.now() });
+    setLocation(ctx(), phone.deviceId, { mode: "on_demand" } as never, parent);
+    const version = () => Policy.parse(buildPolicy(t.deps.db, phone.deviceId, t.now())).version;
+    const page = async (check: string) => (await get(t, `/devices/${phone.deviceId}/location?check=${encodeURIComponent(check)}`, sam.cookie)).text();
+    return { t, sam, phone, parent, ctx, version, page };
+  }
+
+  it("hours later, a caregiver's failed check isn't the answer to the parent's old one", async () => {
+    const { t, phone, parent, ctx, version, page } = await parentFamily();
+    const first = locateNow(ctx(), phone.deviceId, parent).result.command;
+    // The phone was offline: no answer. Three hours later Grandma checks, and the phone says it couldn't.
+    t.advance(3 * HOUR);
+    const added = addCaregiver(ctx(), { name: "Grandma", phones: [phone.deviceId], can: { status: true, pause: false, help: false, locate: true }, endsAt: t.now() + DAY }, parent);
+    const hers = locateNow(ctx(), phone.deviceId, { kind: "caregiver", caregiverId: added.caregiver.id, name: "Grandma" }).result.command;
+    await deviceCall(t, phone.token, "checkin", {
+      status: device({ enforcement: { policy_version: version(), commands: [{ id: hers, result: "failed", at: t.now(), problem: "No GPS fix in 60 seconds" }] } }),
+    });
+    expect(checkOutcome(t.deps.db, phone.deviceId, first, { withinMs: LOCATE_NOW_MS })).toBeNull();
+    const html = await page(first);
+    expect(html).not.toContain("The phone answered");
+    expect(html).toContain("No answer yet");
+    // Hers is answered, and the checks list has it.
+    expect(checkOutcome(t.deps.db, phone.deviceId, hers, { withinMs: LOCATE_NOW_MS })).toEqual({ kind: "failed", problem: "No GPS fix in 60 seconds" });
+    expect(html).toContain("<blockquote>No GPS fix in 60 seconds</blockquote>");
+  });
+
+  it("a newer check in its 2 minutes took its place: its fix answers both", async () => {
+    const { t, phone, parent, ctx, page } = await parentFamily();
+    const first = locateNow(ctx(), phone.deviceId, parent).result.command;
+    t.advance(MIN);
+    const second = locateNow(ctx(), phone.deviceId, parent).result.command;
+    await deviceCall(t, phone.token, "locations", { fixes: [fix({ reason: "on_demand", command_id: second, at: t.now() })], place_events: [] });
+    for (const check of [first, second]) expect(await page(check), check).toContain("The phone answered:");
+    // One made later than that answers neither: the first has its answer already, from the second.
+    t.advance(10 * MIN);
+    const third = locateNow(ctx(), phone.deviceId, parent).result.command;
+    expect(checkOutcome(t.deps.db, phone.deviceId, third, { withinMs: LOCATE_NOW_MS })).toBeNull();
+    expect(checkOutcome(t.deps.db, phone.deviceId, first, { withinMs: LOCATE_NOW_MS })?.kind).toBe("fix");
   });
 });

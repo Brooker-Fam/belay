@@ -12,6 +12,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { audit } from "../audit.js";
 import type { Deps } from "../deps.js";
+import { LOCATE_NOW_MS } from "../family/commands.js";
 import { type DeviceRow, findDeviceByName, listDevices } from "../family/devices.js";
 import { locateNow } from "../family/location/changes.js";
 import { describeFix, distanceWords } from "../family/location/describe.js";
@@ -163,8 +164,10 @@ export function registerLocationTools(server: McpServer, deps: Deps, caller: Cal
       // Counted as soon as the check is sent, before waiting for its answer: the kid's phone shows it either way.
       aiCounted(deps, caller, "locate_now", row.id);
       // The phone's answer, either way: its fix, or its word that it couldn't (or got the check too late). Whichever comes first ends the wait.
-      await deps.fixWaiters.wait(row.id, () => checkOutcome(db, row.id, command) !== null, deps.locateWaitMs, extra.signal);
-      const outcome = checkOutcome(db, row.id, command);
+      // Only this check's answer, or one of a check that took its place in its 2 minutes (the eighth review's K6).
+      const answer = () => checkOutcome(db, row.id, command, { withinMs: LOCATE_NOW_MS });
+      await deps.fixWaiters.wait(row.id, () => answer() !== null, deps.locateWaitMs, extra.signal);
+      const outcome = answer();
       const via = oneLine(caller.clientName, 60) || "an AI app";
       const notice = `The kid's phone shows: "Your parent checked where this phone is, using ${via}."`;
       if (outcome?.kind === "failed") {
