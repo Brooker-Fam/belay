@@ -156,7 +156,11 @@ fun MainScreen(
                     offBelay?.let { line -> item { OffBelayCard(line) } }
                     if (kid.policy?.agreement != null) item { AgreementCard(kid, unsentRequests, screenTime) }
                 }
-                Screen.RULES -> item { RulesCard(kid) }
+                Screen.RULES -> {
+                    item { RulesCard(kid) }
+                    // Phase 13: the apps that work only on Wi-Fi, each by name.
+                    if (kid.wifiOnly.isNotEmpty()) item { WifiOnlyCard(kid) }
+                }
                 Screen.CAN_SEE -> {
                     item {
                         CanSeeCard(Collectors.categories(kid.policy) { hhmm -> clock(words, hhmm) }, connection, kid.policy?.aiReads.orEmpty())

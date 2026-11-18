@@ -673,4 +673,11 @@
     <string name="calls_channel_incoming_description">Shows a call while your phone rings. Belay plays the ringtone itself.</string>
     <string name="calls_channel_ongoing">Calls going on</string>
     <string name="calls_channel_ongoing_description">Shows the call you\'re on, so you can get back to it or hang up.</string>
+
+    <!-- Phase 13: Wi-Fi-only apps, on This phone's rules. Only the apps Android keeps off mobile data for Belay now. -->
+    <string name="rule_wifi_only">Some apps work only on Wi-Fi.</string>
+    <string name="rule_wifi_only_why">Your parent chose apps that can\'t use mobile data: %1$s. On Wi-Fi they work as usual, but on some Wi-Fi, like another phone\'s hotspot, they may not work either. This never stops calls or texts, and 911 and 988 always work.</string>
+    <string name="section_wifi_only">Wi-Fi only</string>
+    <string name="wifi_only_intro">These apps can\'t use mobile data. When the phone is on mobile data, they act like there\'s no internet.</string>
+    <string name="wifi_only_app">Wi-Fi only: your parent chose this</string>
 </resources>

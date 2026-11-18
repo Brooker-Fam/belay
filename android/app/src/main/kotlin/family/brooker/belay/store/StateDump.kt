@@ -14,11 +14,13 @@ import family.brooker.belay.core.WireCommandResult
 import family.brooker.belay.core.WireRecoveryUse
 import family.brooker.belay.core.calls.WireCallsStatus
 import family.brooker.belay.core.location.WireLocationStatus
+import family.brooker.belay.core.mobiledata.WireMobileDataStatus
 import family.brooker.belay.core.screentime.WireNetworkLogStatus
 import family.brooker.belay.core.screentime.WireScreenTimeStatus
 import family.brooker.belay.settings.Connection
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -35,8 +37,10 @@ import kotlinx.serialization.json.putJsonObject
  * block list Belay keeps and how it decided the last calls, without numbers, (Phase 11) the
  * hand-over: when the policy asked for it, what Belay did about reset protection, and whether it
  * still holds any of the hand-over's locks, and (Phase 3) network logging's switch, batches and
- * days, and how many private websites the policy lists, as counts, never a name. Debug builds
- * write it after every step (DebugTools.afterStep), for android/scripts/ci-emulator-test.sh.
+ * days, and how many private websites the policy lists, as counts, never a name, and (Phase 13)
+ * the Wi-Fi-only apps, as the policy lists them, as Belay last asked Android and as Android has
+ * them (getMeteredDataDisabledPackages), and mobile data use's uploads, never how much an app used.
+ * Debug builds write it after every step (DebugTools.afterStep), for android/scripts/ci-emulator-test.sh.
  */
 object StateDump {
     fun json(context: Context, store: AgentStore, connection: Connection): String = buildJsonObject {
@@ -179,6 +183,26 @@ object StateDump {
                 ),
             )
             put("unsent", store.pendingNetworkCount())
+        }
+        // Phase 13: the Wi-Fi-only apps (a parent's rule, so by name) and mobile data use's uploads, as
+        // counts and times: never how much mobile data an app used.
+        val mobileData = store.mobileDataState()
+        putJsonObject("mobile_data") {
+            put("wifi_only", JsonArray(store.policy()?.mobileData?.wifiOnly.orEmpty().map(::JsonPrimitive)))
+            put(
+                "android",
+                runCatching {
+                    JsonArray(context.getSystemService(DevicePolicyManager::class.java).getMeteredDataDisabledPackages(DeviceOwnerSetup.admin(context)).sorted().map(::JsonPrimitive))
+                }.getOrNull() ?: JsonNull,
+            )
+            put("asked", JsonArray(mobileData?.wifiOnly?.asked.orEmpty().map(::JsonPrimitive)))
+            put("refused", JsonArray(mobileData?.wifiOnly?.refused.orEmpty().map(::JsonPrimitive)))
+            mobileData?.report?.let { put("report", Json.encodeToJsonElement(WireMobileDataStatus.serializer(), it)) }
+            put("measure", store.policy()?.mobileData?.measure == true)
+            put("measuring_since", mobileData?.uploads?.since)
+            put("last_upload_at", mobileData?.uploads?.lastAt)
+            put("days_sent_complete", JsonArray(mobileData?.uploads?.complete.orEmpty().map(::JsonPrimitive)))
+            put("unsent", store.pendingMobileDataCount())
         }
     }.toString()
 

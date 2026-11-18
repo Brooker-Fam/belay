@@ -2792,7 +2792,8 @@ ends, when its last bucket has closed and been polled.
 - Uids under 10000 are Android's (`Process.FIRST_APPLICATION_UID`), like `system` (1000) and
   `radio` (1001). A shared uid (`getPackagesForUid` gives several packages) is one identity to the
   network rules, so restricting one package restricts them all (Q2). An SDK sandbox uid belongs to
-  its app (`Process.getAppUidForSdkSandboxUid`, API 33).
+  its app (`Process.getAppUidForSdkSandboxUid` and `isSdkSandboxUid`, public from API 35 by the SDK's
+  API database, which lint checks).
 - `DownloadThread` accounts a download to the app that asked for it
   (`TrafficStats.setThreadStatsUid`).
 

@@ -38,6 +38,7 @@ import family.brooker.belay.core.WirePolicy
 import family.brooker.belay.core.WireRequestKind
 import family.brooker.belay.core.Workarounds
 import family.brooker.belay.core.location.WireLocationStatus
+import family.brooker.belay.core.mobiledata.WifiOnly
 import family.brooker.belay.core.screentime.Decision
 import family.brooker.belay.core.screentime.KidArg
 import family.brooker.belay.core.screentime.Notices
@@ -47,6 +48,7 @@ import family.brooker.belay.core.screentime.Stages
 import family.brooker.belay.core.screentime.UsageLog
 import family.brooker.belay.core.screentime.WireScreenTime
 import family.brooker.belay.location.LocationStep
+import family.brooker.belay.mobiledata.MobileDataStep
 import family.brooker.belay.network.NetworkLogStep
 import family.brooker.belay.screentime.ScreenTimeStep
 import family.brooker.belay.service.PauseNotice
@@ -72,8 +74,10 @@ data class KidView(
     val screenTime: ScreenTimeView? = null,
     /** Phase 4: location as the last step left it (`enforcement.location`); null while location is off. */
     val location: WireLocationStatus? = null,
+    /** Phase 13: the apps Android keeps off mobile data for Belay now, as the policy asks (core's WifiOnly.forKid). */
+    val wifiOnly: List<String> = emptyList(),
 ) {
-    val rules: List<KidRules.Rule> get() = KidRules.of(policy, plan, applied, privateDns)
+    val rules: List<KidRules.Rule> get() = KidRules.of(policy, plan, applied, privateDns, wifiOnly)
 }
 
 /** Phase 3: what the kid's Today screen shows, as the last step decided it. */
@@ -232,6 +236,14 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
             Log.e(Agent.TAG, "network logging's part of the step failed", e)
             null
         }
+        // Phase 13: the Wi-Fi-only apps, as Android keeps them off mobile data, and mobile data use
+        // while the policy measures it. If it fails, the rest is still recorded.
+        val mobileData = try {
+            MobileDataStep(app, store).run(policy, owner, inventory, next.hidden, NeverBlocked.of(roles, inventory, next.hidden), now)
+        } catch (e: RuntimeException) {
+            Log.e(Agent.TAG, "mobile data's part of the step failed", e)
+            null
+        }
         val done = read?.let {
             try {
                 screenTimeStep?.after(it) { lockWaitsForCall }
@@ -255,7 +267,7 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
             tooLarge?.let { PolicyTooLarge.problem(it.tooLargeBytes) },
             screenTimeState?.lockProblem,
             screenTimeProblem,
-        ) + calling?.problems.orEmpty() + networking?.problems.orEmpty() +
+        ) + calling?.problems.orEmpty() + networking?.problems.orEmpty() + mobileData?.problems.orEmpty() +
             // A proxy on the network, or wireless debugging: they get around the rules, so they're reported.
             Workarounds.problems(plan, proxy = PhoneFacts.proxy(app), wirelessDebugging = PhoneFacts.wirelessDebugging(app))
         next = next.copy(sim = sim, problems = (next.problems + extra).distinct().take(Enforcement.MAX_PROBLEMS))
@@ -285,6 +297,7 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
             location = located?.write,
             calls = calling?.write,
             network = networking?.write,
+            mobileData = mobileData?.write,
         )
         // A lock that waits for a call: Belay looks again when Android's audio mode changes, and
         // every minute anyway. With none waiting, a later wait for the audio mode starts afresh.
@@ -314,7 +327,9 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
         val all = made + requests.map { sent[it.id] ?: it }
         val screenTime = read?.let { ScreenTimeView(it.policy, it.decision, it.update.usage, it.decision.days.startOf(it.decision.day)) }
         val locationStatus = located?.report ?: store.locationState()?.report
-        val view = KidView(policy, plan, next, Requests.answered(all, policy), dnsRow?.setHost, labels(inventory, all, plan, policy), screenTime, locationStatus)
+        // Phase 13: only what Android keeps off mobile data for Belay now, as the last step left it if this one failed.
+        val wifiOnly = WifiOnly.forKid(policy.mobileData.wifiOnly, if (mobileData != null) mobileData.report else store.mobileDataState()?.report)
+        val view = KidView(policy, plan, next, Requests.answered(all, policy), dnsRow?.setHost, labels(inventory, all, plan, policy) + labels(inventory, wifiOnly), screenTime, locationStatus, wifiOnly)
         // Anything in the report may have changed, here or on another thread since the last step
         // (the update, the recovery key): compare all of it but the count of apps held back, and
         // screen time's minutes, which change every minute the phone is used.
@@ -380,6 +395,10 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
         named.forEach { name -> inventory[name]?.let { labels[name] = it.label } }
         return labels
     }
+
+    /** Phase 13: the Wi-Fi-only apps' names, for the kid's rules screen (from their developers, so untrusted). */
+    private fun labels(inventory: Map<String, PackageRecord>, packages: List<String>): Map<String, String> =
+        packages.mapNotNull { name -> inventory[name]?.let { name to it.label } }.toMap()
 
     /** Phase 3: every app the screen time rules (and the next stage's) name, for the kid's screens. */
     private fun screenTimeApps(policy: WirePolicy?): List<String> {

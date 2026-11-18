@@ -48,6 +48,12 @@ import family.brooker.belay.core.network.Domains
  *   looked up each domain each day (never the never-blocked apps, never 988's websites or the
  *   family's private ones) and sends that, and reports whether Android paused it:
  *   [DataCategories.network], which says the private websites are never noted, without naming them.
+ * - Phase 13, only while the policy's `mobile_data.measure` is on:
+ *   [family.brooker.belay.mobiledata.DataUseReader] reads Android's own accounting of how much
+ *   mobile data each app used, and the day's Wi-Fi total, and
+ *   [family.brooker.belay.mobiledata.MobileDataStep] sends each day (the apps Belay never blocks,
+ *   Android's own parts and shared uids together, never one by one): [DataCategories.MOBILE_DATA].
+ *   Wi-Fi-only apps collect nothing: they're a rule, on This phone's rules.
  */
 object Collectors {
     /** [clock] shows a policy's "HH:MM" as the kid's phone shows times. */
@@ -58,5 +64,6 @@ object Collectors {
                 policy?.location?.takeIf { LocationRules.collecting(it) }?.let { DataCategories.location(it, clock) },
                 policy?.calls?.takeIf { it.log }?.let { DataCategories.CALLS },
                 policy?.networkLog?.takeIf { it.enabled }?.let { DataCategories.network(privateSites = Domains.privateSet(it.privateDomains).isNotEmpty()) },
+                policy?.mobileData?.takeIf { it.measure }?.let { DataCategories.MOBILE_DATA },
             )
 }
