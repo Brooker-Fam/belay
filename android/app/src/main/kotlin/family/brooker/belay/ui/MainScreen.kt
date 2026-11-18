@@ -48,6 +48,7 @@ import family.brooker.belay.core.WireAgentUpdate
 import family.brooker.belay.core.WireDevice
 import family.brooker.belay.core.WireUpdateState
 import family.brooker.belay.core.calls.CallContacts
+import family.brooker.belay.core.kid.Caregivers
 import family.brooker.belay.core.kid.Home
 import family.brooker.belay.core.kid.HomeInput
 import family.brooker.belay.core.kid.HomeState
@@ -121,6 +122,8 @@ fun MainScreen(
             }
             // Phase 11: Off belay, last on My stage from the first day.
             val offBelay = OffBelay.line(kid.policy, kid.plan)
+            // Phase 12: who else a parent gave some access to this phone, until when (by this phone's clock).
+            val caregivers = Caregivers.current(kid.policy, System.currentTimeMillis())
             when (screen) {
                 Screen.HOME -> {
                     // Phase 11: while a parent hands the phone over, what happens next comes first.
@@ -133,6 +136,7 @@ fun MainScreen(
                     if (kid.policy?.calls != null) item { NavRow(stringResource(R.string.calls_open)) { kidActions.openCalls() } }
                     if (kid.screenTime != null) item { TodayCard(kid, unsentRequests, screenTime, askFor, onAsked) }
                     item { LocationCard(kid, view.told, words) { navigation.go(Screen.TOLD) } }
+                    if (caregivers.isNotEmpty()) item { CaregiversHomeCard(caregivers, words) { navigation.go(Screen.CAN_SEE) } }
                     if (kid.plan?.waiting.orEmpty().isNotEmpty()) item { WaitingCard(kid, unsentRequests, onAsk) }
                     item { Text(stringResource(R.string.home_more), style = MaterialTheme.typography.titleMedium) }
                     item { NavRow(stringResource(R.string.screen_requests)) { navigation.go(Screen.REQUESTS) } }
@@ -161,6 +165,7 @@ fun MainScreen(
                     item {
                         CanSeeCard(Collectors.categories(kid.policy) { hhmm -> clock(words, hhmm) }, connection, kid.policy?.aiReads.orEmpty())
                     }
+                    if (caregivers.isNotEmpty()) item { CaregiversCard(caregivers, words) }
                     item { ConnectionCard(connection, waiting, onConnect) }
                     item { ChangesCard(view.changes, view.inventory) }
                 }

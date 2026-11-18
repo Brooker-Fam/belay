@@ -129,7 +129,9 @@ once, apart from the six-an-hour limit (its own limit is 20 an hour per phone, f
 with Web Push's high urgency, and stays on the screen until the parent acts on it. It says
 `Sam's phone needs help: "I'm lost"` (the kid's words, if any, and whether they shared where
 the phone is: never where it is) and opens the Requests page. It goes again when the kid adds
-words or where the phone is to a help request no parent has seen yet.
+words or where the phone is to a help request no parent has seen yet. Phase 12: it also goes to
+each caregiver who gets that phone's help requests, opening their own page
+([Caregivers](#caregivers-phase-12)).
 
 **Arrivals and departures** (Phase 4), for a place a parent asked to hear about:
 `Sam's phone arrived at School`, with the time when the phone sent it late, at most one per
@@ -626,6 +628,56 @@ The end of the rules, for when the kid outgrows Belay: each step is a parent's, 
 - **Afterwards,** once the phone is reset: it goes quiet here, as expected. Disconnect it, then
   delete everything about it, on its page. [phase11-checklist.md](phase11-checklist.md) walks
   through it on a Pixel.
+
+## Caregivers (Phase 12)
+
+Someone who looks after the kid for a while (a grandparent for a weekend, a babysitter, a coach on
+a trip, the kid's other household) gets their own sign-in, never a parent's
+([design](design/phase12-caregivers.md)). Each step about a caregiver is a parent's, on the parent
+page; AI apps can't see, add or change caregivers, not even as a proposal.
+
+- **Caregivers** (in the menu): add one with a name (1 to 40 characters, one line: the kid sees
+  it), the phones it covers, what they may do (below), and when access ends: a date and time in
+  the family's timezone, at most 30 days ahead. The page shows a one-time link once,
+  `<BELAY_PUBLIC_URL>/care/join/<token>`: it works once, for 7 days, never after access ends, and
+  the server keeps only its hash. With it the caregiver chooses a username and a password (at
+  least 15 characters, argon2id, as a parent's). A caregiver's page has **Change**, **Renew** (a
+  new end, at most 30 days ahead), **Make a new link** (for a forgotten password: it replaces an
+  unused one, and using it signs them out everywhere else) and **End access now**; once access has
+  ended, **Give access again** (from then: help requests from between don't show) and **Remove**
+  (the activity log keeps their name). At most 20 caregivers, ended ones included.
+- **What they may do,** each a parent's choice per caregiver (the form ticks the recommended
+  ones): see each phone's status (online, or when it was last heard from; battery; whether it's
+  paused; the schedule on now) [ticked]; pause it for 15 minutes to 4 hours, or pause it and lock
+  the screen now, only ever longer than a pause in force and with no note of their own [ticked];
+  get the kid's "I need help" by Web Push and on their page, from when their access began, at
+  most 7 days back [ticked]; check where the phone is now, only while its location is on demand
+  or periodic, one fix per check, shown for 15 minutes [not ticked]. At most 6 pauses and locks,
+  and 6 checks, an hour per caregiver and phone. Never anything that loosens (resuming, more
+  time, apps, answering or marking requests), and never the app list, screen time, calls,
+  network activity, earlier fixes or places, lost mode, the activity log, settings, stages, the
+  agreement or other caregivers.
+- **The caregiver's pages** are under `/care`: `/care/login`, `/care/join/<token>` and `/care`,
+  with their own plain layout. A caregiver's session is a separate cookie (`belay_care`,
+  `__Host-belay_care` with https) and a separate table, lasting 7 days and never past their
+  access; no parent page, form, upload, OAuth step, MCP call or device API call takes it, and a
+  test walks every route to check. Sign-in is limited per address and per username, as a
+  parent's. The parents' sign-in page links to the caregivers' one.
+- **Notifications:** a caregiver who gets help requests turns notifications on on their own page,
+  in each browser, as a parent does (on an iPhone, from the Home Screen: the caregiver pages have
+  their own web app manifest, which opens `/care`). Only the kid's "I need help" goes to them, the
+  same notice a parent gets, opening their page. Their browsers are kept apart from the parents',
+  so no parent's notice reaches them, and they go when access ends. A browser a parent also turned
+  notifications on in (a shared tablet) has one subscription for both: it gets both kinds of
+  notices, and turning them off there ends both.
+- **Ending:** at its end time, access stops by itself: every caregiver page, every notice and the
+  kid's phone check it. The hourly clean-up then marks it ended, deletes their sessions, browsers
+  and unused link, and gives their phones new policies without them. **End access now** does all
+  of that at once. A pause they set stays until its end; a parent can resume it.
+- **The activity log** shows everything a caregiver does as "Grandma (caregiver)": joining,
+  signing in, each pause, lock and check, notifications on and off, and being refused past the
+  hourly limits (once an hour); and each parent's change to caregivers. A phone's page says when
+  a caregiver set the pause in force, and its Location tab names a caregiver's checks.
 
 ## What a phone can make the server keep
 

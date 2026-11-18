@@ -671,12 +671,44 @@ work**, in every phase: Belay never blocks the phone app or texting.
 **Not yet checked on a Pixel:** the card while the phone is paused, and the screens at the
 largest font ([phase7-checklist.md](phase7-checklist.md)).
 
+### Someone else looking after the kid
+
+When a grandparent, a babysitter, a coach on a trip or the kid's other household looks after
+your kid for a while, give them their own sign-in on **Caregivers** (in the menu), never your
+password ([server.md](server.md#caregivers-phase-12)). Choose their name (your kid sees it), the
+phones, what they may do, and when their access ends: at most 30 days ahead (the form suggests
+three days), and you can renew it. Belay shows a link to send them, once: with it they choose a
+username and a password, and afterwards they sign in at your server's `/care`. What they may do,
+each your choice (the recommended ones are ticked):
+
+- **See whether the phone is on** (ticked): online or when it was last heard from, its battery,
+  whether it's paused, and the schedule on now.
+- **Pause it, or lock it now** (ticked): 15 minutes to 4 hours, only ever longer than a pause
+  already on. Only a parent ends a pause early.
+- **Get the kid's "I need help"** (ticked): a notification at once, and on their page, with the
+  kid's words, where the phone was if the kid shared it, and **Call** with the kid's number if you
+  added it. They can't mark it seen: it stays at the top of your Requests page until you do.
+- **Check where the phone is now** (not ticked): only while the phone's location is on, and the
+  kid gets a notification naming them each time. Tick it for a trip.
+
+Nothing a caregiver does loosens a rule: no resuming early, no more time, no apps. They never see
+the apps, screen time, calls, websites, where the phone has been, your places, the activity log,
+settings, stages, the agreement or other caregivers, and Claude can't see, add or change
+caregivers. Your kid's phone lists each one with what they can see and do and until when (on
+What your parent can see, with a line on Home), and names them on each pause and check.
+Everything they do is on **Activity**, under their name. **End access now** signs them out and
+stops their notifications at once; at its end, access stops by itself. On an iPhone, a caregiver
+gets notifications only once they add their page to the Home Screen and open it from there.
+
+**Not yet checked on a Pixel:** the kid's screens with a caregiver, and a caregiver's pause,
+lock, check and notifications from another phone ([phase12-checklist.md](phase12-checklist.md)).
+
 ### Keeping an eye on things
 
 - **Settings → Notifications → Daily summary:** once a day, what needs you, in counts only
   ("2 things need you: a phone has been silent 14 hours, the last backup failed").
-- **Activity:** who did what, a parent, Claude or the server, kept 400 days by default; "Also
-  show what AI apps read" adds every read.
+- **Activity:** who did what, a parent, Claude, a caregiver or the server, kept 400 days by
+  default; "Also show what AI apps read" adds every read.
 - **Timeline:** the apps installed, updated and removed, on every phone.
 
 ## 8. When something goes wrong

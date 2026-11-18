@@ -2,7 +2,7 @@ import type { FC } from "hono/jsx";
 import type { AuditEntry } from "../../audit.js";
 import { AI_MIN_SCHEDULE_MINUTES } from "../../family/screentime/changes.js";
 import { hourLabel } from "../../ops/words.js";
-import { dayKey, formatDayKey, formatTime } from "../../time.js";
+import { dayKey, formatDateTime, formatDayKey, formatTime } from "../../time.js";
 import { Layout, Time, type View } from "../ui.js";
 
 function who(e: AuditEntry): string {
@@ -15,7 +15,18 @@ function who(e: AuditEntry): string {
       return e.deviceName ?? "A phone";
     case "server":
       return "The server";
+    case "caregiver":
+      return `${e.caregiverName ?? "A caregiver"} (caregiver)`;
   }
+}
+
+/** Phase 12: what a parent let a caregiver do, in a few words each. */
+const CAN_SHORT: Record<string, string> = { status: "the phone's status", pause: "pause and lock", help: "help requests", locate: "check where it is" };
+
+/** "Grandma", the phones and what they may do, from a caregiver entry's detail. */
+function caregiverWords(d: Record<string, unknown>): { name: string; phones: string; can: string } {
+  const list = (v: unknown, words: (s: string) => string = (s) => s) => (Array.isArray(v) ? v.map(str).filter(Boolean).map(words).join(", ") : "");
+  return { name: str(d.caregiver) || "a caregiver", phones: list(d.phones) || "no phone", can: list(d.can, (k) => CAN_SHORT[k] ?? k) || "nothing" };
 }
 
 const str = (v: unknown): string => (typeof v === "string" || typeof v === "number" ? String(v) : "");
@@ -40,9 +51,10 @@ function refusedWords(tool: string, why: string): string {
 /** "0.4.0 (version 4)" from an entry's version_name and version_code. */
 const version = (d: Record<string, unknown>): string => (str(d.version_name) ? `${str(d.version_name)} (version ${str(d.version_code)})` : `version ${str(d.version_code)}`);
 
-function what(e: AuditEntry): string {
+function what(e: AuditEntry, tz: string): string {
   const d = e.detail ?? {};
   const device = e.deviceName ? ` (${e.deviceName})` : "";
+  const until = typeof d.until === "number" ? formatDateTime(d.until, tz) : "the end they chose";
   switch (e.action) {
     case "parent.setup":
       return "set up Belay";
@@ -96,6 +108,30 @@ function what(e: AuditEntry): string {
       return `was refused: it tried to ${d.what === "checks" ? "check where the phone is" : "pause or lock the phone"} more than ${str(d.limit)} times in an hour${device}`;
     case "ai.refused":
       return `was refused: it tried ${refusedWords(str(d.tool), str(d.why))}${device}`;
+    case "caregiver.added": {
+      const c = caregiverWords(d);
+      return `added ${c.name} as a caregiver for ${c.phones} until ${until}, with ${c.can}`;
+    }
+    case "caregiver.changed": {
+      const c = caregiverWords(d);
+      return `changed the caregiver ${c.name}${str(d.from) ? ` (before: ${str(d.from)})` : ""}: ${c.phones}, with ${c.can}`;
+    }
+    case "caregiver.renewed":
+      return d.again === true ? `gave ${caregiverWords(d).name} access again, until ${until}` : `renewed ${caregiverWords(d).name}'s access, until ${until}`;
+    case "caregiver.ended":
+      return `ended ${caregiverWords(d).name}'s access`;
+    case "caregiver.access_ended":
+      return `ended ${caregiverWords(d).name}'s access, at the end a parent chose`;
+    case "caregiver.removed":
+      return `removed the caregiver ${caregiverWords(d).name}`;
+    case "caregiver.link":
+      return `made a new sign-in link for ${caregiverWords(d).name}${d.joined === true ? ", to choose a new password" : ""}`;
+    case "caregiver.joined":
+      return d.again === true ? "chose a new password with a sign-in link" : "joined as a caregiver";
+    case "caregiver.signed_in":
+      return "signed in to their caregiver page";
+    case "caregiver.limited":
+      return `was refused: they tried to ${d.what === "checks" ? "check where the phone is" : "pause or lock the phone"} more than ${str(d.limit)} times in an hour${device}`;
     case "token.created":
       return `made a personal access token, "${str(d.name)}"`;
     case "token.revoked":
@@ -286,7 +322,7 @@ export const ActivityPage: FC<{ view: View; entries: AuditEntry[]; includeReads:
   return (
     <Layout view={view} title="Activity">
       <h1>Activity</h1>
-      <p class="muted">Who did what: parents on the web, AI apps through MCP, and the phones.</p>
+      <p class="muted">Who did what: parents on the web, AI apps through MCP, caregivers, and the phones.</p>
       <p>
         {includeReads ? (
           <a class="go" href="/activity">
@@ -309,7 +345,7 @@ export const ActivityPage: FC<{ view: View; entries: AuditEntry[]; includeReads:
                   {formatTime(e.at, view.tz)}
                 </Time>
                 <div>
-                  <strong>{who(e)}</strong> {what(e)}
+                  <strong>{who(e)}</strong> {what(e, view.tz)}
                 </div>
               </div>
             ))}

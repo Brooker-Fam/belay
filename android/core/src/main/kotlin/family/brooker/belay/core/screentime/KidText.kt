@@ -241,4 +241,18 @@ enum class KidMessage {
 
     /** "You can always call or text 911 and 988." */
     WORKS_EMERGENCY,
+
+    // ── Phase 12: a caregiver's pause (core's kid.Caregivers), by the name a parent gave them ──
+
+    /** "%1$s paused this phone until %2$s.": [KidArg.Words] the caregiver's name, then [KidArg.Moment]. */
+    PAUSED_BY_UNTIL,
+
+    /** "%1$s paused this phone.": [KidArg.Words] the caregiver's name. */
+    PAUSED_BY,
+
+    /** Home's line: "Paused by %1$s until %2$s": [KidArg.Words] the caregiver's name, then [KidArg.Moment]. */
+    HOME_PAUSED_BY_UNTIL,
+
+    /** Home's line: "Paused by %1$s": [KidArg.Words] the caregiver's name. */
+    HOME_PAUSED_BY,
 }

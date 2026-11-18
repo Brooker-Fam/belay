@@ -17,7 +17,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Phase 4: Belay's own notices for location, so the kid always knows (principle 4): each time a
- * parent (or their AI app, named) checked where the phone is, and lost mode while it's on. Android
+ * parent (or their AI app, or Phase 12's caregiver, named) checked where the phone is, and lost mode while it's on. Android
  * adds its own: the status bar's location icon while GPS is used (platform notes L6), "Belay has
  * location access" when Belay grants itself location (L1), and "Apps can access your location"
  * when Belay turns location on (L2). Each opens "What Belay told your parent".
@@ -38,13 +38,15 @@ object LocationNotice {
 
     /**
      * "Your parent checked where this phone is (8:15 PM)", or "…, using Claude" when [via] names
-     * the AI app (its name, from its registration, shown as text). One notice per check ([id]).
+     * the AI app (its name, from its registration, shown as text), or (Phase 12) "Grandma checked
+     * where this phone is (8:15 PM)" when [caregiver] names the caregiver who sent it (a parent's
+     * words, shown as text). One notice per check ([id]).
      */
-    fun checked(context: Context, id: String, at: String, via: String?) {
-        val text = if (via == null) {
-            context.getString(R.string.location_checked, at)
-        } else {
-            context.getString(R.string.location_checked_via, at, via)
+    fun checked(context: Context, id: String, at: String, via: String?, caregiver: String? = null) {
+        val text = when {
+            via != null -> context.getString(R.string.location_checked_via, at, via)
+            caregiver != null -> context.getString(R.string.location_checked_by, caregiver, at)
+            else -> context.getString(R.string.location_checked, at)
         }
         show(context, id, CHECK_ID, text, ongoing = false)
     }

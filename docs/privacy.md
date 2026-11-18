@@ -335,6 +335,18 @@ sends outside the family's server, and the parent page says so where you choose 
   Which websites are private is never shown to an AI app, nor whether there are any, nor how many
   lookups were dropped (though one that read the network activity before a website was made
   private can see its entries go: above).
+- **Caregivers a parent adds** (Phase 12: a grandparent for a weekend, a babysitter, a coach on
+  a trip), on their own pages, only while their access lasts (at most 30 days, until a parent
+  renews it), and only for the phones and the things a parent chose for each: whether a phone is
+  online, when it was last heard from, its battery, whether it's paused and the schedule on now;
+  the kid's "I need help" requests since their access began (the kid's words, where the phone was
+  if the kid shared it, whether a parent has seen it, and the kid's number for "Call" if a parent
+  set one), as a notice to their own browsers too; and, if a parent allows it, where the phone is
+  at the moment they check, one fix per check. Nothing is collected for them: they see a small
+  part of what the server already keeps, live. Never the apps, screen time, calls, network
+  activity, earlier fixes or the places, lost mode, the activity log, settings, stages, the
+  agreement or other caregivers. A help notice to a caregiver's browser carries what a parent's
+  does (the phone's name and the kid's words), encrypted end to end. AI apps never see caregivers.
 
 ## What the kid sees (Phase 2)
 
@@ -472,6 +484,28 @@ sends the rules and contacts they're built from, and nothing else about calls.
   account; remove your parent's Google account; then Settings > System > Reset options > Erase all
   data. "After the reset, this phone is yours. Belay won't be on it."
 
+## What the kid sees (Phase 12)
+
+Every caregiver with access to the phone is on it, from the policy (there's no hidden one), until
+their access ends, by the phone's own clock:
+
+- **What your parent can see** gains "Caregivers your parent added": each one by name, until when,
+  what they can see and do ("Can see whether this phone is online and when it last connected, its
+  battery, and whether it's paused or on a schedule", "Can pause this phone, or pause it and lock
+  the screen, for up to 4 hours at a time. Only your parent can end a pause early.", "Gets your "I
+  need help" requests, with what you write, and where this phone is if you share it", "Can check
+  where this phone is right now. You get a notification every time."), and what they can't: your
+  apps, your screen time, your calls, the websites apps look up, where this phone has been, more
+  time or letting an app through.
+- **Home:** "Your parent gave Grandma some access to this phone until Sunday at 6:00 PM.", one line
+  each, with a button to that card.
+- **Help:** "Grandma gets your help requests too, with what you write, and where this phone is if
+  you share it."
+- **A caregiver's pause** reads "Paused by Grandma until 5:30 PM" on Home, the pause banner (which
+  adds "Only your parent can end it early.") and the pause notice, and in the words for paused
+  apps. **A caregiver's check** reads "Grandma checked where this phone is (8:15 PM)." in its notice
+  and in "What Belay told your parent".
+
 ## What the kid sees
 
 - A notification that never goes away: "This phone is managed by your parent".
@@ -524,6 +558,12 @@ does giving a contact a number that's private.
 Turning recording or calls off stops new records; the ones kept stay until they age out.
 Contacts, private and blocked numbers stay until a parent removes them, or deletes the phone.
 The AI scope "calls" is off by default for every family.
+
+Caregivers (Phase 12): a caregiver's account (their name, the parent's choices, their username and
+password hash, when they joined and last signed in) stays until a parent removes it; one whose
+access ended stays listed so a parent can give access again. Their sessions last 7 days and never
+past their access, and their browsers (for notices) and an unused link go when access ends. The
+activity log keeps what each caregiver did, under their name, as long as it keeps everything else.
 
 Network activity (Phase 3) is kept 30 days by default (the family chooses 1 to 90 in Settings),
 then deleted by the hourly clean-up. Turning network logging off stops new days; the ones kept

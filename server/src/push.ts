@@ -264,8 +264,8 @@ export function browserName(userAgent: string | undefined, endpoint: string): st
 export interface Notice {
   title: string;
   body: string;
-  /** A tapped notice opens this page: one request's own card (`#request-<id>`) when it's about one. */
-  url: "/" | "/requests" | "/requests#help" | `/requests#request-${string}` | "/proposals" | "/settings" | `/devices/${string}`;
+  /** A tapped notice opens this page: one request's own card (`#request-<id>`) when it's about one; a caregiver's, their own page (Phase 12). */
+  url: "/" | "/requests" | "/requests#help" | `/requests#request-${string}` | "/proposals" | "/settings" | `/devices/${string}` | "/care" | `/care#${string}`;
   urgent?: boolean;
 }
 
@@ -281,13 +281,24 @@ const TTL_SECONDS = 24 * 3600;
 
 /** Sends a notice to every parent's browsers, or one parent's. Nothing is sent when nobody subscribed. */
 export async function sendNotice(deps: Deps, notice: Notice, opts: { parentId?: string } = {}): Promise<SendResult> {
+  return pushTo(deps, listSubscriptions(deps.db, opts.parentId), notice, "push_subscriptions");
+}
+
+/** A browser to push to: a parent's (`push_subscriptions`), or a caregiver's (`caregiver_push`, Phase 12). */
+export type PushBrowser = Pick<PushSubscription, "id" | "endpoint" | "p256dh" | "auth">;
+
+/**
+ * Sends a notice to these browsers, each at its push service, end-to-end encrypted. A browser its
+ * push service no longer knows is deleted from its own table, which a parent's and a caregiver's
+ * browsers never share.
+ */
+export async function pushTo(deps: Deps, subscriptions: PushBrowser[], notice: Notice, table: "push_subscriptions" | "caregiver_push"): Promise<SendResult> {
   const result: SendResult = { sent: 0, removed: 0, failed: 0 };
-  const subscriptions = listSubscriptions(deps.db, opts.parentId);
   if (!subscriptions.length) return result;
   const keys = vapidKeys(deps.db);
   const payload = Buffer.from(JSON.stringify(notice), "utf8");
   const forget = (id: string) => {
-    deps.db.prepare("DELETE FROM push_subscriptions WHERE id = ?").run(id);
+    deps.db.prepare(`DELETE FROM ${table} WHERE id = ?`).run(id);
     result.removed++;
   };
   await Promise.all(
@@ -317,7 +328,7 @@ export async function sendNotice(deps: Deps, notice: Notice, opts: { parentId?: 
           forget(s.id);
           deps.log("A browser's notifications ended: its push service no longer knows it.");
         } else if (response.ok) {
-          deps.db.prepare("UPDATE push_subscriptions SET last_sent_at = ? WHERE id = ?").run(deps.now(), s.id);
+          deps.db.prepare(`UPDATE ${table} SET last_sent_at = ? WHERE id = ?`).run(deps.now(), s.id);
           result.sent++;
         } else {
           result.failed++;

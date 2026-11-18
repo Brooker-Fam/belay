@@ -5,6 +5,7 @@ import family.brooker.belay.core.WireCommand
 import family.brooker.belay.core.WireCommandOutcome
 import family.brooker.belay.core.WireCommandResult
 import family.brooker.belay.core.WireLimits
+import family.brooker.belay.core.kid.Caregivers
 import java.time.ZoneId
 
 /**
@@ -46,16 +47,18 @@ object LocationWork {
         val told = mutableListOf<ToldEntry>()
         for (command in commands.filter { it.kind == WireCommand.LOCATE_NOW }.distinctBy { it.id }) {
             val via = via(command.via)
+            // Phase 12: a caregiver's check names them for the kid; never alongside an AI app's name.
+            val caregiver = if (via == null) Caregivers.who(command.caregiver) else null
             val problem = when {
                 !LocationRules.canLocateNow(location) -> PROBLEM_MODE_OFF
                 !facts.owner -> PROBLEM_NOT_OWNER
                 else -> null
             }
             if (problem == null) {
-                wants += FixWant(WireFixReason.ON_DEMAND, now, commandId = command.id, via = via)
+                wants += FixWant(WireFixReason.ON_DEMAND, now, commandId = command.id, via = via, caregiver = caregiver)
             } else {
                 failed += CommandLog.failed(command, now, problem)
-                told += ToldEntry(command.id, ToldKind.CHECK, now, via, sent = false, problem = problem)
+                told += ToldEntry(command.id, ToldKind.CHECK, now, via, sent = false, problem = problem, caregiver = caregiver)
             }
         }
         return Commanded(wants, failed, told)
@@ -115,7 +118,7 @@ object LocationWork {
         val results: List<WireCommandResult>,
         /** Lines of "What Belay told your parent", new or updated (by id). */
         val told: List<ToldEntry>,
-        /** The checks a parent asked for that sent a fix, for the kid's notice: the AI app's name, or null. */
+        /** The checks a parent asked for that sent a fix, for the kid's notice: the AI app's or (Phase 12) the caregiver's name, or neither. */
         val checks: List<FixWant>,
     )
 
@@ -175,7 +178,15 @@ object LocationWork {
                             now,
                             if (fix != null) null else why.take(WireLimits.MAX_PROBLEM),
                         )
-                        told += ToldEntry(commandId, ToldKind.CHECK, fix?.at ?: now, want.via, sent = fix != null, problem = if (fix == null) why else null)
+                        told += ToldEntry(
+                            commandId,
+                            ToldKind.CHECK,
+                            fix?.at ?: now,
+                            want.via,
+                            sent = fix != null,
+                            problem = if (fix == null) why else null,
+                            caregiver = want.caregiver,
+                        )
                         if (fix != null) checks += want
                     }
                 }

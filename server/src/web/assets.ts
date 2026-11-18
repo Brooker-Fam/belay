@@ -16,6 +16,8 @@ const FILES = {
 const ROOT_FILES = {
   "sw.js": "text/javascript; charset=utf-8",
   "manifest.webmanifest": "application/manifest+json",
+  // Phase 12: the caregiver pages' own, opening /care from a Home Screen.
+  "care.webmanifest": "application/manifest+json",
 } as const;
 
 export interface Assets {

@@ -183,7 +183,7 @@ class LocationStep(context: Context, private val store: AgentStore) {
         fun time(at: Long) = words.time(LocalTimes.local(at, zone).toLocalTime())
         done.checks.forEach { check ->
             val at = done.write?.told?.firstOrNull { it.id == check.commandId }?.at ?: System.currentTimeMillis()
-            LocationNotice.checked(app, check.commandId ?: check.key, time(at), check.via)
+            LocationNotice.checked(app, check.commandId ?: check.key, time(at), check.via, check.caregiver)
         }
         val lost = done.lost
         if (lost != null && done.location?.lost != null) LocationNotice.lost(app, lost.lastFixAt?.let(::time)) else LocationNotice.cancelLost(app)

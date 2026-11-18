@@ -38,9 +38,10 @@ export interface LocationPageData {
 
 const EVERY = [15, 20, 30, 45, 60, 90, 120];
 
-/** Who checked: a parent, their AI app (by the name it registered with), or the server's command line. */
+/** Who checked: a parent, their AI app (by the name it registered with), a caregiver (Phase 12), or the server's command line. */
 function checker(c: Check["command"]): string {
   if (c.via) return `${c.via}, through ${c.issuedBy ?? "a parent"}'s connection`;
+  if (c.caregiver) return `${c.caregiver} (a caregiver)`;
   return c.issuedBy ?? "the server's command line";
 }
 
@@ -325,7 +326,7 @@ export const LocationPage: FC<{ view: View; data: LocationPageData; message?: st
 
       <h2 id="checks">Checks</h2>
       <div class="card">
-        <p class="muted small">Every time a parent, or their AI app, checked where the phone is, the last 30 days. The kid sees the same list on the phone.</p>
+        <p class="muted small">Every time a parent, their AI app, or a caregiver checked where the phone is, the last 30 days. The kid sees the same list on the phone.</p>
         {data.checks.length === 0 && <p class="muted">No checks.</p>}
         {data.checks.map(({ command, fix }) => (
           <div class="change">
