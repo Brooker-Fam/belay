@@ -15,3 +15,21 @@ export function cleanText(value: string, max: number): string {
 export function oneLine(value: string, max: number): string {
   return cleanText(value.replace(/\s*\n\s*/g, " "), max);
 }
+
+/**
+ * Whether a name a parent typed to confirm something (a hand-over, the locks that can strand a
+ * phone) is the phone's name, as a person means it: case, spaces around and between words, and the
+ * curly quotes a phone's keyboard puts in for ' and " don't count. "Sam’s  phone" is "Sam's phone".
+ */
+export function sameName(typed: string, name: string): boolean {
+  const plain = (value: string) =>
+    value
+      .normalize("NFKC")
+      .replace(/[‘’‚‛′]/g, "'")
+      .replace(/[“”„‟″]/g, '"')
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase();
+  const want = plain(name);
+  return want.length > 0 && plain(typed) === want;
+}

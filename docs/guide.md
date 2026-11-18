@@ -425,7 +425,7 @@ Choose **Turn protection on**. In one step:
   settings, the date and time, and the default apps are locked;
 - the web is filtered with CleanBrowsing Family, for every app;
 - Chrome gets SafeSearch, YouTube Restricted Mode (strict), adult sites filtered, no incognito
-  tabs and no downloads.
+  tabs and no downloads, and ignores proxies set on the phone's network.
 
 Within a minute the page says the phone applied the rules, and Belay on the phone lists them.
 You can change each piece below it ([phase2-checklist.md](phase2-checklist.md)).
@@ -781,6 +781,16 @@ Android's own Parental Controls, set up in Settings, add a hidden profile even t
 users is locked, and can undo Belay's pauses. The phone's page says so at the top, and **Remove
 other users and profiles** has the phone remove them, telling the kid first
 ([server.md](server.md#other-users-and-profiles-phase-10)). Talk about it too.
+
+### A proxy or wireless debugging is reported
+
+Both show at the top of the phone's page, as someone maybe getting around Belay. **A proxy**
+is set in the phone's Wi-Fi settings (a network's Advanced options) or its mobile network's:
+Chrome ignores it, but other apps' browsing through it skips the web filter. Remove it there
+(Proxy: None), and talk about it; Belay doesn't lock Wi-Fi's settings, because that would stop
+the kid joining any new network. **Wireless debugging** is in Developer options: with it, another
+phone, or an app on this one, can change settings around Belay. Turn it off, or lock developer
+options under Hardening ([threat-model.md](threat-model.md#getting-around-belay-the-phase-2-audit)).
 
 ## 9. Loosening over time, and off belay
 

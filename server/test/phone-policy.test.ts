@@ -306,4 +306,18 @@ describe("what the phone enforces", () => {
     expect(problems.map((p) => p.code)).toEqual(["tampering", "tampering", "tampering", "phone_reported"]);
     expect(problems[0]?.text).toBe("Someone may be getting around Belay. Belay on the phone says: Android's Parental Controls are on");
   });
+
+  it("counts a proxy on the phone's network and wireless debugging as someone maybe getting around Belay", async () => {
+    const { t, phone } = await setup();
+    // The phone's words (core's Workarounds).
+    const proxy = "This phone's network uses a proxy, set in its Wi-Fi or mobile network settings. Apps that use the proxy can get around the web filter.";
+    const debugging =
+      "Wireless debugging is on in Developer options: another phone, or an app on this one, can use it to change settings around Belay. Locking Developer options (hardening) turns it off.";
+    await deviceCall(t, phone.token, "checkin", { status: enforcing(0, ["Private DNS: the host didn't answer", proxy, debugging]) });
+    const view = getDevice(t.deps.db, phone.deviceId, getSettings(t.deps.db), t.now());
+    expect(view?.status).toBe("attention");
+    expect(view?.problems.map((p) => p.code)).toEqual(["tampering", "tampering", "phone_reported"]);
+    expect(view?.problems[0]).toEqual({ code: "tampering", text: `Someone may be getting around Belay. Belay on the phone says: ${proxy}`, fromPhone: proxy });
+    expect(view?.problems[1]?.fromPhone).toBe(debugging);
+  });
 });

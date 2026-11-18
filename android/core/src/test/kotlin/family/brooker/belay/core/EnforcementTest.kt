@@ -326,7 +326,38 @@ class EnforcementTest {
             plan.locks,
         )
         assertTrue(plan.autoTime, "a locked clock is set automatically")
+        assertTrue(plan.autoTimeZone, "and so is its time zone")
         assertTrue(plan.problems.isEmpty())
+    }
+
+    @Test
+    fun `without the date and time lock, Belay leaves the time and the zone alone`() {
+        val plan = plan(policy(restrictions = WireRestrictions(safeBoot = true)))
+        assertFalse(plan.autoTime)
+        assertFalse(plan.autoTimeZone)
+        assertNull(Enforcement.changes(plan, Applied()).autoTimeZone)
+    }
+
+    @Test
+    fun `a phone that locked the clock before Belay kept the zone automatic gets it at its next step`() {
+        // What an older Belay stored: the lock and automatic time, nothing about the zone.
+        val older = Applied(policyVersion = 1, appliedAt = T0, locks = setOf(Lock.CONFIG_DATE_TIME), autoTime = true)
+        val plan = plan(policy(restrictions = WireRestrictions(configDateTime = true)), applied = older)
+        val changes = Enforcement.changes(plan, older)
+        assertEquals(true, changes.autoTimeZone)
+        assertNull(changes.autoTime)
+        assertTrue(changes.lock.isEmpty())
+        assertTrue(apply(plan, older).autoTimeZone)
+    }
+
+    @Test
+    fun `automatic time zone that failed to apply is tried again`() {
+        val plan = plan(policy(restrictions = WireRestrictions(configDateTime = true)))
+        val changes = Enforcement.changes(plan, Applied())
+        val applied = Enforcement.after(Applied(), plan, changes, ApplyOutcome(autoTimeZoneFailed = true), T0)
+        assertTrue(applied.autoTime)
+        assertFalse(applied.autoTimeZone)
+        assertEquals(true, Enforcement.changes(plan, applied).autoTimeZone)
     }
 
     @Test
@@ -370,6 +401,7 @@ class EnforcementTest {
         assertEquals(emptyList(), config.urlBlocklist)
         assertNull(config.urlAllowlist)
         assertEquals("off", config.dnsOverHttpsMode)
+        assertEquals("""{"ProxyMode":"direct"}""", config.proxySettings)
 
         val open = ChromeConfig.of(WireChromePolicy(incognito = true, youtubeRestrict = "moderate", safeSites = false, allowDownloads = true))
         assertEquals(0, open.incognitoModeAvailability)
@@ -395,6 +427,18 @@ class EnforcementTest {
         val applied = apply(first)
         assertNull(Enforcement.changes(plan(withChrome, applied = applied), applied).chrome)
         assertEquals(Setting.Clear, Enforcement.changes(plan(policy(), applied = applied), applied).chrome)
+    }
+
+    @Test
+    fun `Chrome's settings an older Belay set are set again, with the proxy setting`() {
+        // An older Belay's record has no proxySettings: it reads back as null.
+        val stored = """{"incognitoModeAvailability":1,"forceGoogleSafeSearch":true,"forceYouTubeRestrict":2,""" +
+            """"safeSitesFilterBehavior":1,"downloadRestrictions":3,"urlBlocklist":[],"urlAllowlist":null,"dnsOverHttpsMode":"off"}"""
+        val older = Wire.json.decodeFromString(ChromeConfig.serializer(), stored)
+        assertNull(older.proxySettings)
+        val applied = Applied(policyVersion = 1, appliedAt = T0, chrome = older)
+        val changes = Enforcement.changes(plan(policy(web = WireWebPolicy(chrome = WireChromePolicy())), applied = applied), applied)
+        assertEquals(Setting.Set(older.copy(proxySettings = ChromeConfig.PROXY_DIRECT)), changes.chrome)
     }
 
     // Reset protection.
@@ -545,6 +589,7 @@ class EnforcementTest {
         val changes = Enforcement.changes(plan(policy(version = 2), applied = locked), locked)
         assertEquals(setOf(Lock.SAFE_BOOT, Lock.CONFIG_DATE_TIME), changes.unlock)
         assertEquals(false, changes.autoTime)
+        assertEquals(false, changes.autoTimeZone)
         assertTrue(changes.lock.isEmpty())
     }
 

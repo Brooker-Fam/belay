@@ -64,7 +64,7 @@ export interface ContactFacts {
 const OpenContact: FC<{ view: View; request: ContactRequestView; showDevice: boolean; facts: ContactFacts }> = ({ view, request, showDevice, facts }) => {
   const existing = facts.existing(request.deviceId, request.contactNumber);
   return (
-    <div class="card">
+    <div class="card" id={`request-${request.id}`}>
       <div class="row spread">
         <strong>Add a contact</strong>
         <span class="chip waiting">{STATUS_WORDS[request.status]}</span>
@@ -126,7 +126,7 @@ const OpenContact: FC<{ view: View; request: ContactRequestView; showDevice: boo
 
 /** "Talk to my parent": the kid's words, and "Let's talk" or "Got it", with a note. */
 const OpenTalk: FC<{ view: View; request: TalkView; showDevice: boolean }> = ({ view, request, showDevice }) => (
-  <div class="card">
+  <div class="card" id={`request-${request.id}`}>
     <div class="row spread">
       <strong>Would like to talk</strong>
       <span class="chip waiting">{STATUS_WORDS[request.status]}</span>
@@ -166,7 +166,7 @@ const OpenTalk: FC<{ view: View; request: TalkView; showDevice: boolean }> = ({ 
 
 /** A "more time" request: 15, 30 or 60 minutes for today, "Let's talk", or "No", with a note. */
 const OpenMoreTime: FC<{ view: View; request: MoreTimeView; showDevice: boolean; limitName: LimitNames }> = ({ view, request, showDevice, limitName }) => (
-  <div class="card">
+  <div class="card" id={`request-${request.id}`}>
     <div class="row spread">
       <strong>{moreTimeTitle(request, limitName)}</strong>
       <span class="chip waiting">{STATUS_WORDS[request.status]}</span>
@@ -204,7 +204,7 @@ const OpenMoreTime: FC<{ view: View; request: MoreTimeView; showDevice: boolean;
 
 /** The kid wants to talk about the agreement: "Let's talk", or that you saw it, with a note. */
 const OpenAgreement: FC<{ view: View; request: AgreementAnswerView; showDevice: boolean }> = ({ view, request, showDevice }) => (
-  <div class="card">
+  <div class="card" id={`request-${request.id}`}>
     <div class="row spread">
       <strong>Wants to talk about the family agreement</strong>
       <span class="chip waiting">{STATUS_WORDS[request.status]}</span>
@@ -235,7 +235,7 @@ const OpenAgreement: FC<{ view: View; request: AgreementAnswerView; showDevice: 
 );
 
 const OpenRequest: FC<{ view: View; request: AppRequestView; showDevice: boolean; known: ReadonlySet<string> }> = ({ view, request, showDevice, known }) => (
-  <div class="card">
+  <div class="card" id={`request-${request.id}`}>
     <div class="row spread">
       <AppName request={request} known={known} />
       <span class="chip waiting">{STATUS_WORDS[request.status]}</span>

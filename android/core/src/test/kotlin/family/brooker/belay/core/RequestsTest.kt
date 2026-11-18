@@ -219,6 +219,20 @@ class RequestsTest {
     }
 
     @Test
+    fun `Chrome's proxy setting shows once Belay has set it`() {
+        val roles = PhoneRoles(self = "family.example.belay")
+        val policy = WirePolicy(version = 2, web = WireWebPolicy(chrome = WireChromePolicy()))
+        val plan = Enforcement.plan(Enforcement.Input(policy, emptyMap(), roles, Applied(), false, Enforcement.sdkFull(37), T0))
+        val applied = Enforcement.after(Applied(), plan, Enforcement.changes(plan, Applied()), ApplyOutcome(), T0)
+        assertTrue(KidRules.Rule.CHROME_NO_PROXY in KidRules.of(policy, plan, applied, privateDns = null))
+        // What an older Belay set: Chrome's other settings, without the proxy one.
+        val older = applied.copy(chrome = applied.chrome?.copy(proxySettings = null))
+        val rules = KidRules.of(policy, plan, older, privateDns = null)
+        assertFalse(KidRules.Rule.CHROME_NO_PROXY in rules)
+        assertTrue(KidRules.Rule.CHROME_SAFE_SEARCH in rules)
+    }
+
+    @Test
     fun `repair mode shows while maintenance lifts debugging`() {
         val policy = WirePolicy(version = 2, restrictions = WireRestrictions(debugging = true), maintenanceUntil = T0 + HOUR)
         val plan = Enforcement.plan(Enforcement.Input(policy, emptyMap(), PhoneRoles("family.example.belay"), Applied(), false, Enforcement.sdkFull(37), T0))

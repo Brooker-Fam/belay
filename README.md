@@ -43,9 +43,11 @@ checked on a real Pixel yet. Phase 9 (more families) isn't built either.
   with a one-time code: from `provision.sh`, a QR code, or typed. **Phase 2:** it enforces
   the family's rules within seconds of a change (a long-poll), and keeps enforcing them
   offline: new apps wait for a parent, blocked apps are hidden, the phone can be paused, and
-  safe mode, new users, sideloading, VPNs, Private DNS, the clock and default apps are locked,
-  and Play can be kept to the parent-owned accounts (`allowed_accounts`). Calls, texts, 911 and
-  988 always work. The kid sees every rule, asks for apps with a "Why I
+  safe mode, new users, sideloading, VPNs, Private DNS, the clock (kept automatic, its time
+  zone too) and default apps are locked, and Play can be kept to the parent-owned accounts
+  (`allowed_accounts`). Chrome ignores proxies set on the phone's network, and a proxy (which
+  gets other apps round the web filter) or wireless debugging is reported as someone maybe
+  getting around Belay. Calls, texts, 911 and 988 always work. The kid sees every rule, asks for apps with a "Why I
   want it" box, and sees every answer. **Phase 6 (the phone's side):** it updates itself to
   the version a parent approved, without adb: downloaded (resuming), checked (Belay's own
   package, the offered and a newer version, exactly its own signing key) and installed

@@ -49,6 +49,10 @@ object DataCategories {
             "Whether the SIM card was changed, how many other users or profiles are on the phone, " +
                 "and which settings something other than Belay has locked (not the phone number, " +
                 "and nothing about what's on them)",
+            // Workarounds: reported only while they matter to the rules.
+            "Whether this phone's Wi-Fi or mobile network uses a proxy, while your parent has a " +
+                "website filter, and whether wireless debugging is on, since both can get around " +
+                "your parent's rules (not the proxy's address)",
             "How an update of Belay that your parent chose is going, when the recovery key was " +
                 "last used, and whether Belay did what your parent asked, like removing another user",
         ),

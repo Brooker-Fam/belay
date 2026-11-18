@@ -151,7 +151,8 @@ function what(e: AuditEntry): string {
     case "extra.given":
       return `gave ${str(d.minutes)} more minutes for ${str(d.limit) || "a limit"}, for ${str(d.day) || "today"}${device}`;
     case "agreement.saved":
-      return `wrote version ${str(d.version)} of the family agreement${device}`;
+      // Entries from before agreement_version carry only the rules' version, which isn't the agreement's.
+      return d.agreement_version === undefined ? `wrote the family agreement${device}` : `wrote version ${str(d.agreement_version)} of the family agreement${device}`;
     case "app.allowed":
     case "app.blocked":
     case "app.undecided": {

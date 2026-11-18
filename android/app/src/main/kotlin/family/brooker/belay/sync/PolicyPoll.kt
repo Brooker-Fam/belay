@@ -2,9 +2,11 @@ package family.brooker.belay.sync
 
 import android.content.Context
 import android.net.ConnectivityManager
+import android.net.LinkProperties
 import android.net.Network
 import android.util.Log
 import family.brooker.belay.Agent
+import family.brooker.belay.Trigger
 import family.brooker.belay.core.OutboxPolicy
 import family.brooker.belay.core.PolicyRules
 import family.brooker.belay.core.PolicyTooLarge
@@ -46,6 +48,10 @@ object PolicyPoll {
 
     private var thread: Thread? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
+
+    /** Whether the default network had a proxy at its last change; null before the first. */
+    @Volatile
+    private var lastProxied: Boolean? = null
 
     /** A wake-up for the idle loop; holds at most one. */
     private val wakeups = LinkedBlockingQueue<Unit>(1)
@@ -193,6 +199,18 @@ object PolicyPoll {
                 kick()
                 PrivateDns.networkBack(app)
                 AgentUpdater.networkBack(app)
+            }
+
+            /**
+             * A proxy set on the default network, or taken off (a Wi-Fi network's advanced
+             * options, or the APN), is reported at once rather than at the next check: it can get
+             * around the web filter (core's Workarounds). Switching networks counts too.
+             */
+            override fun onLinkPropertiesChanged(network: Network, linkProperties: LinkProperties) {
+                val proxied = linkProperties.httpProxy != null
+                val before = lastProxied
+                lastProxied = proxied
+                if (before != null && before != proxied) Agent.handle(app, Trigger.PROXY_CHANGED)
             }
         }
         try {

@@ -32,6 +32,7 @@ import family.brooker.belay.core.WireCommand
 import family.brooker.belay.core.WireEnforcement
 import family.brooker.belay.core.WirePolicy
 import family.brooker.belay.core.WireRequestKind
+import family.brooker.belay.core.Workarounds
 import family.brooker.belay.core.location.WireLocationStatus
 import family.brooker.belay.core.screentime.Decision
 import family.brooker.belay.core.screentime.KidArg
@@ -242,7 +243,9 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
             tooLarge?.let { PolicyTooLarge.problem(it.tooLargeBytes) },
             screenTimeState?.lockProblem,
             screenTimeProblem,
-        ) + calling?.problems.orEmpty() + networking?.problems.orEmpty()
+        ) + calling?.problems.orEmpty() + networking?.problems.orEmpty() +
+            // A proxy on the network, or wireless debugging: they get around the rules, so they're reported.
+            Workarounds.problems(plan, proxy = PhoneFacts.proxy(app), wirelessDebugging = PhoneFacts.wirelessDebugging(app))
         next = next.copy(sim = sim, problems = (next.problems + extra).distinct().take(Enforcement.MAX_PROBLEMS))
 
         // Belay asks for each new waiting app at once, so the parent sees it even if the kid
@@ -329,6 +332,7 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
         failedLock = changes.lock,
         failedUnlock = changes.unlock,
         autoTimeFailed = changes.autoTime != null,
+        autoTimeZoneFailed = changes.autoTimeZone != null,
         chromeFailed = changes.chrome != null,
         frpFailed = changes.frpAccounts != null,
         playFailed = changes.playAccounts != null,
@@ -388,6 +392,7 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
             changes.lock.takeIf { it.isNotEmpty() }?.let { "lock $it" },
             changes.unlock.takeIf { it.isNotEmpty() }?.let { "unlock $it" },
             changes.autoTime?.let { "auto time $it" },
+            changes.autoTimeZone?.let { "auto time zone $it" },
             changes.chrome?.let { "Chrome ${it.javaClass.simpleName.lowercase()}" },
             changes.frpAccounts?.let { "reset protection ${it.javaClass.simpleName.lowercase()}" },
             changes.playAccounts?.let { "Play's accounts ${it.javaClass.simpleName.lowercase()}" },

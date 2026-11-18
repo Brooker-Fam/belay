@@ -796,7 +796,7 @@ The answers in `requests` gain `minutes?` (Phase 3: an approved `more_time`).
 | `policy_version` | int | the version applied |
 | `applied_at` | int? | |
 | `suspended_count` | int | apps held suspended or hidden now |
-| `problems` | string[] | Belay's own words for what it couldn't do, at most 20 of 200 characters |
+| `problems` | string[] | Belay's own words for what it couldn't do, and for what can get around the rules that it noticed (another user or profile, a proxy on the network while there's a web filter, wireless debugging), at most 20 of 200 characters; the server shows the second kind first |
 | `agent_update` | `{version_code, state: "downloading"\|"checking"\|"installing"\|"failed"\|"done", problem?, at}`? | Phase 6: the offered update; `done` once Belay runs that version or a newer one |
 | `recovery` | `{version, used_at, until}`? | Phase 6: the last use of the recovery key; repair access is open until `until` |
 | `commands` | `[{id, result: "done"\|"failed"\|"expired", at, problem?}]` | the last 20 commands' results, newest first |

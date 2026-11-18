@@ -164,7 +164,7 @@ private fun RuleText(rule: Rule, kid: KidView) {
 
 private val CHROME = setOf(
     Rule.CHROME_NO_INCOGNITO, Rule.CHROME_SAFE_SEARCH, Rule.CHROME_YOUTUBE_RESTRICTED, Rule.CHROME_SAFE_SITES,
-    Rule.CHROME_NO_DOWNLOADS, Rule.CHROME_ALLOWLIST, Rule.CHROME_BLOCKLIST,
+    Rule.CHROME_NO_DOWNLOADS, Rule.CHROME_NO_PROXY, Rule.CHROME_ALLOWLIST, Rule.CHROME_BLOCKLIST,
 )
 
 private fun chromeWords(rule: Rule): Int = when (rule) {
@@ -173,6 +173,7 @@ private fun chromeWords(rule: Rule): Int = when (rule) {
     Rule.CHROME_YOUTUBE_RESTRICTED -> R.string.rule_chrome_youtube
     Rule.CHROME_SAFE_SITES -> R.string.rule_chrome_safe_sites
     Rule.CHROME_NO_DOWNLOADS -> R.string.rule_chrome_downloads
+    Rule.CHROME_NO_PROXY -> R.string.rule_chrome_proxy
     Rule.CHROME_ALLOWLIST -> R.string.rule_chrome_allowlist
     else -> R.string.rule_chrome_blocklist
 }

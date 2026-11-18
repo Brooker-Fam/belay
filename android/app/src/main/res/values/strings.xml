@@ -179,6 +179,7 @@
     <string name="rule_chrome_youtube">YouTube\'s Restricted Mode is on</string>
     <string name="rule_chrome_safe_sites">Websites for adults are filtered out</string>
     <string name="rule_chrome_downloads">Downloads are off</string>
+    <string name="rule_chrome_proxy">Proxy settings aren\'t used</string>
     <string name="rule_chrome_allowlist">Only the websites your parent allowed open</string>
     <string name="rule_chrome_blocklist">Some websites are blocked</string>
 

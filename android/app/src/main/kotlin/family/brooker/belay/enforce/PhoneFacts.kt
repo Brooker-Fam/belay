@@ -8,6 +8,7 @@ import android.content.IntentFilter
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
+import android.net.ConnectivityManager
 import android.net.Uri
 import android.provider.AlarmClock
 import android.provider.Settings
@@ -85,6 +86,29 @@ object PhoneFacts {
             else -> null
         }
     }
+
+    /**
+     * Whether the phone's default network has a proxy (platform notes H2): ConnectivityManager's
+     * default proxy is the global one if there is one (set over adb), otherwise the network's own:
+     * a Wi-Fi network's manual proxy or proxy script, or the mobile network's APN proxy. It needs
+     * no permission (ConnectivityService.getProxyForNetwork, AOSP 17). Only whether, never where.
+     */
+    fun proxy(context: Context): Boolean = read("proxy") {
+        val proxy = context.getSystemService(ConnectivityManager::class.java)?.defaultProxy
+        proxy != null && (!proxy.host.isNullOrEmpty() || proxy.pacFileUrl != Uri.EMPTY)
+    } ?: false
+
+    /**
+     * Whether wireless debugging is on (platform notes H6): Settings.Global's adb_wifi_enabled,
+     * which apps may read (it's @Readable in AOSP 17; USB debugging's adb_enabled reads as 0 for
+     * apps, so Belay can't tell that one).
+     */
+    fun wirelessDebugging(context: Context): Boolean = read("wireless debugging") {
+        Settings.Global.getInt(context.contentResolver, ADB_WIFI_ENABLED, 0) == 1
+    } ?: false
+
+    /** Settings.Global.ADB_WIFI_ENABLED, a hidden constant. */
+    private const val ADB_WIFI_ENABLED = "adb_wifi_enabled"
 
     private fun <T> read(what: String, block: () -> T): T? = try {
         block()

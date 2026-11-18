@@ -75,7 +75,7 @@ describe("more time", () => {
       expect(fetch).toHaveBeenCalledTimes(1);
     });
     const body = fetch.mock.calls[0]?.[1]?.body as Uint8Array;
-    expect(JSON.parse(decrypt(Buffer.from(body), keys, auth))).toEqual({ title: "Belay", body: 'Alex\'s phone asks for 15 more minutes for Games: "One more level, please"', url: "/requests" });
+    expect(JSON.parse(decrypt(Buffer.from(body), keys, auth))).toEqual({ title: "Belay", body: 'Alex\'s phone asks for 15 more minutes for Games: "One more level, please"', url: "/requests#request-request-0001" });
     expect(listAudit(t.deps.db, { limit: 1, includeReads: false })[0]).toMatchObject({ actor: "phone", action: "request.made", detail: { kind: "more_time", limit: "Games", minutes: 15 } });
   });
 
@@ -132,6 +132,24 @@ describe("more time", () => {
     expect(notice.body).toBe("Alex's phone: 2 requests are waiting for you");
     expect(requestsNotice("Alex's phone", [{ kind: "more_time", label: null, limitId: "*", minutes: 30, reason: null }], () => null).body).toBe("Alex's phone asks for 30 more minutes for screen time");
   });
+
+  it("a notice about one request opens its own card; one about several opens the Requests page", () => {
+    const one = requestsNotice("Alex's phone", [{ id: "req-0042", kind: "talk", label: null, reason: null }], () => null);
+    expect(one.url).toBe("/requests#request-req-0042");
+    const app = requestsNotice("Alex's phone", [{ id: "req-0043", kind: "app", label: "Chatter", reason: null }], () => null);
+    expect(app.url).toBe("/requests#request-req-0043");
+    const two = requestsNotice(
+      "Alex's phone",
+      [
+        { id: "req-0044", kind: "app", label: "Chatter", reason: null },
+        { id: "req-0045", kind: "app", label: "Maps", reason: null },
+      ],
+      () => null,
+    );
+    expect(two.url).toBe("/requests");
+    // Never anything but an id the page could have: a stray character gives the plain page.
+    expect(requestsNotice("Alex's phone", [{ id: "x/../settings", kind: "talk", label: null, reason: null }], () => null).url).toBe("/requests");
+  });
 });
 
 describe("the family agreement's answers", () => {
@@ -160,6 +178,8 @@ describe("the Requests page", () => {
     const page = await (await get(t, "/requests", sam.cookie)).text();
     expect(page).toContain("More time for Games");
     expect(page).toContain("Asked for 15 minutes");
+    // The card a notice about this one request opens.
+    expect(page).toContain('<div class="card" id="request-request-0001">');
     expect(page).toContain('<blockquote class="kid">One more level</blockquote>');
     for (const m of ["15", "30", "60"]) expect(page).toContain(`name="give" value="${m}"`);
     expect(page).toContain('name="answer" value="declined"');

@@ -156,8 +156,18 @@ data class ChromeConfig(
      * Private DNS filter covers Chrome too.
      */
     val dnsOverHttpsMode: String = "off",
+    /**
+     * ProxySettings, a dictionary policy, which Chrome on Android takes as a JSON string:
+     * [PROXY_DIRECT], so Chrome never uses a proxy set on the phone's Wi-Fi or mobile network (a
+     * proxy looks names up itself, past Private DNS) and connects directly (platform notes H2).
+     * Null only in a record an older Belay stored, so updating Belay sets it.
+     */
+    val proxySettings: String? = null,
 ) {
     companion object {
+        /** Chrome's ProxySettings with ProxyMode "direct": never use a proxy server. */
+        const val PROXY_DIRECT = """{"ProxyMode":"direct"}"""
+
         fun of(chrome: WireChromePolicy) = ChromeConfig(
             incognitoModeAvailability = if (chrome.incognito) 0 else 1,
             forceGoogleSafeSearch = chrome.safeSearch,
@@ -171,6 +181,7 @@ data class ChromeConfig(
             // Allowlist mode: everything is blocked except the allowlist (Chrome's own recipe).
             urlBlocklist = (if (chrome.urlAllowlist != null) listOf("*") else emptyList()) + chrome.urlBlocklist,
             urlAllowlist = chrome.urlAllowlist,
+            proxySettings = PROXY_DIRECT,
         )
     }
 }
@@ -197,6 +208,11 @@ data class EnforcementPlan(
     val locks: Set<Lock>,
     /** Automatic time, while the date and time are locked. */
     val autoTime: Boolean,
+    /**
+     * Automatic time zone, while the date and time are locked: the lock alone keeps whatever zone
+     * the phone had, so one set by hand before it would stay (platform notes H8).
+     */
+    val autoTimeZone: Boolean = false,
     /** The Private DNS host to set; null: Belay sets none, and takes back the one it set. */
     val privateDns: String?,
     /** Null: no managed configuration for Chrome. */
@@ -285,6 +301,8 @@ data class Applied(
     val hidden: Set<String> = emptySet(),
     val locks: Set<Lock> = emptySet(),
     val autoTime: Boolean = false,
+    /** Belay keeps the time zone automatic (false in a record an older Belay stored, so an update sets it). */
+    val autoTimeZone: Boolean = false,
     val chrome: ChromeConfig? = null,
     val frpAccounts: List<String>? = null,
     /** Play's allowed accounts as Belay set them, or null: Belay set none. */
@@ -322,6 +340,8 @@ data class EnforcementChanges(
     val unlock: Set<Lock> = emptySet(),
     /** True: turn automatic time on; false: hand it back; null: leave it. */
     val autoTime: Boolean? = null,
+    /** The same for the time zone. */
+    val autoTimeZone: Boolean? = null,
     val chrome: Setting<ChromeConfig>? = null,
     val frpAccounts: Setting<List<String>>? = null,
     /** Play's allowed accounts: set them, or take back Belay's own. */
@@ -329,7 +349,8 @@ data class EnforcementChanges(
 ) {
     val none: Boolean
         get() = suspend.isEmpty() && unsuspend.isEmpty() && hide.isEmpty() && unhide.isEmpty() &&
-            lock.isEmpty() && unlock.isEmpty() && autoTime == null && chrome == null && frpAccounts == null && playAccounts == null
+            lock.isEmpty() && unlock.isEmpty() && autoTime == null && autoTimeZone == null && chrome == null &&
+            frpAccounts == null && playAccounts == null
 }
 
 /** A setting Belay manages as one value: set it to [Set.value], or take back its own. */
@@ -348,6 +369,7 @@ data class ApplyOutcome(
     val failedLock: Set<Lock> = emptySet(),
     val failedUnlock: Set<Lock> = emptySet(),
     val autoTimeFailed: Boolean = false,
+    val autoTimeZoneFailed: Boolean = false,
     val chromeFailed: Boolean = false,
     val frpFailed: Boolean = false,
     val playFailed: Boolean = false,
@@ -498,6 +520,7 @@ object Enforcement {
             hide = hide,
             locks = locks,
             autoTime = Lock.CONFIG_DATE_TIME in locks,
+            autoTimeZone = Lock.CONFIG_DATE_TIME in locks,
             privateDns = privateDns,
             chrome = policy.web.chrome?.let(ChromeConfig::of),
             frpAccounts = frpAccounts.takeUnless { input.debugBuild },
@@ -572,6 +595,7 @@ object Enforcement {
         lock = plan.locks - applied.locks,
         unlock = applied.locks - plan.locks,
         autoTime = plan.autoTime.takeIf { it != applied.autoTime },
+        autoTimeZone = plan.autoTimeZone.takeIf { it != applied.autoTimeZone },
         chrome = when {
             plan.chrome == applied.chrome -> null
             plan.chrome == null -> Setting.Clear
@@ -605,6 +629,7 @@ object Enforcement {
             hidden = applied.hidden - (changes.unhide - outcome.failedUnhide) + (changes.hide - outcome.failedHide),
             locks = applied.locks - (changes.unlock - outcome.failedUnlock) + (changes.lock - outcome.failedLock),
             autoTime = if (changes.autoTime == null || outcome.autoTimeFailed) applied.autoTime else changes.autoTime,
+            autoTimeZone = if (changes.autoTimeZone == null || outcome.autoTimeZoneFailed) applied.autoTimeZone else changes.autoTimeZone,
             chrome = settle(applied.chrome, changes.chrome, outcome.chromeFailed),
             frpAccounts = settle(applied.frpAccounts, changes.frpAccounts, outcome.frpFailed),
             playAccounts = settle(applied.playAccounts, changes.playAccounts, outcome.playFailed),

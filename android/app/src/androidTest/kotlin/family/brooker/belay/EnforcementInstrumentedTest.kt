@@ -2,23 +2,30 @@ package family.brooker.belay
 
 import android.app.admin.DevicePolicyManager
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.os.UserManager
+import android.provider.Settings
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import family.brooker.belay.core.ChromeConfig
 import family.brooker.belay.core.Lock
 import family.brooker.belay.core.PlayAccounts
 import family.brooker.belay.core.Wire
 import family.brooker.belay.core.WireAppDecision
 import family.brooker.belay.core.WireAppState
 import family.brooker.belay.core.WireChangeKind
+import family.brooker.belay.core.WireChromePolicy
 import family.brooker.belay.core.WireEvent
 import family.brooker.belay.core.WireNewApps
 import family.brooker.belay.core.WirePolicy
 import family.brooker.belay.core.WireRequest
+import family.brooker.belay.enforce.Enforcer
+import family.brooker.belay.enforce.PhoneFacts
 import family.brooker.belay.health.DeviceStatus
 import family.brooker.belay.health.HealthReader
 import family.brooker.belay.store.AgentStore
+import family.brooker.belay.sync.Http
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -28,6 +35,7 @@ import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.net.Proxy
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -149,6 +157,67 @@ class EnforcementInstrumentedTest {
         agentStep()
         assertFalse(dpm.getApplicationRestrictions(admin, PlayAccounts.PLAY_STORE).containsKey(PlayAccounts.KEY))
         assertNull(store.applied().playAccounts)
+    }
+
+    /**
+     * Chrome's managed configuration tells Chrome to ignore the phone's proxies (platform notes H2),
+     * with Secure DNS off. The CI images have no Chrome: Android keeps the configuration anyway.
+     */
+    @Test
+    fun chromesConfigurationTurnsProxiesAndSecureDnsOff() {
+        val before = dpm.getApplicationRestrictions(admin, Enforcer.CHROME)
+        assumeTrue("Chrome's configuration holds something Belay didn't set", before.isEmpty || store.applied().chrome != null)
+        val base = basePolicy()
+        DebugTools.policyOverride = base.copy(version = base.version + VERSION_OFFSET, web = base.web.copy(chrome = WireChromePolicy()))
+        agentStep()
+        val config = dpm.getApplicationRestrictions(admin, Enforcer.CHROME)
+        assertEquals("""{"ProxyMode":"direct"}""", config.getString("ProxySettings"))
+        assertEquals("off", config.getString("DnsOverHttpsMode"))
+        assertEquals(ChromeConfig.PROXY_DIRECT, store.applied().chrome?.proxySettings)
+    }
+
+    /**
+     * The date and time lock keeps the time zone automatic too (platform notes H8), and hands it
+     * back with the lock. Only where both are automatic already (the emulators' default), so the
+     * test changes nothing a later step relies on.
+     */
+    @Test
+    fun aLockedClockKeepsTheTimeZoneAutomatic() {
+        val automatic = { name: String -> Settings.Global.getInt(context.contentResolver, name, 0) == 1 }
+        assumeTrue("the clock or its zone isn't automatic here", automatic(Settings.Global.AUTO_TIME) && automatic(Settings.Global.AUTO_TIME_ZONE))
+        assumeTrue("the date and time are locked by something other than Belay", !um.hasUserRestriction(UserManager.DISALLOW_CONFIG_DATE_TIME) || Lock.CONFIG_DATE_TIME in store.applied().locks)
+        val base = basePolicy()
+        DebugTools.policyOverride = base.copy(version = base.version + VERSION_OFFSET, restrictions = base.restrictions.copy(configDateTime = true))
+        agentStep()
+        assertTrue(um.hasUserRestriction(UserManager.DISALLOW_CONFIG_DATE_TIME))
+        assertTrue(store.applied().autoTimeZone)
+        assertTrue(automatic(Settings.Global.AUTO_TIME_ZONE))
+        if (Build.VERSION.SDK_INT >= 36) assertEquals(DevicePolicyManager.AUTO_TIME_ZONE_ENABLED, dpm.autoTimeZonePolicy)
+
+        DebugTools.policyOverride = base.copy(version = base.version + VERSION_OFFSET + 1)
+        agentStep()
+        assertFalse(store.applied().autoTimeZone)
+        if (Build.VERSION.SDK_INT >= 36) assertEquals(DevicePolicyManager.AUTO_TIME_ZONE_NOT_CONTROLLED_BY_POLICY, dpm.autoTimeZonePolicy)
+    }
+
+    /**
+     * Belay sees a proxy on the network (platform notes H2). A global one, the way adb sets it, for
+     * a few seconds: it's the one the emulator can have without a Wi-Fi network to edit.
+     */
+    @Test
+    fun aProxyIsSeenAndGoneAgain() {
+        // Belay's own connection never goes through one, so a proxy can't hold its reports back.
+        assertEquals(Proxy.NO_PROXY, Http.client.proxy)
+        assumeTrue("this phone already has a proxy", !PhoneFacts.proxy(context))
+        try {
+            shell("settings put global http_proxy 127.0.0.1:9")
+            awaitTrue("Belay didn't see the proxy") { PhoneFacts.proxy(context) }
+        } finally {
+            // ":0" is how a global proxy set this way is cleared (ProxyTracker); then the setting goes.
+            shell("settings put global http_proxy :0")
+            shell("settings delete global http_proxy")
+        }
+        awaitTrue("Belay still sees a proxy") { !PhoneFacts.proxy(context) }
     }
 
     @Test
