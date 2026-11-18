@@ -15,10 +15,11 @@ import { listApps } from "../src/family/apps.js";
 import { listCommands } from "../src/family/commands.js";
 import { getDevice } from "../src/family/devices.js";
 import { policyVersion } from "../src/family/policy.js";
+import type { Policy } from "../src/device/schemas.js";
 import { getSettings } from "../src/settings.js";
 import { APPS, FIRST_APPS, NEVER_BLOCKED, PHONE_NAME, packageOf } from "../demo/family.js";
 import { SAYS, SimPhone, enforce, newPhoneState } from "../demo/phone.js";
-import { type Sent, checkedFetch, until } from "./demo-helpers.js";
+import { type Sent, checkRequest, checkedFetch, until } from "./demo-helpers.js";
 import { ORIGIN, postForm, signIn, T0, testServer, type TestServer } from "./helpers.js";
 
 const ZONE = "America/New_York";
@@ -113,6 +114,54 @@ describe("the simulated phone", () => {
     expect((await form(`/devices/${deviceId()}/location/check`, {})).status).toBe(302);
     await until(() => listCommands(t.deps.db, deviceId(), t.now(), { kind: "locate_now" })[0]?.state === "failed");
     expect(listCommands(t.deps.db, deviceId(), t.now(), { kind: "locate_now" })[0]?.problem).toBe(SAYS.noGps);
+  });
+
+  it("notices its pause run out as the clock moves, says so and checks in", async () => {
+    expect(reported()?.suspended_count).toBeGreaterThan(5);
+    t.advance(16 * 60_000);
+    await phone.recheck();
+    expect(lines.at(-1)).toMatch(/^Robin's phone: \d+ apps run now\.$/);
+    expect(phone.suspended().size).toBe(0);
+    expect(reported()?.suspended_count).toBe(0);
+  });
+
+  it("starts a schedule that locks as the clock moves: it holds the apps, locks the screen and checks in", async () => {
+    const policy = phone.state.policy;
+    if (!policy) throw new Error("no policy");
+    // Two minutes before a made-up bedtime, on a phone whose server only answers check-ins.
+    let clock = Date.parse("2026-11-16T20:58:00-05:00");
+    const bedtime = { id: "s_bedtime", kind: "bedtime" as const, name: "Bedtime", days: ["mon" as const], start: "21:00", end: "07:00", allow: [], lock: true, skip: [] };
+    const rules: Policy = {
+      ...policy,
+      pause: null,
+      commands: [],
+      screen_time: { measure: false, zone: ZONE, day_starts: "00:00", limits: [], schedules: [bedtime], exempt: [], if_unmeasured: "pause_limited", extra: [], self_serve: null, warn_before: 5 },
+    };
+    const checkins: string[] = [];
+    const said: string[] = [];
+    const quiet = new SimPhone({
+      server: ORIGIN,
+      zone: ZONE,
+      state: { ...newPhoneState({ now: clock, bootCount: 1, lastBootAt: clock - DAY, apps: phone.state.apps }), token: "made-up", deviceId: "made-up", name: PHONE_NAME },
+      fetch: (_input, init) => {
+        checkins.push(typeof init?.body === "string" ? init.body : "");
+        return Promise.resolve(Response.json({ server_time: clock, policy: rules }));
+      },
+      now: () => clock,
+      log: (line) => said.push(line),
+    });
+    quiet.apply(rules);
+    await quiet.recheck();
+    expect([said.length, checkins.length]).toEqual([1, 0]);
+    clock += 3 * 60_000;
+    await quiet.recheck();
+    expect(said.at(-1)).toMatch(/^Robin's phone: \d+ apps are off during Bedtime\. Locked the screen: Bedtime started\.$/);
+    expect(checkins.length).toBe(1);
+    expect(checkRequest("POST", `${ORIGIN}/api/v1/checkin`, checkins[0] ?? null).problem).toBeNull();
+    // Nothing changes a minute later: nothing said, no early check-in.
+    clock += 60_000;
+    await quiet.recheck();
+    expect([said.length, checkins.length]).toEqual([2, 1]);
   });
 
   it("says it can't install a new version of Belay a parent offers it", async () => {

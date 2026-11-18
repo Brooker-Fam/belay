@@ -23,6 +23,8 @@ import { BELAY_APP, type DemoApp, KEPT_OPEN, NEVER_BLOCKED, packageOf } from "./
 export const CHECKIN_MS = 2 * 3_600_000;
 export const INVENTORY_MS = 24 * 3_600_000;
 export const USAGE_MS = 15 * 60_000;
+/** How often it looks again at what its rules hold, as the clock moves (a schedule, a pause's end, a limit). */
+export const RECHECK_MS = 60_000;
 /** The longest the server holds the policy long-poll (docs/protocol.md). */
 export const LONG_POLL_SECONDS = 55;
 
@@ -244,6 +246,8 @@ export class SimPhone {
   private timers: ReturnType<typeof setInterval>[] = [];
   private loop: Promise<void> | null = null;
   private quietUntil = 0;
+  /** What the phone held, and the schedule on, when it last said so: the minute's recheck compares with it. */
+  private held: { suspended: Map<string, Why>; schedule: string | null } | null = null;
 
   constructor(opts: SimPhoneOptions) {
     this.server = opts.server;
@@ -389,7 +393,7 @@ export class SimPhone {
   /** Applies a policy: the apps it holds, the commands it runs once, the answers the kid sees. */
   apply(policy: Policy): void {
     const now = this.now();
-    const before = this.state.policy ? this.enforced(now).suspended : new Map<string, Why>();
+    const before = this.held?.suspended ?? (this.state.policy ? this.enforced(now).suspended : new Map<string, Why>());
     const first = this.state.policy === null;
     this.state.policy = policy;
     this.state.appliedAt = now;
@@ -407,6 +411,16 @@ export class SimPhone {
     if (!policy.calls?.log) this.state.outbox.calls = [];
     this.save(this.state);
     const e = this.enforced(now);
+    const news = [...this.changes(before, e, first), ...ran];
+    this.held = { suspended: e.suspended, schedule: e.schedule?.id ?? null };
+    if (answered.length) news.push(`${this.kid()} sees your answer: ${answered.join("; ")}`);
+    // A new version can change nothing the phone shows: a lock's result, reported, leaves the rules, say.
+    const applied = `applied the rules (version ${String(policy.version)})`;
+    this.log(`${this.name}: ${news.length ? [applied, ...news.map(sentence)].join(". ") : `${applied}: nothing new on the phone`}.`);
+  }
+
+  /** What changed on the phone, in words: the apps held now, and why, and the ones that run again. */
+  private changes(before: Map<string, Why>, e: Enforced, first: boolean): string[] {
     const changes: string[] = [];
     const byWhy = new Map<Why, string[]>();
     for (const [pkg, why] of e.suspended) {
@@ -419,11 +433,26 @@ export class SimPhone {
     for (const [why, labels] of byWhy) changes.push(heldWords(labels, why, e));
     const freed = [...before.keys()].filter((pkg) => !e.suspended.has(pkg) && this.state.apps.some((a) => a.package === pkg)).map((pkg) => this.label(pkg));
     if (freed.length) changes.push(`${freed.length <= 3 ? freed.join(", ") : `${String(freed.length)} apps`} ${freed.length === 1 ? "runs" : "run"} now`);
-    const news = [...changes, ...ran];
-    if (answered.length) news.push(`${this.kid()} sees your answer: ${answered.join("; ")}`);
-    // A new version can change nothing the phone shows: a lock's result, reported, leaves the rules, say.
-    const applied = `applied the rules (version ${String(policy.version)})`;
-    this.log(`${this.name}: ${news.length ? [applied, ...news.map(sentence)].join(". ") : `${applied}: nothing new on the phone`}.`);
+    return changes;
+  }
+
+  /**
+   * What the agent does as the clock moves, with no new rules: a schedule starts or ends, a pause
+   * runs out, a limit is used up. Each minute the phone looks again; when what it holds changed, it
+   * says so and checks in early, so the parent page shows it within a minute. A schedule that locks
+   * locks the screen as it starts.
+   */
+  async recheck(): Promise<void> {
+    const e = this.enforced();
+    const before = this.held;
+    this.held = { suspended: e.suspended, schedule: e.schedule?.id ?? null };
+    if (!before || !this.state.policy) return;
+    const news = this.changes(before.suspended, e, false);
+    const started = e.schedule && e.schedule.id !== before.schedule ? this.state.policy.screen_time?.schedules.find((s) => s.id === e.schedule?.id) : undefined;
+    if (started?.lock) news.push(`locked the screen: ${started.name} started`);
+    if (!news.length) return;
+    this.log(`${this.name}: ${news.map(sentence).join(". ")}.`);
+    await this.checkin();
   }
 
   private kid(): string {
@@ -547,6 +576,7 @@ export class SimPhone {
     const pkg = packageOf(app, now);
     this.state.apps = [...this.state.apps.filter((a) => a.package !== pkg.package), pkg];
     this.state.outbox.events.push(this.newEvent("installed", pkg, { to: { name: pkg.version_name, code: pkg.version_code }, happened_at: now, app: pkg }));
+    this.rehold(pkg.package);
     let id: string | null = null;
     if (this.suspended().get(pkg.package) === "waiting") {
       id = randomUUID();
@@ -555,6 +585,14 @@ export class SimPhone {
     }
     this.save(this.state);
     return id;
+  }
+
+  /** An app installed or removed: what the phone holds of it changes at once, as on a real phone. */
+  private rehold(pkg: string): void {
+    if (!this.held) return;
+    const why = this.enforced().suspended.get(pkg);
+    if (why) this.held.suspended.set(pkg, why);
+    else this.held.suspended.delete(pkg);
   }
 
   /** An app updates itself. */
@@ -573,6 +611,7 @@ export class SimPhone {
     const old = this.state.apps.find((a) => a.package === pkgName);
     if (!old) return;
     this.state.apps = this.state.apps.filter((a) => a.package !== pkgName);
+    this.rehold(pkgName);
     this.state.outbox.events.push(this.newEvent("removed", old, { from: { name: old.version_name, code: old.version_code }, happened_at: null }));
     this.save(this.state);
   }
@@ -671,7 +710,7 @@ export class SimPhone {
   /**
    * Starts the phone on its own: it sends what waits, checks in, sends its app list after a
    * restart or a day, then holds the long-poll, checks in every 2 hours, sends its app list every
-   * day and today's screen time every 15 minutes.
+   * day and today's screen time every 15 minutes, and looks at its rules again every minute.
    */
   start(opts: { rebooted: boolean }): void {
     if (this.running) return;
@@ -683,6 +722,7 @@ export class SimPhone {
       await this.flush();
       await this.checkin();
       if (opts.rebooted || stale) await this.sendInventory();
+      await this.recheck();
     });
     this.timers.push(
       setInterval(() => void this.task("check in", () => this.checkin()), CHECKIN_MS),
@@ -695,6 +735,7 @@ export class SimPhone {
           }),
         USAGE_MS,
       ),
+      setInterval(() => void this.task("look at its rules again", () => this.recheck()), RECHECK_MS),
     );
     this.loop = this.pollLoop(this.abort.signal);
   }
