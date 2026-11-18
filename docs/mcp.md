@@ -309,9 +309,14 @@ too, since whoever holds a phone's token can send any text.
   time against the limits, with anything Belay couldn't count. It never claims to have
   approved anything.
 - **`family_check_in(device)`** (Phase 3): a monthly talk with the kid in the room: what went
-  well first, then what was hard, without judging; what the next stage would change and how
-  to get there; three open questions for the kid; and changes the family might make, only as
-  suggestions.
+  well first, then what was hard, without judging; the stage the phone is on and the family
+  agreement (whether the kid agreed, and whether it still fits); built to loosen: what
+  loosened this month (requests a parent approved, a move to this stage) and what could
+  loosen next (what the next stage would change and how to get there, a limit the kid kept
+  every day), only as suggestions; the kid's own requests and their answers, without judging
+  the asking, and without reading out an "I need help" or a "Talk to my parent", which stay
+  between the kid and the parent (one no parent has seen: look now); three open questions for
+  the kid; and changes the family might make, only as suggestions.
 - **`review_app(device, package)`:** the same review for one app.
 - **`review_request(device, package)`:** reviews an app the kid asked for, with their
   reason, and suggests how the parent might answer (approve, decline or let's talk, with a
@@ -320,7 +325,9 @@ too, since whoever holds a phone's token can send any text.
 The prompts follow the categories a parent allows, as the tools do, as they are each time a
 prompt is asked for: a prompt never asks the AI app to read a category that's off, and says in
 one line that it is. `weekly_review` has each category's section only while it's on (the
-phones' status and problems, and proposals waiting, are always there). With Apps off,
+phones' status and problems, and proposals waiting, are always there), and
+`family_check_in` leaves out screen time, the stage and agreement, or the kid's requests the
+same way (the phone's rules, from `get_rules`, are always there). With Apps off,
 `review_app` and `review_request` say nothing about the phone's apps (not even whether the
 app is on it) and tell the AI app it's off; with Requests off, `review_request` says so too.
 Each use of `review_app` and `review_request` is in the activity log, like a tool's read.
