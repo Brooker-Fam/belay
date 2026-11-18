@@ -382,6 +382,13 @@ Belay's `InCallService` mid-call.
 6. Confirm Belay's rule: calls and texts with emergency numbers and 988 are never recorded or
    reported.
 7. What AI clients may read (both off by default), and retention.
+8. A tap on Text 988 opens the window, which lifts blocked numbers too: keep it, or keep blocks
+   during a window a tap opened. Today Belay keeps it: for the window's 2 hours every entry of the
+   family's comes off Android's block list, which stops texts as well as calls, so a blocked
+   number can call and text the kid then (the second bypass audit's B3; Android does the same for
+   2 hours after a call to emergency services, platform notes T6). Keeping blocks for a tap would
+   mean a blocked number can't reach the kid during a rescue that started with a text to 988; a
+   real call to 911 or 988 would still lift them.
 
 ## Open questions
 

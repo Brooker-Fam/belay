@@ -633,6 +633,14 @@ each parent as a contact marked **A parent**: parents always ring, and are on th
 card. **911, 988 and every emergency number always work**: the kid can always call them, even
 while the phone is paused, and a call from 911 rings, unless the phone network says its caller
 ID is fake; for 2 hours after a call to one, anyone can call back; and Belay never records them.
+Those 2 hours start when your kid calls 911 or 988, and also when they tap one of Belay's buttons
+to text 911 or 988, even if no text is sent (Belay can't tell). During them **your blocked numbers
+are unblocked too**: a number you blocked can call your kid and text them, and a call that rang
+only because of those 2 hours isn't recorded. Android does the same after a call to emergency
+services. So someone your kid shouldn't hear from could ask them to tap Text 988 and back out. We
+keep it this way so a rescue call always rings, whatever number it comes from; whether a tap
+alone should lift your blocks is a decision for your family
+([the calls design](design/phase5-calls-texts.md#decisions-the-family-must-make)).
 A caller ID that only shows 988's number is treated like any other caller (988 doesn't call
 people; a counselor calls back from their own number, which those 2 hours let through), and a
 caller whose caller ID may be fake is a stranger, whatever number it shows (one showing a
