@@ -17,6 +17,11 @@ export interface Config {
   extraRedirectUris: string[];
   /** Cookies get the Secure flag (and the __Host- prefix) when the public URL is https. */
   secureCookies: boolean;
+  /**
+   * "Demo: a made-up family. Nothing here is real." on every page (BELAY_DEMO_BANNER=1). Only
+   * `npm run demo` sets it (docs/demo.md), and it changes nothing else.
+   */
+  demoBanner: boolean;
 }
 
 export class ConfigError extends Error {
@@ -89,6 +94,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     trustProxy: env.BELAY_TRUST_PROXY === "1" || env.BELAY_TRUST_PROXY === "true",
     extraRedirectUris: parseRedirects(env.BELAY_EXTRA_REDIRECT_URIS),
     secureCookies: publicUrl.startsWith("https:"),
+    demoBanner: env.BELAY_DEMO_BANNER === "1",
   };
 }
 
@@ -103,6 +109,7 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     trustProxy: true,
     extraRedirectUris: [],
     secureCookies: true,
+    demoBanner: false,
     ...overrides,
   };
 }

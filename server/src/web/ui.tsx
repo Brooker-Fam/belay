@@ -15,6 +15,8 @@ export interface View {
   assets: { css: string; js: string; icon: string };
   /** What waits for a parent, for the menu: the kid's requests and AI apps' proposals. */
   waiting?: { requests: number; proposals: number };
+  /** `npm run demo`'s server (config's demoBanner): every page says it's a made-up family. */
+  demo?: boolean;
 }
 
 const NAV = [
@@ -41,13 +43,18 @@ export const Layout: FC<PropsWithChildren<{ view: View; title: string; narrow?: 
       <meta name="robots" content="noindex" />
       <meta name="theme-color" content="#1f6f5c" />
       <meta name="apple-mobile-web-app-title" content="Belay" />
-      <title>{`${title} · Belay`}</title>
+      <title>{`${title} · Belay${view.demo ? " demo" : ""}`}</title>
       <link rel="manifest" href="/manifest.webmanifest" />
       <link rel="icon" href={view.assets.icon} type="image/svg+xml" />
       <link rel="stylesheet" href={view.assets.css} />
       <script src={view.assets.js} defer></script>
     </head>
     <body>
+      {view.demo && (
+        <div class="demo-banner" role="note">
+          Demo: a made-up family. Nothing here is real.
+        </div>
+      )}
       {view.parentName !== null && (
         <a class="skip" href="#main">
           Skip the menu

@@ -291,6 +291,7 @@ export function webRoutes(deps: Deps, assets: Assets): Hono<WebEnv> {
       path: c.req.path,
       assets: assets.urls,
       waiting: session ? { requests: pendingRequestCount(db), proposals: pendingProposalCount(db) } : undefined,
+      demo: config.demoBanner,
     };
   };
   const message = (c: WebContext, title: string, text: string, status: ContentfulStatusCode = 200, link?: { href: string; label: string }) =>

@@ -152,7 +152,7 @@ export function oauthRoutes(deps: Deps, assets: Assets): Hono<{ Bindings: Bindin
 
   // ── Authorize: sign in, then consent ───────────────────────────────
 
-  const view = (c: Context, csrf = ""): View => ({ parentName: null, csrf, tz: getSettings(db).timezone, now: deps.now(), path: c.req.path, assets: assets.urls });
+  const view = (c: Context, csrf = ""): View => ({ parentName: null, csrf, tz: getSettings(db).timezone, now: deps.now(), path: c.req.path, assets: assets.urls, demo: config.demoBanner });
 
   const errorPage = (c: Context, status: 400 | 403 | 503, title: string, text: string) =>
     render(

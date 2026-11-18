@@ -273,3 +273,5 @@ a.button.call { background: var(--bad-fill); border-color: var(--bad-fill); colo
 /* Phase 4: where the phone is, in words and numbers; never a map. */
 .coords { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.875rem; }
 .numbers .row input[type=text] { min-width: 0; flex: 1 1 10rem; }
+/* npm run demo (docs/demo.md): on every page, so a screenshot can't pass for a real family's. The same colors in the dark. */
+.demo-banner { background: #ffe08a; color: #1d2521; border-bottom: 2px solid #a35d00; padding: 8px 16px; text-align: center; font-weight: 700; }
