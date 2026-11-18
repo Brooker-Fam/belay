@@ -164,7 +164,9 @@ phase's Pixel checklist is in `docs/`.
   - the parent page reworked for phones and screen readers;
   - MCP prompts (`weekly_review`, `family_check_in`) that cover every phase, each part only when
     the family lets AI apps read it;
-  - [docs/guide.md](docs/guide.md), one guide for parents.
+  - [docs/guide.md](docs/guide.md), one guide for parents;
+  - `npm run demo` ([docs/demo.md](docs/demo.md)): a made-up family and a simulated phone, to try
+    the parent page and Claude over MCP without an Android phone.
 
 **Next:**
 - the Pixel checklists, starting with [Phase 0's](docs/phase0-checklist.md);
