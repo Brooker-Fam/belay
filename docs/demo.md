@@ -154,4 +154,5 @@ MCP client on the same computer). What Claude reads goes to Anthropic, as with a
   `npm run build` compiles only `src/` (`tsconfig.build.json`), the Dockerfile copies only `src/`,
   and `.dockerignore` leaves `demo/` out of the image's build context. The only part of it in the
   server is `BELAY_DEMO_BANNER`, and all that does is the banner. `test/demo-build.test.ts`
-  checks all three, and that nothing in `src/` imports the demo.
+  checks all three, that nothing in `src/` imports the demo, and that a built `dist/` holds none
+  of it (CI builds before the tests for that one; elsewhere it's skipped without a `dist/`).
