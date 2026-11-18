@@ -71,6 +71,15 @@ lets a parent remove the profile.
 stops, then collection stops, then the parent hands the phone over: restrictions and FRP lifted,
 data backed up to the kid's own account, a reset from Settings, and the server's data deleted.
 
+**[Phase 13: mobile data](phase13-mobile-data.md).** For a family plan with a data cap, two parts,
+both off until a parent turns them on. Wi-Fi-only apps: a parent marks apps that may not use mobile
+data, and the phone enforces it as device owner with `setMeteredDataDisabledPackages`, on every
+metered network (a phone's hotspot and Wi-Fi marked metered too), never for Belay, calls, texting,
+the keyboard, the home screen or Android's own parts; adding one tightens, removing one is a
+proposal. Mobile data use: per app per day, from `NetworkStatsManager` (a device owner reads every
+app's), with the day's Wi-Fi total, never which websites or networks; AI access on by default, like
+screen time's.
+
 ## Recommended build order
 
 1. **Finish Phase 2, with the fixes in "For Phase 2, now" below.**

@@ -135,6 +135,15 @@ relying on something new, it goes here first, with a source.
 | T21 | `WRITE_SECURE_SETTINGS` granted over adb outlives the debugging lock | Confirmed; it can't turn adb back on | AOSP |
 | T22 | Calls before the first unlock are in Android's call log after it | Confirmed: its direct-boot copy is moved in before the first read | AOSP; Emulator pending (Phase 5 CI); Pixel pending |
 | O1 | Handing over: clearing reset protection, and what a reset from Settings does on a fully managed phone | Confirmed in AOSP; Pixel pending (Phase 11 checklist) | AOSP |
+| Q1 | A device owner keeps apps off metered networks with `setMeteredDataDisabledPackages`; it refuses admins and apps not installed or hidden | Confirmed | AOSP; Docs; Emulator pending (Phase 13 CI) |
+| Q2 | Android enforces it per uid on every metered network; being in front, Data Saver's exemption and the app's switches don't lift it | Confirmed: uids resolved at each call and at boot | AOSP |
+| Q3 | Metered: mobile data, Wi-Fi marked metered, another Android phone's hotspot; "Treat as unmetered" wins | Confirmed; an iPhone's hotspot unknown | AOSP; Pixel pending (Phase 13 checklist) |
+| Q4 | The app sees no network; Settings shows its data switches "Disabled by admin" | Confirmed | AOSP; Pixel pending |
+| Q5 | Resetting network settings or app preferences, Data Saver and Background data don't undo it | Confirmed | AOSP |
+| Q6 | A device owner reads every app's mobile data from `NetworkStatsManager`, without usage access | Confirmed | AOSP; Docs; Emulator pending (Phase 13 CI) |
+| Q7 | Per-app stats in 2-hour buckets, kept 90 days, polled every 30 minutes; a query polls first, rate-limited | Confirmed | AOSP |
+| Q8 | Removed apps, the phone's hotspot, Android's own and shared uids, the SDK sandbox | Confirmed | AOSP |
+| Q9 | Downloads through Android's download manager, and Play's updates, aren't the app's traffic | Partly: to check on the Pixel | AOSP |
 
 "Emulator" entries were seen in CI: `ci-emulator-test.sh` passed end to end on the API 37.0
 Automated Test Device image (`aosp_atd`, required) from run 8, and on the API 37.0 Google
@@ -2610,6 +2619,200 @@ the phone is back to consumer reset protection, which asks for an account that w
 AOSP), and after the hand-over that's the kid's, if they added it. The kid's screen names no
 accounts path. The Pixel checklist records the paths and what the setup wizard asks after the
 reset.
+
+## Mobile data (Phase 13)
+
+Read in AOSP `android-17.0.0_r1` on 2026-11-18 while designing and building Phase 13
+([design](design/phase13-mobile-data.md)): `platform/frameworks/base` unless named, and
+`platform/packages/modules/Connectivity` (NetworkStats, ConnectivityService, tethering),
+`platform/packages/modules/Wifi`, `platform/packages/modules/NetworkStack`,
+`platform/packages/apps/Settings` and `platform/packages/providers/DownloadProvider`. With
+developer.android.com's references for `DevicePolicyManager` (last updated 2026-09-16) and
+`NetworkStatsManager` (2026-08-03), read 2026-11-18. None of it ran on a device yet: CI's emulator
+steps check that Belay's list reaches Android (`ci-emulator-test.sh`'s mobile data block), and the
+Pixel's checks are in [phase13-checklist.md](phase13-checklist.md).
+
+### Q1. `setMeteredDataDisabledPackages` for a device owner
+
+**Confirmed.** Verified on: AOSP; Docs; Emulator pending (Phase 13 CI).
+
+- `DevicePolicyManager.setMeteredDataDisabledPackages(admin, packageNames)`, API 28: "Called by a
+  device or profile owner to restrict packages from using metered data", returning "a list of
+  package names which could not be restricted"; `SecurityException` for anyone else.
+  `getMeteredDataDisabledPackages(admin)` returns "the list of restricted package names".
+  `isMeteredDataDisabledPackageForUser` is hidden, for the system (Settings).
+- `DevicePolicyManagerService.setMeteredDataDisabledPackages`: the default device owner or a
+  profile owner (`checkCallAuthorization`). `removeInvalidPkgsForMeteredDataRestriction` takes out,
+  and returns, every package that is an active device admin (Belay itself, and any other admin),
+  holds one of `METERED_DATA_RESTRICTION_EXEMPT_ROLES` (the financed-device controller and kiosk),
+  or isn't `isPackageAvailable` for the user; the admin keeps only the rest
+  (`admin.meteredDisabledPackages`), saves it, and pushes it to NetworkPolicyManagerService
+  (`pushMeteredDisabledPackages`).
+- `ComputerEngine.isPackageAvailable` uses `PackageUserStateUtils.isAvailable(state, 0)`: installed
+  and not hidden. So a hidden app (Belay's block, `setApplicationHidden`) and an app that isn't
+  installed are refused, and not kept: one installed or unhidden later needs another call.
+- `ActiveAdmin` writes the list to the device policy XML (`metered_data_disabled_packages`) and
+  `dumpsys device_policy` prints it under the admin as `meteredDisabledPackages=[…]`. At boot,
+  `loadAdminDataAsync` pushes every user's list again (`pushAllMeteredRestrictedPackages`), and so
+  does removing an admin. A package's removal changes nothing in the admin's list.
+
+Belay's consequence: core's `WifiOnly` asks only for installed, unhidden packages, compares with
+`getMeteredDataDisabledPackages` at every step, calls again after an install or an unhide, and
+reports a refusal as a problem. Belay can't restrict itself (it's an admin), and never asks to.
+
+### Q2. How Android enforces it
+
+**Confirmed.** Verified on: AOSP.
+
+- `NetworkPolicyManagerService.setMeteredRestrictedPackagesInternal` resolves each package to its
+  uid with `getPackageUidAsUser(…, MATCH_KNOWN_PACKAGES)` when it's pushed (a package with no uid is
+  skipped) and keeps the uids per user (`mMeteredRestrictedUids`); `dumpsys netpolicy` prints them
+  under "Admin restricted uids for metered data". The set is only recomputed at a push: a package
+  removed and installed again (a new uid, perhaps) isn't covered until Belay calls again, and
+  `onUidDeletedUL` doesn't take a removed uid out of it.
+- `updateRulesForDataUsageRestrictionsULInner`: a restricted uid gets
+  `BLOCKED_METERED_REASON_ADMIN_DISABLED`, and the uid goes on the metered deny chain
+  (`FIREWALL_CHAIN_METERED_DENY_ADMIN`, or the older metered denylist). `getEffectiveBlockedReasons`:
+  being in front (`ALLOWED_METERED_REASON_FOREGROUND`) clears only Data Saver's and the user's
+  reasons, and Data Saver's "Unrestricted data" (`ALLOWED_METERED_REASON_USER_EXEMPTED`) only Data
+  Saver's: nothing a user or the app does clears the admin's. Only system uids are exempt
+  (`ALLOWED_METERED_REASON_SYSTEM`, uids under 10000).
+- `isUidValidForRulesUL`: rules apply only to app uids (`UserHandle.isApp`) that hold `INTERNET`.
+  `setMeteredNetworkDenylist` and `setUidFirewallRuleUL` give the app's SDK sandbox uid
+  (`Process.toSdkSandboxUid`) the same rule.
+
+Belay's consequence: Belay keeps each restricted package's uid and calls again when one changes
+(a reinstall), or when a package on the list was removed, so Android never holds a stale uid
+another app could get.
+
+### Q3. Which networks are metered
+
+**Confirmed, except another phone's hotspot that isn't Android's.** Verified on: AOSP; Pixel pending.
+
+- NetworkPolicyManagerService treats as metered every network without
+  `NET_CAPABILITY_NOT_METERED` (`updateNetworkRulesNL`'s last pass, `mNetworkCallback`), and
+  `ConnectivityService.isNetworkWithCapabilitiesBlocked` asks with `nc.isMetered()`: mobile data,
+  roaming too. A 5G network a carrier marks `TEMPORARILY_NOT_METERED` still has no `NOT_METERED`,
+  so it counts as metered.
+- Wi-Fi (`packages/modules/Wifi`): `ClientModeImpl` adds `NOT_METERED` unless
+  `WifiConfiguration.isMetered(config, wifiInfo)`, which is true for a metered hint from DHCP (the
+  vendor option `ANDROID_METERED`, `DhcpPacket.VENDOR_INFO_ANDROID_METERED`), a "chargeable public"
+  hotspot (`NetworkDetail.Ant.ChargeablePublic`), the network's own `meteredHint`, or the user's
+  "Treat as metered" (`METERED_OVERRIDE_METERED`); and false whatever else says so when the user
+  picked "Treat as unmetered" (`METERED_OVERRIDE_NOT_METERED`, checked last). Changing it on the
+  network in use updates its capabilities at once.
+- Android's own hotspot always offers `ANDROID_METERED`: Tethering's `IpServer` builds its DHCP
+  server with `setMetered(true)`. Whether an iPhone's hotspot sends it is outside AOSP: the Pixel
+  checklist checks.
+
+Belay's consequence: Wi-Fi-only apps are kept off mobile data, another Android phone's hotspot,
+and any Wi-Fi marked metered. The kid can mark a Wi-Fi network unmetered in its settings, and then
+they aren't (threat model). The kid's words say "on some Wi-Fi, like another phone's hotspot, they
+may not work either", not more.
+
+### Q4. What the app and the kid see
+
+**Confirmed.** Verified on: AOSP; Pixel pending.
+
+- `ConnectivityService.getActiveNetworkForUidInternal`: for a uid blocked on its default network,
+  `getActiveNetwork()` returns null; `isNetworkWithCapabilitiesBlocked` decides from the uid's rules
+  and the network's meteredness. Its packets on metered networks are dropped by the deny chain. To
+  the app it's being offline. Android posts no notice of its own.
+- Settings' app page "Mobile data & Wi-Fi" (`AppDataUsage`, `res/xml/app_data_usage.xml`): its
+  "Background data" and "Unrestricted data usage" switches are `RestrictedSwitchPreference`s that
+  `updatePrefs` disables by admin when
+  `RestrictedLockUtilsInternal.checkIfMeteredDataUsageUserControlDisabled` finds the package
+  restricted (it asks DevicePolicyManager), with the summary "Disabled by admin"; tapping one shows
+  Android's admin dialog (with Belay's short support message, Phase 2).
+
+Belay's consequence: Belay's own screens say which apps are Wi-Fi only and why: Android says
+nothing, and the app only seems to lose its connection.
+
+### Q5. What the kid can't undo
+
+**Confirmed.** Verified on: AOSP.
+
+- Data Saver (`setRestrictBackground`) and an app's "Background data" off only add
+  `BLOCKED_METERED_REASON_DATA_SAVER` or `…_USER_RESTRICTED` (Q2); neither removes the admin's.
+- `NetworkPolicyManagerService.factoryReset` (Settings' reset of mobile network settings) turns off
+  data limits and Data Saver and clears the users' background restrictions; not the admin's list.
+  Resetting app preferences (`removeUserStateUL`) leaves `mMeteredRestrictedUids` alone: the
+  receiver for added and removed users clears it, saying so, "outside removeUserStateUL since that
+  can also be called when user resets app preferences".
+- The admin's list is the device owner's: Settings has no way to change it.
+
+### Q6. Reading per-app mobile data as device owner
+
+**Confirmed.** Verified on: AOSP; Docs; Emulator pending (Phase 13 CI).
+
+- `NetworkStatsAccess.checkAccessLevel`: a device owner (`isDeviceOwnerApp`), a carrier-privileged
+  app and the network stack get `Level.DEVICE` ("can access usage for any uid"); usage access
+  (`OPSTR_GET_USAGE_STATS`) or `READ_NETWORK_USAGE_HISTORY` gives `DEVICESUMMARY`. So Belay reads
+  every app's use as device owner, with or without the usage access the kid can turn off (U4). The
+  reference agrees: "Device owner apps and carrier-privileged apps likewise get access to usage
+  data for all users on the device… usage by removed users and apps, and usage by the system is
+  also included".
+- `NetworkStatsManager.createTemplate`: `TYPE_MOBILE` with a null subscriber id is every mobile
+  network, metered ones only (`MATCH_MOBILE` with `METERED_YES`); `TYPE_WIFI` with none is all
+  Wi-Fi. The reference: a null `subscriberId` "for the mobile network type to receive usage for all
+  mobile networks", for apps that can't read it (Belay can't: no `READ_PHONE_STATE`). A template with
+  Wi-Fi network keys needs fine location (`enforceTemplatePermissions`): Belay never asks per network.
+- `querySummary` (per uid, state, metered and roaming, over the interval) and
+  `querySummaryForDevice` (one bucket); `@WorkerThread`, "may take a long time".
+
+### Q7. Buckets, polling and delay
+
+**Confirmed.** Verified on: AOSP.
+
+- `NetworkStatsService.DefaultNetworkStatsSettings`: per-uid stats in 2-hour buckets
+  (`getUidConfig`: 2 h, rotated at 15 days, deleted at 90), the device's in 1-hour buckets
+  (`getXtConfig`), polled every 30 minutes (`getPollInterval`).
+- `NetworkStatsHistory.getValues`: a bucket only partly inside the interval adds its share by time
+  (`multiplySafeByRational(bytes, overlap, bucketSpan)`), and the bucket still open counts up to now.
+  Buckets start on multiples of their length since the epoch, so in a zone an odd number of hours
+  from UTC each day's edge falls inside a uid bucket.
+- `NetworkStatsManager` sets `FLAG_POLL_ON_OPEN` by default, and `openSessionInternal` polls before
+  answering, except that `isRateLimitedForPoll` skips the poll for a caller that isn't the system
+  uid when any such caller opened a session in the last 15 s (`POLL_RATE_LIMIT_MS`).
+
+Belay's consequence: a day's numbers are Android's: at its edges, an hour's worth can be split
+between two days by time. Belay sends today about hourly, and a day as complete 2.5 hours after it
+ends, when its last bucket has closed and been polled.
+
+### Q8. Removed apps, the hotspot, Android's own uids
+
+**Confirmed.** Verified on: AOSP.
+
+- `NetworkStatsService`'s `ACTION_UID_REMOVED` receiver polls once more, then
+  `NetworkStatsCollection.removeUids` moves the uid's untagged history to `UID_REMOVED`
+  (`TrafficStats.UID_REMOVED`, -4; `NetworkStats.Bucket.UID_REMOVED` to apps): a removed app's
+  past use stays, as "removed apps", in days read after the removal.
+- `getNetworkStatsTethering`: what other devices use through the phone's own hotspot is
+  `UID_TETHERING` (`NetworkStats.Bucket.UID_TETHERING`).
+- Uids under 10000 are Android's (`Process.FIRST_APPLICATION_UID`), like `system` (1000) and
+  `radio` (1001). A shared uid (`getPackagesForUid` gives several packages) is one identity to the
+  network rules, so restricting one package restricts them all (Q2). An SDK sandbox uid belongs to
+  its app (`Process.getAppUidForSdkSandboxUid`, API 33).
+- `DownloadThread` accounts a download to the app that asked for it
+  (`TrafficStats.setThreadStatsUid`).
+
+Belay's consequence: core's `DataUse` puts Android's own uids, shared uids, other users' uids and
+the never-blocked apps in one line, removed apps and the hotspot in lines of their own, and an SDK
+sandbox's bytes with its app; `WifiOnly` never restricts a package with a shared uid.
+
+### Q9. What Wi-Fi only doesn't cover
+
+**Partly: to check on the Pixel.** Verified on: AOSP.
+
+- `DownloadProvider`'s `Helpers.scheduleJob` runs each download as the download manager's own
+  job (user-initiated, or a foreground job, while its notification shows), and `DownloadThread`
+  takes the job's network (`mSystemFacade.getNetwork(mParams)`): the download manager's, not the
+  app's, so a Wi-Fi-only app's download handed to it may use mobile data. It's still accounted to
+  the app (Q8).
+- App updates are Play's (`com.android.vending`) downloads, under Play's uid.
+
+Belay's consequence: the parent page says both, flags a Wi-Fi-only app that used mobile data on a
+day after it was added, and suggests making Play Wi-Fi only too, or Play's own download setting.
 
 ---
 
