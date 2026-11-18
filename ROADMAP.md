@@ -126,11 +126,13 @@ of it yet on a real Pixel). The contracts are in [docs/protocol.md](docs/protoco
 phase's Pixel checklist is in `docs/`.
 
 - **Phase 3:** screen time (limits, schedules, lock now, measuring, more time, stages and the
-  agreement), and opt-in network logging.
+  agreement), and opt-in network logging, which never notes 988's websites or the ones a parent
+  makes private.
 - **Phase 4:** location, off by default.
 - **Phase 5:** calls, with Belay as the phone app when a parent turns calls on: approved
   contacts, who rings, call records. 911, emergency numbers and 988 are always allowed, in code.
-- **Phase 6:** self-update, the recovery key, encrypted backups and health checks. CI restores an
+- **Phase 6:** self-update (a parent adds a new version on the parent page and offers it, and
+  the phone installs it by itself), the recovery key, encrypted backups and health checks. CI restores an
   encrypted backup onto a new machine, and builds and runs the server's image on amd64 and arm64.
 - **Phase 7:** the kid's side: Home, "I need help", the emergency card, "talk to my parent".
 - **Phase 8:** the setup kit. One provisioning plan runs in `provision.sh` and in the kit, and CI
@@ -138,18 +140,21 @@ phase's Pixel checklist is in `docs/`.
 - **Phase 10:** another user or profile is reported, and removed when a parent asks.
 - **Phase 11:** off belay: the last stage, stopping collection with deletion, the hand-over.
 - **Across phases:**
-  - three security reviews, with their fixes in (the third's on the phone too: a spoofed caller ID
-    is a stranger's, 911 and 988 go through with a caller-ID code, the callback window opens
-    before the first unlock, and screen locks wait for a call to end), and a fourth that checked
-    them (on the phone: calls before the first unlock after a restart are recorded afterwards,
-    only a call an app can't make up holds a screen lock off, a parent's number whose caller-ID
-    check fails goes to voicemail, and only the codes that hide or show the number come off);
+  - three security reviews and a check of the third's fixes, with their fixes in (the third's on
+    the phone too: a spoofed caller ID is a stranger's, 911 and 988 go through with a caller-ID
+    code, the callback window opens before the first unlock, and screen locks wait for a call
+    to end; the check's on the phone too: calls before the first unlock after a restart are
+    recorded afterwards, only a call an app can't make up holds a screen lock off, a parent's
+    number whose caller-ID check fails goes to voicemail, and only the codes that hide or show
+    the number come off);
   - an audit of how a kid could get around Belay on Android 17: a proxy and wireless debugging
     are reported, Chrome ignores proxies, and the time zone stays automatic;
   - limits on what an AI app can do to the kid's phone (checks, pauses, locks, and schedules
     that lock);
   - Play's `allowed_accounts`;
   - the parent page reworked for phones and screen readers;
+  - MCP prompts (`weekly_review`, `family_check_in`) that cover every phase, each part only when
+    the family lets AI apps read it;
   - [docs/guide.md](docs/guide.md), one guide for parents.
 
 **Next:**
