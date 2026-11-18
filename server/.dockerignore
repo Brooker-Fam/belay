@@ -3,6 +3,8 @@ dist
 data
 coverage
 test
+# npm run demo's made-up family and simulated phone (docs/demo.md): never in the image.
+demo
 *.db
 *.db-wal
 *.db-shm
