@@ -185,8 +185,8 @@ clears it too. Every step here is in maintenance (adb on).
    `#31#` before the number. Then `-c`. Neither call is on the parent page, and for the next 2
    hours every caller rings (the window those calls opened).
 7. `adb shell cmd phone emergency-number-test-mode -p` lists nothing.
-8. A restart without the callback window (the fourth review's N1). At least 2 hours after step 4,
-   restart the Pixel and leave it locked for 10 minutes. Call it from the second phone (still not
+8. A restart without the callback window (the fourth review's N1). At least 2 hours after step 6
+   (its calls opened a window too), restart the Pixel and leave it locked for 10 minutes. Call it from the second phone (still not
    a contact): Google's Phone app rings on the lock screen (write down what it shows); let it ring
    out. Unlock the Pixel. Within a minute Belay's Recent tab lists the missed call, and the parent
    page has its record: missed, with the second phone's number, and no reason. The phone's Calls
@@ -295,8 +295,9 @@ What the outcome means (send the results; the texts design decides from them):
 - **Google Messages doesn't call Belay:** no update at all, with Google Messages the SMS app, RCS
   connected, "messages_archival: Belay" and the service on. Google Messages doesn't archive to an app
   named by a device owner that was set up over adb, without managed Google Play (or this version
-  doesn't). Then the family chooses: Belay as the default SMS app (**Option B**, T9: SMS and MMS only,
-  so iPhone and group chats lose RCS), or no text monitoring.
+  doesn't). Then the family chooses: Belay as the default SMS app (**Option B**, T9 in the
+  [drafts](design/platform-notes-drafts.md#t9-belay-as-the-default-sms-app): SMS and MMS only, so
+  iPhone and group chats lose RCS), or no text monitoring.
 
 ## Results
 

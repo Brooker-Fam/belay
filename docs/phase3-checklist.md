@@ -21,7 +21,9 @@ kid's real apps or times.
    Belay lock the screen only after the phone restarts once with this version of Belay.", and
    "lock now" says the phone couldn't lock, in those words, also when you tap it during a call
    (call a contact first); the screen doesn't lock when that call ends. After the restart the
-   problem is gone.
+   problem is gone. A phone first set up with a build from Phase 3 on (any build today) has
+   `force-lock` from the start, with nothing to update and no restart to wait for: write "n/a"
+   for 0.1 and go on to 0.2.
 2. With adb (maintenance mode): `adb shell dumpsys device_policy` lists `force-lock` under
    Belay's admin, below `policies:`.
 3. Write down whether this Android has the flag that makes the restart unnecessary:
@@ -51,7 +53,8 @@ kid's real apps or times.
 2. When it runs out: the game closes. Write down Belay's notification word for word ("Time's up
    for … today. It comes back …") and what Android shows when the kid taps the game (its dialog's
    title and text, platform notes C2). Does the launcher grey out the icon? Does the game's
-   music stop (it should lose audio focus, S2)?
+   music stop (it should lose audio focus: S2 in the
+   [drafts](design/platform-notes-drafts.md#s2-suspension-closes-the-app-but-its-process-keeps-running-phase-2))?
 3. Tap "Ask for more time" in the notification: Belay opens with the dialog. Ask for 15 minutes
    with a reason. On the parent page, approve it: within seconds the game opens again, Today
    says "Your parent gave you 15 minutes more for …", and the limit shows extra time.
