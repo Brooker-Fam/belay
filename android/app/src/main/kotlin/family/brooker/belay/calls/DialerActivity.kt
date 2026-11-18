@@ -48,6 +48,7 @@ class DialerActivity : ComponentActivity() {
             },
             askContact = { name, number, reason, done -> Agent.askContact(applicationContext, name, AndroidCalls.key(this, number), reason) { sent -> runOnUiThread { done(sent) } } },
             display = { CallFlow.display(this, it) },
+            removeCall = { id -> Agent.removeCall(applicationContext, id) },
         )
         setContent {
             BelayTheme {
@@ -81,6 +82,8 @@ class DialerActivity : ComponentActivity() {
                 CallContacts.private(policy),
                 AndroidCalls.emergencyNumbers(app),
                 now,
+                // A stranger's call showing 988 that Belay keeps itself isn't listed twice.
+                kept = Agent.view.value?.calls?.recents.orEmpty(),
             )
             runOnUiThread { privateCalls = found }
         }

@@ -62,6 +62,13 @@ kid's real apps or times.
    Android's "can't open" screen. An alarm set in the clock app rings. Call and text work.
 3. The parent page's "lock now": the screen locks within seconds, with and without a screen
    lock (PIN) set on the phone. Write down what happens without one (the screen only turns off).
+4. A lock waits for a call (platform notes T20). Call a contact from the phone app, and during the
+   call tap "lock now" on the parent page: the screen doesn't lock while the call is on, and the
+   parent page has no result yet. End the call: the screen locks within a minute, and the result
+   is "done". Do it once more with a bedtime schedule (with "lock" on) that starts during a call:
+   the apps pause at the start, and the screen locks only once the call ends. If calls aren't on
+   for this phone, the call goes through Google's Phone app, and Belay sees it by the audio mode:
+   write down which it was.
 
 ## 4. Usage access off
 
@@ -114,6 +121,32 @@ kid's real apps or times.
    the entry, and with adb (maintenance mode) `adb shell dpm force-network-logs` says
    "logging is not available". The Network tab goes; the phone's page says how many days the
    server still keeps.
+6. 988's chat (the third review's plausible H), with logging back on. In Chrome, open the 988
+   Lifeline's chat page (988lifeline.org, its "Chat" link) and let it load for a minute. **Don't
+   start a chat: type nothing, send nothing.** Close the tab, and finish the batch (`adb shell dpm
+   force-network-logs` in maintenance mode, or wait). On the Network tab, under Chrome, write down
+   every name that showed up for that minute that isn't one of 988's own (`988lifeline.org`,
+   `988lineadevida.org`, `suicidepreventionlifeline.org`, `988.ca`, `veteranscrisisline.net`, or a
+   name under one). A chat provider's domain there would need adding to 988's list on both sides
+   (`core/network/Domains.kt` and the server's `family/network/store.ts`), so it's never kept.
+
+## 8. What a pause never closes
+
+1. Emergency SOS and car crash detection (the third review's plausible D). In maintenance mode,
+   write down which app takes Android's emergency assistance (`adb shell cmd role get-role-holders
+   android.app.role.EMERGENCY`; on a Pixel, Personal Safety, `com.google.android.apps.safetyhub`,
+   is expected) and which app Settings > Safety & emergency > Emergency SOS and Car crash detection
+   belong to (the page's title and the app's info). Pause the phone from the parent page. Then
+   `adb shell dumpsys package <each package> | grep -i suspended`: none is suspended. On the
+   parent page, the phone's app list says the phone never blocks each of them. **Don't trigger
+   Emergency SOS** (pressing the power button five times calls emergency services); only look.
+2. A third-party keyboard (plausible G). Install an approved keyboard app that isn't the phone's
+   own, and make it the keyboard in use. Pause the phone: it still opens in the texting app (the
+   keyboard in use stays open through a pause). Then add a limit of 0 minutes for that keyboard on
+   the parent page (or block it), and open a conversation with a parent in the texting app: write
+   down whether Android falls back to its own keyboard (Gboard) and you can still type, or there's
+   no keyboard at all. Type a few words to that parent only; don't text 988. Remove the limit, and
+   set the phone's own keyboard back.
 
 ## Results
 
@@ -131,6 +164,7 @@ kid's real apps or times.
 | 3.1 | Bedtime warning and notice words; screen locks at the start | pending | |
 | 3.2 | What works during bedtime; the alarm rings | pending | |
 | 3.3 | Lock now, with and without a PIN | pending | |
+| 3.4 | Lock now and a bedtime's lock during a call: no lock until it ends, then done; Belay's call or Google's Phone app | pending | |
 | 4.1 | Usage access off: noticed within seconds, limited apps paused | pending | |
 | 4.2 | "Turn usage access back on" opens Belay's switch or the list | pending | |
 | 5.1 | Next stage sentences | pending | |
@@ -141,3 +175,6 @@ kid's real apps or times.
 | 7.3 | No phone app, texting or 988 names; a private website never shows, nor is named on the phone | pending | |
 | 7.4 | A day's pairs, left out, battery | pending | |
 | 7.5 | Off: Android's notice goes, dpm refuses | pending | |
+| 7.6 | 988's chat page: any name that isn't 988's own (nothing typed) | pending | |
+| 8.1 | Emergency SOS's and car crash detection's apps; none suspended during a pause; never paused on the parent page | pending | |
+| 8.2 | A third-party keyboard with a 0-minute limit: Android falls back to its own keyboard, or none | pending | |

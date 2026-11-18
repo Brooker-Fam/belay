@@ -28,20 +28,34 @@ import java.util.Locale
  *   them. Nothing read here is stored or sent.
  */
 object AndroidCalls {
+    /** Android's emergency numbers, and its E.164 formatter with the phone's country, for core's rules. */
     fun emergencyNumbers(context: Context): EmergencyNumbers {
-        val telephony = context.applicationContext.getSystemService(TelephonyManager::class.java)
-        return EmergencyNumbers { number ->
-            if (telephony == null) {
-                null
-            } else {
-                try {
+        val app = context.applicationContext
+        val telephony = app.getSystemService(TelephonyManager::class.java)
+        return object : EmergencyNumbers {
+            override fun isEmergency(number: String): Boolean? {
+                if (telephony == null) return null
+                return try {
                     telephony.isEmergencyNumber(number)
                 } catch (e: RuntimeException) {
                     // IllegalStateException while telephony restarts, UnsupportedOperationException without it.
                     null
                 }
             }
+
+            override fun e164(number: String): String? = PhoneNumbers.e164(number) ?: formatE164(app, number)
         }
+    }
+
+    /** [dialable] (national) in E.164 by Android's own formatter with the phone's country; null when it can't. */
+    private fun formatE164(context: Context, dialable: String): String? {
+        val country = country(context) ?: return null
+        val formatted = try {
+            PhoneNumberUtils.formatNumberToE164(dialable, country)
+        } catch (e: RuntimeException) {
+            null
+        }
+        return formatted?.takeIf(PhoneNumbers::isE164)
     }
 
     /** The phone's country for numbers written nationally (ISO 3166, upper case): the network's, else the SIM's. */
@@ -54,19 +68,17 @@ object AndroidCalls {
         null
     }
 
-    /** [raw] as Belay compares it (core's PhoneNumbers.key), in E.164 when Android can make it so. */
+    /**
+     * [raw] as Belay compares it (core's PhoneNumbers.key), in E.164 when Android can make it so. An
+     * always-allowed number (911, 988, Android's emergency numbers) is never reformatted, and a number
+     * with `*` or `#` (a caller-id code before it: core's PhoneNumbers.withoutCodes) stays as dialed.
+     */
     fun key(context: Context, raw: String?, android: EmergencyNumbers = emergencyNumbers(context)): String? {
         val dialable = PhoneNumbers.dialable(raw)
         if (dialable.isEmpty()) return null
         PhoneNumbers.e164(dialable)?.let { return it }
         if (AlwaysAllowed.allows(dialable, android) || dialable.any { it == '*' || it == '#' }) return dialable
-        val country = country(context) ?: return dialable
-        val formatted = try {
-            PhoneNumberUtils.formatNumberToE164(dialable, country)
-        } catch (e: RuntimeException) {
-            null
-        }
-        return formatted?.takeIf(PhoneNumbers::isE164) ?: dialable
+        return formatE164(context, dialable) ?: dialable
     }
 
     /** Whether Belay may read Android's call log now (READ_CALL_LOG, granted by policy while calls is on). */

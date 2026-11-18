@@ -228,6 +228,8 @@ object Agent {
         val started = System.nanoTime()
         Log.i(TAG, "step: ${trigger.label}" + if (packages.isEmpty()) "" else " $packages")
         try {
+            // Started before the first unlock (BelayApp): the watchers begin with the first step after it.
+            BelayApp.watch(app)
             val store = AgentStore.get(app)
             val connection = ConnectionStore.read(app)
             if (trigger.setup) {
@@ -576,22 +578,43 @@ object Agent {
                 val private = CallContacts.private(policy)
                 val entry = CallRecords.entry(
                     UUID.randomUUID().toString(), call.at, call.direction, call.number, call.contact,
-                    call.durationS, call.outcome, call.reason, private, android, callback = call.callback,
+                    call.durationS, call.outcome, call.reason, private, android, callback = call.callback, unverified = call.unverified,
                 )
                 val record = entry?.takeIf { calls.log }?.let { CallRecords.toWire(it, private, android) }
                 val now = System.currentTimeMillis()
                 store.commitCall(entry, record, now)
-                Log.i(TAG, "call ${call.direction.name.lowercase()}, ${call.outcome.name.lowercase()}: " + when {
-                    entry == null -> "not kept (an always-allowed or private number)"
-                    record != null -> "kept, and queued for the server"
-                    else -> "kept on the phone"
-                })
-                _view.value?.let { view -> view.calls?.let { _view.value = view.copy(calls = it.copy(recents = store.calls(SCREEN_CALLS))) } }
+                // The same words for every call: whether it was kept would say it was with 911, 988 or a private number.
+                Log.i(TAG, "calls: a call ended")
+                showRecents(store)
                 if (record != null) Sync.request(app)
             } catch (t: Throwable) {
                 Log.e(TAG, "recording a call failed", t)
             }
         }
+    }
+
+    /**
+     * Phase 5: the kid removes call [id] from Belay's own recent calls (the dialer's Recent tab), on
+     * the agent thread. Only the phone's copy goes: a record already queued for the server with
+     * `calls.log` still goes, as the kid's screen says. [done] gets whether it was there.
+     */
+    fun removeCall(context: Context, id: String, done: ((Boolean) -> Unit)? = null) {
+        val app = context.applicationContext
+        executor.execute {
+            val removed = try {
+                val store = AgentStore.get(app)
+                store.removeCall(id).also { showRecents(store) }
+            } catch (t: Throwable) {
+                Log.e(TAG, "removing a call failed", t)
+                false
+            }
+            done?.invoke(removed)
+        }
+    }
+
+    /** The dialer shows Belay's recent calls as stored now, without waiting for a step. */
+    private fun showRecents(store: AgentStore) {
+        _view.value?.let { view -> view.calls?.let { _view.value = view.copy(calls = it.copy(recents = store.calls(SCREEN_CALLS))) } }
     }
 
     /**
@@ -609,10 +632,12 @@ object Agent {
                 if (last != state.lastEmergencyContactAt) {
                     store.saveCallsState(state.copy(lastEmergencyContactAt = last), System.currentTimeMillis())
                     CallsGate.publish(DebugTools.policyOverride ?: store.policy(), store.callsState())
-                    Log.i(TAG, "calls: every caller rings for the next 2 hours")
+                    // Neutral words: what changed would say that the kid called 911 or 988.
+                    Log.i(TAG, "calls: calls' state saved")
                 }
             } catch (t: Throwable) {
-                Log.e(TAG, "storing the callback window failed", t)
+                // Neutral words here too: that the window couldn't be stored would say it opened.
+                Log.e(TAG, "calls: calls' state couldn't be saved", t)
             }
         }
         // The block list lifts for the window at the next step.

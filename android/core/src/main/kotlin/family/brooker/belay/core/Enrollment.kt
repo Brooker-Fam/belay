@@ -35,6 +35,12 @@ enum class EnrollProblem(val code: String) {
     /** Connected to a server already: only the parent (adb) can move the phone. */
     ALREADY_CONNECTED("already_connected"),
 
+    /**
+     * Connected, and Belay holds the debugging lock: the adb receiver won't move the phone to
+     * another server until a parent opens repair access (maintenance, or the recovery key).
+     */
+    LOCKED("locked"),
+
     /** Something failed on the phone itself, such as storing the token. */
     PHONE_ERROR("phone_error"),
 }
@@ -83,6 +89,20 @@ object Enrollment {
         }
         val port = if (uri.port == -1) "" else ":${uri.port}"
         return "$scheme://$host$port"
+    }
+
+    /**
+     * Whether the adb receiver (provision.sh's EnrollReceiver) may move a phone to another server.
+     * Its guard is WRITE_SECURE_SETTINGS, the shell's; but adb can also grant that permission to an
+     * installed app that asks for it (its "development" protection level, platform notes T21), and
+     * the app keeps it after the debugging lock turns adb off. So a phone that's [connected] moves
+     * only while Belay doesn't hold the debugging lock ([held]), or while a parent opened repair
+     * access: maintenance, or the recovery key's window (each lifts the lock, so adb works again).
+     * A phone that isn't connected may always enroll, and the enrollment screen never replaces one.
+     */
+    fun receiverMayReplace(connected: Boolean, held: Set<Lock>, maintenanceUntil: Long?, recoveryUntil: Long?, now: Long): Boolean {
+        if (!connected || Lock.DEBUGGING !in held) return true
+        return (maintenanceUntil ?: 0) > now || (recoveryUntil ?: 0) > now
     }
 
     /** What an error answer from `POST /api/v1/enroll` means (docs/protocol.md, "Errors"). */

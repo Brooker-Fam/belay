@@ -8,6 +8,7 @@ import family.brooker.belay.DebugTools
 import family.brooker.belay.DeviceOwnerSetup
 import family.brooker.belay.R
 import family.brooker.belay.calls.CallsStep
+import family.brooker.belay.calls.InCall
 import family.brooker.belay.core.ActualState
 import family.brooker.belay.core.AnsweredRequest
 import family.brooker.belay.core.Applied
@@ -27,6 +28,7 @@ import family.brooker.belay.core.PackageRecord
 import family.brooker.belay.core.PolicyTooLarge
 import family.brooker.belay.core.RecoveryRules
 import family.brooker.belay.core.Requests
+import family.brooker.belay.core.ScreenLocks
 import family.brooker.belay.core.SimRules
 import family.brooker.belay.core.WireCommand
 import family.brooker.belay.core.WireEnforcement
@@ -186,13 +188,16 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
 
         // Phase 3: lock the screen for lock_now commands and for a schedule that locks as it
         // starts, now that the rest is applied; then the notices, and the usage to send. Nothing
-        // here may stop what was applied from being recorded below.
-        val lockResults = runner.lockNow(commandPlan, owner)
+        // here may stop what was applied from being recorded below. Every lock waits while a call
+        // is on (core's ScreenLocks), asked only when one is due.
+        val callOn by lazy { InCall.now(app) }
+        val lockResults = runner.lockNow(commandPlan, owner) { callOn }
+        val lockNowWaits = commandPlan.lockNow.isNotEmpty() && lockResults.isEmpty()
         // Phase 4: location's part: the fixes the collector took, locate_now, the periodic and lost
         // mode fixes due, keep_on and lost mode. If it fails, the rest is still recorded.
         val locationStep = LocationStep(app, store)
         val located = try {
-            locationStep.run(policy, commandPlan.run.filter { it.kind == WireCommand.LOCATE_NOW }, owner, requests, now)
+            locationStep.run(policy, commandPlan.run.filter { it.kind == WireCommand.LOCATE_NOW }, owner, requests, now) { callOn }
         } catch (e: RuntimeException) {
             Log.e(Agent.TAG, "location's part of the step failed", e)
             null
@@ -222,7 +227,7 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
         }
         val done = read?.let {
             try {
-                screenTimeStep?.after(it)
+                screenTimeStep?.after(it) { callOn }
             } catch (e: RuntimeException) {
                 Log.e(Agent.TAG, "screen time's notices and uploads failed", e)
                 screenTimeProblem = "Belay couldn't finish screen time's step: ${e.javaClass.simpleName}."
@@ -274,7 +279,11 @@ class EnforcementStep(context: Context, private val store: AgentStore) {
             calls = calling?.write,
             network = networking?.write,
         )
-        PolicyTimer.schedule(app, listOfNotNull(plan.nextChangeAt, calling?.nextAt).minOrNull())
+        // A lock that waits for a call: Belay looks again when Android's audio mode goes back to
+        // normal, and every minute anyway.
+        val lockWaits = lockNowWaits || done?.lockWaits == true || located?.lockWaits == true
+        if (lockWaits) InCall.lockWaits(app)
+        PolicyTimer.schedule(app, listOfNotNull(plan.nextChangeAt, calling?.nextAt, ScreenLocks.recheckAt(lockWaits, now)).minOrNull())
         log(plan, changes, made)
         next.handover?.takeIf { it != applied.handover }?.let(::logHandover)
         // Android's screen for a held-back app can't name it: Belay's notice does.

@@ -38,9 +38,9 @@ describe("numbers that always work", () => {
   });
 
   it("never blocks one, saying why; a contact or private number must be E.164, which no short number is", () => {
-    expect(numberProblem("911", "blocked")).toBe("Belay never blocks 911 or any other emergency number: they always work, in and out, whatever the rules say.");
-    expect(numberProblem("+1 988", "blocked")).toBe("Belay never blocks 988: the crisis line always works, in and out, whatever the rules say.");
-    expect(numberProblem("+18002738255", "blocked")).toBe("Belay never blocks 988: the crisis line always works, in and out, whatever the rules say.");
+    expect(numberProblem("911", "blocked")).toBe("Belay never blocks 911 or any other emergency number: the kid can always call them, and their calls always ring, whatever the rules say.");
+    expect(numberProblem("+1 988", "blocked")).toBe("Belay never blocks 988: the kid can always call and text the crisis line, whatever the rules say.");
+    expect(numberProblem("+18002738255", "blocked")).toBe("Belay never blocks 988: the kid can always call and text the crisis line, whatever the rules say.");
     expect(numberProblem("988", "private")).toBe("Calls and texts with 988 are always private: Belay never records them, so there's no need to add it.");
     expect(numberProblem("112", "contact")).toBe("911 and every emergency number always work without being a contact, and Belay never records them.");
     // 988's full number is a real number the phone may not know as 988: a parent may make it a contact, or private.
@@ -230,7 +230,7 @@ describe("a side as it can be saved", () => {
     );
     expect(sideProblem(before, contact({ numbers: [COACH] }))).toBe("+15555550142 is already Coach Lee's number.");
     expect(sideProblem(before, contact({ numbers: ["988"] }))).toBe("988 always works without being a contact, and Belay never records it.");
-    expect(sideProblem(before, { ...before, blockedNumbers: ["911"] })).toBe("Belay never blocks 911 or any other emergency number: they always work, in and out, whatever the rules say.");
+    expect(sideProblem(before, { ...before, blockedNumbers: ["911"] })).toBe("Belay never blocks 911 or any other emergency number: the kid can always call them, and their calls always ring, whatever the rules say.");
     expect(sideProblem(before, { ...before, blockedNumbers: [COACH] })).toBe("+15555550142 is Coach Lee's number, a contact: take it off the contact first, then block it.");
     expect(sideProblem(before, { ...before, blockedNumbers: [STRANGER] }, { emergencyCard: [STRANGER] })).toBe("+15555550199 is on the kid's emergency card: take it off the card first, then block it.");
     expect(sideProblem(before, { ...before, privateNumbers: ["988"] })).toBe("Calls and texts with 988 are always private: Belay never records them, so there's no need to add it.");

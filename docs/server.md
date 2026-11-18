@@ -543,11 +543,15 @@ policy's `calls` is `null`, and Belay leaves calls alone. Turned on, Belay becom
 phone app (the default dialer), and decides who rings. Turned off, `calls` is `null` again; the
 rules are kept for next time.
 
-- **911, 988 and every emergency number always work**, in and out, in every mode, even when the
-  phone is paused or at bedtime: the phone allows them in its own code, never from the policy,
-  and Android sends an emergency call to the phone's own dialer. For 2 hours after a call to an
-  emergency number or 988, every caller rings, so they can call back. Belay never records calls
-  with them. If Belay stops working as the phone app, calls go through the phone's own app with
+- **911, 988 and every emergency number always work**: the kid can call them in every mode, even
+  when the phone is paused or at bedtime, and a call from 911 or another emergency number always
+  rings, unless the phone network says its caller ID is fake. The phone allows them in its own
+  code, never from the policy, and Android sends an emergency call to the phone's own dialer.
+  For 2 hours after a call to an emergency number or 988, every caller rings, so they can call
+  back. A caller ID that only shows 988's number is decided like any other caller (988 doesn't
+  call people; a counselor calls back from their own number), and one the phone network says may
+  be fake is a stranger's, recorded without the number when it showed 911, 988 or a private
+  number. Belay never records calls with them. If Belay stops working as the phone app, calls go through the phone's own app with
   no rules, on purpose, and the phone's page says "Calls are going through the phone's own app"
   (also in the daily summary).
 - **The rules:** who can call (anyone, or only contacts who can call); with only contacts,

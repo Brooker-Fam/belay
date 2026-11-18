@@ -7,7 +7,8 @@ import java.time.ZoneId
 
 /**
  * Quiet time for calls (`calls.quiet`): while one of Phase 3's bedtime or school schedules is on,
- * only always-allowed numbers and parents ring. Whether one is on comes from screen time's own rules
+ * only parents and calls from 911 or Android's emergency numbers ring (CallRules: a caller id showing
+ * 988 is decided like any other). Whether one is on comes from screen time's own rules
  * (Rules.evaluate, the same function that pauses the apps), so calls and apps never disagree about
  * when bedtime is. A custom schedule doesn't count.
  */

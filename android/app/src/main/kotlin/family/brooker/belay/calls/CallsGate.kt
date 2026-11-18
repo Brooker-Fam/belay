@@ -26,8 +26,9 @@ import java.time.ZoneId
  * Belay's calls state as the last agent step published them (or read from the store once, after a
  * restart), plus what only the moment knows: whether a bedtime or school schedule is on (screen
  * time's own rules) and whether the kid called 911 or 988 in the last 2 hours (Belay's record, this
- * process's memory, and Android's call log). Never on the main thread (the store and the call log
- * are read here). Anything that goes wrong decides "ring": calls fail open (docs/protocol.md).
+ * process's memory, the time kept before the first unlock after a restart (LockedCalls), and
+ * Android's call log). Never on the main thread (the store and the call log are read here).
+ * Anything that goes wrong decides "ring": calls fail open (docs/protocol.md).
  */
 object CallsGate {
     private data class Snapshot(val policy: WirePolicy?, val state: CallsState?)
@@ -68,12 +69,13 @@ object CallsGate {
             null
         }
         if (fromLog != null && fromLog > (emergencyAt ?: 0L)) emergencyAt = fromLog
+        val beforeUnlock = if (calls != null) LockedCalls.emergencyContactAt(context) else null
         return CallsNow(
             calls = calls,
             contacts = CallContacts.of(policy),
             blocked = CallContacts.blocked(policy, android),
             quietSchedule = quiet,
-            lastEmergencyContactAt = listOfNotNull(snap.state?.lastEmergencyContactAt, emergencyAt).maxOrNull(),
+            lastEmergencyContactAt = listOfNotNull(snap.state?.lastEmergencyContactAt, emergencyAt, beforeUnlock).maxOrNull(),
             now = at,
         )
     }

@@ -9,6 +9,7 @@ import family.brooker.belay.DeviceOwnerSetup
 import family.brooker.belay.core.CategoryPermissions
 import family.brooker.belay.core.KidRequest
 import family.brooker.belay.core.Requests
+import family.brooker.belay.core.ScreenLocks
 import family.brooker.belay.core.WireCommand
 import family.brooker.belay.core.WireCommandResult
 import family.brooker.belay.core.WirePolicy
@@ -55,6 +56,9 @@ class LocationStep(context: Context, private val store: AgentStore) {
     private val dpm = app.getSystemService(DevicePolicyManager::class.java)
     private val lm = app.getSystemService(LocationManager::class.java)
 
+    /** Lost mode's lock waits for a call to end (this step's). */
+    private var lockWaits = false
+
     /** What to store with the step, and do after it. */
     class Done(
         /** Null: nothing to store. */
@@ -70,9 +74,19 @@ class LocationStep(context: Context, private val store: AgentStore) {
         val report: WireLocationStatus?,
         val lost: LostApplied?,
         val location: WireLocation?,
+        /** Lost mode's one lock is due but waits for a call to end (core's ScreenLocks). */
+        val lockWaits: Boolean = false,
     )
 
-    fun run(policy: WirePolicy, commands: List<WireCommand>, owner: Boolean, requests: List<KidRequest>, now: Long): Done {
+    /** [callOn]: whether a call is on, asked only when lost mode's lock is due (then it waits). */
+    fun run(
+        policy: WirePolicy,
+        commands: List<WireCommand>,
+        owner: Boolean,
+        requests: List<KidRequest>,
+        now: Long,
+        callOn: () -> Boolean = { false },
+    ): Done {
         val location = policy.location
         val before = store.locationState()
         val zone = ZoneId.systemDefault()
@@ -121,7 +135,7 @@ class LocationStep(context: Context, private val store: AgentStore) {
         }
 
         if (owner) {
-            state = lost(location, state)
+            state = lost(location, state, callOn)
             state = locationOn(location, state, facts)
             // Granted at the start of most steps (DeviceOwnerSetup.ensure); here for the ones that skip setup.
             if ((LocationRules.collecting(location) || state.help != null) && !facts.permission) DeviceOwnerSetup.ensure(app)
@@ -159,7 +173,7 @@ class LocationStep(context: Context, private val store: AgentStore) {
         val helpRequests = helpFixes.mapNotNull { (id, fix) -> Requests.withHelpFix(requests, id, fix) }
         val on = CategoryPermissions.categoriesOn(policy, helpFix = keep?.help != null)
         val revoke = owner && DeviceOwnerSetup.unwanted(app, on).isNotEmpty()
-        return Done(write, results, helpRequests, checks, revoke, report, keep?.lost, location)
+        return Done(write, results, helpRequests, checks, revoke, report, keep?.lost, location, lockWaits)
     }
 
     /** After the step is stored: the kid's notices, and the managed notice's line for periodic mode. */
@@ -183,7 +197,7 @@ class LocationStep(context: Context, private val store: AgentStore) {
     )
 
     /** Lost mode as the policy says: the message on the lock screen and one lock, or both taken back. */
-    private fun lost(location: WireLocation?, state: LocationState): LocationState {
+    private fun lost(location: WireLocation?, state: LocationState, callOn: () -> Boolean): LocationState {
         val lost = location?.lost
         val admin = DeviceOwnerSetup.admin(app)
         if (lost == null) {
@@ -207,10 +221,14 @@ class LocationStep(context: Context, private val store: AgentStore) {
                 Log.w(Agent.TAG, "lost mode: the lock screen message couldn't be set", e)
             }
         }
-        if (!applied.locked) {
+        // One lock, once no call is on (core's ScreenLocks): during a call it waits for a step after it.
+        if (!applied.locked && ScreenLocks.lostLockNow(applied, callOn())) {
             val problem = ScreenLock.lock(app, owner = true)
             if (problem != null) Log.w(Agent.TAG, "lost mode: $problem")
             applied = applied.copy(locked = true)
+        } else if (!applied.locked) {
+            Log.i(Agent.TAG, "screen lock waits for a call to end")
+            lockWaits = true
         }
         return state.copy(lost = applied)
     }

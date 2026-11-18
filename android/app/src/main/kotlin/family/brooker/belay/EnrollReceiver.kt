@@ -14,13 +14,18 @@ import family.brooker.belay.sync.Sync
  *         --es server https://belay.example.org --es code 7KQ2M9XA
  *
  * The receiver is exported, but only to senders holding WRITE_SECURE_SETTINGS: the adb shell
- * does, ordinary apps can't (signature|privileged|development|role|installer in Android 17;
- * "development" can only be granted over adb). So this is a parent's path, like adb itself,
- * and it may replace an existing connection. The idea of a receiver guarded this way comes
- * from kidctl (MIT, github.com/kidctl/kidctl); the code is Belay's own.
+ * does, ordinary apps can't (signature|privileged|development|role|installer in Android 17).
+ * "Development" means adb can grant it to an installed app that asks for it (`pm grant`), and the
+ * app keeps it after the debugging lock turns adb off (docs/platform-notes.md T21). So it may
+ * replace an existing connection only while Belay doesn't hold the debugging lock, or while a
+ * parent opened repair access (maintenance, or the recovery key): then adb works anyway, and it's a
+ * parent's path, like adb itself. Belay reports an app holding the permission as a sensitive one
+ * (`secure_settings`). The idea of a receiver guarded this way comes from kidctl (MIT,
+ * github.com/kidctl/kidctl); the code is Belay's own.
  *
  * The result (`am broadcast` prints it) is RESULT_OK and "enrolled: …", or 1 and
- * "failed: <problem>[: <server's words>]". It never contains the token.
+ * "failed: <problem>[: <server's words>]" (`locked` for a connected phone under the debugging
+ * lock). It never contains the token.
  */
 class EnrollReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {

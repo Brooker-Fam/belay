@@ -34,6 +34,35 @@ object PhoneNumbers {
     /** The form Belay compares: E.164 when it can be, else what Android dials; null when nothing is left. */
     fun key(raw: String?): String? = e164(raw) ?: dialable(raw).takeIf { it.isNotEmpty() }
 
+    /**
+     * A code dialed before a number for that one call: North America's vertical service codes
+     * (`*67` hides the caller id, `*82` shows it; any `*NN` or `*NNN`) and GSM's (`#31#` hides it,
+     * `*31#` shows it; any `#NN#` or `*NN#`).
+     */
+    private val LEADING_CODES = listOf(Regex("^\\*[0-9]{2}"), Regex("^\\*[0-9]{3}"), Regex("^\\*[0-9]{2}#"), Regex("^#[0-9]{2}#"))
+
+    /** At most this many codes before a number are taken off. */
+    private const val MAX_CODES = 3
+
+    /**
+     * What [raw] may reach once the codes dialed before it are taken off ("*67 911" reaches 911),
+     * every way of reading them; empty when it starts with none. A code isn't always clear:
+     * "*272911" is `*27` then 2911, or `*272` then 911, so both are listed. Belay looks at these
+     * only to tell whether a call reaches a number that always works or a private one (then it
+     * goes through, or isn't recorded: AlwaysAllowed.dialed, CallRecords.isPrivate), never to let
+     * a call through to a contact.
+     */
+    fun withoutCodes(raw: String?): List<String> {
+        val found = LinkedHashSet<String>()
+        var level = listOf(dialable(raw))
+        repeat(MAX_CODES) {
+            level = level.flatMap { number ->
+                LEADING_CODES.mapNotNull { code -> code.find(number)?.let { number.substring(it.value.length) } }
+            }.filter { it.isNotEmpty() && found.add(it) }
+        }
+        return found.toList()
+    }
+
     private fun String.substringBefore(chars: CharArray): String {
         val at = indexOfAny(chars)
         return if (at < 0) this else substring(0, at)

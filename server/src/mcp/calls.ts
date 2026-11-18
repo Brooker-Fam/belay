@@ -47,7 +47,8 @@ const action = z.enum(["reject", "voicemail", "ring"]);
 /** The most days get_calls reads at once. */
 const MAX_DAYS = 92;
 
-export const ALWAYS = "911, 988 and every emergency number always work, in and out, in Belay's own code on the phone, whatever these rules say, and Belay never records them.";
+export const ALWAYS =
+  "911, 988 and every emergency number always work, in Belay's own code on the phone, whatever these rules say: the kid can always call them, and a call from 911 or another emergency number always rings unless the phone network says its caller ID is fake. For 2 hours after the kid calls one of them, or taps Belay's button to text 911 or 988, every caller rings. Belay never records calls with them.";
 
 /** The Calls category's name in Settings. */
 const CALLS = AI_SCOPES.calls.split(":")[0] ?? "Calls";

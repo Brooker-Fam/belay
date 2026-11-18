@@ -2,22 +2,32 @@ package family.brooker.belay.core.calls
 
 /**
  * What the phone's Android says about emergency numbers (TelephonyManager.isEmergencyNumber: the
- * SIM's, the network's, the modem's and Android's own list for the country). A seam, so the rules
- * can be tested on the JVM.
+ * SIM's, the network's, the modem's and Android's own list for the country), and how it writes a
+ * number in E.164. A seam, so the rules can be tested on the JVM.
  */
 fun interface EmergencyNumbers {
     /** True or false; null when Android can't say (telephony isn't running, or the phone has none). */
     fun isEmergency(number: String): Boolean?
+
+    /**
+     * [number] (dialable, as the kid may type it) in E.164 for the phone's country, as Android's
+     * formatter writes it (PhoneNumberUtils.formatNumberToE164); null when it can't be. Without
+     * the phone, only a number already written in E.164.
+     */
+    fun e164(number: String): String? = PhoneNumbers.e164(number)
 }
 
 /** Why a number always works: an emergency number (911 and Android's own), or 988. */
 enum class AlwaysAllowedKind { EMERGENCY, CRISIS_988 }
 
 /**
- * The numbers that always work, in and out, in every mode, stage, pause, schedule and quiet time,
- * whatever the policy says (docs/protocol.md, "Calls rules"): 911, every number Android reports as
- * an emergency number, and 988. They're decided here, in code, never from the policy, so no policy
- * or server bug can remove them; calls with them are never recorded or sent (CallRecords).
+ * The numbers that always work whatever the policy says (docs/protocol.md, "Calls rules"): 911,
+ * every number Android reports as an emergency number, and 988. The kid can always call them, in
+ * every mode, stage, pause, schedule and quiet time, also with a caller-id code dialed before
+ * them ("*67 988", [dialed]). A call from 911 or an emergency number always rings, unless the
+ * network's check of the caller id failed (CallRules). They're decided here, in code, never from
+ * the policy, so no policy or server bug can remove them; calls with them are never recorded or
+ * sent (CallRecords).
  *
  * 988 is an ordinary number to Android (platform notes T3), so it's here by name, with the
  * Lifeline's older number (1-800-273-8255), which still reaches it; the server treats that one as
@@ -60,6 +70,15 @@ object AlwaysAllowed {
 
     fun allows(number: String?, android: EmergencyNumbers): Boolean = kind(number, android) != null
 
-    /** Whether a call or text with [number] opens the 2-hour window in which every caller rings. */
-    fun opensCallbackWindow(number: String?, android: EmergencyNumbers): Boolean = allows(number, android)
+    /**
+     * Why a call the kid dials to [number] always works: as [kind] says, or once the caller-id codes
+     * dialed before it are taken off (PhoneNumbers.withoutCodes: "*67 911", "#31#988"). Android
+     * itself sees only the whole string, so it calls "*67911" an ordinary number (platform notes
+     * T17); Belay lets it through, and whatever the network does with it is the network's.
+     */
+    fun dialed(number: String?, android: EmergencyNumbers): AlwaysAllowedKind? =
+        kind(number, android) ?: PhoneNumbers.withoutCodes(number).firstNotNullOfOrNull { kind(it, android) }
+
+    /** Whether a call or text the kid makes to [number] opens the 2-hour window in which every caller rings. */
+    fun opensCallbackWindow(number: String?, android: EmergencyNumbers): Boolean = dialed(number, android) != null
 }

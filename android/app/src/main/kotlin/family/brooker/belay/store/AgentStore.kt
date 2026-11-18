@@ -565,6 +565,12 @@ class AgentStore internal constructor(private val db: BelayDatabase, private val
         enforcement.calls(limit).mapNotNull { decode(it.entry, CallEntry.serializer()) }
 
     /**
+     * Phase 5, the agent thread: the kid removed call [id] from Belay's recent calls. Only the
+     * phone's copy: a record already in the outbox is the parents' (with `calls.log`), and still goes.
+     */
+    fun removeCall(id: String): Boolean = enforcement.deleteCall(id) > 0
+
+    /**
      * Phase 5, the agent thread: a call that ended. [entry] goes in Belay's own recent calls (null:
      * one it must never keep, core's CallRecords), and [record] to the outbox (only with `log`).
      */

@@ -328,9 +328,13 @@
         </activity-alias>
 
         <!-- Telecom's outgoing-call broadcast, sent only to holders of PROCESS_OUTGOING_CALLS and
-             from the system: a call to 911 or 988 through any dialer opens the callback window. -->
+             from the system: a call to 911 or 988 through any dialer opens the callback window.
+             The only part of Belay that's direct-boot aware: a call to 911 from the lock screen
+             before the first unlock reaches it too, and it keeps only the time, in
+             device-protected storage (calls/LockedCalls.kt; docs/platform-notes.md T19). -->
         <receiver
             android:name=".calls.OutgoingCallReceiver"
+            android:directBootAware="true"
             android:enabled="false"
             android:exported="false">
             <intent-filter>

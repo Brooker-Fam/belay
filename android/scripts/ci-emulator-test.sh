@@ -55,7 +55,8 @@
 # Phase 5, with BELAY_E2E_CLI, a server whose status has calls and an image with telephony: with
 # `calls --mode contacts --unknown reject --log on`, Belay becomes the default dialer (telecom
 # get-default-dialer) and reports it; the calls instrumented tests run; an incoming call from a
-# contact's number (the emulator console's `gsm call`) rings Belay's screen (its debug state); one
+# contact's number (the emulator console's `gsm call`) rings Belay's screen (its debug state), and a
+# lock-now sent while it rings waits, then is done once the call ends; one
 # from another number is rejected without ringing and reaches the server as rejected, unknown, with
 # its number; block-number puts the number on Android's block list and unblock-number takes it off;
 # and `calls --off` gives the default dialer back (or, with none before, Android drops Belay from
@@ -770,8 +771,23 @@ elif [ -n "$E2E_CLI" ]; then
   wait_calls_state '[.now[]? | select(.direction == "in" and .shown == "true")] | length > 0' 10 ||
     { gsm_cancel "$CONTACT_NUMBER"; diagnose; die "Belay's in-call service doesn't show the contact's call"; }
   echo "Belay rings: $(calls_state | jq -c '{ringing, now}')"
+
+  step "Phase 5: a screen lock waits while a call rings, and locks once the call ends"
+  lock_id="$(server_cli_out lock-now "$phone")"
+  [[ "$lock_id" =~ ^[A-Za-z0-9_-]+$ ]] || { gsm_cancel "$CONTACT_NUMBER"; die "lock-now should print only the command's id" "$lock_id"; }
+  wait_applied
+  lock_done="[.enforcement.commands[]? | select(.id == \"$lock_id\" and .result == \"done\")] | length > 0"
+  # The step that applied it saw the call: the lock waits (core's ScreenLocks), so no result yet.
+  sleep 5
+  if server_status | jq -e ".phones[0] | $lock_done" >/dev/null 2>&1; then
+    gsm_cancel "$CONTACT_NUMBER"
+    diagnose
+    die "lock-now locked the screen while a call rang"
+  fi
   gsm_cancel "$CONTACT_NUMBER"
   wait_calls_state '(.now // []) | length == 0' 20 || { diagnose; die "the contact's call didn't end after gsm cancel"; }
+  wait_server "$lock_done" "a done result for lock-now once the call ended" 90
+  wake_up
 
   step "Phase 5: a call from a number that isn't a contact is rejected, never rings, and is reported"
   gsm_call "$STRANGER_NUMBER"

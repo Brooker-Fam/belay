@@ -20,15 +20,23 @@ object SensitivePermissions {
     const val ACCESSIBILITY = "accessibility"
     const val DEVICE_ADMIN = "device_admin"
 
+    /**
+     * WRITE_SECURE_SETTINGS: changes Android's protected settings, and reaches what only the adb
+     * shell should (Belay's enrollment receiver among them). Android's own apps hold it; any other
+     * app only once someone granted it over adb (`pm grant`, its "development" protection level),
+     * and it keeps it after the debugging lock (platform notes T21).
+     */
+    const val SECURE_SETTINGS = "secure_settings"
+
     /** Every category, in the order they are shown. */
     val categories: List<String> = listOf(
         CAMERA, MICROPHONE, LOCATION, CONTACTS, SMS, CALL_LOG, PHOTOS_MEDIA, NEARBY_DEVICES,
-        NOTIFICATION_ACCESS, ACCESSIBILITY, DEVICE_ADMIN,
+        NOTIFICATION_ACCESS, ACCESSIBILITY, DEVICE_ADMIN, SECURE_SETTINGS,
     )
 
     private const val P = "android.permission."
 
-    /** Runtime permissions, by category. */
+    /** Runtime permissions (and WRITE_SECURE_SETTINGS), by category. */
     val runtime: Map<String, String> = buildMap {
         put(P + "CAMERA", CAMERA)
         put(P + "RECORD_AUDIO", MICROPHONE)
@@ -46,6 +54,8 @@ object SensitivePermissions {
             "BLUETOOTH_SCAN", "BLUETOOTH_CONNECT", "BLUETOOTH_ADVERTISE", "NEARBY_WIFI_DEVICES",
             "UWB_RANGING", "ACCESS_LOCAL_NETWORK",
         ).forEach { put(P + it, NEARBY_DEVICES) }
+        // Not a runtime permission, but granted the same way when adb grants it (pm grant).
+        put(P + "WRITE_SECURE_SETTINGS", SECURE_SETTINGS)
     }
 
     /**

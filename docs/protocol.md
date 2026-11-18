@@ -407,27 +407,41 @@ phone's other calls (30 a minute).
   about calls changes. With `calls` set, Belay makes itself the default dialer
   (`setDefaultDialerApplication`) and runs its own dial pad, contacts, recent calls,
   incoming-call and in-call screens; it places every call with `TelecomManager.placeCall`.
-- **Always allowed, in code** (`:core`, never the policy): 911, every number Android reports
-  as an emergency number (`isEmergencyNumber`) and 988, in and out, in every mode, stage,
-  pause and schedule; contacts with `parent` ring too. Telecom sends emergency calls to the
-  preloaded dialer, which is never hidden, suspended or disabled.
-- **After an emergency contact:** for 2 hours after a call to an emergency number or 988,
-  or a text to 988, every incoming call rings, so a dispatcher or the 988 line can call back
-  from any number.
-- **Incoming:** `mode: open` lets everyone ring. `mode: contacts` lets contacts with `calls`
-  ring; other callers follow `unknown`, callers with no caller id follow `withheld`
-  (`reject`, `voicemail` or `ring`). A number that failed carrier verification counts as
-  unknown. With `quiet`, only always-allowed numbers and parents ring during a bedtime or
-  school schedule (Phase 3). A refused call never rings.
-- **Outgoing:** `outgoing: contacts` allows only contacts with `calls` and the
-  always-allowed numbers; `any` allows any number.
+- **Always allowed, in code** (`:core`, never the policy): the kid can always call 911, every
+  number Android reports as an emergency number (`isEmergencyNumber`) and 988 (988's full
+  number, 1-800-273-8255, too), also with caller-id codes dialed before them (`*67`, `*82`,
+  `#31#`, `*31#`: any `*NN`, `*NNN`, `#NN#` or `*NN#`), in every mode, stage, pause and
+  schedule. A call from 911 or an emergency number always rings, unless its caller id failed
+  the network's check; contacts with `parent` always ring too. Telecom sends emergency calls to
+  the preloaded dialer, which is never hidden, suspended or disabled.
+- **After an emergency contact:** for 2 hours after a call to an emergency number or 988 (from
+  any dialer, the lock screen's before the first unlock after a restart included), or a tap on
+  one of Belay's buttons to text 911 or 988, every incoming call rings, so a dispatcher or the
+  988 line can call back from any number. So does a call Telecom marks as part of an emergency
+  (emergency callback mode, or an emergency call the network identified).
+- **Incoming:** a caller id that failed the network's check (STIR/SHAKEN) is a stranger's,
+  whatever number it shows: never a contact, a parent or 911. `mode: open` lets everyone ring.
+  `mode: contacts` lets contacts with `calls` ring; other callers follow `unknown`, callers with
+  no caller id follow `withheld` (`reject`, `voicemail` or `ring`). A caller id showing 988 or
+  its full number is decided like any other: 988 doesn't call people, and a counselor's own
+  number rings after an emergency contact. With `quiet`, only parents and calls from 911 or an
+  emergency number ring during a bedtime or school schedule (Phase 3). A refused call never
+  rings, and a call the phone takes longer than 2 seconds to decide rings anyway.
+- **Outgoing:** `outgoing: contacts` allows only contacts with `calls`, parents and the
+  always-allowed numbers; `any` allows any number. A caller-id code never makes a number a
+  contact's.
 - **If Belay breaks,** Telecom falls back to the preloaded dialer with no filtering, on
   purpose: a phone that can't take calls is worse. Belay reports "Calls are going through the
   phone's own app" (`enforcement.calls.problem`).
 - **Records** (`log`): when, direction, duration, outcome, and the contact, or the number for
   a caller who isn't one. Calls with emergency numbers, 988 or the family's private numbers
-  are never recorded or sent, and neither is a call that rang only because of the 2 hours
-  after an emergency contact (the rules would have refused it): its record would tell.
+  (dialed with a caller-id code too) are never recorded or sent, and neither is a call that rang
+  only because of an emergency (the 2 hours after an emergency contact, or Telecom's mark; the
+  rules would have refused it): its record would tell. A caller whose caller id failed the
+  network's check is recorded like any stranger, without the number when it showed one of
+  those. An outgoing call is recorded only with its contact or its number (the number it
+  reached, in E.164), never with neither. The kid can remove a call from Belay's own recent
+  calls on the phone; its record, sent or waiting to be, still goes.
 - **Contacts** live in the policy and in Belay's own storage; Belay never writes them into
   Android's Contacts. A `contact` request is the kid asking for one; a parent approves it.
 - Only a parent turns calls on or off or changes who may call; an AI client may only
@@ -525,7 +539,8 @@ proposal), and the phone shows each step before it happens.
   notice, and Belay's screen lists them from the phone's own record.
 - **`keep_on`:** Belay keeps location on and sets `DISALLOW_CONFIG_LOCATION`.
 - **Lost mode** (`lost`, any mode): the parent's message on the lock screen, location kept
-  on, a fix every 5 minutes, and one screen lock; everything goes back when it ends.
+  on, a fix every 5 minutes, and one screen lock (during a call, once the call ends);
+  everything goes back when it ends.
 - **Only a parent** turns location on or off, changes places, `keep_on` or lost mode.
   An AI client may read fixes only with the `location` scope on (off by default), and may
   ask for `locate_now` only in `on_demand` or `periodic` mode; the kid's notice names it.
@@ -596,8 +611,8 @@ server decides whether a change tightens or loosens.
   Used up: its apps are suspended until the next day starts, or until extra time.
 - **Schedules:** from `start` to `end` on `days` (an `end` at or before `start` ends the
   next day), every app is suspended except the never-blocked ones, the `exempt` ones and
-  the schedule's `allow`; `lock` also locks the screen when it starts; `skip` names days
-  it doesn't start.
+  the schedule's `allow`; `lock` also locks the screen when it starts (during a call, once
+  the call ends, if the schedule is still on); `skip` names days it doesn't start.
 - **Always open:** the never-blocked apps and `exempt`. Schedules and daily totals also
   leave the clock and the keyboard alone, as a pause does; a limit that names the clock
   itself still applies.
@@ -612,7 +627,9 @@ server decides whether a change tightens or loosens.
   no `POST /usage`, and no `used_minutes`, `used` or `left` in the report.
 - **`lock_now`** (a command): locks the screen once, unless it arrives after `expires_at`.
   The phone runs it after applying the rest of the policy, so a pause sent with it suspends
-  the apps first. A phone updated to a Belay that can lock reads that permission at its next
+  the apps first. While a call is on (the phone's, or one in an app, a call to 988 included),
+  the lock waits and the command stays unrun: it's `done` once the call ends, or `expired` if
+  the call outlasts it. A phone updated to a Belay that can lock reads that permission at its next
   restart (platform notes S5): until then the result is `failed`, "Android lets Belay lock the
   screen only after the phone restarts once with this version of Belay." The server sends it
   with `expires_at` 10 minutes on, and with a pause of 5 to 240 minutes when a parent or an AI
@@ -725,7 +742,7 @@ server decides whether a change tightens or loosens.
 | `target_sdk`, `category` | int | `category` is `ApplicationInfo.category` (-1: none) |
 | `source` | `play_store` `other_store` `other_app` `sideloaded` `adb` `preinstalled` `unknown` | |
 | `installer` | `{installing?, initiating?, originating?, update_owner?, package_source?}` | raw `InstallSourceInfo` |
-| `permissions` | string[] | sensitive permissions it holds, from: `camera` `microphone` `location` `contacts` `sms` `call_log` `photos_media` `nearby_devices` `notification_access` `accessibility` `device_admin` |
+| `permissions` | string[] | sensitive permissions it holds, from: `camera` `microphone` `location` `contacts` `sms` `call_log` `photos_media` `nearby_devices` `notification_access` `accessibility` `device_admin` `secure_settings` (`WRITE_SECURE_SETTINGS`: Android's own apps hold it; any other app only because adb granted it, and it keeps it after the debugging lock, platform notes T21). A server that doesn't know a name refuses the app, so the server is updated first (it offers Belay's updates). |
 
 **Policy** (server → phone; every field has a default that enforces nothing)
 

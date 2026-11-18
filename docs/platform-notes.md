@@ -128,6 +128,11 @@ relying on something new, it goes here first, with a source.
 | T14 | Denying `CALL_PHONE` to other apps leaves emergency calls working | Confirmed | AOSP; Emulator pending (Phase 5 CI) |
 | T15 | CI: no preloaded dialer on ATD; the emulator console simulates incoming calls | Confirmed | AOSP; Docs; Emulator pending (Phase 5 CI) |
 | T16 | Call audio routes and the SIM choice for an in-call app | Confirmed: the endpoint API from API 34 | AOSP; Pixel pending |
+| T17 | What Android counts as an emergency call: the whole number, so "*67911" isn't one, and a caller ID showing 911 is | Confirmed: Belay takes caller-ID codes off itself; the network decides what "*67911" reaches | AOSP; Pixel pending (Phase 5 checklist, a test number) |
+| T18 | What Telecom tells an in-call service about an emergency | Confirmed: emergency callback mode and a network-identified emergency call, both skip filtering; emergency SMS mode can't be read | AOSP; Pixel pending (the carrier's setting) |
+| T19 | A call to 911 before the first unlock reaches a direct-boot-aware receiver | Confirmed; before that unlock Telecom finds no service of Belay's | AOSP; Emulator (the storage); Pixel pending (a test number) |
+| T20 | Whether a call is on: Telecom's `isInCall` for the dialer, and the audio mode | Confirmed: neither needs a permission | AOSP; Emulator (Phase 5 CI); Pixel pending |
+| T21 | `WRITE_SECURE_SETTINGS` granted over adb outlives the debugging lock | Confirmed; it can't turn adb back on | AOSP |
 | O1 | Handing over: clearing reset protection, and what a reset from Settings does on a fully managed phone | Confirmed in AOSP; Pixel pending (Phase 11 checklist) | AOSP |
 
 "Emulator" entries were seen in CI: `ci-emulator-test.sh` passed end to end on the API 37.0
@@ -1127,9 +1132,11 @@ for anything; the phone's own emoji font still renders.
 - `provision.sh --server --code` sends `am broadcast -a family.brooker.belay.ENROLL` to
   `EnrollReceiver`, which is exported but protected by `WRITE_SECURE_SETTINGS`
   (`signature|privileged|development|role|installer`). The shell package holds it;
-  ordinary apps can't get it, except by `pm grant` over adb. So only someone with adb can
-  enroll this way, and this path may replace an existing connection. (The idea is
-  kidctl's; the code is Belay's.)
+  ordinary apps can't get it, except by `pm grant` over adb, and an app keeps that grant
+  after the debugging lock turns adb off (T21). So this path may replace an existing
+  connection only while Belay doesn't hold the debugging lock, or while a parent opened
+  repair access (maintenance, or the recovery key); otherwise it answers `failed: locked`.
+  (The idea is kidctl's; the code is Belay's.)
 - `am broadcast` sends an ordered broadcast and waits, printing
   `Broadcast completed: result=…, data="…"` (`ActivityManagerShellCommand`). Belay answers
   `enrolled: "<name>" on <host>` or `failed: <problem>`, never the token.
@@ -1997,11 +2004,14 @@ All read in AOSP `android-17.0.0_r1` on 2026-11-17 (`platform/frameworks/base` u
 is `packages/services/Telecomm`, the role controller `packages/modules/Permission`), and in the
 InCallService, CallScreeningService and BlockedNumberContract references. T1 to T6 moved here from
 [the drafts](design/platform-notes-drafts.md) and were checked again where Belay now relies on them;
-T10 to T16 are new (T7 to T9, about texts, stay in the drafts). The emulator checks run in CI
-(`CallFlowInstrumentedTest`, `CallsInstrumentedTest` and `ci-emulator-test.sh`'s Phase 5 block); the
-Pixel's are in [phase5-checklist.md](phase5-checklist.md). No test calls or texts 911 or 988, on the
-emulator or anywhere else: those paths are JVM tests (`AlwaysAllowedTest`, `CallRulesTest`,
-`CallRecordsTest`) and checks that don't dial.
+T10 to T16 are new, and T17 to T21 came with the third security review (read on 2026-11-18,
+with `frameworks/opt/telephony` and `packages/services/Telephony`); T7 to T9, about texts, stay in
+the drafts. The emulator checks run in CI (`CallFlowInstrumentedTest`, `CallsInstrumentedTest`,
+`LockedCallsInstrumentedTest` and `ci-emulator-test.sh`'s Phase 5 block); the Pixel's are in
+[phase5-checklist.md](phase5-checklist.md). No test calls or texts 911 or 988, on the emulator or
+anywhere else: those paths are JVM tests (`AlwaysAllowedTest`, `CallRulesTest`, `CallRecordsTest`,
+`PhoneNumbersTest`, `ThirdReviewCallsTest`) and checks that don't dial; the Pixel checklist's one
+emergency call is to a test number Android routes as a normal call (T19).
 
 ### T1. Belay as the default dialer
 
@@ -2086,8 +2096,11 @@ pending (Phase 5 CI).
 
 Belay's consequence: Belay decides every incoming call in its `InCallService.onCallAdded` (withheld
 callers, and every call when another app holds the screening role), refusing it before anything
-rings. Its screening service only decides sooner: it answers within 4 seconds, letting the call
-through when it can't, and asks Android to post no notification for a call it refuses.
+rings. Its screening service only decides sooner: it answers within 2 seconds (core's
+`CallRules.DECIDE_WITHIN_MS`), letting the call through when it can't, and asks Android to post no
+notification for a call it refuses. Two kinds of call are the exception: one from a caller ID
+showing 911 reaches only screening (Telecom gives it to the preloaded dialer, T17), and one in
+emergency callback mode skips screening and always rings (T18).
 
 ### T5. The dialer decides whether a call rings
 
@@ -2106,7 +2119,9 @@ through when it can't, and asks Android to post no notification for a call it re
 - `core/res/AndroidManifest.xml`: `USE_FULL_SCREEN_INTENT` is `normal|appop`: granted at install, but
   an app op, which can be switched off.
 
-Belay's consequence: a call the rules refuse never rings. Belay rings only once it has decided, with
+Belay's consequence: a call the rules refuse never rings. Belay rings once it has decided, or after
+2 seconds without a decision (a slow first read of its store or the call log: calls fail open, and
+the late decision only names the call), with
 its own looping ringtone (`USAGE_NOTIFICATION_RINGTONE`) and vibration, following the ringer mode,
 and only vibrates when another call is on or a screening app asked. The incoming call is a
 `CallStyle` notification with a full-screen intent to Belay's call screen. Belay holds no
@@ -2178,10 +2193,11 @@ least hourly) checks the dialer, for a change with no broadcast.
 
 Belay's consequence: the 2-hour callback window opens on a call Belay places to an always-allowed
 number, a tap on one of Belay's buttons to text 911 or 988, `NEW_OUTGOING_CALL` to one of those
-numbers (from the preloaded dialer or the lock screen's emergency dialer), an outgoing one in
-Android's call log, or Telecom's extra. Belay keeps the time only on the phone, and forgets it once
-the window is over. A call that rings only because of the window is never sent (its record would
-tell a parent).
+numbers (from the preloaded dialer or the lock screen's emergency dialer, also with a caller-ID code
+before it, T17, and before the first unlock after a restart, T19), an outgoing one in Android's call
+log, or Telecom's extra. A text sent from the texting app opens nothing: Android gives Belay no sign
+of it (T18). Belay keeps the time only on the phone, and forgets it once the window is over. A call
+that rings only because of the window is never sent (its record would tell a parent).
 
 ### T12. Missed-call notifications
 
@@ -2265,6 +2281,156 @@ never calls or simulates 911 or 988, which only JVM tests cover.
 
 Belay's consequence: Belay's call screen routes audio with the endpoint API from Android 14 (the
 older `CallAudioState` before), and picks the first suggested SIM, only once the call is allowed.
+
+### T17. What Android counts as an emergency call: the whole number
+
+**Confirmed.** Verified on: AOSP; Pixel pending (Phase 5 checklist, with a test number). Never tried
+with 911.
+
+- Telecom's `NewOutgoingCallIntentBroadcaster.evaluateCall` (outgoing) and `Call.setHandle` (every
+  call, incoming too) ask `TelephonyManager.isEmergencyNumber` about the number as dialed or shown,
+  separators stripped and `*` and `#` kept. `frameworks/opt/telephony`'s
+  `EmergencyNumberTracker.isEmergencyNumber` compares `PhoneNumberUtils.extractNetworkPortionAlt`
+  of it (digits, `*`, `#`, `+`, up to a pause) with its list, exactly; a prefixed form is on the
+  list only for a prefix the carrier names in `emergency_number_prefix_string_array`
+  (`CarrierConfigManager`, empty by default). So "*67911", "*82911", "#31#911" and "*31#911" aren't
+  emergency numbers to Android: Telecom doesn't hand the call to the preloaded dialer, the default
+  dialer's in-call service gets it like any other, and `NEW_OUTGOING_CALL` carries it as dialed.
+- `packages/services/Telephony`'s `TelephonyConnectionService.onCreateOutgoingConnection` asks the
+  same and places a normal call. GSM and IMS then read TS 22.030's codes, which end in `#`
+  (`GsmMmiCode`, `ImsPhoneMmiCode`): "#31#911" and "*31#911" hide or show the caller ID for one
+  call, and Android dials 911 itself, still as a normal call (`GsmCdmaPhone.dialInternal` →
+  `GsmCdmaCallTracker.dialGsm` with no `isEmergency`; `ImsPhone.dialInternal` with Telecom's
+  arguments). "*67911" and "*82911" match no such code, so the network gets "*67911" and decides,
+  as for any vertical service code. The two code readers turn `*67` and `*82` into `#31#` and
+  `*31#` only with `carrier_supports_caller_id_vertical_service_codes_bool` (false by default), and
+  then only for a dial string that's itself an emergency number, or while roaming on a network that
+  needs it.
+- With AOSP's domain selection, an IMS network that answers such a normal call with SIP 380
+  Alternative Service (`ImsReasonInfo.CODE_SIP_ALTERNATE_EMERGENCY_CALL`) has Android dial it again
+  as an emergency call (`TelephonyConnectionService.maybeReselectDomain` → `onEmergencyRedial`).
+- Incoming, `Call.setHandle` makes a call whose caller ID Android lists (911, 112…) an emergency
+  call too, and `InCallController` then binds the preloaded dialer in place of the default one
+  (`adjustServiceBindingsForEmergency`, `EmergencyInCallServiceConnection.setHasEmergency` →
+  `takeControl`). Call screening (`CallsManager.setUpCallFilterGraph`) is still asked first. 988
+  isn't on the list (T3), so a caller ID showing it stays with the default dialer.
+
+Belay's consequence: Belay takes up to three leading codes (`*NN`, `*NNN`, `#NN#`, `*NN#`) off a
+number itself (core's `PhoneNumbers.withoutCodes`) before it decides whether the number always
+works or is private, and never to match a contact: a call the kid dials so to 911 or 988 always
+goes through, opens the 2-hour window and is never recorded, and whatever the network does with it
+is the network's. A caller ID showing 911 is Belay's to refuse only in screening, so one that
+failed the network's check (spoofed) is refused there or not at all: with another screening app
+chosen (T4), or when screening takes too long, it rings in the preloaded dialer.
+
+### T18. What Telecom tells an in-call service about an emergency
+
+**Confirmed.** Verified on: AOSP; Pixel pending (Phase 5 checklist: the carrier's setting).
+
+- Telecom's `CallsManager.onSuccessfulIncomingCall` skips call filtering (Android's block list,
+  call screening, Do Not Disturb's filter) for an incoming call with
+  `Connection.PROPERTY_EMERGENCY_CALLBACK_MODE` or `PROPERTY_NETWORK_IDENTIFIED_EMERGENCY_CALL`, and
+  for every call while `TelephonyManager.isInEmergencySmsMode()` ("Skipping call filtering for …").
+- Telephony's `TelephonyConnection.buildConnectionProperties` puts
+  `PROPERTY_EMERGENCY_CALLBACK_MODE` on every connection while the phone is in emergency callback
+  mode, and `ParcelableCallUtils` passes it to in-call services as
+  `Call.Details.PROPERTY_EMERGENCY_CALLBACK_MODE`. `EmergencyStateTracker` enters that mode after an
+  emergency call only when the carrier sets `imsemergency.emergency_callback_mode_supported_bool`
+  (`CarrierConfigManager.ImsEmergency`, false by default), for `ecm_exit_timer` (5 minutes by
+  default).
+- Telecom's `Call.setConnectionProperties`: a call with `PROPERTY_NETWORK_IDENTIFIED_EMERGENCY_CALL`
+  becomes an emergency call, so the preloaded dialer takes it (T17).
+- Emergency SMS mode (`isInEmergencySmsMode`), `TelephonyCallback.EmergencyCallbackModeListener` and
+  `TelecomManager.isInEmergencyCall` are `@SystemApi`, behind privileged permissions: no ordinary
+  app reads them. Besides the two properties, an in-call service sometimes gets
+  `Call.EXTRA_LAST_EMERGENCY_CALLBACK_TIME_MILLIS` (T11).
+
+Belay's consequence: an incoming call with either property always rings (core's
+`IncomingCall.emergency`, read by the in-call service and by screening), like a call in the 2-hour
+window, and is never sent. Emergency callback mode is short and up to the carrier, so Belay's own
+window (T11, T19) stays the main path. A text to 911 sent from the texting app (Android's emergency
+SMS mode) gives Belay nothing to read, and a text to 988 is an ordinary text to Android: neither
+opens the window.
+
+### T19. A call to 911 before the first unlock after a restart
+
+**Confirmed in AOSP.** Verified on: AOSP; Emulator (`LockedCallsInstrumentedTest`: the storage
+only); Pixel pending (Phase 5 checklist, with a test number).
+
+- Telecom's `NewOutgoingCallIntentBroadcaster` sends `ACTION_NEW_OUTGOING_CALL` for every managed
+  call, emergency calls included (`CallDisposition.sendBroadcast`), after placing it: a non-ordered
+  `sendBroadcastAsUser` to holders of `PROCESS_OUTGOING_CALLS`, with
+  `FLAG_RECEIVER_INCLUDE_BACKGROUND` and the number as dialed.
+- `services/core/.../pm/ComputerEngine.updateFlags`: a query that states neither direct-boot flag
+  matches only direct-boot-aware components while the user is locked (both kinds once unlocked);
+  `am`'s `BroadcastController.collectReceiverComponents` states neither.
+  `ComputerEngine.getPackageStartability`: before credential-encrypted storage unlocks, a package
+  may start only if it's direct-boot aware or partly so (`AndroidPackageUtils.isEncryptionAware`:
+  one component marked `directBootAware` is enough).
+- Telecom's `InCallController.getInCallServiceComponents` states neither flag either, so before the
+  first unlock it can't find a dialer's in-call service that isn't direct-boot aware.
+- Device-protected storage (`Context.createDeviceProtectedStorageContext`) is open from boot;
+  credential-protected storage, where Belay's store is, from the first unlock
+  (`UserManager.isUserUnlocked`).
+- To try it without 911: `packages/services/Telephony`'s `TelephonyShellCommand` takes
+  `cmd phone emergency-number-test-mode -a <number>:normal`, a test emergency number with normal
+  routing (`-p` prints the list, with `routing=`; `-c` clears it). `EmergencyNumberTracker` keeps
+  it in memory only, so a restart clears it. Telephony tells the modem a call to it is a test
+  (`RadioVoiceProxy.emergencyDial`'s `isTesting`, `ImsCallProfile.setEmergencyCallTesting`; the
+  radio HAL's `IRadioVoice.emergencyDial`: such a request "must not be sent to a real emergency
+  service"), and a normal-routed one goes as a normal call while the phone has normal service
+  (emergency routing only "if service cannot support normal routing"). Otherwise Android treats it
+  like 911: Telecom gives it to the preloaded dialer, `NEW_OUTGOING_CALL` carries it, and a call
+  from it is an emergency call (T17).
+
+Belay's consequence: `OutgoingCallReceiver` is Belay's only direct-boot-aware component. A call to
+911 from the lock screen before the first unlock reaches it, and Belay keeps only the time, in
+device-protected storage (`calls/LockedCalls.kt`); its watchers wait for the unlock. Once the phone
+is unlocked, CallsGate and the calls step read the time into the 2-hour window, and the step
+deletes it once the window is over or calls goes off. Before that unlock Belay's in-call and
+screening services can't run, so Telecom is expected to give every call to the preloaded dialer,
+unfiltered (calls fail open; the Pixel checklist looks).
+
+### T20. Whether a call is on
+
+**Confirmed.** Verified on: AOSP; Emulator (a call on Belay's screen, Phase 5 CI); Pixel pending
+(Phase 3 checklist: a call in Google's Phone app).
+
+- Telecom's `TelecomServiceImpl.isInCall` → `canReadPhoneState`: "The system/default dialer can
+  always read phone state - so that emergency calls will still work"; any other app needs
+  `READ_PHONE_STATE`, which Belay doesn't hold. The answer is `CallsManager.hasOngoingCalls`: every
+  managed call, an emergency call in the preloaded dialer included.
+- `AudioService.getMode` and `AudioManager.addOnModeChangedListener` need no permission. The mode is
+  `MODE_RINGTONE` while a call rings, `MODE_IN_CALL` during a carrier call, `MODE_IN_COMMUNICATION`
+  during a call in an app, `MODE_CALL_SCREENING`, and from API 33 `MODE_CALL_REDIRECT` and
+  `MODE_COMMUNICATION_REDIRECT`.
+
+Belay's consequence: every screen lock Belay makes (lock_now, a schedule that locks as it starts,
+lost mode's one lock) waits while a call is on: Belay's own, any Telecom call while Belay is the
+dialer, or, by the audio mode, a call in any app. It happens at the first step after the call if
+it's still due (core's `ScreenLocks`); Belay listens for the audio mode to go back to normal, and
+looks again every minute.
+
+### T21. `WRITE_SECURE_SETTINGS` granted over adb outlives the debugging lock
+
+**Confirmed.** Verified on: AOSP.
+
+- `core/res/AndroidManifest.xml`: `WRITE_SECURE_SETTINGS` is
+  `signature|privileged|development|role|installer`; the shell holds it
+  (`packages/Shell/AndroidManifest.xml`).
+- `services/permission/.../permission/PermissionService.kt`, `setRuntimePermissionGranted`: a
+  `development` permission is granted and revoked like a runtime one (`pm grant`, `pm revoke`), for
+  an app that requests it.
+- `services/core/.../pm/UserRestrictionsUtils`: `DISALLOW_DEBUGGING_FEATURES` turns `adb_enabled`
+  and `adb_wifi_enabled` off and revokes nothing; while it holds, `isSettingRestrictedForUser`
+  refuses to set either to anything but 0, whoever holds the permission.
+
+Belay's consequence: an app that adb granted the permission before the debugging lock keeps it, and
+can reach what's guarded by it, such as Belay's adb enrollment receiver (E1). So that receiver won't
+move a connected phone to another server while Belay holds the debugging lock, unless a parent
+opened repair access (maintenance, or the recovery key), and the phone reports every app holding the
+permission as a sensitive one (`secure_settings`, Android's own apps included). Such an app can't
+turn adb back on.
 
 ## Off belay (Phase 11)
 

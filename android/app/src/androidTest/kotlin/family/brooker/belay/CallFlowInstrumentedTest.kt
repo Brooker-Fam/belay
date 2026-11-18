@@ -11,10 +11,12 @@ import family.brooker.belay.calls.CallFlow
 import family.brooker.belay.calls.CallNotices
 import family.brooker.belay.calls.CallPort
 import family.brooker.belay.calls.EndedCall
+import family.brooker.belay.calls.InCall
 import family.brooker.belay.core.calls.CallRules
 import family.brooker.belay.core.calls.CallsNow
 import family.brooker.belay.core.calls.EmergencyNumbers
 import family.brooker.belay.core.calls.Ring
+import family.brooker.belay.core.calls.RingBecause
 import family.brooker.belay.core.calls.WireCallAction
 import family.brooker.belay.core.calls.WireCallDirection
 import family.brooker.belay.core.calls.WireCallMode
@@ -31,6 +33,8 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /**
  * Phase 5 on the phone, without a real call: Belay's in-call flow (calls/CallFlow.kt) driven with a
@@ -128,6 +132,79 @@ class CallFlowInstrumentedTest {
     }
 
     @Test
+    fun aCallOnBelaysScreenHoldsScreenLocksUntilItEnds() {
+        val call = FakeCall(incoming = true, number = SAM.numbers.single())
+        assertEquals(Ring.RING, add(call).action)
+        assertTrue("a ringing call should hold a screen lock", InCall.now(context))
+        call.state = Call.STATE_ACTIVE
+        instrumentation.runOnMainSync { CallFlow.removed(context, call) }
+        await("Belay still counts a call that ended") { !CallFlow.callOn }
+    }
+
+    @Test
+    fun aSpoofed988CallerIdIsRefusedAndRecordedAsAStrangersCall() {
+        // A made-up stranger showing 988's number with a failed check (CallerNumberVerification FAILED).
+        val call = FakeCall(incoming = true, number = "988", verification = Connection.VERIFICATION_STATUS_FAILED)
+        val decided = add(call)
+        assertEquals(Ring.REJECT, decided.action)
+        assertTrue(decided.unverified)
+        assertFalse(decided.rang)
+        call.state = Call.STATE_DISCONNECTED
+        instrumentation.runOnMainSync { CallFlow.removed(context, call) }
+        val record = records.single()
+        assertTrue("the record says the caller id failed the check", record.unverified)
+        assertFalse(record.callback)
+        assertEquals(WireCallOutcome.REJECTED, record.outcome)
+    }
+
+    @Test
+    fun aCallTelecomMarksAsPartOfAnEmergencyRingsFromANumberTheRulesRefuse() {
+        // Emergency callback mode: a dispatcher calling back from a number that isn't a contact.
+        val call = FakeCall(incoming = true, number = "+15555550160", emergency = true)
+        val decided = add(call)
+        assertEquals(Ring.RING, decided.action)
+        assertEquals(RingBecause.EMERGENCY_MODE, decided.because)
+        assertTrue("Belay didn't ring", decided.rang)
+        assertFalse(call.rejected)
+        call.state = Call.STATE_DISCONNECTED
+        instrumentation.runOnMainSync { CallFlow.removed(context, call) }
+        assertTrue("it rang only for the emergency: never sent", records.single().callback)
+    }
+
+    @Test
+    fun aDecisionThatTakesTooLongLetsTheCallRing() {
+        // The rules take 4 seconds (a cold store, say): the call rings after about 2, and the late
+        // "reject" only names it.
+        val gate = CountDownLatch(1)
+        CallFlow.incomingRules = { _, call, _ ->
+            gate.await(10, TimeUnit.SECONDS)
+            CallRules.incoming(call, CallsNow(calls = rules, contacts = listOf(SAM), now = System.currentTimeMillis()), android)
+        }
+        val call = FakeCall(incoming = true, number = "+15555550199")
+        val from = System.currentTimeMillis()
+        instrumentation.runOnMainSync { CallFlow.added(context, call) }
+        // On Belay's screen, ringing (whatever the phone's ringer mode lets it play).
+        await("it didn't ring after the decision took too long") { CallFlow.calls.value.any { it.id == call.id } }
+        val waited = System.currentTimeMillis() - from
+        assertTrue("it rang after $waited ms, not about 2 s", waited in 1_500..6_000)
+        gate.countDown()
+        var decided: CallFlow.Decided? = null
+        await("the late decision never came") {
+            decided = CallFlow.decisions().lastOrNull { it.at >= from && !it.screened }
+            decided != null
+        }
+        assertTrue(checkNotNull(decided).late)
+        assertFalse("a late reject doesn't end a call that rings", call.rejected)
+        // The kid doesn't answer: a missed call from a stranger, sent like any other.
+        call.state = Call.STATE_DISCONNECTED
+        instrumentation.runOnMainSync { CallFlow.removed(context, call) }
+        val record = records.single()
+        assertEquals(WireCallOutcome.MISSED, record.outcome)
+        assertEquals("+15555550199", record.number)
+        assertFalse(record.callback)
+    }
+
+    @Test
     fun anOutgoingCallBelayDidntPlaceToANumberItDoesntAllowIsEndedBeforeItConnects() {
         val call = FakeCall(incoming = false, number = "+15555550199", state = Call.STATE_DIALING)
         instrumentation.runOnMainSync { CallFlow.added(context, call) }
@@ -180,6 +257,7 @@ class CallFlowInstrumentedTest {
         override val presentation: Int = TelecomManager.PRESENTATION_ALLOWED,
         override val verification: Int = Connection.VERIFICATION_STATUS_NOT_VERIFIED,
         @Volatile override var state: Int = Call.STATE_RINGING,
+        override val emergency: Boolean = false,
     ) : CallPort {
         override val id: String = "fake-" + System.nanoTime()
         override val lastEmergencyCallAt: Long? = null

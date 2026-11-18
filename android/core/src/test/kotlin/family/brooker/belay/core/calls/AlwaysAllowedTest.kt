@@ -79,6 +79,26 @@ class AlwaysAllowedTest {
     }
 
     @Test
+    fun `911 and 988 dialed with a caller-id code before them always work too`() {
+        val emergency = listOf("*67911", "*67 911", "*82 911", "#31#911", "*31#911", "*272911", "*67*82911", "*67911,1")
+        val crisis = listOf("*67988", "#31#988", "*82(988)", "*67 1-800-273-8255", "*6718002738255", "*67 800 273 8255", "#31#+18002738255")
+        for (android in androids) {
+            emergency.forEach { assertEquals(AlwaysAllowedKind.EMERGENCY, AlwaysAllowed.dialed(it, android), "'$it'") }
+            crisis.forEach { assertEquals(AlwaysAllowedKind.CRISIS_988, AlwaysAllowed.dialed(it, android), "'$it'") }
+            (emergency + crisis).forEach { assertTrue(AlwaysAllowed.opensCallbackWindow(it, android), "'$it'") }
+            // kind is what Android itself sees: the whole string, an ordinary number (platform notes T17).
+            (emergency + crisis).forEach { assertNull(AlwaysAllowed.kind(it, android), "'$it'") }
+        }
+        // Android's own emergency numbers, after a code.
+        assertEquals(AlwaysAllowedKind.EMERGENCY, AlwaysAllowed.dialed("*67999", uk))
+        assertNull(AlwaysAllowed.dialed("*67999", us))
+        // Not after something that isn't a code, and not with digits after them.
+        for (n in listOf("*6911", "**67911", "*679115", "67911", "+67911", "*67", "#31#", "##31#911")) {
+            assertNull(AlwaysAllowed.dialed(n, us), "'$n'")
+        }
+    }
+
+    @Test
     fun `ordinary numbers and no number aren't always allowed`() {
         for (android in androids) {
             assertNull(AlwaysAllowed.kind(null, android))

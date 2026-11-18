@@ -65,7 +65,8 @@ describe("the Calls tab", () => {
     expect(first.status).toBe(200);
     expect(html).toContain("Calls are off: Belay leaves calls alone on this phone.");
     expect(html).toContain("Belay then becomes the phone&#39;s phone app");
-    expect(html).toContain("<strong>911, 988 and every emergency number always work</strong>, in and out, in every mode, even when the phone is paused or at bedtime");
+    expect(html).toContain("<strong>911, 988 and every emergency number always work</strong>: the kid can call them in every mode, even when the phone is paused or at bedtime");
+    expect(html).toContain("a call from 911 or another emergency number always rings, unless the phone network says its caller ID is fake");
     expect(html).toContain("Belay never records calls with them.");
     expect(html).toContain("Turn calls on</button>");
     expect(html).toContain('href="' + base + '/calls" aria-current="page">Calls</a>');

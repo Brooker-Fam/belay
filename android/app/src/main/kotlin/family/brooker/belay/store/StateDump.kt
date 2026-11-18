@@ -210,6 +210,8 @@ object StateDump {
                         put("contact_id", it.contactId)
                         put("rang", it.rang)
                         put("screened", it.screened)
+                        put("unverified", it.unverified)
+                        put("late", it.late)
                     }
                 },
             ),

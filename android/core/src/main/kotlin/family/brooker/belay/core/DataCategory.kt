@@ -28,7 +28,8 @@ object DataCategories {
             // SensitivePermissions.categories, in words.
             "What each app is allowed to use: the camera, microphone, location, contacts, " +
                 "texts, call history, photos and media, or nearby devices, and whether it can " +
-                "read notifications, use accessibility controls or act as a device admin",
+                "read notifications, use accessibility controls, act as a device admin or change " +
+                "protected system settings",
             "When an app is installed, updated or removed",
         ),
     )

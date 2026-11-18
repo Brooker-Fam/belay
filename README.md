@@ -91,10 +91,13 @@ checked on a real Pixel yet. Phase 9 (more families) isn't built either.
   app (the app it took over from is again when calls goes off): a large-print dial pad,
   the approved contacts, recent calls, and its own incoming-call and in-call screens, with
   "Emergency (911)" and "988: Call or text for crisis support" always there. Belay decides every
-  call in code before anything rings: 911, Android's emergency numbers and 988 always work, in and
-  out; parents always ring; for 2 hours after a call to 911 or 988 everyone rings, so they can call
-  back; otherwise the family's rules for contacts, other callers, callers with no caller ID and
-  quiet times. A refused call never rings, and Belay's recent calls say why. The kid can ask to add
+  call in code before anything rings: the kid can always call 911, Android's emergency numbers and
+  988 (with a caller-ID code like `*67` before them too); a call from 911 always rings, unless the
+  network says its caller ID is fake, which makes any caller a stranger; parents always ring; for
+  2 hours after a call to 911 or 988 everyone rings, so they can call back; otherwise the family's
+  rules for contacts, other callers, callers with no caller ID and quiet times. A refused call
+  never rings, and Belay's recent calls say why; the kid can remove a call from them. A screen
+  lock waits for a call to end. The kid can ask to add
   a contact. Belay keeps Android's block list in step with the family's blocked numbers, stops other
   apps from placing calls around its rules, and, while calls are recorded, sends each call's record
   (never one with 911, 988 or a private number). If Belay's dialer breaks, calls go through the

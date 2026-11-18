@@ -42,9 +42,10 @@ const ACTION_CHOICES = [
 
 const Always: FC = () => (
   <p class="small">
-    <strong>911, 988 and every emergency number always work</strong>, in and out, in every mode, even when the phone is paused or at bedtime: Belay allows
-    them in its own code, whatever these rules say, and Android sends an emergency call to the phone's own dialer. For 2 hours after a call to an emergency
-    number or 988, every caller rings, so they can call back. Belay never records calls with them.
+    <strong>911, 988 and every emergency number always work</strong>: the kid can call them in every mode, even when the phone is paused or at bedtime,
+    and a call from 911 or another emergency number always rings, unless the phone network says its caller ID is fake. Belay allows them in its own code,
+    whatever these rules say, and Android sends an emergency call to the phone's own dialer. For 2 hours after a call to an emergency number or 988, every
+    caller rings, so they can call back. Belay never records calls with them.
   </p>
 );
 

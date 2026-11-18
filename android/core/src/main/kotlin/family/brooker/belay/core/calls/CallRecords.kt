@@ -1,11 +1,14 @@
 package family.brooker.belay.core.calls
 
 import kotlinx.serialization.Serializable
+import kotlin.math.abs
 
 /**
  * One call as Belay keeps it on the phone, for its recent calls and (with `calls.log`) for
  * POST /api/v1/calls. Never a call with an emergency number, 988 or a private number: those are
- * never made into a CallEntry at all (CallRecords.entry), so nothing can store or send them.
+ * never made into a CallEntry at all (CallRecords.entry), so nothing can store or send them. The
+ * one exception is a caller id that failed the network's check ([unverified]), a stranger's call
+ * whatever number it shows: it's kept like any unknown caller's.
  */
 @Serializable
 data class CallEntry(
@@ -27,6 +30,12 @@ data class CallEntry(
      * that the kid called 911 or 988 (a 988 counselor calling back, say).
      */
     val callback: Boolean = false,
+    /**
+     * An incoming call whose caller id failed the network's check (STIR/SHAKEN): Belay treated it as
+     * a stranger's, whatever number it shows, and the kid's recent calls say the number may be fake.
+     * Sent without its number when that's an emergency number, 988 or a private one (CallRecords.toWire).
+     */
+    val unverified: Boolean = false,
 )
 
 /** A call in Android's own call log (CallLog.Calls), as the phone reads it, for what's below. */
@@ -50,11 +59,19 @@ data class PrivateCall(val number: String, val at: Long, val direction: WireCall
  * Call records (docs/protocol.md, "Calls rules", Records): what Belay keeps on the phone, what it
  * sends with `log`, and what it may take from Android's own call log. The decisions, JVM-tested:
  * - A call with an emergency number, 988 or one of the policy's `private_numbers` is never kept or
- *   sent. On the phone, Belay's recent calls show such a call only while Android's own call log
- *   has it (the kid can delete it there), read when the screen opens and never stored.
+ *   sent, also when the kid dialed a caller-id code before it ("*67 988"). On the phone, Belay's
+ *   recent calls show such a call only while Android's own call log has it (the kid can delete it
+ *   there), read when the screen opens and never stored.
+ * - An incoming call whose caller id failed the network's check is a stranger's: it's kept like any
+ *   unknown caller's, and sent without its number when that number is one of those (the server
+ *   would drop it, and the parents would never learn that a stranger called). Its record says
+ *   nothing about 911, 988 or a private number: it reads like a withheld caller's.
  * - A record names the contact by id, or carries the number for a caller who isn't a contact
- *   (so a parent can approve or block them), or neither for a withheld caller.
- * - A call that rang only because of the callback window is kept on the phone and never sent.
+ *   (so a parent can approve or block them), or neither for a withheld caller. An outgoing call is
+ *   kept only with its contact or its number in E.164 (with any caller-id code taken off): one
+ *   without could only say that the kid called someone, when, and for how long.
+ * - A call that rang only because of an emergency (the callback window, or Telecom's mark) is kept
+ *   on the phone and never sent. The kid can remove any call from Belay's recent calls.
  */
 object CallRecords {
     /** Belay's own recent calls are kept 30 days, at most 500. */
@@ -64,14 +81,48 @@ object CallRecords {
     /** Android's call log is read this far back for the recent calls screen. */
     const val ANDROID_LOG_MS = KEEP_MS
 
-    /** Whether a call with [number] may be kept and sent: never an emergency number, 988 or a private number. */
-    fun keepable(number: String?, privateNumbers: Set<String>, android: EmergencyNumbers): Boolean {
-        if (AlwaysAllowed.allows(number, android)) return false
-        val key = PhoneNumbers.key(number) ?: return true
-        return key !in privateNumbers
+    /**
+     * Whether a call with [number] may be kept and sent: never an emergency number, 988 or a private
+     * number, also with caller-id codes before it.
+     */
+    fun keepable(number: String?, privateNumbers: Set<String>, android: EmergencyNumbers): Boolean =
+        AlwaysAllowed.dialed(number, android) == null && !isPrivate(number, privateNumbers, android)
+
+    /**
+     * Whether [number] is one of the family's [privateNumbers] (E.164): as it is, or once the
+     * caller-id codes dialed before it are taken off ("*67 555 555 0150"), written in E.164 as the
+     * phone's Android writes any number it's given (EmergencyNumbers.e164).
+     */
+    fun isPrivate(number: String?, privateNumbers: Set<String>, android: EmergencyNumbers): Boolean {
+        if (privateNumbers.isEmpty()) return false
+        val key = PhoneNumbers.key(number) ?: return false
+        if (key in privateNumbers) return true
+        return PhoneNumbers.withoutCodes(key).any { rest -> e164(rest, android) in privateNumbers }
     }
 
-    /** The entry to keep for a call that ended, or null when it must never be kept (keepable). */
+    /**
+     * The number an outgoing call to [number] reached, in E.164: as dialed, or with the caller-id
+     * codes before it taken off; null when it can't be written so, or reads as two different numbers.
+     */
+    fun reached(number: String?, android: EmergencyNumbers): String? {
+        val key = PhoneNumbers.key(number) ?: return null
+        PhoneNumbers.e164(key)?.let { return it }
+        return (listOf(key) + PhoneNumbers.withoutCodes(key)).mapNotNull { e164(it, android) }.distinct().singleOrNull()
+    }
+
+    private fun e164(number: String, android: EmergencyNumbers): String? =
+        PhoneNumbers.e164(number) ?: try {
+            android.e164(number)?.takeIf(PhoneNumbers::isE164)
+        } catch (e: RuntimeException) {
+            null
+        }
+
+    /**
+     * The entry to keep for a call that ended, or null when it must never be kept: a call with an
+     * always-allowed or private number (keepable), unless it's an incoming call whose caller id
+     * failed the network's check ([unverified]: a stranger's); and an outgoing call with neither
+     * its contact nor a number Belay can write in E.164 ([reached]).
+     */
     fun entry(
         id: String,
         at: Long,
@@ -84,35 +135,48 @@ object CallRecords {
         privateNumbers: Set<String>,
         android: EmergencyNumbers,
         callback: Boolean = false,
+        unverified: Boolean = false,
     ): CallEntry? {
-        if (!keepable(number, privateNumbers, android)) return null
+        val spoofed = unverified && direction == WireCallDirection.IN
+        if (!spoofed && !keepable(number, privateNumbers, android)) return null
+        val kept = when (direction) {
+            WireCallDirection.IN -> PhoneNumbers.key(number)
+            WireCallDirection.OUT -> reached(number, android) ?: PhoneNumbers.key(number)?.takeIf { contact != null } ?: return null
+        }
         return CallEntry(
             id = id,
             at = at,
             direction = direction,
-            number = PhoneNumbers.key(number),
+            number = kept,
             contactId = contact?.id,
             durationS = durationS.coerceIn(0, MAX_DURATION_S),
             outcome = outcome,
             reason = reason,
             callback = callback,
+            unverified = spoofed,
         )
     }
 
     /**
      * [entry] for POST /api/v1/calls, or null when it must not be sent: a call that rang only
-     * because of the callback window, or one checked again against the policy's private numbers as
-     * they are now (a number made private after the call stays on the phone). The number goes only
-     * for a caller who isn't a contact, and only in E.164.
+     * because of an emergency, one checked again against the policy's private numbers as they are
+     * now (a number made private after the call stays on the phone), or an outgoing call with
+     * neither its contact nor its number. The number goes only for a caller who isn't a contact,
+     * only in E.164, and never when it's an always-allowed or private number: then only a stranger's
+     * unverified caller id is sent at all, without it.
      */
     fun toWire(entry: CallEntry, privateNumbers: Set<String>, android: EmergencyNumbers): WireCallRecord? {
-        if (entry.callback || !keepable(entry.number, privateNumbers, android)) return null
+        if (entry.callback) return null
+        val shielded = !keepable(entry.number, privateNumbers, android)
+        if (shielded && !(entry.unverified && entry.direction == WireCallDirection.IN)) return null
+        val number = if (entry.contactId == null && !shielded) PhoneNumbers.e164(entry.number) else null
+        if (entry.direction == WireCallDirection.OUT && entry.contactId == null && number == null) return null
         return WireCallRecord(
             id = entry.id,
             at = entry.at,
             direction = entry.direction,
             contactId = entry.contactId,
-            number = if (entry.contactId == null) PhoneNumbers.e164(entry.number) else null,
+            number = number,
             durationS = entry.durationS.coerceIn(0, MAX_DURATION_S),
             outcome = entry.outcome,
             reason = entry.reason,
@@ -125,17 +189,30 @@ object CallRecords {
 
     /**
      * The calls from Android's call log that Belay's recent calls may show: only those with an
-     * always-allowed or private number (Belay keeps every other call itself), and not blocked ones.
+     * always-allowed or private number, also with caller-id codes before it (Belay keeps every other
+     * call itself), and not blocked ones; nor one Belay keeps itself ([kept]: a stranger's
+     * unverified caller id showing such a number, within [SAME_CALL_MS]).
      */
-    fun privateCalls(log: List<AndroidLogCall>, privateNumbers: Set<String>, android: EmergencyNumbers, now: Long): List<PrivateCall> =
+    fun privateCalls(
+        log: List<AndroidLogCall>,
+        privateNumbers: Set<String>,
+        android: EmergencyNumbers,
+        now: Long,
+        kept: List<CallEntry> = emptyList(),
+    ): List<PrivateCall> =
         log.mapNotNull { call ->
             val direction = call.direction ?: return@mapNotNull null
             if (call.blocked || now - call.at >= ANDROID_LOG_MS) return@mapNotNull null
             val number = PhoneNumbers.key(call.number) ?: return@mapNotNull null
-            val kind = AlwaysAllowed.kind(number, android)
-            if (kind == null && number !in privateNumbers) return@mapNotNull null
+            val kind = AlwaysAllowed.dialed(number, android)
+            if (kind == null && !isPrivate(number, privateNumbers, android)) return@mapNotNull null
+            val keptHere = kept.any { it.direction == direction && it.number == number && abs(it.at - call.at) < SAME_CALL_MS }
+            if (keptHere) return@mapNotNull null
             PrivateCall(number, call.at, direction, call.durationS.coerceAtLeast(0), kind)
         }.sortedByDescending { it.at }
+
+    /** Android's call log and Belay write a call's time a moment apart: within this, it's the same call. */
+    const val SAME_CALL_MS = 60_000L
 
     /**
      * The last time the kid called an emergency number or 988, as Android's call log shows it (a

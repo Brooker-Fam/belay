@@ -660,6 +660,10 @@ interface EnforcementDao {
 
     @Query("DELETE FROM calls")
     fun clearCalls(): Int
+
+    /** The kid removed one from Belay's recent calls. */
+    @Query("DELETE FROM calls WHERE id = :id")
+    fun deleteCall(id: String): Int
 }
 
 /** Phase 3, network logging: its state, and the days Belay is still counting. Only the agent thread writes. */

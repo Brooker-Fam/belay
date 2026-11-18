@@ -126,6 +126,8 @@ export const PermissionCategory = z.enum([
   "notification_access",
   "accessibility",
   "device_admin",
+  // WRITE_SECURE_SETTINGS: Android's own apps hold it; any other app only because adb granted it.
+  "secure_settings",
 ]);
 export type PermissionCategory = z.infer<typeof PermissionCategory>;
 
