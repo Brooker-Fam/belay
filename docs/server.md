@@ -528,7 +528,8 @@ rules are kept for next time.
   why. Adding a blocked number as a contact unblocks it.
 - **Private numbers** (at most 50): numbers Belay never records, like a helpline, besides 911,
   988 and emergency numbers, which it never records anyway. Making a number private deletes the
-  records already kept of it.
+  records already kept of it, and of the contact who has it: the server keeps no record about a
+  contact with a private number.
 - **Recent calls** (only while Belay records calls): the last 30 days, with **Add as contact**
   and **Block** beside someone who isn't a contact.
 - **The kid's contact requests** come to the Requests page with their name for the contact, the

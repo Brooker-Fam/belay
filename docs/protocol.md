@@ -330,8 +330,9 @@ it's answered `200`, counted in `accepted`, dropped, and counted for the parent 
 never names an emergency number, 988 or one of the phone's `private_numbers`: the server drops
 any record of one before it checks the body (so a record with `911`, which isn't E.164, costs the
 others in the call nothing), counts it for no one, and logs only that it happened, without the
-number or the phone; it treats 988's full number (`+18002738255`) as 988 too. `number` is kept
-only when `contact_id` is null. At most 1000 records are kept a day per phone; past that they're
+number or the phone; it treats 988's full number (`+18002738255`) as 988 too. Nor does it keep
+a record about a contact who has a private number (a call with them may have been with it),
+counted for no one. `number` is kept only when `contact_id` is null. At most 1000 records are kept a day per phone; past that they're
 dropped and counted. `accepted` counts every record in the call, kept, already kept or dropped.
 The endpoint is rate limited per phone apart from the phone's other calls (30 a minute).
 
@@ -429,7 +430,8 @@ What the server does with them:
   refuses to put 911, any emergency number it knows (112, 999, 000…, with or without a country
   code) or 988 (988's full number included) in `blocked_numbers`, saying why, and refuses a
   contact's number there, or one on the emergency card (`parent_numbers`). A number a contact
-  gains that was blocked is unblocked. Making a number private deletes the records kept of it.
+  gains that was blocked is unblocked. Making a number private deletes the records kept of it,
+  and of the contact who has it.
 - **Who may change what:** turning calls on or off, `log` and `private_numbers` are a parent's
   alone (the parent page or the server's CLI), never an AI client's, not even as a proposal. An
   AI client may apply a change whose every part tightens (`mode: contacts`, a stricter `unknown`

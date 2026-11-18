@@ -224,7 +224,8 @@ export interface By {
 
 /**
  * Saves what differs from `current` to `desired` (checked and settled first). A contact made from
- * the kid's request remembers it (`requestOf`).
+ * the kid's request remembers it (`requestOf`). The call records of a private number, and of a
+ * contact who has one, are deleted.
  */
 export function writeSide(db: DB, deviceId: string, current: CallsSide, desired: CallsSide, now: number, by: By, requestOf: (contactId: string) => string | null = () => null): void {
   if (current.enabled !== desired.enabled || !same(current.rules, desired.rules)) {
@@ -255,5 +256,13 @@ export function writeSide(db: DB, deviceId: string, current: CallsSide, desired:
       if (kind === "private") db.prepare("DELETE FROM call_records WHERE device_id = ? AND number = ?").run(deviceId, n);
     }
   }
+  // Nor is a contact who has a private number, whichever came first, the number or the contact:
+  // a record names the contact, not the number, and a call with them may have been with it
+  // (records.ts keeps none of theirs).
+  db.prepare(
+    `DELETE FROM call_records WHERE device_id = ? AND contact_id IN (
+       SELECT n.contact_id FROM contact_numbers n JOIN call_numbers p ON p.device_id = n.device_id AND p.number = n.number AND p.kind = 'private'
+       WHERE n.device_id = ?)`,
+  ).run(deviceId, deviceId);
 }
 

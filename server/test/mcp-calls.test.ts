@@ -13,6 +13,7 @@ import { createParent, createSession } from "../src/auth/parents.js";
 import { listAudit } from "../src/audit.js";
 import { Policy } from "../src/device/schemas.js";
 import { blockNumber, saveContact, setCalls, setPrivateNumber } from "../src/family/calls/changes.js";
+import { callSettings } from "../src/family/calls/store.js";
 import { buildPolicy, type PolicyContext } from "../src/family/policy.js";
 import { approveProposal, listProposals } from "../src/family/proposals.js";
 import { createPersonalToken } from "../src/oauth/store.js";
@@ -335,5 +336,50 @@ describe("with the Calls category off (its default), nothing says anything about
     // With the category on, they say it all.
     updateSettings(t.deps.db, { aiScopes: { calls: true } });
     expect((await read("get_contacts")).proposals_waiting[0].untrusted.change).toBe('Change calls: add "Jordan" (+15555550133) as a contact, who can call and text (and 1 more change)');
+  });
+});
+
+describe("a private number's contact", () => {
+  const THERAPIST = "+15555550150";
+  const HELPLINE = "+15555550177";
+
+  it("making a contact's number private deletes the contact's call records, and the server keeps none about them after, counted nowhere", async () => {
+    const { t, phone, ctx, sam, call, callsOn } = await family();
+    const { mom, coach } = callsOn();
+    const therapist = saveContact(ctx(), phone.deviceId, { name: "Dr. Lee (counselor)", numbers: [THERAPIST, "+15555550151"], calls: true, texts: false, parent: false }, sam).result.contact;
+    const kept = (contactId: string) => (t.deps.db.prepare("SELECT COUNT(*) AS n FROM call_records WHERE device_id = ? AND contact_id = ?").get(phone.deviceId, contactId) as { n: number }).n;
+    const record = (id: string, contactId: string, at: number) => ({ id, at, direction: "out", contact_id: contactId, duration_s: 600, outcome: "answered" });
+    await deviceCall(t, phone.token, "calls", {
+      calls: [
+        record("call-00000001", therapist.id, T0 - 7_200_000),
+        record("call-00000002", therapist.id, T0 - 3_600_000),
+        record("call-00000003", mom.id, T0 - 3_000_000),
+        record("call-00000004", coach.id, T0 - 2_000_000),
+        { id: "call-00000005", at: T0 - 1_000_000, direction: "in", number: STRANGER, duration_s: 0, outcome: "rejected", reason: "unknown" },
+      ],
+    });
+    expect(kept(therapist.id)).toBe(2);
+    // "Making a number private deletes the records already kept of it": the counselor's are of it.
+    setPrivateNumber(ctx(), phone.deviceId, THERAPIST, true, sam);
+    expect(kept(therapist.id)).toBe(0);
+    expect([kept(mom.id), kept(coach.id)]).toEqual([1, 1]);
+    // A phone that hasn't the new rules yet sends one more (the counselor's other number, which the
+    // phone doesn't know is theirs to keep private): accepted, not kept, and counted nowhere.
+    const late = await deviceCall(t, phone.token, "calls", { calls: [record("call-00000006", therapist.id, T0 - 60_000)] });
+    expect(late.status).toBe(200);
+    expect(await late.json()).toMatchObject({ accepted: 1 });
+    expect(kept(therapist.id)).toBe(0);
+    expect(callSettings(t.deps.db, phone.deviceId)?.dropped).toBe(0);
+    expect(t.logs.join("\n")).not.toContain("never keeps");
+    // With the Calls category on, get_calls has the others, and nothing of the counselor.
+    updateSettings(t.deps.db, { aiScopes: { calls: true } });
+    const read = await call("get_calls", { device: "Alex's phone" });
+    expect(read.json.records).toHaveLength(3);
+    expect(JSON.stringify(read.json.records)).not.toContain("Dr. Lee");
+    // Whichever comes first: a contact who gains a number that's private loses their records too.
+    setPrivateNumber(ctx(), phone.deviceId, HELPLINE, true, sam);
+    saveContact(ctx(), phone.deviceId, { id: coach.id, name: coach.name, numbers: [COACH, HELPLINE], calls: true, texts: true, parent: false }, sam);
+    expect(kept(coach.id)).toBe(0);
+    expect(kept(mom.id)).toBe(1);
   });
 });

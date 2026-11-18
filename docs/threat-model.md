@@ -148,7 +148,7 @@ parent records calls.
 | Ask for a contact with words meant for the AI | The name and reason are `untrusted` for AI clients (principle 3), and no AI tool answers a contact request: only a parent approves it, and may change the name first. |
 | Flood contact requests | At most 60 wait per phone (one per number: a new one for the same number takes the old one's place); past that, 429. Notices are capped per phone. |
 | Send made-up call records (with the phone's token) | Kept only while the rules record calls, at most 500 in 128 KB a call, rate limited per phone apart from its other calls, and at most 1000 kept a day. A record naming an emergency number, 988 or a private number is never kept, in any form. |
-| Call 988, or a helpline, without a parent knowing | By design: Belay never records calls with 911, emergency numbers, 988 or the family's private numbers, the server drops any record of one it gets, and no count a parent sees says that one was dropped. |
+| Call 988, or a helpline, without a parent knowing | By design: Belay never records calls with 911, emergency numbers, 988 or the family's private numbers, the server drops any record of one it gets, and no count a parent sees says that one was dropped. A helpline that's a contact too (a counselor) keeps no records either: making its number private deletes the contact's, and the server keeps none about a contact with a private number. |
 
 | Who | Risk | What Belay does |
 |---|---|---|

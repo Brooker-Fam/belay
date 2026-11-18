@@ -187,8 +187,8 @@ const NumbersCard: FC<{ view: View; device: DeviceView; kind: "blocked" | "priva
       </p>
     ) : (
       <p class="small">
-        Belay never records calls with these numbers, like a helpline the kid might call, besides 911, 988 and emergency numbers, which it never records
-        anyway. Only a parent sees which numbers they are: AI apps see how many.
+        Belay never records calls with these numbers, like a helpline the kid might call, or with a contact who has one, besides 911, 988 and emergency
+        numbers, which it never records anyway. Only a parent sees which numbers they are: AI apps see how many.
       </p>
     )}
     {numbers.length === 0 && <p class="muted">None.</p>}

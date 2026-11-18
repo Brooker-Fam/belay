@@ -97,7 +97,8 @@ provider's terms. Settings → "What AI apps may read" turns each category off:
   incoming or outgoing, what happened and why, how long, and the contact, or the number of
   someone who isn't one), the contacts' numbers, the blocked numbers, and the number in the
   kid's request to add a contact. Never what was said, and never calls with 911, 988, an
-  emergency number or a private number: Belay doesn't record those. Without it, `change_calls`
+  emergency number or a private number, or with a contact who has a private number: Belay
+  doesn't record those. Without it, `change_calls`
   takes no phone numbers at all (none to block or unblock, no contact's), and answers every
   change that names one the same way, since its answer about a guessed number would say whose
   it is; proposals waiting name no number or contact.

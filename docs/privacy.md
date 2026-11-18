@@ -157,7 +157,9 @@ app. Call records only while a parent also turns on "Keep a record of calls" (`l
 
 Never what anyone says, and never a call with 911, an emergency number, 988 or one of the
 family's private numbers: the phone doesn't record those at all, and the server drops any record
-of one it gets (it also treats 988's full number, 1-800-273-8255, as 988). For 2 hours after the
+of one it gets (it also treats 988's full number, 1-800-273-8255, as 988). Nor does the server
+keep a record about a contact who has a private number, since a call with them may have been
+with it. For 2 hours after the
 kid calls 911 or 988 (or taps one of Belay's buttons to text them), every caller rings, so they
 can call back; a call that rings only because of that is never sent either, since its record
 would tell. "Please add this contact": the name the kid gives, the number and why. The contacts
@@ -458,7 +460,9 @@ on, never a fix or a place event.
 
 Call records (Phase 5) are kept 90 days by default (the family chooses 1 to 365 in Settings),
 then deleted by the hourly clean-up; a record counts from its own time, or from when it arrived
-if the phone's clock was ahead. Making a number private deletes the records already kept of it.
+if the phone's clock was ahead. Making a number private deletes the records already kept of it,
+and of the contact who has it (records about a contact name the contact, not the number); so
+does giving a contact a number that's private.
 Turning recording or calls off stops new records; the ones kept stay until they age out.
 Contacts, private and blocked numbers stay until a parent removes them, or deletes the phone.
 The AI scope "calls" is off by default for every family.

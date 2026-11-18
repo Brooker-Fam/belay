@@ -148,7 +148,7 @@ export function registerCallsTools(server: McpServer, deps: Deps, caller: Caller
     {
       title: "Calls",
       description:
-        "A phone's calls, newest first: when, incoming or outgoing, what happened (answered, missed, refused, voicemail, or not placed because Belay didn't allow it) and why, how long, and the contact (or the number, for someone who isn't one). Never what was said, and never calls with 911, 988, an emergency number or a private number: Belay doesn't record those. Only while the phone records calls. Times may be a date (2026-11-10, midnight in the family's timezone) or a date and time; the last 7 days by default, at most 92. Needs the Calls category, which is off until a parent turns it on.",
+        "A phone's calls, newest first: when, incoming or outgoing, what happened (answered, missed, refused, voicemail, or not placed because Belay didn't allow it) and why, how long, and the contact (or the number, for someone who isn't one). Never what was said, and never calls with 911, 988, an emergency number or a private number, or with a contact who has a private number: Belay doesn't record those. Only while the phone records calls. Times may be a date (2026-11-10, midnight in the family's timezone) or a date and time; the last 7 days by default, at most 92. Needs the Calls category, which is off until a parent turns it on.",
       inputSchema: {
         device: deviceParam,
         from: z.string().max(40).optional().describe("Start, like 2026-11-10 or 2026-11-10T15:00. Default: 7 days ago."),
