@@ -242,10 +242,10 @@ adb shell am broadcast -a family.brooker.belay.DEBUG_ARCHIVAL -n family.brooker.
    the parent page for this section). In Google Messages' settings, RCS chats says "Connected" (it can
    take minutes to check the number; write down what it says). Write down
    `adb shell appops get family.brooker.belay READ_RESTRICTED_MESSAGES` (expected "No operations."
-   and "Default mode: ignore") and the switch's `status`: "off: never started", Google Messages' version, "its schema has
-   messages_archival" (if it doesn't, update Google Messages from the Play Store first: an older one
-   may not know the key), "default SMS app: com.google.android.apps.messaging", "READ_SMS: not
-   granted", "Belay is the phone app: no".
+   and "Default mode: ignore") and the switch's `status`: "off: never started", Google Messages'
+   version, "its schema has messages_archival" (if it doesn't, update Google Messages from the Play
+   Store first: an older one may not know the key), "default SMS app:
+   com.google.android.apps.messaging", "READ_SMS: not granted", "Belay is the phone app: no".
 2. **Start:** `--es command start` (an hour; add `--ei minutes 30` for less). Expected `result=-1`
    and "on until …", "messages_archival: Belay", "READ_SMS: granted", "archival service: on" and,
    within seconds (ask `status` again), "restricted messages: allowed". `appops get` as in step 1 now
@@ -292,10 +292,10 @@ What the outcome means (send the results; the texts design decides from them):
   Belay read RCS messages (or Google Messages didn't write them to Android's store): Option A would
   cover SMS and MMS only. Write down step 2's `appops` lines.
 - **Google Messages doesn't call Belay:** no update at all, with Google Messages the SMS app, RCS
-  connected, "messages_archival: Belay" and the service on. Google Messages doesn't archive to an app a
-  device owner set up over adb names, without managed Google Play (or this version doesn't). Then the
-  family chooses: Belay as the default SMS app (**Option B**, T9: SMS and MMS only, so iPhone and group
-  chats lose RCS), or no text monitoring.
+  connected, "messages_archival: Belay" and the service on. Google Messages doesn't archive to an app
+  named by a device owner that was set up over adb, without managed Google Play (or this version
+  doesn't). Then the family chooses: Belay as the default SMS app (**Option B**, T9: SMS and MMS only,
+  so iPhone and group chats lose RCS), or no text monitoring.
 
 ## Results
 

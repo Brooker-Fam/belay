@@ -339,34 +339,49 @@ object ArchivalTest {
         }
     }
 
-    /** What the Pixel test needs to know besides the counts, for the adb switch's answer. Never a value from a message. */
+    /**
+     * What the Pixel test needs to know besides the counts, for the adb switch's answer: each fact on its
+     * own, so one Android can't give says so and the others still come. Never a value from a message.
+     */
     private fun facts(app: Context): String {
         val dpm = app.getSystemService(DevicePolicyManager::class.java)
         val pkg = app.packageName
-        val messages = googleMessages(app)
-        val parts = mutableListOf<String>()
-        parts += if (messages == null) {
-            "Google Messages isn't installed"
-        } else {
-            "Google Messages ${ArchivalLog.clean(messages.versionName ?: "?", 40)} (${messages.longVersionCode})${schema(app)}"
-        }
-        parts += "default SMS app: ${Telephony.Sms.getDefaultSmsPackage(app) ?: "none"}"
-        parts += if (dpm.isDeviceOwnerApp(pkg)) {
-            val value = dpm.getApplicationRestrictions(DeviceOwnerSetup.admin(app), ArchivalLog.GOOGLE_MESSAGES).getString(ArchivalLog.KEY)
-            "messages_archival: " + when (value) {
-                null -> "not set"
-                pkg -> "Belay"
-                else -> "another app"
-            }
-        } else {
-            "Belay isn't the device owner"
-        }
-        parts += "READ_SMS: " + if (granted(app)) "granted" else "not granted"
-        parts += "restricted messages: ${restrictedMessages(app)}"
-        parts += "Belay is the phone app: " + if (Dialer.isDialer(app)) "yes" else "no"
-        val enabled = components(app).all { app.packageManager.getComponentEnabledSetting(it) == PackageManager.COMPONENT_ENABLED_STATE_ENABLED }
-        parts += "archival service: " + if (enabled) "on" else "off"
-        return parts.joinToString("; ")
+        return listOf(
+            fact("Google Messages") {
+                val messages = googleMessages(app)
+                if (messages == null) {
+                    "Google Messages isn't installed"
+                } else {
+                    "Google Messages ${ArchivalLog.clean(messages.versionName ?: "?", 40)} (${messages.longVersionCode})${schema(app)}"
+                }
+            },
+            fact("default SMS app") { "default SMS app: ${Telephony.Sms.getDefaultSmsPackage(app) ?: "none"}" },
+            fact(ArchivalLog.KEY) {
+                if (!dpm.isDeviceOwnerApp(pkg)) {
+                    "Belay isn't the device owner"
+                } else {
+                    val value = dpm.getApplicationRestrictions(DeviceOwnerSetup.admin(app), ArchivalLog.GOOGLE_MESSAGES).getString(ArchivalLog.KEY)
+                    "${ArchivalLog.KEY}: " + when (value) {
+                        null -> "not set"
+                        pkg -> "Belay"
+                        else -> "another app"
+                    }
+                }
+            },
+            fact("READ_SMS") { "READ_SMS: " + if (granted(app)) "granted" else "not granted" },
+            "restricted messages: ${restrictedMessages(app)}",
+            "Belay is the phone app: " + if (Dialer.isDialer(app)) "yes" else "no",
+            fact("archival service") {
+                val on = components(app).all { app.packageManager.getComponentEnabledSetting(it) == PackageManager.COMPONENT_ENABLED_STATE_ENABLED }
+                "archival service: " + if (on) "on" else "off"
+            },
+        ).joinToString("; ")
+    }
+
+    private inline fun fact(label: String, read: () -> String): String = try {
+        read()
+    } catch (e: RuntimeException) {
+        "$label: unknown (${e.javaClass.simpleName})"
     }
 
     /** Whether Google Messages' own configuration schema has `messages_archival` (never its titles, which its developer wrote). */
