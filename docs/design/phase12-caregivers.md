@@ -192,7 +192,7 @@ nothing.
 | Field | Type | |
 |---|---|---|
 | `caregivers` | `[{name, until, can}]` | The caregivers with access to this phone (not ended), soonest end first, then by name; at most 20. `name`: the parent's words, one line, at most 40 characters. `until`: when access ends (epoch ms). `can`: what they may do now, in this order, from `status`, `pause`, `help`, `locate` (`locate` only while the phone's location takes checks: `on_demand` or `periodic`). The phone lists one only until `until`, by its own clock. |
-| `pause.caregiver` | string? | The caregiver who set the pause in force (their name), only when one did: absent when a parent, an AI app or the server's CLI did, so a policy without caregivers is the same as before. |
+| `pause.caregiver` | string? | The caregiver who set the pause in force (their name), only when one did: absent when a parent, an AI app or the server's CLI did, so their pause reads as before. |
 | `commands[].caregiver` | string? | The caregiver who sent this `lock_now` or `locate_now` (their name), only when one did; absent otherwise. Never with `via`. |
 
 Example:

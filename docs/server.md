@@ -664,7 +664,9 @@ page; AI apps can't see, add or change caregivers, not even as a proposal.
   in each browser, as a parent does (on an iPhone, from the Home Screen: the caregiver pages have
   their own web app manifest, which opens `/care`). Only the kid's "I need help" goes to them, the
   same notice a parent gets, opening their page. Their browsers are kept apart from the parents',
-  so no parent's notice reaches them, and they go when access ends.
+  so no parent's notice reaches them, and they go when access ends. A browser a parent also turned
+  notifications on in (a shared tablet) has one subscription for both: it gets both kinds of
+  notices, and turning them off there ends both.
 - **Ending:** at its end time, access stops by itself: every caregiver page, every notice and the
   kid's phone check it. The hourly clean-up then marks it ended, deletes their sessions, browsers
   and unused link, and gives their phones new policies without them. **End access now** does all
