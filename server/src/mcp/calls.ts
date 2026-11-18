@@ -226,7 +226,7 @@ export function registerCallsTools(server: McpServer, deps: Deps, caller: Caller
     {
       title: "Change calls",
       description:
-        "Changes who may call the kid and whom the kid may call, on a phone whose calls are on: the call rules (mode, unknown, withheld, outgoing, quiet), contacts (add, or change or remove by id from get_contacts) and blocked numbers. The server decides: a change that only tightens (only contacts, a stricter rule for unknown or withheld callers, outgoing to contacts only, quiet on, fewer contacts allowed to call, blocking a number) applies at once, within seconds when the phone is online; use it only when the parent asks. Anything else, or a mix, or anything that takes from a parent contact, becomes a proposal a parent approves or rejects on the parent page. Turning calls on or off, recording them and private numbers are a parent's alone. It can't block 911, 988 or an emergency number (they always work), a contact's number, or a number Belay doesn't let an AI app block (a parent decides about those). With the Calls category off (it starts off), it takes no phone numbers: blocking, unblocking, adding a contact and a contact's numbers need that category; the rules, and contacts by id without their numbers, don't. Belay doesn't manage texts yet (for now, texting works with anyone), so a contact's texts isn't something it changes; blocking a number stops its texts too. A change it refuses is in the activity log.",
+        "Changes who may call the kid and whom the kid may call, on a phone whose calls are on: the call rules (mode, unknown, withheld, outgoing, quiet), contacts (add, or change or remove by id from get_contacts) and blocked numbers. The server decides: a change that only tightens (only contacts, a stricter rule for unknown or withheld callers, outgoing to contacts only, quiet on, fewer contacts allowed to call, blocking a number) applies at once, within seconds when the phone is online; use it only when the parent asks. Anything else, or a mix, or anything that takes from a parent contact, becomes a proposal a parent approves or rejects on the parent page. Turning calls on or off, recording them and private numbers are a parent's alone. It can't block 911, 988 or an emergency number (they always work) or a contact's number; and while the phone has numbers Belay doesn't show AI apps (private ones, or ones on the kid's emergency card), every block you ask for is a proposal a parent checks. With the Calls category off (it starts off), it takes no phone numbers: blocking, unblocking, adding a contact and a contact's numbers need that category; the rules, and contacts by id without their numbers, don't. Belay doesn't manage texts yet (for now, texting works with anyone), so a contact's texts isn't something it changes; blocking a number stops its texts too. A change it refuses is in the activity log.",
       inputSchema: {
         device: deviceParam,
         change: z
@@ -280,13 +280,20 @@ export function registerCallsTools(server: McpServer, deps: Deps, caller: Caller
       const wanted = applyOps(current, ops, (contact) => proposedContactId(row.id, contact.name, contact.numbers));
       if ("problem" in wanted) return refused("other", wanted.problem);
       const { side } = settle(current, wanted.side);
-      const problem = sideProblem(current, side, { emergencyCard: parentNumbersFor(db, row.id).map((p) => p.number), ai: true });
+      const card = parentNumbersFor(db, row.id).map((p) => p.number);
+      // Numbers an AI app doesn't see: the private ones, and the card's that aren't a contact's. While a
+      // phone has any, every block an AI app asks for is a proposal, so its answer is the same whatever
+      // the number (a refusal would tell which numbers are private); a parent's approval checks them.
+      const contactNumbers = new Set(current.contacts.flatMap((c) => c.numbers));
+      const hidden = current.privateNumbers.length > 0 || card.some((n) => !contactNumbers.has(n));
+      const askParent = hidden && side.blockedNumbers.some((n) => !current.blockedNumbers.includes(n));
+      const problem = sideProblem(current, side, { emergencyCard: card, ai: true, askParent });
       if (problem) return refused("other", `Nothing changed. ${problem}`);
       const classification = classifyCallsChange(current, side);
       const patch = patchOf(current, side);
       if (classification.none) return refusal(`Nothing to change: ${row.name}'s calls are already like that.`);
       const changes = classification.changes.map((c) => ({ effect: c.effect, untrusted: { change: callChangeSentence(c) } }));
-      if (classification.onlyTightens) {
+      if (classification.onlyTightens && !askParent) {
         try {
           const done = applyCallsPatch(ctx(), row.id, patch, ai);
           return result({
@@ -315,7 +322,9 @@ export function registerCallsTools(server: McpServer, deps: Deps, caller: Caller
         why:
           classification.effect === "loosens"
             ? "Part of it loosens who may call the kid or whom they may call, so a parent decides."
-            : "It doesn't only tighten the rules (a new name, or something about a parent contact), so a parent decides.",
+            : askParent && classification.onlyTightens
+              ? "On this phone a parent decides about every number an AI app asks to block: it has numbers Belay doesn't show AI apps (private ones, or ones on the kid's emergency card), and a parent checks the number against them."
+              : "It doesn't only tighten the rules (a new name, or something about a parent contact), so a parent decides.",
         changes,
         ...(made.duplicate ? { note: "The same change was already proposed, and is still waiting." } : {}),
         where: parentsPage("/proposals"),

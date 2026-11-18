@@ -184,7 +184,12 @@ export const aiMayNotBlock = (number: string): string => `Belay doesn't let an A
  * a choice of its own in the activity log, as for a contact's number or one on the card. Unmarking
  * it as part of the block instead would start recording the kid's calls with it unasked.
  */
-export function sideProblem(current: CallsSide, desired: CallsSide, opts: { emergencyCard?: string[]; ai?: boolean } = {}): string | null {
+/**
+ * `askParent`: an AI app's blocks that become a proposal whatever the numbers (mcp/calls.ts), so
+ * the numbers an AI app doesn't see aren't checked here, where its answer could tell them apart:
+ * the parent's approval checks them, with the reason.
+ */
+export function sideProblem(current: CallsSide, desired: CallsSide, opts: { emergencyCard?: string[]; ai?: boolean; askParent?: boolean } = {}): string | null {
   const before = new Map(current.contacts.map((c) => [c.id, c]));
   const owner = new Map<string, string>();
   for (const c of desired.contacts) for (const n of c.numbers) if (!owner.has(n)) owner.set(n, c.name);
@@ -219,7 +224,10 @@ export function sideProblem(current: CallsSide, desired: CallsSide, opts: { emer
     if (problem) return problem;
     const name = owner.get(n);
     if (name !== undefined) return `${n} is ${oneLine(name, 60)}'s number, a contact: take it off the contact first, then block it.`;
-    if (opts.ai && (card.has(n) || kept.has(n))) return aiMayNotBlock(n);
+    if (opts.ai) {
+      if (!opts.askParent && (card.has(n) || kept.has(n))) return aiMayNotBlock(n);
+      continue;
+    }
     if (card.has(n)) return `${n} is on the kid's emergency card: take it off the card first, then block it.`;
     if (kept.has(n)) return `${n} is one of the private numbers, which Belay never records, like a helpline the kid may call: take it off the private numbers first if you mean to block it.`;
   }

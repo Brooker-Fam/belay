@@ -369,19 +369,32 @@ describe("private numbers", () => {
   const THERAPIST = "+15555550150";
   const HELPLINE = "+15555550177";
 
-  it("an AI app can't block one (a helpline the family keeps private), and is told the same as for a number on the emergency card", async () => {
+  it("while a phone has numbers an AI app doesn't see, every block it asks for waits for a parent, whatever the number", async () => {
     const { t, phone, ctx, sam, call, policy, callsOn } = await family();
     callsOn();
+    // Without hidden numbers, blocking a number applies at once: it only tightens.
+    updateSettings(t.deps.db, { aiScopes: { calls: true } });
+    expect((await call("change_calls", { device: "Alex's phone", change: { block_numbers: ["+15555550188"] }, reason: "x" })).json.status).toBe(
+      "done: it only tightens, so it applies at once",
+    );
     setPrivateNumber(ctx(), phone.deviceId, HELPLINE, true, sam);
-    updateSettings(t.deps.db, { parentNumbers: [{ name: "Aunt Jo", number: "+15555550160" }], aiScopes: { calls: true } });
-    const helpline = await call("change_calls", { device: "Alex's phone", change: { block_numbers: [HELPLINE] }, reason: "Unknown number calling late" });
-    expect(helpline.isError).toBe(true);
-    expect(helpline.text).toBe(`Nothing changed. Belay doesn't let an AI app block ${HELPLINE}: only a parent decides about that number, on the phone's Calls tab.`);
-    const card = await call("change_calls", { device: "Alex's phone", change: { block_numbers: ["+15555550160"] }, reason: "x" });
-    expect(card.text).toBe(helpline.text.replace(HELPLINE, "+15555550160"));
-    expect(policy()).toMatchObject({ private_numbers: [HELPLINE], blocked_numbers: [] });
-    // A number no one has still blocks at once.
-    expect((await call("change_calls", { device: "Alex's phone", change: { block_numbers: [STRANGER] }, reason: "x" })).json.status).toBe("done: it only tightens, so it applies at once");
+    updateSettings(t.deps.db, { parentNumbers: [{ name: "Aunt Jo", number: "+15555550160" }] });
+    const answers: { status: unknown; why: unknown; isError: boolean }[] = [];
+    for (const n of [HELPLINE, "+15555550160", STRANGER]) {
+      const r = await call("change_calls", { device: "Alex's phone", change: { block_numbers: [n] }, reason: "Unknown number calling late" });
+      answers.push({ status: r.json.status, why: r.json.why, isError: r.isError });
+    }
+    // The same answer for the private number, the card's and a stranger's: none of them tells which is which.
+    expect(answers.every((a) => JSON.stringify(a) === JSON.stringify(answers[0]))).toBe(true);
+    expect(answers[0]).toMatchObject({ status: "proposed: waiting for a parent to approve or reject it", isError: false });
+    expect(policy()).toMatchObject({ private_numbers: [HELPLINE], blocked_numbers: ["+15555550188"] });
+    // A parent approving them: the stranger's blocks; the helpline's and the card's are refused, with why.
+    const waiting = listProposals(t.deps.db, { deviceId: phone.deviceId, status: "pending" });
+    const about = (n: string) => waiting.find((p) => JSON.stringify(p.change).includes(n))?.id ?? "";
+    expect(approveProposal(ctx(), about(STRANGER), sam.parentId)).toMatchObject({ ok: true });
+    expect(() => approveProposal(ctx(), about(HELPLINE), sam.parentId)).toThrow("one of the private numbers");
+    expect(() => approveProposal(ctx(), about("+15555550160"), sam.parentId)).toThrow("on the kid's emergency card");
+    expect(policy()).toMatchObject({ private_numbers: [HELPLINE], blocked_numbers: ["+15555550188", STRANGER] });
   });
 
   it("making a contact's number private deletes the contact's call records, and the server keeps none about them after, counted nowhere", async () => {
