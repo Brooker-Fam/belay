@@ -20,6 +20,13 @@ data class IncomingCall(
     val verification: Verification = Verification.NOT_VERIFIED,
     /** Telecom's own time of the last emergency call, when it put one on the call (Call.EXTRA_LAST_EMERGENCY_CALLBACK_TIME_MILLIS). */
     val lastEmergencyCallAt: Long? = null,
+    /**
+     * Telecom marked the call as part of an emergency: the phone is in emergency callback mode
+     * after an emergency call (Call.Details.PROPERTY_EMERGENCY_CALLBACK_MODE), or the network
+     * identified the call as an emergency call (PROPERTY_NETWORK_IDENTIFIED_EMERGENCY_CALL).
+     * Telecom itself skips call filtering for both (platform notes T18).
+     */
+    val emergency: Boolean = false,
 )
 
 /** What Belay does with an incoming call. Only [RING] rings: Belay plays the ringtone itself. */
@@ -34,11 +41,12 @@ enum class Ring {
 }
 
 /**
- * Why a call may ring, for Belay's log and the debug state. [EMERGENCY_CALLBACK]: it rings only
- * because of the 2-hour callback window (the rules would have refused it otherwise), so it's never
- * sent: its record would tell a parent that the kid called 911 or 988 (CallRecords).
+ * Why a call may ring, for the debug state (never the log). [EMERGENCY_CALLBACK]: it rings only
+ * because of the 2-hour callback window, and [EMERGENCY_MODE] only because Telecom marked it as
+ * part of an emergency (the rules would have refused either otherwise), so neither is ever sent:
+ * its record would tell a parent that the kid called 911 or 988 (CallRecords).
  */
-enum class RingBecause { CALLS_OFF, ALWAYS_ALLOWED, EMERGENCY_CALLBACK, PARENT, OPEN, CONTACT, RULE }
+enum class RingBecause { CALLS_OFF, ALWAYS_ALLOWED, EMERGENCY_CALLBACK, EMERGENCY_MODE, PARENT, OPEN, CONTACT, RULE }
 
 data class IncomingDecision(
     val action: Ring,
@@ -48,7 +56,12 @@ data class IncomingDecision(
     val contact: WireContact? = null,
     /** Why it rings; null when it's refused. */
     val because: RingBecause? = null,
-)
+    /** The network's check of the caller id failed: Belay treated it as a stranger's, whatever number it shows. */
+    val unverified: Boolean = false,
+) {
+    /** It rang only because of an emergency (the window, or Telecom's mark): kept on the phone, never sent. */
+    val callback: Boolean get() = because == RingBecause.EMERGENCY_CALLBACK || because == RingBecause.EMERGENCY_MODE
+}
 
 /** Whether an outgoing call may connect. */
 data class OutgoingDecision(
@@ -77,59 +90,79 @@ data class CallsNow(
  * the same answer, and every case is in CallRulesTest. In order, for an incoming call:
  *
  * 1. With `calls` null, Belay isn't the dialer: everything rings.
- * 2. Always allowed (AlwaysAllowed: 911, Android's emergency numbers, 988) rings.
- * 3. For 2 hours after the kid called an emergency number or 988 (or texted 988), every caller rings,
- *    withheld and blocked ones too, so a dispatcher or the 988 line can call back from any number.
- *    A call the steps below let ring rings for its own reason, with its contact; one they'd refuse
- *    rings because of the window (RingBecause.EMERGENCY_CALLBACK), and is never sent.
- * 4. A number that failed the network's verification counts as unknown: it's no contact, no parent.
- * 5. A `parent` contact rings in every mode, quiet time included.
- * 6. A number a parent blocked is rejected (Android's block list usually stops it first).
- * 7. `mode: open` lets everyone ring. `mode: contacts`: contacts with `calls` ring; callers with no
+ * 2. A caller id that failed the network's check (STIR/SHAKEN) is a stranger's, whatever number it
+ *    shows: an unknown caller, no contact, no parent, and not 911 (IncomingDecision.unverified).
+ * 3. 911 or another emergency number (AlwaysAllowed) rings, so a dispatcher's callback that shows
+ *    one gets through. 988 doesn't call anyone (a counselor calls back from their own number), so a
+ *    caller id showing 988, or its old 1-800 number, is decided like any other caller below.
+ * 4. A `parent` contact rings in every mode, quiet time included.
+ * 5. A number a parent blocked is rejected (Android's block list usually stops it first).
+ * 6. `mode: open` lets everyone ring. `mode: contacts`: contacts with `calls` ring; callers with no
  *    caller id follow `withheld`; other callers follow `unknown` (a contact without `calls` too, with
  *    the reason `not_allowed`).
- * 8. With `quiet`, during a bedtime or school schedule, a call that would ring goes to voicemail.
+ * 7. With `quiet`, during a bedtime or school schedule, a call that would ring goes to voicemail.
  *    Quiet time never loosens: a call already refused stays refused, with its own reason.
+ * 8. For 2 hours after the kid called an emergency number or 988 (or texted 988), every caller rings,
+ *    withheld, blocked and unverified ones too, so a dispatcher or a counselor can call back from any
+ *    number; and so does a call Telecom marked as part of an emergency (IncomingCall.emergency). A
+ *    call steps 4 to 7 let ring rings for its own reason, with its contact; one they'd refuse rings
+ *    because of the emergency (RingBecause.EMERGENCY_CALLBACK or EMERGENCY_MODE), and is never sent.
  */
 object CallRules {
+    /**
+     * An incoming call whose decision takes longer than this rings anyway (calls fail open): Belay
+     * plays the ringtone itself, so a slow read (the store on a cold start, the call log) would
+     * otherwise leave the call silent. Call screening's own wait is the same.
+     */
+    const val DECIDE_WITHIN_MS = 2_000L
+
     fun incoming(call: IncomingCall, now: CallsNow, android: EmergencyNumbers): IncomingDecision {
         val calls = now.calls ?: return IncomingDecision(Ring.RING, because = RingBecause.CALLS_OFF)
         val number = call.number?.takeIf { call.presentation == Presentation.NUMBER }
-        if (number != null && AlwaysAllowed.allows(number, android)) return IncomingDecision(Ring.RING, because = RingBecause.ALWAYS_ALLOWED)
-        val usual = byTheRules(call, number, calls, now)
-        if (usual.action != Ring.RING && callbackWindow(now.lastEmergencyContactAt, call.lastEmergencyCallAt, now.now)) {
-            return IncomingDecision(Ring.RING, contact = usual.contact, because = RingBecause.EMERGENCY_CALLBACK)
+        val unverified = call.verification == Verification.FAILED
+        if (!unverified && number != null && AlwaysAllowed.kind(number, android) == AlwaysAllowedKind.EMERGENCY) {
+            return IncomingDecision(Ring.RING, because = RingBecause.ALWAYS_ALLOWED)
+        }
+        val usual = byTheRules(number, unverified, calls, now)
+        if (usual.action != Ring.RING) {
+            val because = when {
+                call.emergency -> RingBecause.EMERGENCY_MODE
+                callbackWindow(now.lastEmergencyContactAt, call.lastEmergencyCallAt, now.now) -> RingBecause.EMERGENCY_CALLBACK
+                else -> null
+            }
+            if (because != null) return IncomingDecision(Ring.RING, contact = usual.contact, because = because, unverified = unverified)
         }
         return usual
     }
 
-    /** Steps 4 to 8, for a call that isn't always allowed. */
-    private fun byTheRules(call: IncomingCall, number: String?, calls: WireCalls, now: CallsNow): IncomingDecision {
-        val trusted = call.verification != Verification.FAILED
-        val contact = if (trusted) CallContacts.find(number, now.contacts) else null
-        if (contact?.parent == true) return IncomingDecision(Ring.RING, contact = contact, because = RingBecause.PARENT)
-        if (number != null && number in now.blocked) return IncomingDecision(Ring.REJECT, WireCallReason.NOT_ALLOWED, contact)
-
+    /** Steps 4 to 7, for a call that isn't an emergency number's. */
+    private fun byTheRules(number: String?, unverified: Boolean, calls: WireCalls, now: CallsNow): IncomingDecision {
+        val contact = if (unverified) null else CallContacts.find(number, now.contacts)
         val base = when {
+            contact?.parent == true -> IncomingDecision(Ring.RING, contact = contact, because = RingBecause.PARENT)
+            number != null && number in now.blocked -> IncomingDecision(Ring.REJECT, WireCallReason.NOT_ALLOWED, contact)
             calls.mode == WireCallMode.OPEN -> IncomingDecision(Ring.RING, contact = contact, because = RingBecause.OPEN)
             number == null -> act(calls.withheld, WireCallReason.WITHHELD, null)
             contact != null && contact.calls -> IncomingDecision(Ring.RING, contact = contact, because = RingBecause.CONTACT)
             contact != null -> act(calls.unknown, WireCallReason.NOT_ALLOWED, contact)
             else -> act(calls.unknown, WireCallReason.UNKNOWN, null)
         }
-        if (base.action == Ring.RING && calls.quiet && now.quietSchedule) {
-            return IncomingDecision(Ring.VOICEMAIL, WireCallReason.QUIET, base.contact)
+        val decided = if (base.action == Ring.RING && base.because != RingBecause.PARENT && calls.quiet && now.quietSchedule) {
+            IncomingDecision(Ring.VOICEMAIL, WireCallReason.QUIET, base.contact)
+        } else {
+            base
         }
-        return base
+        return decided.copy(unverified = unverified)
     }
 
     /**
      * Whether the kid may call [number] (as PhoneNumbers.key makes it). Always-allowed numbers always
-     * may; `outgoing: any` allows any number; `outgoing: contacts` allows contacts with `calls`, and
-     * parents (a parent can always be called).
+     * may, also with caller-id codes dialed before them ("*67 988": AlwaysAllowed.dialed), and a call
+     * to one opens the callback window and is never recorded; `outgoing: any` allows any number;
+     * `outgoing: contacts` allows contacts with `calls`, and parents (a parent can always be called).
      */
     fun outgoing(number: String?, now: CallsNow, android: EmergencyNumbers): OutgoingDecision {
-        val always = AlwaysAllowed.kind(number, android)
+        val always = AlwaysAllowed.dialed(number, android)
         val contact = CallContacts.find(number, now.contacts)
         val calls = now.calls ?: return OutgoingDecision(true, contact, always)
         if (always != null) return OutgoingDecision(true, contact, always)
