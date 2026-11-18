@@ -617,7 +617,7 @@
     <string name="calls_rule_call_anyone">You can call any number.</string>
     <string name="calls_rule_call_contacts">You can call your contacts, your parents, 911 and 988.</string>
     <string name="calls_rule_quiet">During bedtime and school, only your parents and 911 ring. Other calls go to voicemail.</string>
-    <string name="calls_rule_log">Belay tells your parent who you call and who calls you, and for how long. Never what anyone says, and never calls with 911, 988 or the numbers your parent made private. If the phone network says a caller\'s number may be fake, Belay treats it as a stranger\'s call, and your parent sees it as one, never as a call with 911, 988 or a private number.</string>
+    <string name="calls_rule_log">Belay tells your parent who you call and who calls you, and for how long. If you call a short number, like 211, or a number without its area code, your parent sees that you called, and for how long, but not the number. Never what anyone says, and never calls with 911, 988 or the numbers your parent made private. If the phone network says a caller\'s number may be fake, Belay treats it as a stranger\'s call, and your parent sees it as one, never as a call with 911, 988 or a private number.</string>
     <string name="calls_rule_always">911 and 988 always work. For 2 hours after you call 911 or 988, anyone can call you back.</string>
 
     <!-- Ask to add a contact (a request your parent answers). -->

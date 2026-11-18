@@ -440,9 +440,12 @@ phone's other calls (30 a minute).
   only because of an emergency (the 2 hours after an emergency contact, or Telecom's mark; the
   rules would have refused it): its record would tell. A caller whose caller id failed the
   network's check is recorded like any stranger, without the number when it showed one of
-  those. An outgoing call is recorded only with its contact or its number (the number it
-  reached, in E.164), never with neither. The kid can remove a call from Belay's own recent
-  calls on the phone; its record, sent or waiting to be, still goes.
+  those. An outgoing call is recorded with its contact or its number (the number it reached,
+  in E.164); one to a number the phone can't write in E.164 (211, a number dialed without its
+  area code) without the number, once the phone knows it isn't an emergency number, 988 or a
+  private one (dialed without its area code, the end of a private number counts as it). The
+  kid can remove a call from Belay's own recent calls on the phone; its record, sent or
+  waiting to be, still goes.
 - **Contacts** live in the policy and in Belay's own storage; Belay never writes them into
   Android's Contacts. A `contact` request is the kid asking for one; a parent approves it.
 - Only a parent turns calls on or off or changes who may call; an AI client may only

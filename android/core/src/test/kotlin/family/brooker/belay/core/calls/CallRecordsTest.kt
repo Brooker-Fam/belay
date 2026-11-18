@@ -77,15 +77,11 @@ class CallRecordsTest {
     }
 
     @Test
-    fun `an outgoing call is kept only with its contact or its number in E164, caller-id codes taken off`() {
+    fun `an outgoing call is kept with the number it reached in E164, caller-id codes taken off`() {
         // What the kid dialed with *67 before an ordinary number: the number it reached.
         assertEquals("+15555550199", assertNotNull(entry("*675555550199", emergency = us)).number)
         assertEquals("+15555550199", assertNotNull(entry("#31#+15555550199", emergency = us)).number)
         assertEquals("+15555550199", assertNotNull(entry("5555550199", emergency = us)).number)
-        // No number Belay can write in E.164 (a short code, a national number without the phone's
-        // country, nothing at all): neither kept nor sent, since it could only say that the kid called
-        // someone, when, and for how long.
-        for (number in listOf("55501", "*611", "5555550199", null, "*67")) assertNull(entry(number), "$number")
         // A three-digit code isn't one Belay takes off (the fourth review's N8), so "*272" and the
         // number after it reach nothing Belay can write.
         assertNull(CallRecords.reached("*2725555550199", us))
@@ -97,8 +93,47 @@ class CallRecordsTest {
         // An incoming short code is kept, and sent without its number.
         val short = assertNotNull(entry("55501", direction = WireCallDirection.IN))
         assertNull(assertNotNull(CallRecords.toWire(short, private, android)).number)
-        // A stored outgoing record without a number (from before) is never sent.
-        assertNull(CallRecords.toWire(assertNotNull(entry("+15555550199")).copy(number = "*675555550199"), private, android))
+        // Nothing dialed: nothing kept.
+        assertNull(entry(null))
+    }
+
+    @Test
+    fun `an outgoing call Android can't write in E164 is kept with what was dialed, and sent without it`() {
+        // A short code, a 7-digit local number, a national number on a phone without a country, a
+        // number in an area code Android doesn't know, an unknown code: the fourth review's N2.
+        for (dialed in listOf("211", "511", "55501", "5550199", "*611", "*2725555550199", "*67")) {
+            val kept = assertNotNull(entry(dialed, emergency = us), dialed)
+            assertEquals(PhoneNumbers.key(dialed), kept.number, "$dialed: what was dialed, on the phone")
+            val wire = assertNotNull(CallRecords.toWire(kept, private, us), "$dialed is sent")
+            assertNull(wire.number, "$dialed: without the number")
+            assertNull(wire.contactId)
+            assertEquals(WireCallDirection.OUT, wire.direction)
+            assertEquals(65, wire.durationS)
+        }
+        assertEquals("5555550199", assertNotNull(entry("5555550199")).number, "no formatter: as dialed")
+        // Never one that's 911, 988 or a private number, also after a caller-id code.
+        for (dialed in listOf("911", "*67 911", "#31#988", "988", "*67 555 555 0150", "5555550150")) {
+            assertNull(entry(dialed, emergency = us), dialed)
+            assertNull(entry(dialed), "$dialed, no formatter")
+        }
+    }
+
+    @Test
+    fun `a private number dialed without its area code is private too`() {
+        // 555-0150 dialed locally may be +1 555 555 0150: never kept, never sent.
+        for (dialed in listOf("5550150", "555-0150", "*67 555 0150", "#31#5550150")) {
+            assertTrue(CallRecords.isPrivate(dialed, private, us), dialed)
+            assertNull(entry(dialed, emergency = us), dialed)
+            assertNull(entry(dialed, direction = WireCallDirection.IN, emergency = us), "$dialed, incoming")
+        }
+        // A short code isn't taken for one (fewer than CallRecords.LOCAL_DIGITS digits), nor are digits
+        // that aren't the end of a private number.
+        for (dialed in listOf("0150", "50150", "5550151", "211")) assertTrue(!CallRecords.isPrivate(dialed, private, us), dialed)
+        // A number Android writes in E.164 is compared exactly: another area code's 555-0150 isn't private.
+        assertTrue(!CallRecords.isPrivate("2025550150", private, us))
+        // An entry kept before the number was made private isn't sent now.
+        val before = assertNotNull(entry("5550150", privateNumbers = emptySet(), emergency = us))
+        assertNull(CallRecords.toWire(before, private, us))
     }
 
     @Test

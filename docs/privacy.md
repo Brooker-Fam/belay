@@ -176,8 +176,11 @@ app. Call records only while a parent also turns on "Keep a record of calls" (`l
 - a caller whose caller ID the phone network says may be fake (it failed STIR/SHAKEN) is a
   stranger's call, whatever number it showed: recorded with that number, or with none when it
   showed 911, 988 or a private number (it says nothing about who called, and would read as the
-  kid being in touch with one). An outgoing call is recorded only with its contact or the number
-  it reached.
+  kid being in touch with one). An outgoing call is recorded with its contact or the number it
+  reached; a call to a number the phone can't write in full (a short number like 211, or one
+  dialed without its area code) is recorded with no number at all, and the phone keeps the
+  digits dialed only in Belay's own recent calls. A number dialed without its area code that's
+  the end of a private number counts as that private number, so it's never recorded.
 
 Never what anyone says, and never a call with 911, an emergency number, 988 or one of the
 family's private numbers, also when the kid dials a caller-ID code before it (`*67 988`): the

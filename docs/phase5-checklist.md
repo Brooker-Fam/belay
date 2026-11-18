@@ -88,6 +88,11 @@ and to call (a parent's is fine); the parent page; adb over USB for the steps ma
    Google's Phone app showed.
 4. In Google Messages, open a conversation with a number that isn't a contact and tap its call
    button: write down what happens.
+5. Set whom the kid can call to any number. From Belay's dial pad, call the second phone's number
+   without its area code (7 digits), and hang up after a few seconds. Write down whether the
+   carrier connected it. Either way, Belay's Recent tab lists the call with the digits as dialed,
+   and the parent page has an outgoing record of it with no number (the fourth review's N2).
+   Set whom the kid can call back to only contacts.
 
 ## 6. Quiet times
 
@@ -195,6 +200,7 @@ clears it too. Every step here is in maintenance (adb on).
 | 5.2 | The 988 dialog's words (nothing called) | pending | |
 | 5.3 | Google's Phone app calling a number that isn't a contact: does the other phone ring? | pending | |
 | 5.4 | Google Messages' call button | pending | |
+| 5.5 | 7 digits with any number allowed: connected?; Recent tab shows the digits; the parent page's record has no number | pending | |
 | 6.1 | Quiet time: voicemail; a parent rings | pending | |
 | 7.1 | `am force-stop` ignored? | pending | |
 | 7.2 | `am crash` during a call: which app, did it drop, did Belay come back | pending | |

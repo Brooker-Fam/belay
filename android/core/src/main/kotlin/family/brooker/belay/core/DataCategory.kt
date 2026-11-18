@@ -95,7 +95,8 @@ object DataCategories {
         title = "Your calls",
         details = listOf(
             "Who you call and who calls you, when, and for how long: the contact's name, or the " +
-                "number of someone who isn't one of your contacts",
+                "number of someone who isn't one of your contacts (not the number when you call a " +
+                "short number, like 211, or a number without its area code)",
             "Calls Belay didn't let through, and why, like a number that isn't in your contacts",
             "Never what anyone says. Calls with 911, 988 and the numbers your parent made private " +
                 "are never recorded or sent.",

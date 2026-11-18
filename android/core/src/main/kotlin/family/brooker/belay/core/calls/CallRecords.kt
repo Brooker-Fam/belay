@@ -68,8 +68,9 @@ data class PrivateCall(val number: String, val at: Long, val direction: WireCall
  *   nothing about 911, 988 or a private number: it reads like a withheld caller's.
  * - A record names the contact by id, or carries the number for a caller who isn't a contact
  *   (so a parent can approve or block them), or neither for a withheld caller. An outgoing call is
- *   kept only with its contact or its number in E.164 (with any caller-id code taken off): one
- *   without could only say that the kid called someone, when, and for how long.
+ *   kept with its number in E.164 (with any caller-id code taken off), or with the digits the kid
+ *   dialed when Android can't write them so (211, a number without its area code): those are
+ *   sent without the number, once they're known not to be 911, 988 or a private number.
  * - A call that rang only because of an emergency (the callback window, or Telecom's mark) is kept
  *   on the phone and never sent. The kid can remove any call from Belay's recent calls.
  */
@@ -91,14 +92,26 @@ object CallRecords {
     /**
      * Whether [number] is one of the family's [privateNumbers] (E.164): as it is, or once the
      * caller-id codes dialed before it are taken off ("*67 555 555 0150"), written in E.164 as the
-     * phone's Android writes any number it's given (EmergencyNumbers.e164).
+     * phone's Android writes any number it's given (EmergencyNumbers.e164). A number Android can't
+     * write so counts as private when it's the last [LOCAL_DIGITS] or more digits of one: dialed
+     * without its area code ("555 0150"), it may well be that number. That errs toward keeping no
+     * record, never toward letting a call through: Belay matches contacts exactly (PhoneNumbers).
      */
     fun isPrivate(number: String?, privateNumbers: Set<String>, android: EmergencyNumbers): Boolean {
         if (privateNumbers.isEmpty()) return false
         val key = PhoneNumbers.key(number) ?: return false
         if (key in privateNumbers) return true
-        return PhoneNumbers.withoutCodes(key)?.let { rest -> e164(rest, android) in privateNumbers } == true
+        return listOfNotNull(key, PhoneNumbers.withoutCodes(key)).any { rest ->
+            val written = e164(rest, android)
+            if (written != null) written in privateNumbers else endsAPrivateNumber(rest, privateNumbers)
+        }
     }
+
+    /** A number dialed without its area code has at least this many digits (North America's local numbers have 7). */
+    const val LOCAL_DIGITS = 6
+
+    private fun endsAPrivateNumber(dialed: String, privateNumbers: Set<String>): Boolean =
+        dialed.length >= LOCAL_DIGITS && dialed.all(Char::isDigit) && privateNumbers.any { it.endsWith(dialed) }
 
     /**
      * The number an outgoing call to [number] reached, in E.164: as dialed, or with the caller-id
@@ -120,8 +133,10 @@ object CallRecords {
     /**
      * The entry to keep for a call that ended, or null when it must never be kept: a call with an
      * always-allowed or private number (keepable), unless it's an incoming call whose caller id
-     * failed the network's check ([unverified]: a stranger's); and an outgoing call with neither
-     * its contact nor a number Belay can write in E.164 ([reached]).
+     * failed the network's check ([unverified]: a stranger's). An outgoing call is kept with the
+     * number it reached in E.164 ([reached]), or else with what the kid dialed: a short code like
+     * 211, or a number without its area code, which Android can't write in E.164 (the fourth
+     * review's N2). Such a call is sent without its number (toWire).
      */
     fun entry(
         id: String,
@@ -141,7 +156,7 @@ object CallRecords {
         if (!spoofed && !keepable(number, privateNumbers, android)) return null
         val kept = when (direction) {
             WireCallDirection.IN -> PhoneNumbers.key(number)
-            WireCallDirection.OUT -> reached(number, android) ?: PhoneNumbers.key(number)?.takeIf { contact != null } ?: return null
+            WireCallDirection.OUT -> reached(number, android) ?: PhoneNumbers.key(number) ?: return null
         }
         return CallEntry(
             id = id,
@@ -159,18 +174,18 @@ object CallRecords {
 
     /**
      * [entry] for POST /api/v1/calls, or null when it must not be sent: a call that rang only
-     * because of an emergency, one checked again against the policy's private numbers as they are
-     * now (a number made private after the call stays on the phone), or an outgoing call with
-     * neither its contact nor its number. The number goes only for a caller who isn't a contact,
-     * only in E.164, and never when it's an always-allowed or private number: then only a stranger's
-     * unverified caller id is sent at all, without it.
+     * because of an emergency, or one checked again against the policy's private numbers as they
+     * are now (a number made private after the call stays on the phone). The number goes only for
+     * someone who isn't a contact, only in E.164, and never when it's an always-allowed or private
+     * number: then only a stranger's unverified caller id is sent at all, without it. A number
+     * that isn't in E.164 (an outgoing call to 211, a number dialed without its area code) isn't
+     * sent: the record says only that there was a call, when, and how long.
      */
     fun toWire(entry: CallEntry, privateNumbers: Set<String>, android: EmergencyNumbers): WireCallRecord? {
         if (entry.callback) return null
         val shielded = !keepable(entry.number, privateNumbers, android)
         if (shielded && !(entry.unverified && entry.direction == WireCallDirection.IN)) return null
         val number = if (entry.contactId == null && !shielded) PhoneNumbers.e164(entry.number) else null
-        if (entry.direction == WireCallDirection.OUT && entry.contactId == null && number == null) return null
         return WireCallRecord(
             id = entry.id,
             at = entry.at,
