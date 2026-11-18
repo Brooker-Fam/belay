@@ -17,7 +17,7 @@ import { registrable, typedWebsite } from "../src/family/network/domains.js";
 import { isPrivateWebsite, listPrivateWebsites, networkDays, neverKept, privateDomainsOf } from "../src/family/network/store.js";
 import { buildPolicy, RuleRefused, type PolicyContext } from "../src/family/policy.js";
 import { updateSettings } from "../src/settings.js";
-import { deviceCall, enrollPhone, get, signIn, testServer, T0 } from "./helpers.js";
+import { deviceCall, enrollPhone, get, postForm, signIn, testServer, T0 } from "./helpers.js";
 
 const TODAY = "2026-11-16";
 
@@ -243,5 +243,96 @@ describe("who chooses the private websites", () => {
     expect(html).toContain("made a website private: network logging never notes it (Alex&#39;s phone)");
     expect(html).toContain("took a website off the private websites (Alex&#39;s phone)");
     expect(html).not.toMatch(/example\.(org|net)/);
+  });
+});
+
+describe("the private websites on the parent page", () => {
+  async function pages(opts: { on?: boolean } = {}) {
+    const f = await family(opts);
+    const base = `/devices/${f.phone.deviceId}`;
+    const form = (path: string, fields: Record<string, string>, csrf = true) => postForm(f.t, path, { ...(csrf ? { _csrf: f.sam.csrf } : {}), ...fields }, { cookie: f.sam.cookie });
+    const page = async (path: string) => {
+      const res = await get(f.t, path, f.sam.cookie);
+      return { status: res.status, html: await res.text() };
+    };
+    return { ...f, base, form, page };
+  }
+
+  it("are under network logging's switch, on or off, with what they do and who sees them", async () => {
+    const { base, page } = await pages();
+    const { html } = await page(base);
+    expect(html.indexOf("<h4>Private websites</h4>")).toBeGreaterThan(html.indexOf('<h3 id="network-logging">Network logging</h3>'));
+    expect(html).toContain('<div class="card" id="private-websites">');
+    expect(html).toContain("Belay never notes these websites, or any name under them, like 988&#39;s: a helpline&#39;s or a counselor&#39;s site");
+    expect(html).toContain("the kid&#39;s phone says some websites are never noted, without naming them (tell the kid yourself if they should know)");
+    expect(html).toContain("AI apps don&#39;t see them, or whether there are any");
+    expect(html).toContain("so www.example.org/help makes all of example.org private");
+    expect(html).toContain(`action="${base}/network/private"`);
+    expect(html).toContain("never 988&#39;s websites or this phone&#39;s private websites");
+  });
+
+  it("a parent adds one as typed, and it's kept as its registrable domain; then removes it", async () => {
+    const { t, base, form, page, policy } = await pages({ on: true });
+    const res = await form(`${base}/network/private`, { website: "https://www.Example.org/help" });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe(`${base}?saved=private_website#private-websites`);
+    expect(policy().network_log.private_domains).toEqual(["example.org"]);
+    let { html } = await page(`${base}?saved=private_website`);
+    expect(html).toContain("Saved: Belay never notes that website, or any name under it, and the server deleted what it kept of it.");
+    expect(html).toContain('<strong class="pkg">example.org</strong>');
+    expect(html).toContain(" by Sam");
+    expect(html).toContain(`action="${base}/network/private/remove"`);
+    expect(html).not.toContain('<p class="muted">None.</p>');
+    // The Network tab says how many, and where to change them.
+    ({ html } = await page(`${base}/network`));
+    expect(html).toContain("1 private website is never noted here, with the");
+    expect(html).toContain(`href="${base}#private-websites"`);
+    const removed = await form(`${base}/network/private/remove`, { domain: "example.org" });
+    expect(removed.headers.get("location")).toBe(`${base}?saved=private_website_removed#private-websites`);
+    expect(policy().network_log.private_domains).toEqual([]);
+    ({ html } = await page(`${base}?saved=private_website_removed`));
+    expect(html).toContain("Taken off the private websites: while network logging is on, the phone notes it again.");
+    expect(listAudit(t.deps.db, { limit: 2, includeReads: false }).map((e) => [e.actor, e.action])).toEqual([
+      ["parent", "network.private_removed"],
+      ["parent", "network.private_added"],
+    ]);
+  });
+
+  it("need a parent signed in and the CSRF token", async () => {
+    const { t, base, form, policy } = await pages();
+    expect((await form(`${base}/network/private`, { website: "example.org" }, false)).status).toBe(403);
+    expect((await postForm(t, `${base}/network/private`, { website: "example.org" })).status).toBe(401);
+    expect((await form(`${base}/network/private/remove`, { domain: "example.org" }, false)).status).toBe(403);
+    expect(policy().network_log.private_domains).toEqual([]);
+  });
+
+  it("a website Belay refuses shows the phone's page with why, and nothing is saved", async () => {
+    const { base, form, policy } = await pages();
+    for (const [website, why] of [
+      ["988lifeline.org", "Belay never notes 988&#39;s websites anyway, so there&#39;s no need to add one."],
+      ["example", "That isn&#39;t a website&#39;s name: type one like example.org"],
+      ["", "Type a website&#39;s name, like example.org."],
+    ] as const) {
+      const res = await form(`${base}/network/private`, { website });
+      expect(res.status, website).toBe(400);
+      const html = await res.text();
+      expect(html, website).toContain(why);
+      expect(html).toContain("<h4>Private websites</h4>");
+    }
+    expect(policy().network_log.private_domains).toEqual([]);
+  });
+
+  it("at 100, the form to add one goes; on a disconnected phone, both forms do", async () => {
+    const { t, phone, base, page, make } = await pages();
+    make("example.org");
+    const insert = t.deps.db.prepare("INSERT INTO network_private_domains (device_id, domain, added_at) VALUES (?, ?, ?)");
+    for (let i = 1; i < LIMITS.maxPrivateDomains; i++) insert.run(phone.deviceId, `site${i}.example`, T0);
+    let { html } = await page(base);
+    expect(html).not.toContain(`action="${base}/network/private"`);
+    expect(html).toContain(`action="${base}/network/private/remove"`);
+    t.deps.db.prepare("UPDATE devices SET revoked_at = ? WHERE id = ?").run(t.now(), phone.deviceId);
+    ({ html } = await page(base));
+    expect(html).toContain('<strong class="pkg">example.org</strong>');
+    expect(html).not.toContain(`action="${base}/network/private/remove"`);
   });
 });

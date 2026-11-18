@@ -1,16 +1,18 @@
 /**
- * Phase 3's network logging on the parent pages: the switch (on the phone's page, under Web) and
- * the phone's Network tab. Mounted inside the parent pages (web/routes.tsx), after the sign-in and
- * CSRF checks, so the switch is a signed-in parent's, with the session's CSRF token. It goes
- * through family/network/changes.ts, which logs it and bumps the policy. AI apps have no way to it.
+ * Phase 3's network logging on the parent pages: the switch and the private websites (on the
+ * phone's page, under Web) and the phone's Network tab. Mounted inside the parent pages
+ * (web/routes.tsx), after the sign-in and CSRF checks, so each change is a signed-in parent's,
+ * with the session's CSRF token. They go through family/network/changes.ts, which logs them and
+ * bumps the policy; a website it refuses shows the phone's page again with why (routes.tsx's
+ * onError). AI apps have no way to any of it.
  */
 import { type Context, Hono } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { DB } from "../db.js";
 import type { Deps } from "../deps.js";
 import { type DeviceView, getDevice } from "../family/devices.js";
-import { setNetworkLog } from "../family/network/changes.js";
-import { networkCutoff, networkDays, networkKept, networkSettings } from "../family/network/store.js";
+import { setNetworkLog, setPrivateWebsite } from "../family/network/changes.js";
+import { listPrivateWebsites, networkCutoff, networkDays, networkKept, networkSettings } from "../family/network/store.js";
 import type { PolicyContext } from "../family/policy.js";
 import { phoneLabels } from "../family/screentime/rules.js";
 import { getSettings } from "../settings.js";
@@ -35,6 +37,7 @@ export function networkCardData(db: DB, device: DeviceView): NetworkCardData {
     keptDays: networkKept(db, device.id).days,
     networkDays: settings.networkDays,
     aiReads: settings.aiScopes.network,
+    privateWebsites: listPrivateWebsites(db, device.id),
   };
 }
 
@@ -81,6 +84,24 @@ export function networkWebRoutes(deps: Deps, h: NetworkWebHelpers): Hono<WebEnv>
     if (on !== "1" && on !== "0") return h.message(c, "Nothing changed", "Use the switch on the phone's page.", 400, { href: `/devices/${device.id}#network`, label: device.name });
     setNetworkLog(ctx(), device.id, on === "1", asParent(c));
     return c.redirect(`/devices/${device.id}?saved=${on === "1" ? "network_on" : "network_off"}#network`);
+  });
+
+  /** A private website, as the parent typed it (a name or a link); one Belay refuses shows the phone's page with why. */
+  app.post("/devices/:id/network/private", async (c) => {
+    const device = deviceOf(c);
+    if (!device) return noPhone(c);
+    if (device.revokedAt !== null) return h.message(c, "Nothing changed", "This phone is disconnected.", 400, { href: `/devices/${device.id}`, label: device.name });
+    setPrivateWebsite(ctx(), device.id, first(await c.req.parseBody({ all: true }), "website"), true, asParent(c));
+    return c.redirect(`/devices/${device.id}?saved=private_website#private-websites`);
+  });
+
+  /** Takes a website off the private websites: network logging notes it again. */
+  app.post("/devices/:id/network/private/remove", async (c) => {
+    const device = deviceOf(c);
+    if (!device) return noPhone(c);
+    if (device.revokedAt !== null) return h.message(c, "Nothing changed", "This phone is disconnected.", 400, { href: `/devices/${device.id}`, label: device.name });
+    setPrivateWebsite(ctx(), device.id, first(await c.req.parseBody({ all: true }), "domain"), false, asParent(c));
+    return c.redirect(`/devices/${device.id}?saved=private_website_removed#private-websites`);
   });
 
   return app;

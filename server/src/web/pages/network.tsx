@@ -1,16 +1,17 @@
 /**
  * Phase 3's network logging on the parent pages: the switch on the phone's page (a parent's alone:
- * no AI app can turn it on or off, or propose it), and the phone's Network tab, shown while it's
- * on: which websites and online services each app looked up, by name, day by day, with how long
- * the server keeps it. Domains and app names come from apps' developers: escaped like everything
- * in JSX, and shown as names, never as links.
+ * no AI app can turn it on or off, or propose it), with the phone's private websites below it
+ * (never noted, like 988's; a parent's alone too, and AI apps never see them), and the phone's
+ * Network tab, shown while it's on: which websites and online services each app looked up, by
+ * name, day by day, with how long the server keeps it. Domains and app names come from apps'
+ * developers: escaped like everything in JSX, and shown as names, never as links.
  */
 import type { FC } from "hono/jsx";
-import type { Enforcement } from "../../device/schemas.js";
+import { type Enforcement, LIMITS } from "../../device/schemas.js";
 import type { DeviceView } from "../../family/devices.js";
-import type { NetworkDayView, NetworkSettings } from "../../family/network/store.js";
+import type { NetworkDayView, NetworkSettings, PrivateWebsite } from "../../family/network/store.js";
 import type { Labels } from "../../family/screentime/words.js";
-import { Csrf, Layout, Notice, Time, type View } from "../ui.js";
+import { Csrf, Layout, Notice, PostButton, Time, type View } from "../ui.js";
 import { PhoneTabs, shortDay } from "./screentime.js";
 
 export interface NetworkCardData {
@@ -24,15 +25,61 @@ export interface NetworkCardData {
   networkDays: number;
   /** Whether AI apps may read it (the network scope). */
   aiReads: boolean;
+  /** The phone's private websites, never noted. */
+  privateWebsites: PrivateWebsite[];
 }
 
 const WhatItIs: FC = () => (
   <p class="small">
     Belay on the phone notes which websites and online services each app looks up, by name (like example.com, never the pages, messages, searches or
     anything typed), and how many times a day, and sends only that. Never what the phone app, texting and the other apps Belay never blocks look up, and
-    never 988's websites. Apps look names up by themselves too, for ads, updates and their own services: a name looked up isn't a page visited. Apps
-    with their own way of looking names up, or a fixed address, aren't noted: it's a record, not a filter.
+    never 988's websites or this phone's private websites. Apps look names up by themselves too, for ads, updates and their own services: a name looked
+    up isn't a page visited. Apps with their own way of looking names up, or a fixed address, aren't noted: it's a record, not a filter.
   </p>
+);
+
+/**
+ * The phone's private websites, under network logging's switch: never noted, like 988's, with the
+ * names under them. Only a parent sees which they are: the kid's phone says some websites are never
+ * noted without naming them, and AI apps don't see them, or whether there are any.
+ */
+const PrivateWebsitesCard: FC<{ view: View; device: DeviceView; websites: PrivateWebsite[] }> = ({ view, device, websites }) => (
+  <div class="card" id="private-websites">
+    <p class="small">
+      Belay never notes these websites, or any name under them, like 988's: a helpline's or a counselor's site the kid might use privately. The phone
+      drops their lookups, the server drops any that arrive anyway, and adding one deletes what the server kept of it. Only you see which they are: while
+      there are any, the kid's phone says some websites are never noted, without naming them (tell the kid yourself if they should know), and AI apps
+      don't see them, or whether there are any.
+    </p>
+    <p class="small muted">Belay notes a website by its main name, so www.example.org/help makes all of example.org private.</p>
+    {websites.length === 0 && <p class="muted">None.</p>}
+    {websites.map((w) => (
+      <div class="row spread">
+        <span>
+          <strong class="pkg">{w.domain}</strong>
+          <span class="small muted">
+            {" "}
+            · added <Time ms={w.addedAt} tz={view.tz} />
+            {w.addedBy ? ` by ${w.addedBy}` : ""}
+          </span>
+        </span>
+        {device.revokedAt === null && (
+          <PostButton view={view} action={`/devices/${device.id}/network/private/remove`} fields={{ domain: w.domain }} kind="quiet">
+            Remove
+          </PostButton>
+        )}
+      </div>
+    ))}
+    {device.revokedAt === null && websites.length < LIMITS.maxPrivateDomains && (
+      <form class="row" method="post" action={`/devices/${device.id}/network/private`}>
+        <Csrf view={view} />
+        <input type="text" name="website" required maxlength={2000} placeholder="example.org" inputmode="url" aria-label="A private website" />
+        <button type="submit" class="quiet">
+          Add
+        </button>
+      </form>
+    )}
+  </div>
 );
 
 /** What Android and Belay on the phone say about logging now. */
@@ -51,43 +98,47 @@ const PhoneState: FC<{ settings: NetworkSettings | null; report: Enforcement["ne
   return <p class="small">On the phone: Android is logging, and Belay sends each day's names as Android hands them over, every hour or two.</p>;
 };
 
-/** The phone page's network logging card, under Web. */
+/** The phone page's network logging card, under Web, with the private websites below it. */
 export const NetworkCard: FC<{ view: View; data: NetworkCardData }> = ({ view, data }) => {
   const { device, settings: s } = data;
   const on = s?.enabled === true;
   return (
-    <div class="card" id="network">
-      {on ? (
-        <p>
-          Network logging is on, since {s.enabledAt !== null ? <Time ms={s.enabledAt} tz={view.tz} /> : "a while"}.{" "}
-          <a href={`/devices/${device.id}/network`}>See what apps looked up</a>.
+    <>
+      <div class="card" id="network">
+        {on ? (
+          <p>
+            Network logging is on, since {s.enabledAt !== null ? <Time ms={s.enabledAt} tz={view.tz} /> : "a while"}.{" "}
+            <a href={`/devices/${device.id}/network`}>See what apps looked up</a>.
+          </p>
+        ) : (
+          <p>Network logging is off: Belay notes nothing about which websites and services apps look up.</p>
+        )}
+        <WhatItIs />
+        <p class="small">
+          The kid's phone lists it under "What your parent can see" while it's on, and Android shows its own notice that the phone "may monitor network
+          traffic". The server keeps it {data.networkDays} days (<a href="/settings">Settings</a>).{" "}
+          {data.aiReads ? "AI apps you connected may read it: you allowed that in Settings." : "AI apps can't read it unless you allow that in Settings."}
         </p>
-      ) : (
-        <p>Network logging is off: Belay notes nothing about which websites and services apps look up.</p>
-      )}
-      <WhatItIs />
-      <p class="small">
-        The kid's phone lists it under "What your parent can see" while it's on, and Android shows its own notice that the phone "may monitor network
-        traffic". The server keeps it {data.networkDays} days (<a href="/settings">Settings</a>).{" "}
-        {data.aiReads ? "AI apps you connected may read it: you allowed that in Settings." : "AI apps can't read it unless you allow that in Settings."}
-      </p>
-      <PhoneState settings={s} report={data.report} />
-      {!on && data.keptDays > 0 && (
-        <p class="small muted">
-          The server still keeps {data.keptDays} day{data.keptDays === 1 ? "" : "s"} of it from before, until {data.keptDays === 1 ? "it's" : "they're"}{" "}
-          {data.networkDays} days old: <a href={`/devices/${device.id}/network`}>see them</a>, or stop collecting under Off belay to delete them now.
-        </p>
-      )}
-      {device.revokedAt === null && (
-        <form method="post" action={`/devices/${device.id}/network`} data-confirm={on ? undefined : "Turn network logging on? The phone notes which websites and services its apps look up."}>
-          <Csrf view={view} />
-          <input type="hidden" name="on" value={on ? "0" : "1"} />
-          <button type="submit" class={on ? "quiet" : undefined}>
-            {on ? "Turn network logging off" : "Turn network logging on"}
-          </button>
-        </form>
-      )}
-    </div>
+        <PhoneState settings={s} report={data.report} />
+        {!on && data.keptDays > 0 && (
+          <p class="small muted">
+            The server still keeps {data.keptDays} day{data.keptDays === 1 ? "" : "s"} of it from before, until {data.keptDays === 1 ? "it's" : "they're"}{" "}
+            {data.networkDays} days old: <a href={`/devices/${device.id}/network`}>see them</a>, or stop collecting under Off belay to delete them now.
+          </p>
+        )}
+        {device.revokedAt === null && (
+          <form method="post" action={`/devices/${device.id}/network`} data-confirm={on ? undefined : "Turn network logging on? The phone notes which websites and services its apps look up."}>
+            <Csrf view={view} />
+            <input type="hidden" name="on" value={on ? "0" : "1"} />
+            <button type="submit" class={on ? "quiet" : undefined}>
+              {on ? "Turn network logging off" : "Turn network logging on"}
+            </button>
+          </form>
+        )}
+      </div>
+      <h4>Private websites</h4>
+      <PrivateWebsitesCard view={view} device={device} websites={data.privateWebsites} />
+    </>
   );
 };
 
@@ -152,6 +203,12 @@ export const NetworkPage: FC<{ view: View; data: NetworkPageData; message?: stri
       <div class="card">
         {on ? <p>Network logging is on. Each app's names, newest day first.</p> : <p>Network logging is off: nothing new arrives. Turn it on on the phone's page, under Web.</p>}
         <WhatItIs />
+        {data.privateWebsites.length > 0 && (
+          <p class="small">
+            {data.privateWebsites.length === 1 ? "1 private website is" : `${data.privateWebsites.length} private websites are`} never noted here, with the
+            names under {data.privateWebsites.length === 1 ? "it" : "them"}: <a href={`/devices/${device.id}#private-websites`}>change them on the phone's page</a>.
+          </p>
+        )}
         <PhoneState settings={data.settings} report={data.report} />
         <p class="small muted">
           Belay keeps this {data.networkDays} days, on this server only (<a href="/settings">Settings</a>), then deletes it. Stop collecting, under Off belay

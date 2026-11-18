@@ -184,6 +184,9 @@ const SAVED: Record<string, string> = {
   handover_cancelled: "The hand-over is taken back. The phone stops showing it within seconds if it's online.",
   network_on: "Network logging is on. The phone starts noting which websites and services its apps look up when it gets this, within seconds if it's online.",
   network_off: "Network logging is off. The phone stops noting them when it gets this, within seconds if it's online.",
+  private_website:
+    "Saved: Belay never notes that website, or any name under it, and the server deleted what it kept of it. The phone gets it within seconds if it's online.",
+  private_website_removed: "Taken off the private websites: while network logging is on, the phone notes it again.",
 };
 
 /** Google account ids for reset protection: long numbers, one per line ("people/" before one is fine). */
