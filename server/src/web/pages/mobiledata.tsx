@@ -49,7 +49,8 @@ const WhatItCovers: FC = () => (
     usual. Android keeps it off, on the phone, even offline; the kid sees which apps are Wi-Fi only under This phone's rules. It doesn't cover a download an
     app hands to Android's download manager, or app updates, which come through Play: to keep updates off mobile data too, make Google Play (
     <span class="pkg">com.android.vending</span>) Wi-Fi only, or set Play's own download preference to Wi-Fi only. Belay never makes the phone app, texting,
-    the keyboard, the home screen or Android's own parts Wi-Fi only: calls, texts, 911 and 988 always work.
+    the keyboard, the home screen or Android's own parts Wi-Fi only: calls, texts, 911 and 988 always work. Think twice before making the browser or a maps
+    app Wi-Fi only: 988's chat runs in the browser, and a kid who's lost away from Wi-Fi needs the map.
   </p>
 );
 
