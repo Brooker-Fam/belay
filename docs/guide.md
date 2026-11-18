@@ -407,7 +407,8 @@ category off too, what Claude can always read: the phone's name, how it's doing 
 when it last checked in, and its rules (the call rules and contacts' names among them).
 
 **What Claude can do:** read those categories, mark apps reviewed, and tighten at once: block an
-app, pause or lock the phone, tighten screen time or the call rules. **Anything that loosens**
+app, pause or lock the phone, tighten screen time or the call rules (naming apps, in a limit or
+otherwise, only with the Apps category on). **Anything that loosens**
 (allowing an app, resuming the phone, a higher limit, another stage) **is only a proposal:** it
 waits on the **Proposals** page until a parent approves it. Claude never answers the kid's
 requests, and can't change measuring screen time, location's settings, turning calls on or
