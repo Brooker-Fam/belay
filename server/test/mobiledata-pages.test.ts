@@ -134,7 +134,7 @@ describe("the Mobile data tab", () => {
     expect(html).toContain("Measuring is on, since");
     expect(html).toContain("Stop measuring</button>");
     expect(html).toContain(`The server keeps it ${getSettings(t.deps.db).mobileDataDays} days`);
-    expect(html).toContain("AI apps you connected may read it");
+    expect(html).toContain("AI apps you connected may read each day once it&#39;s over, never today so far");
     // The bars and the table, the same numbers.
     expect(html).toContain('aria-label="327 MB of mobile data on Mon, Nov 16"');
     expect(html).toContain("<td>327 MB</td><td>1.2 GB</td><td>&lt;b&gt;Video Tube&lt;/b&gt; (300 MB)</td>");

@@ -138,10 +138,13 @@ const MeasuringCard: FC<{ view: View; data: MobileDataPageData }> = ({ view, dat
       )}
       <p class="small">
         Android counts it on the phone: each app's bytes on mobile data, and the phone's total on Wi-Fi, never which websites or Wi-Fi networks, or anything
-        inside the traffic. The phone app, texting and Android's own parts are counted together, never one by one. The phone sends today about every hour,
-        and each day once more when it's over, never anything from before measuring turned on. The kid's phone lists it under "What your parent can see" while
-        it's on. The server keeps it {data.mobileDataDays} days (<a href="/settings">Settings</a>).{" "}
-        {data.aiReads ? "AI apps you connected may read it: that's on in Settings." : "AI apps can't read it unless you allow that in Settings."}
+        inside the traffic. The phone app, texting and Android's own parts are counted together, never one by one. The phone sends today so far at noon and
+        at 6 PM (its own time), counted up to then, and each day once more when it's over, never anything from before measuring turned on: never by the hour.
+        The kid's phone lists it under "What your parent can see" while it's on. The server keeps it {data.mobileDataDays} days (
+        <a href="/settings">Settings</a>).{" "}
+        {data.aiReads
+          ? "AI apps you connected may read each day once it's over, never today so far: that's on in Settings."
+          : "AI apps can't read it unless you allow that in Settings."}
       </p>
       {!on && data.keptDays > 0 && (
         <p class="small muted">

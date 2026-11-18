@@ -1,9 +1,10 @@
 /**
  * Phase 13's mobile data over MCP (docs/design/phase13-mobile-data.md, "MCP"): get_mobile_data,
- * how much mobile data each app on a phone used, day by day, with the day's Wi-Fi total, under the
- * `mobile_data` scope (on by default, like screen time); and change_wifi_only, which makes apps
- * Wi-Fi only at once (it only tightens) and turns anything that lets an app use mobile data again
- * into a proposal for a parent. Package names and app names are their developers' words: they sit
+ * how much mobile data each app on a phone used, each whole day, with the day's Wi-Fi total, under
+ * the `mobile_data` scope (on by default, like screen time): never today so far, which only the
+ * parent page shows (the seventh review's M3); and change_wifi_only, under the Apps scope as
+ * block_app (M1), which makes apps Wi-Fi only at once (it only tightens) and turns anything that
+ * lets an app use mobile data again into a proposal for a parent. Package names and app names are their developers' words: they sit
  * under `untrusted`, and the apps' names need the Apps scope too, as in get_screen_time. No tool
  * turns measuring on or off, and none proposes it: collecting is a parent's choice alone. Every
  * read and change is in the activity log.
@@ -82,7 +83,7 @@ export function registerMobileDataTools(server: McpServer, deps: Deps, caller: C
     {
       title: "Mobile data use",
       description:
-        "How much mobile data each app on one phone used, day by day in the phone's days, as Android counts it: each day's mobile data and Wi-Fi totals, the top apps, and Android, calls and texting together (never one by one); never which websites or networks. Only while a parent measures it. With the Wi-Fi-only apps. The last 7 days by default, at most 31. Needs the Mobile data category; app names need Apps too.",
+        "How much mobile data each app on one phone used, each whole day in the phone's days, as Android counts it: the day's mobile data and Wi-Fi totals, the top apps, and Android, calls and texting together; never which websites or networks, nor today so far. Only while a parent measures it. With the Wi-Fi-only apps. The last 7 days by default, at most 31. Needs the Mobile data category; app names need Apps too.",
       inputSchema: {
         device: deviceParam,
         from: day.optional().describe("The first day. Default: 6 days before `to`."),
@@ -110,7 +111,10 @@ export function registerMobileDataTools(server: McpServer, deps: Deps, caller: C
       const named = settings.aiScopes.apps;
       const label = phoneLabels(db, row.id);
       const app = (pkg: string) => ({ ...(named ? { label: label(pkg) } : {}), package: pkg });
+      // Whole days only (the seventh review's M3): today so far, even at noon and 6 PM, would tell an AI app
+      // asking often which part of the kid's day was off Wi-Fi, which is the Location category's to tell.
       const sent = mobileDataDays(db, row.id, { from: first, to: last });
+      const whole = sent.filter((d) => d.complete);
       const byDay = new Map(sent.map((d) => [d.day, d]));
       const days: unknown[] = [];
       const totals = { mobile: 0, wifi: 0, android: 0, removed: 0, hotspot: 0 };
@@ -119,6 +123,10 @@ export function registerMobileDataTools(server: McpServer, deps: Deps, caller: C
         const n = byDay.get(d);
         if (!n) {
           days.push({ day: d, weekday: DAY_NAMES[weekdayOf(d)], not_sent: "Belay sent nothing for this day: unknown, not none" });
+          continue;
+        }
+        if (!n.complete) {
+          days.push({ day: d, weekday: DAY_NAMES[weekdayOf(d)], not_over: "Not over yet: AI apps get a day's numbers once it's over, never so far" });
           continue;
         }
         totals.mobile += n.mobileBytes;
@@ -132,7 +140,7 @@ export function registerMobileDataTools(server: McpServer, deps: Deps, caller: C
           day: n.day,
           weekday: DAY_NAMES[weekdayOf(n.day)],
           ...(n.zone !== zone ? (isValidTimeZone(n.zone) ? { counted_in: n.zone } : { untrusted: { counted_in: n.zone } }) : {}),
-          counted: n.complete ? "the whole day" : `until ${iso(n.asOf)}, so far`,
+          counted: "the whole day",
           // Measuring turned on during the day: nothing from before then is counted.
           ...(n.from > at(n.day, 0, isValidTimeZone(n.zone) ? n.zone : zone) + 60_000 ? { counted_from: iso(n.from) } : {}),
           mobile_data: amount(n.mobileBytes),
@@ -147,7 +155,7 @@ export function registerMobileDataTools(server: McpServer, deps: Deps, caller: C
       const top = [...perApp.entries()].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).slice(0, MAX_APPS);
       const wifiOnly = wifiOnlyApps(db, row.id).map((w) => {
         // Days that started after it was added, from the days read: a download the download manager made, or a phone that didn't apply it yet.
-        const after = sent.filter((d) => d.from >= w.addedAt).reduce((sum, d) => sum + (d.apps.find((a) => a.package === w.package)?.bytes ?? 0), 0);
+        const after = whole.filter((d) => d.from >= w.addedAt).reduce((sum, d) => sum + (d.apps.find((a) => a.package === w.package)?.bytes ?? 0), 0);
         return {
           added: iso(w.addedAt),
           by: w.addedBy === "ai" ? `${w.clientName ?? "an AI app"} (${w.parentName ?? "a parent"}'s connection)` : w.addedBy === "server" ? "the server's admin command" : (w.parentName ?? "a former parent account"),
@@ -161,12 +169,12 @@ export function registerMobileDataTools(server: McpServer, deps: Deps, caller: C
         to: last,
         days_follow: `the phone's own time zone (${zone})`,
         measuring: s?.measure
-          ? "on: the phone sends each day's use about hourly, and each day once more when it's over"
+          ? "on: you get each day once it's over (the phone sends it a few hours after midnight); never today so far"
           : "off: the phone sends nothing now, so newer days aren't here. Only a parent turns it on.",
         kept_for: `${settings.mobileDataDays} days`,
         ...(named ? {} : { app_names: "Hidden: a parent turned off AI access to apps, so each app is the package name the phone sent." }),
         period: {
-          days_sent: sent.length,
+          whole_days: whole.length,
           mobile_data: amount(totals.mobile),
           wifi: amount(totals.wifi),
           top_apps: top.map(([pkg, bytes]) => ({ mobile_data: amount(bytes), untrusted: app(pkg) })),

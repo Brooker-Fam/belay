@@ -17,6 +17,7 @@ import { listAudit } from "../src/audit.js";
 import { loadMigrations, migrate } from "../src/db.js";
 import { Policy } from "../src/device/schemas.js";
 import { getCaregiver, listCaregivers } from "../src/family/caregivers/store.js";
+import { setMobileDataMeasure } from "../src/family/mobiledata/changes.js";
 import { wifiOnlyApps } from "../src/family/mobiledata/store.js";
 import { buildPolicy, pausePhone, resumePhone, type PolicyContext } from "../src/family/policy.js";
 import { createPersonalToken } from "../src/oauth/store.js";
@@ -285,7 +286,7 @@ async function mcpFamily() {
     }
     return { json, text, isError: res.isError === true };
   };
-  return { t, phone, client, call };
+  return { t, phone, client, call, session };
 }
 
 describe("M1: change_wifi_only needs the Apps category, as block_app does", () => {
@@ -311,6 +312,58 @@ describe("M1: change_wifi_only needs the Apps category, as block_app does", () =
     expect(done.isError).toBe(false);
     expect(wifiOnlyApps(f.t.deps.db, f.phone.deviceId).map((w) => w.package)).toEqual(["com.example.video"]);
     expect(listAudit(f.t.deps.db, { limit: 1, includeReads: false })[0]).toMatchObject({ actor: "ai", action: "mobile_data.wifi_only_added" });
+    await f.client.close();
+  });
+});
+
+describe("M3: an AI app gets each whole day of mobile data, never today so far", () => {
+  it("with only Mobile data on, today so far gives it no numbers and no time; the parent page has it; the whole day gives both", async () => {
+    const f = await mcpFamily();
+    updateSettings(f.t.deps.db, { aiScopes: { ...NO_SCOPES, mobile_data: true } });
+    setMobileDataMeasure({ db: f.t.deps.db, now: f.t.now() }, f.phone.deviceId, true, { kind: "parent", parentId: f.session.parent.id });
+    // Monday Nov 16 in New York, as the phone sends it now: so far at noon, then at 6 PM (core's DataUseUploads.SO_FAR_AT), then whole.
+    const midnight = Date.UTC(2026, 10, 16, 5, 0, 0);
+    const day = (asOf: number, mobile: number, wifi: number, complete = false) => ({
+      day: "2026-11-16",
+      zone: "America/New_York",
+      from: midnight,
+      as_of: asOf,
+      complete,
+      mobile_bytes: mobile,
+      wifi_bytes: wifi,
+      apps: [{ package: "com.example.video", bytes: mobile }],
+      android_bytes: 0,
+      removed_bytes: 0,
+      hotspot_bytes: 0,
+    });
+    const read = async () => {
+      const r = await f.call("get_mobile_data", { device: "Alex's phone", from: "2026-11-16", to: "2026-11-16" });
+      expect(r.isError, r.text).toBe(false);
+      return r.json as { days: Record<string, unknown>[]; period: Record<string, unknown>; measuring: string };
+    };
+    const send = async (d: ReturnType<typeof day>) => {
+      expect((await deviceCall(f.t, f.phone.token, "mobile-data", { days: [d] })).status).toBe(200);
+    };
+    await send(day(midnight + 12 * HOUR, 50e6, 900e6));
+    const noon = await read();
+    await send(day(midnight + 18 * HOUR, 230e6, 900e6));
+    const six = await read();
+    // The two reads say the same: no numbers, no "counted until".
+    expect(six).toEqual(noon);
+    expect(noon.days).toEqual([{ day: "2026-11-16", weekday: "Monday", not_over: "Not over yet: AI apps get a day's numbers once it's over, never so far" }]);
+    expect(noon.period).toMatchObject({ whole_days: 0, mobile_data: { bytes: 0 }, wifi: { bytes: 0 } });
+    expect(noon.measuring).toContain("never today so far");
+    // The parent page has today so far, counted up to 6 PM.
+    const page = await (await get(f.t, `/devices/${f.phone.deviceId}/mobile-data`, f.session.cookie)).text();
+    expect(page).toContain("230 MB");
+    expect(page).toContain("Counted up to");
+    // Once it's over: the whole day.
+    await send(day(midnight + 24 * HOUR, 300e6, 1500e6, true));
+    const whole = await read();
+    expect(whole.days[0]).toMatchObject({ counted: "the whole day", mobile_data: { bytes: 300e6 }, wifi: { bytes: 1500e6 } });
+    expect(whole.period).toMatchObject({ whole_days: 1 });
+    // Where the phone was is still the Location category's, which is off.
+    expect((await f.call("get_location", { device: "Alex's phone" })).isError).toBe(true);
     await f.client.close();
   });
 });
