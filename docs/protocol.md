@@ -383,7 +383,8 @@ device owner only; docs/platform-notes.md W1, W6 to W9):
   batch changed (it waits in an outbox lane of its own, a newer report of a day replacing an
   unsent one), and deletes all of it when `network_log` goes off. When `private_domains` changes,
   it deletes what it counted of the private ones from the days it keeps, and sends each day that
-  changed again (replacing an unsent report, which never goes).
+  changed again, in place of an unsent report; one sent before that, from the policy it has,
+  goes without them.
 
 What the server keeps: a day only while the phone's `network_log` is on; otherwise it's answered
 `200`, counted in `accepted`, dropped, and counted for the parent page. It never keeps the

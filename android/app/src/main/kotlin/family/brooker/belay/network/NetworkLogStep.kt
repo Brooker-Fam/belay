@@ -29,7 +29,7 @@ import java.time.ZoneId
  *   With logging off, the days Belay was counting and every unsent day are deleted: collecting is a
  *   parent's decision, and nothing more is sent. When the family's private websites change, what
  *   the days kept counted of them goes, and each day that changed is queued again, in place of an
- *   unsent report (which never goes).
+ *   unsent report (Sync sends one that goes before then without them: NetworkDigest.sendable).
  * - [take], when Android says a batch is ready (AdminReceiver.onNetworkLogsAvailable): Belay takes
  *   it at once (Android discards a batch 5 minutes after it's taken), and any it missed, reads only
  *   the DNS lookups (never the connect events, an address and a port), reduces them to counts per
@@ -76,7 +76,7 @@ class NetworkLogStep(context: Context, private val store: AgentStore) {
         }
         if (android && state.enabledAt == null) state = NetworkLog.turnedOn(now, bootCount())
         // The family's private websites changed: what the days kept counted of them before goes, and
-        // each day that changed is sent again, in place of an unsent report (which never goes).
+        // each day that changed is sent again, in place of an unsent report.
         val private = Domains.privateSet(policy.networkLog.privateDomains)
         val digest = NetworkLog.digest(private)
         var cleared = emptyList<NetworkDay>()

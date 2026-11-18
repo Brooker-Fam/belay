@@ -46,7 +46,8 @@ data class NetworkDay(
  * - IP addresses, reverse lookups and other names that aren't websites or online services ([Domains]).
  * A day keeps at most [MAX_KEPT] entries and sends the [MAX_SENT] most looked up (fewer if they'd
  * pass [MAX_DAY_BYTES]); the rest are counted in `dropped`. A day kept from before a website was
- * made private loses it at the next batch ([merge]), or at the next step ([without]).
+ * made private loses it at the next batch ([merge]), or at the next step ([without]), and a report
+ * of it queued before goes without it ([sendable]).
  */
 object NetworkDigest {
     /** The server takes at most this many entries a day. */
@@ -170,6 +171,22 @@ object NetworkDigest {
     fun without(day: NetworkDay, private: Set<String>): NetworkDay? {
         val kept = day.counts.filterKeys { !Domains.neverKept(it.domain, private) }
         return if (kept.size == day.counts.size) null else day.copy(counts = kept)
+    }
+
+    /**
+     * A queued report of a day ([WireNetworkDay] JSON) as it may go now: without the family's
+     * [private] websites (or 988's), for one queued before a website was made private and sent
+     * before a step took it out of the day. The same text when nothing changes, or when it can't
+     * be read (the server checks what it gets, and drops what it never keeps).
+     */
+    fun sendable(payload: String, private: Set<String>): String {
+        val day = try {
+            Wire.json.decodeFromString(WireNetworkDay.serializer(), payload)
+        } catch (e: IllegalArgumentException) {
+            return payload
+        }
+        val entries = day.entries.filterNot { Domains.neverKept(it.domain, private) }
+        return if (entries.size == day.entries.size) payload else Wire.json.encodeToString(WireNetworkDay.serializer(), day.copy(entries = entries))
     }
 
     /**

@@ -237,4 +237,20 @@ class NetworkDigestTest {
         assertNull(NetworkDigest.without(clean, private))
         assertNull(NetworkDigest.without(clean, emptySet()))
     }
+
+    @Test
+    fun `a report queued before a website was private is sent without it, and any other as it was`() {
+        val queued = Wire.json.encodeToString(
+            WireNetworkDay.serializer(),
+            WireNetworkDay("2026-11-17", zone.id, at(12), listOf(WireNetworkEntry(chat, "example.org", 3), WireNetworkEntry(chat, "example.com", 5), WireNetworkEntry(game, "help.example.net", 1)), dropped = 4),
+        )
+        val sent = Wire.json.decodeFromString(WireNetworkDay.serializer(), NetworkDigest.sendable(queued, private))
+        assertEquals(WireNetworkDay("2026-11-17", zone.id, at(12), listOf(WireNetworkEntry(chat, "example.com", 5)), dropped = 4), sent)
+        // Nothing private in it: the same text.
+        assertEquals(queued, NetworkDigest.sendable(queued, emptySet()))
+        val other = Wire.json.encodeToString(WireNetworkDay.serializer(), WireNetworkDay("2026-11-17", zone.id, at(12), listOf(WireNetworkEntry(chat, "example.com", 5))))
+        assertEquals(other, NetworkDigest.sendable(other, private))
+        // What can't be read goes as it is: the server checks it.
+        assertEquals("not json", NetworkDigest.sendable("not json", private))
+    }
 }
