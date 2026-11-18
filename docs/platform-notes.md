@@ -530,6 +530,13 @@ docs [2026-10-28] only say owners "are exempt from entering the restricted bucke
 - A process with a running foreground service keeps network access during Doze
   (`NetworkPolicyManagerService`, `FOREGROUND_THRESHOLD_STATE`); alarms and jobs are still
   deferred. Phase 2's long-poll relies on this.
+- But not the jobs of an app on that allowlist (read on 2026-11-18 for the sixth review's G3):
+  `apex/jobscheduler/.../controllers/DeviceIdleJobsController` ("When device is dozing, set
+  constraint for all jobs, except whitelisted apps, as not satisfied") satisfies the not-dozing
+  constraint for a job whose app is in `getPowerSaveWhitelistUserAppIds`. So WorkManager runs
+  Belay's check-in worker every 2 hours and its hourly check overnight too, and the steps the clock
+  or a call brings (the policy timer, every minute while a lock waits for a call) leave due
+  check-ins to them.
 
 ### B7. `DeviceAdminService`
 

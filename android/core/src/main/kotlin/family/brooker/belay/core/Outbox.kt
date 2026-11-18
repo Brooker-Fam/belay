@@ -303,6 +303,30 @@ object OutboxDrain {
     }
 }
 
+/**
+ * What brought an agent step, as far as the sync after it goes (the app's Trigger says which, for
+ * each trigger). Only an [OTHER] step sends a check-in merely because one is due
+ * ([SyncPolicy.checkinNow]; the sixth review's G3).
+ */
+enum class StepCause {
+    /**
+     * Only a time passing: the policy timer (every minute while a lock waits for a call, and at a
+     * rule's boundary), screen time's minute while the screen is on, a location check's alarm, a
+     * retry's.
+     */
+    TIME,
+
+    /** A call came or ended, or a lock that waits for one looks again when Android's audio mode changes. */
+    CALL,
+
+    /** Anything else: something happened on the phone or the server, or the hourly check (one of the workers). */
+    OTHER,
+    ;
+
+    /** Whether the sync after the step checks in when one is due. */
+    val dueCheckin: Boolean get() = this == OTHER
+}
+
 object SyncPolicy {
     const val CHECKIN_INTERVAL_MS = 2L * 60 * 60 * 1000
 
@@ -311,6 +335,19 @@ object SyncPolicy {
 
     fun checkinDue(lastCheckinAt: Long?, now: Long): Boolean =
         lastCheckinAt == null || now < lastCheckinAt || now - lastCheckinAt >= CHECKIN_INTERVAL_MS - CHECKIN_EARLY_MS
+
+    /**
+     * Whether a sync run checks in: when it was asked to ([asked]: a trigger that checks in, a
+     * changed report, the 2-hourly check-in worker), else when one is due, unless only a time
+     * passing or a call brought it ([dueToo] false: [StepCause.dueCheckin], the sixth review's G3).
+     * While a lock waits for a call the policy timer steps every minute, so a check-in sent once
+     * due landed within a minute of 110 minutes after the last, all through the call, where the
+     * workers put them about 2 hours apart: a call's span, to the minute, in `last_check_in`. Those
+     * steps leave a due check-in to the workers' own schedule, and still send what waits in the
+     * outbox, and a report that changed (as [asked]).
+     */
+    fun checkinNow(asked: Boolean, dueToo: Boolean, lastCheckinAt: Long?, now: Long): Boolean =
+        asked || (dueToo && checkinDue(lastCheckinAt, now))
 
     /** The server's clock minus the phone's, taking the middle of the request as when the server answered. */
     fun clockSkewMs(serverTime: Long, sentAt: Long, receivedAt: Long): Long =

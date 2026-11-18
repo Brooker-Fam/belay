@@ -76,7 +76,12 @@ Enrollment attempts are rate-limited per client address.
 
 ## `POST /api/v1/checkin`
 
-Every 2 hours, and when the agent starts.
+Every 2 hours, and when the agent starts, and soon after what the phone reports changes. The
+2-hourly ones come from the phone's background work (its check-in worker, and its hourly check
+when one is due): a step that only a time passing or a call brought (the policy timer, which
+looks every minute while a screen lock waits for a call, screen time's minute, a call's end)
+never checks in just because one is due, so their times don't follow a call (the sixth security
+review's G3).
 
 ```json
 { "status": { …Device… } }

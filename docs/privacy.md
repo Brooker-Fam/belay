@@ -224,7 +224,10 @@ and some (location, calls, network activity) off by default for AI.
 
 - An app change: as soon as Belay notices it (it waits in an outbox while the phone is
   offline, and goes out in order when it's back).
-- A check-in with the phone's status: every 2 hours.
+- A check-in with the phone's status: every 2 hours, from the phone's background work (a step
+  that only a call or the clock brought never sends one just because one is due, so when the
+  phone last checked in doesn't show a call: sixth security review, G3); sooner when what it
+  reports changes.
 - The whole app list: once a day, after every restart, and right after the phone connects
   to the server.
 - Changes Belay noticed before the phone was connected to a server are sent when it

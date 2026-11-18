@@ -218,4 +218,77 @@ class SixthReviewTest {
         assertEquals(listOf("s-bed"), locks.map { it.scheduleId }, "done now, so its problem (S5's, already reported) is recorded now, not at the call's end")
         assertEquals(emptyList(), Upkeep.locks(decision, after, start + 30 * minute, callOn = false).first, "once")
     }
+
+    // ── G3: the per-minute steps while a lock waits, and the check-in that comes due ─────
+
+    /** One agent step's sync, as Agent.step asks it (Sync.request with the trigger's cause, then SyncRun). */
+    private data class Step(val at: Long, val cause: StepCause, val asked: Boolean = false)
+
+    /** The check-ins a sequence of steps sends after one at [from], by core's SyncPolicy.checkinNow. */
+    private fun checkins(from: Long, steps: List<Step>): List<Long> {
+        var last = from
+        val sent = mutableListOf(from)
+        for (step in steps.sortedBy { it.at }) {
+            if (SyncPolicy.checkinNow(step.asked, step.cause.dueCheckin, last, step.at)) {
+                sent += step.at
+                last = step.at
+            }
+        }
+        return sent
+    }
+
+    /**
+     * A night: the hourly watchdog's steps (WatchdogWorker: Trigger.WATCHDOG, a check-in when due),
+     * CheckinWorker's 2-hourly run (always checks in), and, while a lock waits for a call, the policy
+     * timer's step every minute (Trigger.POLICY_TIMER: core's ScreenLocks.recheckAt) and the audio
+     * mode's step at the call's end (Trigger.CALL).
+     */
+    private fun night(from: Long, until: Long, watchdogPhase: Long, workerPhase: Long, callUntil: Long?): List<Step> {
+        val steps = mutableListOf<Step>()
+        var w = from + watchdogPhase
+        while (w < until) { steps += Step(w, StepCause.OTHER); w += hour }
+        var c = from + workerPhase
+        while (c < until) { steps += Step(c, StepCause.OTHER, asked = true); c += 2 * hour }
+        if (callUntil != null) {
+            var r = from
+            while (r < callUntil) { r = ScreenLocks.recheckAt(waiting = true, now = r)!!; steps += Step(r, StepCause.TIME) }
+            steps += Step(callUntil, StepCause.CALL)
+        }
+        return steps
+    }
+
+    @Test
+    fun `G3 - while a lock waits for a call, the per-minute steps never send a check-in because one is due`() {
+        val t0 = at("2026-11-19T01:00:02") // the check-in that carried lock_phone's done
+        val rechecks = generateSequence(t0) { prev -> ScreenLocks.recheckAt(waiting = true, now = prev) }.drop(1).take(6 * 60).toList()
+        // What the review saw: the first recheck past 110 minutes checked in, within a minute of due.
+        val wasDue = rechecks.first { SyncPolicy.checkinDue(t0, it) }
+        assertTrue(wasDue - (t0 + 110 * minute) in 0 until minute)
+        // Now none of them does, however long the call; a step the workers bring still does.
+        assertEquals(listOf(t0), checkins(t0, rechecks.map { Step(it, StepCause.TIME) }))
+        assertEquals(listOf(t0), checkins(t0, listOf(Step(t0 + 3 * hour, StepCause.CALL))), "nor the call's end")
+        assertEquals(listOf(t0, t0 + 2 * hour), checkins(t0, listOf(Step(t0 + 2 * hour, StepCause.OTHER))))
+        // They still send a changed report (Sync.checkinSoon asks), and the workers' check-in.
+        assertTrue(SyncPolicy.checkinNow(asked = true, dueToo = StepCause.TIME.dueCheckin, lastCheckinAt = t0, now = t0 + minute))
+        assertTrue(StepCause.OTHER.dueCheckin)
+        assertFalse(StepCause.TIME.dueCheckin)
+        assertFalse(StepCause.CALL.dueCheckin)
+    }
+
+    @Test
+    fun `G3 - over a night, a call after lock_phone leaves the check-ins exactly where they'd be without one`() {
+        val from = at("2026-11-19T00:00:02")
+        val until = at("2026-11-19T07:00:00")
+        for (wp in listOf(7L, 23L, 41L, 58L)) for (cp in listOf(13L, 52L, 95L)) {
+            val quiet = checkins(from, night(from, until, wp * minute, cp * minute, callUntil = null))
+            val onCall = checkins(from, night(from, until, wp * minute, cp * minute, callUntil = until - 30 * minute))
+            assertEquals(quiet, onCall, "watchdog :$wp, worker +$cp min")
+            // What the review saw: gaps of 110 minutes to the minute, again and again, on a call.
+            val before = mutableListOf(from)
+            for (step in night(from, until, wp * minute, cp * minute, callUntil = until - 30 * minute).sortedBy { it.at }) {
+                if (step.asked || SyncPolicy.checkinDue(before.last(), step.at)) before += step.at
+            }
+            assertTrue(before.zipWithNext { a, b -> (b - a) / minute }.count { it == 110L } >= 2, "the old rule: $before")
+        }
+    }
 }
