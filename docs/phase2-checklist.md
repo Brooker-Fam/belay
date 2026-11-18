@@ -129,6 +129,13 @@ the home Wi-Fi's password ready.
     name), and whether the page opens in Chrome or in its own window. Then pause the phone on
     the parent page, forget that Wi-Fi and join it again: write down whether the sign-in page
     still opens while the phone is paused (the threat model's captive-portal row).
+11. **A parent's password on the kid's phone.** Have notifications on in your own browser or
+    phone first (Settings → Notifications). On the Pixel, open Chrome, go to the server's address
+    (Belay's screen shows it) and sign in with your own parent account. Within seconds your other
+    browsers show "Belay: a new sign-in", "… signed in on Chrome on Android (…)": write down how
+    long it took, and the words. Tap it: it opens Settings at that browser, under Your account.
+    Sign the Pixel's browser out there, and check the Pixel's page asks to sign in again. Activity
+    says "signed in on Chrome on Android" (the second bypass audit's B1).
 
 ## Results
 
@@ -156,3 +163,4 @@ the home Wi-Fi's password ready.
 | 7 | The assistant during a pause: does it answer, which app, what "open YouTube" does | pending | |
 | 7 | No guest; in-app browser and Google app filtered, SafeSearch on | pending | |
 | 7 | The captive portal's app and window, and whether it opens while paused (optional) | pending | |
+| 7 | A parent's sign-in from the Pixel's Chrome: the notice's words and how fast; it opens that browser's row; Sign out works | pending | |

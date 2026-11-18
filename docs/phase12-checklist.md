@@ -60,8 +60,11 @@ the table at the end: no screenshots in the repository, and no names, numbers or
    the caregiver page says the pause stayed as it was and that the phone says she locked it.
    During a call, the lock's notice says it locks about 2 minutes after the call ends. Write down
    each wording, then resume on the parent page.
-6. On the parent page, Activity lists "Grandma (caregiver)" for the sign-in, the pauses and the
-   lock.
+6. On the parent page, Activity lists "Grandma (caregiver)" for the sign-in (with the kind of
+   browser, "on Chrome on Android"), the pauses and the lock. A parent's browser with
+   notifications on got "Belay: a new sign-in", "Grandma joined as a caregiver, on Chrome on
+   Android (…)", when she chose her password in 2.1 (the second bypass audit's B1): write down
+   whether it came at once, and what tapping it opened.
 
 ## 3. Checking where it is
 
@@ -107,7 +110,7 @@ the table at the end: no screenshots in the repository, and no names, numbers or
 | 2.3 | "Paused by Grandma" on Home, the banner and the notice (wordings) | pending | |
 | 2.4 | Pause and lock locks once, with "Grandma locked the screen"; shorter changes nothing; no resume | pending | |
 | 2.5 | Under a parent's pause: the pause stays "your parent", the lock's notice names Grandma, her page says so (wordings) | pending | |
-| 2.6 | Activity lists Grandma's sign-in, pauses and locks | pending | |
+| 2.6 | Activity lists Grandma's sign-in (with the browser), pauses and locks; the parents' sign-in notice came at once | pending | |
 | 3.2 | The check's notice and What Belay told your parent name Grandma | pending | |
 | 3.3 | Location off: no check on the card or the page | pending | |
 | 4.1 | Help notice on Android Chrome, screen off too; opens the request | pending | |
