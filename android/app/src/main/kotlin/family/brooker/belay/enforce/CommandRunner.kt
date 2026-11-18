@@ -9,6 +9,7 @@ import family.brooker.belay.DeviceOwnerSetup
 import family.brooker.belay.core.CommandLog
 import family.brooker.belay.core.CommandPlan
 import family.brooker.belay.core.OtherUsers
+import family.brooker.belay.core.ScreenLocks
 import family.brooker.belay.core.WireCommand
 import family.brooker.belay.core.WireCommandResult
 import family.brooker.belay.service.ParentNotice
@@ -26,7 +27,9 @@ import family.brooker.belay.service.ParentNotice
  * (docs/platform-notes.md V2). The kid is told first, and only when there is someone to remove.
  *
  * Phase 3, lock_now: [lockNow] locks the screen once per command (ScreenLock), after the step
- * applied the rest, so a pause sent with it has suspended the apps first. [run] leaves them out.
+ * applied the rest, so a pause sent with it has suspended the apps first; while a call is on, the
+ * lock waits (core's ScreenLocks): the command stays unrun until a step after the call, or until it
+ * expires. [run] leaves them out.
  *
  * Phase 4, locate_now: the step's location part runs them (location/LocationStep.kt): a fix takes
  * up to a minute, so its result comes at a later step. [run] leaves them out too.
@@ -50,10 +53,17 @@ class CommandRunner(context: Context) {
         return ran + reported
     }
 
-    /** Phase 3: [plan]'s lock_now commands, each locking the screen once (several at once lock once). */
-    fun lockNow(plan: CommandPlan, owner: Boolean): List<WireCommandResult> {
-        val commands = plan.lockNow
-        if (commands.isEmpty()) return emptyList()
+    /**
+     * Phase 3: [plan]'s lock_now commands, each locking the screen once (several at once lock once);
+     * none while a call is on ([callOn]: they're left for a step after it).
+     */
+    fun lockNow(plan: CommandPlan, owner: Boolean, callOn: () -> Boolean = { false }): List<WireCommandResult> {
+        if (plan.lockNow.isEmpty()) return emptyList()
+        val commands = ScreenLocks.lockNow(plan, callOn())
+        if (commands.isEmpty()) {
+            Log.i(Agent.TAG, "screen lock waits for a call to end")
+            return emptyList()
+        }
         val problem = ScreenLock.lock(app, owner)
         val at = System.currentTimeMillis()
         return commands.map { command ->

@@ -53,6 +53,8 @@ class ScreenTimeStep(context: Context, private val store: AgentStore) {
         val usage: List<WireUsageDay>,
         val notices: NoticePlan,
         val locks: List<LockNow>,
+        /** A schedule's lock is due but waits for a call to end (core's ScreenLocks). */
+        val lockWaits: Boolean = false,
     )
 
     fun read(
@@ -75,9 +77,11 @@ class ScreenTimeStep(context: Context, private val store: AgentStore) {
         return Read(policy, reading.wall, zone, update, state, Rules.evaluate(input), input.neverBlocked)
     }
 
-    fun after(read: Read): Done {
+    /** [callOn]: whether a call is on, asked only when a schedule's lock is due (then the lock waits). */
+    fun after(read: Read, callOn: () -> Boolean = { false }): Done {
         val notices = Notices.plan(read.decision, read.state, read.now)
-        val (locks, locked) = Upkeep.locks(read.decision, notices.state, read.now)
+        val waits = Upkeep.lockDue(read.decision, notices.state, read.now) && callOn()
+        val (locks, locked) = Upkeep.locks(read.decision, notices.state, read.now, callOn = waits)
         val days = read.decision.days
         val uploads = UsageUploads.plan(
             measure = read.policy.measure,
@@ -96,6 +100,7 @@ class ScreenTimeStep(context: Context, private val store: AgentStore) {
             usage = uploads.days,
             notices = notices,
             locks = locks,
+            lockWaits = waits,
         )
     }
 }
