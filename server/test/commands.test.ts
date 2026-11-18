@@ -21,7 +21,7 @@ async function family() {
   const phone = await enrollPhone(t, "CI phone");
   const policy = () => Policy.parse(buildPolicy(t.deps.db, phone.deviceId, t.now()));
   /** A check-in: how many other users the phone counts, restrictions it didn't set, and command results. */
-  const report = (health: { other_users?: number; foreign_restrictions?: string[] } = {}, commands: { id: string; result: "done" | "failed" | "expired"; at: number; problem?: string }[] = []) =>
+  const report = (health: { other_users?: number; foreign_restrictions?: string[] } = {}, commands: { id: string; result: "done" | "failed" | "expired"; at: number; problem?: string; waited_for_call?: boolean }[] = []) =>
     deviceCall(t, phone.token, "checkin", {
       status: device({ device_time: t.now(), enforcement: { policy_version: policy().version, applied_at: t.now(), commands } }, health),
     });
@@ -90,8 +90,9 @@ describe("remove_other_users", () => {
     expect(listCommands(t.deps.db, phone.deviceId, t.now())[0]).toMatchObject({ id: first.id, state: "not_done" });
     // It stays in the policy, so the phone can say it got it too late.
     expect(policy().commands.map((c) => c.id)).toEqual([first.id]);
-    await report({}, [{ id: first.id, result: "expired", at: t.now() }]);
-    expect(listCommands(t.deps.db, phone.deviceId, t.now())[0]).toMatchObject({ state: "expired" });
+    // Only a lock_now waits for a call: a phone that says this one did isn't taken at its word.
+    await report({}, [{ id: first.id, result: "expired", at: t.now(), waited_for_call: true }]);
+    expect(listCommands(t.deps.db, phone.deviceId, t.now())[0]).toMatchObject({ state: "expired", waitedForCall: false });
     expect(policy().commands).toEqual([]);
     // One past its expiry with no word is replaced by a new one.
     const second = issueCommand({ db: t.deps.db, now: t.now() }, phone.deviceId, "remove_other_users", { kind: "server" }).result.command;

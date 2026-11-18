@@ -166,6 +166,27 @@ describe("the Screen time tab", () => {
     expect(html).toContain("<blockquote>Android lets Belay lock the screen only after the phone restarts once with this version of Belay.</blockquote>");
     expect(sam.parent.name).toBe("Sam");
   });
+
+  it("says a call was on until a lock expired, when the phone says its lock waited for one", async () => {
+    const { t, phone, base, form, page, policy } = await family();
+    const expire = async (waited: boolean) => {
+      expect((await form(`/devices/${phone.deviceId}/lock`, { minutes: "30" })).status).toBe(302);
+      const p = policy();
+      t.advance(11 * 60_000);
+      const result = { id: p.commands[0]?.id ?? "", result: "expired" as const, at: t.now(), ...(waited ? { waited_for_call: true } : {}) };
+      expect((await deviceCall(t, phone.token, "checkin", { status: device({ enforcement: { policy_version: p.version, commands: [result] } }) })).status).toBe(200);
+      return (await page(base)).html;
+    };
+    const waited = await expire(true);
+    expect(waited).toContain("a call was on until it expired, so it didn");
+    expect(waited).not.toContain("too late");
+    // Without the phone's word, it reached the phone too late.
+    expect(await expire(false)).toContain("the phone got it too late, so it didn");
+    // The activity log says the same.
+    const log = (await page("/activity")).html;
+    expect(log).toContain("a call was on until the request expired");
+    expect(log).toContain("got a request to lock its screen too late");
+  });
 });
 
 describe("stages", () => {

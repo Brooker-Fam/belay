@@ -242,7 +242,7 @@ export function registerScreenTimeTools(server: McpServer, deps: Deps, caller: C
             ? {
                 last_lock: {
                   sent: iso(lock.issuedAt),
-                  state: LOCK_STATE_WORDS[lock.state],
+                  state: lock.state === "expired" && lock.waitedForCall ? "not done: a call was on until it expired, so the phone didn't lock" : LOCK_STATE_WORDS[lock.state],
                   ...(lock.resultAt !== null ? { phone_said_at: iso(lock.resultAt) } : {}),
                   ...(lock.state === "failed" && lock.problem ? { untrusted: { why_belay_on_the_phone_says: lock.problem } } : {}),
                 },

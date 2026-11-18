@@ -234,7 +234,8 @@ function what(e: AuditEntry): string {
       return d.kind === "lock_now" ? "couldn't lock its screen" : "couldn't remove the other users and profiles";
     case "command.expired":
       if (d.kind === "locate_now") return "got a check too late, so didn't send where it is";
-      return d.kind === "lock_now" ? "got a request to lock its screen too late, so didn't" : "got a parent's request to remove other users too late, so didn't run it";
+      if (d.kind === "lock_now") return d.waited_for_call === true ? "didn't lock its screen: a call was on until the request expired" : "got a request to lock its screen too late, so didn't";
+      return "got a parent's request to remove other users too late, so didn't run it";
     case "location.changed": {
       const what =
         d.mode === "off" ? "off" : d.mode === "on_demand" ? "on demand (only when a parent checks)" : `every ${str(d.every_minutes)} minutes`;

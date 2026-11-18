@@ -340,13 +340,16 @@ const LOCK_WORDS: Record<Command["state"], string> = {
   replaced: "a newer one took its place",
 };
 
+/** An expired lock the phone says waited for a call: a call was on until it expired. */
+const lockWords = (lock: Command): string => (lock.state === "expired" && lock.waitedForCall ? "a call was on until it expired, so it didn't lock" : LOCK_WORDS[lock.state]);
+
 /** Lock the phone now: a pause, and the screen locked once. The last one and how it went, in the phone's own words. */
 const LockCard: FC<{ view: View; device: DeviceView; lastLock: Command | null }> = ({ view, device, lastLock }) => (
   <div class="card" id="lock">
     {lastLock && (
       <>
         <p class="small">
-          Last sent <Time ms={lastLock.issuedAt} tz={view.tz} />: {LOCK_WORDS[lastLock.state]}
+          Last sent <Time ms={lastLock.issuedAt} tz={view.tz} />: {lockWords(lastLock)}
           {lastLock.resultAt !== null && (
             <>
               {" "}

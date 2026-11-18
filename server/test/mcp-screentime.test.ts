@@ -252,6 +252,15 @@ describe("screen time over MCP", () => {
       untrusted: { why_belay_on_the_phone_says: "Android lets Belay lock the screen only after the phone restarts once with this version of Belay." },
     });
     expect(policy().commands).toEqual([]);
+    // One the phone says waited for a call until it expired is worded so, not as one it got too late.
+    await call("lock_phone", { device: "Alex's phone", minutes: 15 });
+    const waited = policy().commands[0]?.id ?? "";
+    t.advance(11 * MIN);
+    await deviceCall(t, phone.token, "checkin", {
+      status: device({ enforcement: { policy_version: policy().version, commands: [{ id: waited, result: "expired", at: t.now(), waited_for_call: true }] } }),
+    });
+    const after = await call("get_rules", { device: "Alex's phone" });
+    expect(after.json.last_lock).toMatchObject({ state: "not done: a call was on until it expired, so the phone didn't lock" });
   });
 
   it("list_requests: more time, with the limit's name and the kid's reason untrusted; the agreement's answers with their category", async () => {
