@@ -83,9 +83,11 @@ object ScreenLocks {
 
     /**
      * A step's part in lock_now: the commands to report now ([report]: done, or failed when the
-     * lock fails), whether to lock the screen now ([lock]), and the lock due after the step ([due]).
+     * lock fails), whether to lock the screen now ([lock]), the lock due after the step ([due]), and
+     * why Belay can't lock the screen at all ([problem]: then each is failed in those words, without
+     * a try).
      */
-    data class LockNowStep(val report: List<WireCommand>, val lock: Boolean, val due: LockDue?)
+    data class LockNowStep(val report: List<WireCommand>, val lock: Boolean, val due: LockDue?, val problem: String? = null)
 
     /**
      * lock_now (the fifth review's F2): [plan]'s new lock_now commands are reported at the step
@@ -97,11 +99,19 @@ object ScreenLocks {
      * [bootAt]): the restart locked the screen. Only `expired` (the phone got it too late) and
      * `failed` (the lock failed now) say the screen didn't lock; a due lock that fails later is the
      * phone's log's to say, since when it was tried would say when the call ended.
+     *
+     * Whether Belay can lock the screen at all is decided first ([cannotLock]: null when it can,
+     * else why not, from what doesn't change with a call: Belay isn't the device owner, or
+     * Android's record of its policies has no force-lock until the phone restarts, platform notes
+     * S5). Then each new command is failed in those words, a call on or not, and no lock is due
+     * (the sixth review's G2: on such a phone a lock_now during a call was done, where every other
+     * was failed, so its result told of a call, and that done never locked).
      */
-    fun lockNow(plan: CommandPlan, due: LockDue?, bootCount: Int?, bootAt: Long, waits: () -> Boolean): LockNowStep {
+    fun lockNow(plan: CommandPlan, due: LockDue?, bootCount: Int?, bootAt: Long, cannotLock: String? = null, waits: () -> Boolean): LockNowStep {
         val stillDue = due?.takeIf { Boots.same(it.bootCount, it.bootAt, bootCount, bootAt) }
         val fresh = plan.lockNow
         if (fresh.isEmpty() && stillDue == null) return LockNowStep(emptyList(), lock = false, due = null)
+        if (cannotLock != null) return LockNowStep(fresh, lock = false, due = null, problem = cannotLock)
         if (waits()) return LockNowStep(fresh, lock = false, due = stillDue ?: LockDue(bootCount, bootAt))
         return LockNowStep(fresh, lock = true, due = null)
     }

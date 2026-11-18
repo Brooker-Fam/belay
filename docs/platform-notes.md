@@ -887,6 +887,16 @@ AOSP; Emulator pending (Phase 3 CI).
   re-provisioning. Until then (with the flag off) `lockNow` fails, and Belay reports it.
 - `ActiveAdmin.dump` prints each admin's `policies:` (`force-lock` among them) in `adb shell
   dumpsys device_policy`; CI checks it.
+- **Belay can ask beforehand** (read on 2026-11-18 for the sixth review's G2):
+  `DevicePolicyManager.hasGrantedPolicy(admin, USES_POLICY_FORCE_LOCK)` ("whether the
+  administrator was activated under an earlier set of policies, but requires additional policies
+  after an upgrade"; it throws only for an admin that isn't active) returns
+  `administrator.info.usesPolicy(policyId)` for `DeviceAdmins.getActiveAdminUnchecked`'s admin,
+  the same in-memory `ActiveAdmin` whose `info` lockNow's check reads without the flag
+  (`getActiveAdminWithPolicyForUid` → `isActiveAdminWithPolicyForUser`). So it's false exactly
+  while that lockNow throws for force-lock. With the flag on, `PermissionChecker.enforce`
+  passes a device owner on `MANAGE_DEVICE_POLICY_LOCK` whatever the admin's policies, so lockNow
+  would work while `hasGrantedPolicy` still says no.
 - DPM reference [2026-09-16]: "If there's no lock type set, this method forces the device to go to
   sleep but doesn't lock the device." `lockNow` calls `goToSleep` and `IWindowManager.lockNow`.
 
@@ -894,7 +904,14 @@ Belay's consequence: `res/xml/device_admin.xml` declares `<force-lock/>`. A `loc
 a schedule with `lock` calls `lockNow` once (core's `Commands.plan`, `Upkeep.locks`); a refusal
 is reported, for "force-lock" in plain words: "Android lets Belay lock the screen only after the
 phone restarts once with this version of Belay." The family's Pixel, provisioned before Phase 3,
-needs one restart after the update. The kid knows their own PIN, so it's a nudge.
+needs one restart after the update. The kid knows their own PIN, so it's a nudge. Every step asks
+`hasGrantedPolicy` first (`enforce/ScreenLock.cannotLock`, and Belay also remembers a force-lock
+refusal until it restarts), so while the answer is no, no lock waits for a call, every
+`lock_now` is failed in those words without a try, call or not, a schedule's or lost mode's lock
+is recorded as it comes, and the phone reports the same words among its problems the whole time
+(the sixth review's G2: a lock that waited for a call used to be reported done, and never
+locked). With the flag on, Belay goes by `hasGrantedPolicy` all the same, so it doesn't lock
+until the restart, though Android would let it.
 
 ### S6. Exact alarms for screen time's boundaries
 

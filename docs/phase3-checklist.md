@@ -16,7 +16,12 @@ kid's real apps or times.
 
 1. Update Belay to the Phase 3 version (the parent page's update, or `provision.sh` in
    maintenance mode), then **restart the phone once**. Android reads Belay's new permission to
-   lock the screen (`force-lock`) only when the phone starts (platform notes S5).
+   lock the screen (`force-lock`) only when the phone starts (platform notes S5). Before that
+   restart (the sixth review's G2): the phone's page says "Belay on the phone says: Android lets
+   Belay lock the screen only after the phone restarts once with this version of Belay.", and
+   "lock now" says the phone couldn't lock, in those words, also when you tap it during a call
+   (call a contact first); the screen doesn't lock when that call ends. After the restart the
+   problem is gone.
 2. With adb (maintenance mode): `adb shell dumpsys device_policy` lists `force-lock` under
    Belay's admin, below `policies:`.
 3. Write down whether this Android has the flag that makes the restart unnecessary:
@@ -162,6 +167,7 @@ kid's real apps or times.
 
 | Step | Check | Result | Android build |
 |---|---|---|---|
+| 0.1 | Before the restart: the problem in the phone's status, and lock now "couldn't lock" in its words, during a call too | pending | |
 | 0.2 | `force-lock` under Belay's admin after the restart | pending | |
 | 0.3 | `lock_now_coexistence` and the other flags | pending | |
 | 1.2 | Minutes match a stopwatch | pending | |

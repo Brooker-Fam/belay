@@ -15,6 +15,13 @@ import family.brooker.belay.core.calls.WireCallOutcome
 import family.brooker.belay.core.calls.WireCalls
 import family.brooker.belay.core.calls.WireContact
 import family.brooker.belay.core.calls.WireOutgoing
+import family.brooker.belay.core.screentime.Rules
+import family.brooker.belay.core.screentime.ScreenTimeState
+import family.brooker.belay.core.screentime.Upkeep
+import family.brooker.belay.core.screentime.WireDay
+import family.brooker.belay.core.screentime.WireSchedule
+import family.brooker.belay.core.screentime.WireScheduleKind
+import family.brooker.belay.core.screentime.WireScreenTime
 import java.time.LocalDateTime
 import java.time.ZoneId
 import kotlin.test.Test
@@ -130,5 +137,85 @@ class SixthReviewTest {
         val newest20 = (before988 + locked).sorted().takeLast(20)
         val without = CallRecords.whileLocked(listOf(counselor), bootAt, unlockedAt, emptyList(), emptyList(), rules, { false }, newest20, emptySet(), us) { "call-${++ids}" }
         assertFalse(without.entries.single().callback)
+    }
+
+    // ── G2: a phone that can't lock (platform notes S5) ─────────────────────────────────
+
+    /** ScreenLock.NEEDS_RESTART and NOT_OWNER on the phone, word for word (app/enforce/ScreenLock.kt). */
+    private val needsRestart = "Android lets Belay lock the screen only after the phone restarts once with this version of Belay."
+    private val notOwner = "Belay isn't the device owner, so it can't lock the screen."
+
+    /**
+     * enforce/CommandRunner.lockNow, as it runs core's ScreenLocks.lockNow: when Belay can't lock
+     * ([cannotLock], ScreenLock.cannotLock: hasGrantedPolicy's force-lock, or a refusal since Belay
+     * started), each new command fails in those words with no try; when the lock waits, each is
+     * done; else ScreenLock.lock runs ([lock]: null when it worked) and each is done or failed by it.
+     */
+    private fun runnerLockNow(
+        plan: CommandPlan,
+        due: LockDue?,
+        bootAt: Long,
+        now: Long,
+        cannotLock: String?,
+        waits: () -> Boolean,
+        lock: () -> String?,
+    ): Pair<List<WireCommandResult>, LockDue?> {
+        val step = ScreenLocks.lockNow(plan, due, bootCount = 3, bootAt = bootAt, cannotLock = cannotLock, waits = waits)
+        step.problem?.let { problem -> return step.report.map { CommandLog.failed(it, now, problem) } to null }
+        if (!step.lock) return step.report.map { CommandLog.done(it, now) } to step.due
+        val problem = lock()
+        return step.report.map { if (problem == null) CommandLog.done(it, now) else CommandLog.failed(it, now, problem) } to null
+    }
+
+    private fun lockPlan(id: String, now: Long) =
+        Commands.plan(listOf(WireCommand(id, WireCommand.LOCK_NOW, issuedAt = now, expiresAt = now + 10 * minute)), emptySet(), now, setOf(WireCommand.LOCK_NOW))
+
+    @Test
+    fun `G2 - on a phone that can't lock until it restarts, every lock_now is failed in the same words, a call on or not`() {
+        val bootAt = at("2026-11-18T08:00:00")
+        val t1 = at("2026-11-18T10:00:00")
+        val t2 = at("2026-11-18T10:20:00")
+        val neverTried = { error("Belay doesn't try a lock it knows Android refuses") }
+        // 10:00, no call; 10:20, the kid on a call (988, say). The call isn't even asked about.
+        val (quiet, quietDue) = runnerLockNow(lockPlan("lock-1", t1), null, bootAt, t1, needsRestart, waits = { error("not asked") }, lock = neverTried)
+        val (during, duringDue) = runnerLockNow(lockPlan("lock-2", t2), null, bootAt, t2, needsRestart, waits = { error("not asked") }, lock = neverTried)
+        assertEquals(listOf(WireCommandResult("lock-1", WireCommandOutcome.FAILED, t1, needsRestart)), quiet)
+        assertEquals(listOf(WireCommandResult("lock-2", WireCommandOutcome.FAILED, t2, needsRestart)), during)
+        assertEquals(null, quietDue)
+        assertEquals(null, duringDue, "no lock waits for a call that couldn't happen")
+        // What the review's probe showed before: done during the call, failed without one.
+        val (was, wasDue) = runnerLockNow(lockPlan("lock-2", t2), null, bootAt, t2, cannotLock = null, waits = { true }, lock = neverTried)
+        assertEquals(WireCommandOutcome.DONE, was.single().result)
+        assertEquals(LockDue(3, bootAt), wasDue)
+        // A lock due from before Belay found it can't lock goes too, and nothing more is reported.
+        val empty = Commands.plan(emptyList(), setOf("lock-1", "lock-2"), t2, setOf(WireCommand.LOCK_NOW))
+        assertEquals(emptyList<WireCommandResult>() to null, runnerLockNow(empty, LockDue(3, bootAt), bootAt, t2, needsRestart, waits = { error("not asked") }, lock = neverTried))
+    }
+
+    @Test
+    fun `sound - while Belay isn't the device owner every lock_now fails, call or not, and none waits`() {
+        val t = at("2026-11-18T10:00:00")
+        val a = runnerLockNow(lockPlan("a", t), null, 0, t, notOwner, waits = { true }, lock = { notOwner })
+        val b = runnerLockNow(lockPlan("b", t), null, 0, t, notOwner, waits = { false }, lock = { notOwner })
+        assertEquals(WireCommandResult("a", WireCommandOutcome.FAILED, t, notOwner), a.first.single())
+        assertEquals(WireCommandResult("b", WireCommandOutcome.FAILED, t, notOwner), b.first.single())
+        assertEquals(null, a.second)
+        // A lock due when Belay stops being device owner is dropped, so none fires after it becomes owner again.
+        val empty = Commands.plan(emptyList(), setOf("x"), t, setOf(WireCommand.LOCK_NOW))
+        assertEquals(null, runnerLockNow(empty, LockDue(3, 0), 0, t, notOwner, waits = { true }, lock = { notOwner }).second)
+    }
+
+    @Test
+    fun `G2 - a schedule's lock that can't happen doesn't wait for a call either, so its problem comes as the schedule starts`() {
+        val bedtime = WireSchedule("s-bed", WireScheduleKind.BEDTIME, "Bedtime", WireDay.entries.toList(), "21:00", "07:00", lock = true)
+        val policy = WireScreenTime(schedules = listOf(bedtime))
+        val start = at("2026-11-18T21:00:30")
+        val decision = Rules.evaluate(Rules.Input(policy = policy, now = start, phoneZone = ny, usage = null, measured = true, apps = emptySet(), neverBlocked = emptySet()))
+        // EnforcementStep asks a schedule's lock to wait for a call only when Belay can lock (cannotLock == null).
+        val cannotLock: String? = needsRestart
+        val callOn = true
+        val (locks, after) = Upkeep.locks(decision, ScreenTimeState(), start, callOn = cannotLock == null && callOn)
+        assertEquals(listOf("s-bed"), locks.map { it.scheduleId }, "done now, so its problem (S5's, already reported) is recorded now, not at the call's end")
+        assertEquals(emptyList(), Upkeep.locks(decision, after, start + 30 * minute, callOn = false).first, "once")
     }
 }

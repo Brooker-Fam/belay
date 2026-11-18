@@ -652,10 +652,15 @@ server decides whether a change tightens or loosens.
   call, once the call ends, however long that takes (a restart before then drops it: the
   restart locked the screen), so no result says whether a call was on, or when one ended.
   `expired` means only that the phone got it after `expires_at`, and `failed` that the lock
-  failed when the phone had it; a lock that waited and fails later is only in the phone's own
-  log. A phone updated to a Belay that can lock reads that permission at its next
-  restart (platform notes S5): until then the result is `failed`, "Android lets Belay lock the
-  screen only after the phone restarts once with this version of Belay." The server sends it
+  failed when the phone had it; a lock that waited and fails later (rare: Android refusing it
+  for another reason) is only in the phone's own log. Whether the phone can lock at all is
+  decided first, from what a call doesn't change (the sixth security review's G2): while Belay
+  isn't the device owner, or before a phone updated to a Belay that can lock reads that
+  permission at its next restart (platform notes S5: Android's record of Belay's policies,
+  `DevicePolicyManager.hasGrantedPolicy`, has no force-lock until then), every `lock_now` is
+  `failed` at once, call or not, nothing waits, and the phone doesn't try; for the restart,
+  "Android lets Belay lock the screen only after the phone restarts once with this version of
+  Belay.", which the phone also reports in `enforcement.problems` the whole time. The server sends it
   with `expires_at` 10 minutes on, and with a pause of 5 to 240 minutes when a parent or an AI
   client locks the phone (the command line's `lock-now` sends the lock alone, expiring after
   its `--minutes`); a new one replaces one still waiting. The parent sees a failed one's
