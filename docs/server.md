@@ -339,7 +339,8 @@ For scripts: `agent-add` prints only the APK's SHA-256 (lowercase) on stdout,
 `recovery-key` prints only the key, grouped like `7KD2M-8Q4ZX-1HNP3-RT6VW-B9CF0G`,
 `limit`, `schedule`, `lock-now`, `place`, `locate-now` and `contact` print only the id of the
 limit, schedule, place, command or contact, `caregiver-add` prints only the one-time link, and
-`handover` prints one sentence; everything else goes to stderr. They exit 1 with a reason on stderr when they can't.
+`handover` prints one sentence; everything else goes to stderr. They exit 1 with a reason on
+stderr when they can't.
 
 Outside Docker, use `npm run cli -- <command>` from `server/`.
 
