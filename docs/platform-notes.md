@@ -2511,7 +2511,14 @@ schedule's lock wait for a managed call Telecom has (`isInManagedCall`, or a cal
 screen), as long as it lasts, and never for an app's self-managed call, which an app can hold
 open all night, paused or not (the fifth review's F3: Belay asked `isInCall` before, which counts
 them). A call through a calling account the kid turned on in Settings rings on Belay's own
-screen, by the family's rules, so it's a call Belay decided. While Belay isn't the dialer,
+screen, by the family's rules, but it isn't a call an app can't make up (read on 2026-11-18 for
+the sixth review's I8): that account's app says which number its call shows (a contact's, so
+the rules let it ring) and keeps it on as long as it likes, since Telecom's
+`CallAnomalyWatchdog` times out only a call stuck in a transitory or intermediate state
+(`CallState.isTransitoryState`: NEW, CONNECTING, DISCONNECTING, ANSWERED;
+`isIntermediateState`: DIALING, RINGING), never an ACTIVE one. So while the kid leaves such an
+account on (a parent approved its app), the app can hold a lock off; Belay records the call, and
+the apps still pause. While Belay isn't the dialer,
 Telecom won't answer it, so they wait only while the audio mode is `MODE_IN_CALL` (a carrier
 call), for at most 30 minutes from the step the wait began; then the screen locks, and the call
 goes on. Lost mode's one lock waits only for a managed call Telecom has. No other audio mode

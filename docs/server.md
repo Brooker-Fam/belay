@@ -283,7 +283,8 @@ as it sent it, or `null`), `requests` (`[{id, kind, package, status, reason}]`, 
 agreement), `agent_version_code` and `agent_signing_sha256` (as the phone reported them),
 `agent_update` (the offer, and what the phone said about it), `recovery` (`{version,
 last_used}`: the key version the policy carries, or `null`), `commands` (the latest, with
-their results), `screen_time` (the policy's screen-time rules, or `null` while the phone has
+their results and the phone's time for each, which for a lock now is when the phone had it,
+a call on or not), `screen_time` (the policy's screen-time rules, or `null` while the phone has
 none) and `usage` (the days the phone sent, newest first, at most 31: `[{day, zone, as_of,
 screen_minutes, apps: [{package, minutes, opens}]}]`). Phase 4 adds `location` (the policy's,
 `null` until a parent first sets it), `fixes` (newest first, at most 50: `[{id, at, lat, lng,

@@ -658,9 +658,14 @@ server decides whether a change tightens or loosens.
   and a call in those 2 minutes holds it off again. The result doesn't wait (the fifth security
   review's F2): the phone reports it at the step that first has it, `done` whether the screen
   locks then or, during a call, about 2 minutes after the call ends, however long that takes (a
-  restart before then drops it: the restart locked the screen), so no result says whether a call
+  restart before then drops it: the restart locked the screen; a phone without Android's boot
+  count, `BOOT_COUNT`, platform notes K2, takes a clock moved 10 minutes or more for a restart
+  too, and drops it unlocked: the sixth review's I3), so no result says whether a call
   was on, or when one ended. Once reported, the lock has nothing to do with the pause it came
-  with (I2): it still happens after that pause ended, or after a parent resumed the phone.
+  with (I2): it still happens after that pause ended, or after a parent resumed the phone. The
+  build before that fix sent `waited_for_call` with an expired one; the server refuses that field
+  now, so a phone on that build had its check-ins refused until it updated (only CI's phones ran
+  it: the sixth review's I5).
   `expired` means only that the phone got it after `expires_at`, and `failed` that the lock
   failed when the phone had it; a lock that waited and fails later (rare: Android refusing it
   for another reason) is only in the phone's own log. Whether the phone can lock at all is
@@ -674,7 +679,10 @@ server decides whether a change tightens or loosens.
   with `expires_at` 10 minutes on, and with a pause of 5 to 240 minutes when a parent or an AI
   client locks the phone (the command line's `lock-now` sends the lock alone, expiring after
   its `--minutes`); a new one replaces one still waiting. The parent sees a failed one's
-  `problem` word for word; the server shows no time of the phone's beside a lock's result.
+  `problem` word for word; the parent page, MCP and the activity log show no time of the phone's
+  beside a lock's result. Only the server's command line (`status --json`, for whoever runs the
+  server) prints each result's `at` as the phone sent it, which for a lock now is when the phone
+  had it, a call on or not (the sixth review's I6).
 - **The report:** `enforcement.screen_time` changes every minute the phone is used, but the
   phone checks in early only when something other than the minutes changed (a limit used up,
   a schedule starting, usage access, a self-serve take); the 2-hourly check-in carries the

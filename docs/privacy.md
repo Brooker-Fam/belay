@@ -270,13 +270,18 @@ allows it, and only while that screen is open. Camera frames are never stored or
   kid can remove any of them (only the phone's copy: a record sent, or waiting to be, stays the
   parents'). When the kid last called 911 or 988 (or tapped a button to text them) is kept only
   for the 2 hours every caller rings, and never sent (after a restart, until Belay has read
-  Android's call log for the calls from before the unlock: at most until a call still on then
-  ends); a call to 911 from the lock screen before the
+  Android's call log for the calls from before the unlock: at the first step after the unlock,
+  or, when a call that rang before it was still on then, at the first step after that call ends,
+  which nothing brings at once for a call in the phone's own app (the hourly check does); if
+  Android won't let Belay read its call log, until calls goes off or the phone restarts again:
+  the sixth review's I9); a call to 911 from the lock screen before the
   phone's first unlock after a restart keeps only its time (each such call's, at most 20), in the
   part of the phone's storage Android opens at boot, until Belay's own storage opens and the
   call's 2 hours are over. Belay's log on the phone (readable only
   with USB debugging) says what it did with each call, never why: nothing in it tells a call or
-  text with 911, 988 or a private number from any other. Network logging (Phase 3) keeps the
+  text with 911, 988 or a private number from any other. It does say when a screen lock began to
+  wait for a call, its steps every minute while it waits, and when the screen locked, so it shows
+  how long a call lasted, though not which call it was (the sixth review's I7). Network logging (Phase 3) keeps the
   counts of today and the two days before (which app looked up which name, how many times), and
   where Android's batches stand; all of it goes, with the days not sent yet, when a parent turns
   it off.
