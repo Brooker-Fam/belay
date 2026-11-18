@@ -426,7 +426,7 @@ describe("H2: a caregiver's lock under a parent's longer pause", () => {
     expect(p.commands.map((c) => ({ kind: c.kind, caregiver: c.caregiver }))).toEqual([{ kind: "lock_now", caregiver: "Grandma" }]);
     // Her page doesn't say it paused the phone or showed her name on the pause: the lock did, and the pause stayed as it was.
     expect(locked.saved).toBe("locked_kept");
-    expect(locked.notice).toContain("the phone says you locked it");
+    expect(locked.notice).toContain("and says you locked it");
     expect(locked.notice).toContain("so that pause stays as it was");
     expect(locked.notice).not.toContain("shows your name");
     // With nothing longer on, her pause and her lock both name her, as the page says.
@@ -434,7 +434,7 @@ describe("H2: a caregiver's lock under a parent's longer pause", () => {
     const fresh = await pauseAs(care, f.phone.deviceId, "30", true);
     expect(fresh.saved).toBe("locked");
     expect(f.policy().pause).toMatchObject({ caregiver: "Grandma" });
-    expect(await care.html()).toContain("The kid&#39;s phone names you for your pause and for each lock.");
+    expect(await care.html()).toContain("The kid&#39;s phone names you for your pause, and for each lock once it has locked the screen");
   });
 });
 

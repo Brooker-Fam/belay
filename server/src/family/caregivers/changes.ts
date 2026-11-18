@@ -306,11 +306,12 @@ export type CareSaved = "paused" | "kept" | "locked" | "locked_kept" | "paused_a
 
 /**
  * Which words a caregiver's page answers their pause or lock with, true in every case: the kid's
- * phone names them for their pause while it's the one in force, and for every lock (its notice:
- * the seventh review's H2). With Status (`sees`), as the page shows anyway, whether a pause at
- * least as long was on already (`kept`): then their pause changed nothing, and a lock comes with
- * that pause as it was. Without Status, the same words either way (`paused_any`, `locked_any`),
- * since "kept" would tell them the phone was paused (J7).
+ * phone names them for their pause while it's the one in force, and for every lock it carries out
+ * (its notice: the seventh review's H2; a phone that can't lock names no one for it, so the words
+ * say "if it can": the eighth review's K8). With Status (`sees`), as the page shows anyway,
+ * whether a pause at least as long was on already (`kept`): then their pause changed nothing, and
+ * a lock comes with that pause as it was. Without Status, the same words either way (`paused_any`,
+ * `locked_any`), since "kept" would tell them the phone was paused (J7).
  */
 export function careSaved(sees: boolean, lock: boolean, kept: boolean): CareSaved {
   if (!sees) return lock ? "locked_any" : "paused_any";
