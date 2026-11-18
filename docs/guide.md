@@ -663,7 +663,9 @@ or off: Claude can't, not even as a proposal, and it reads it only if you turn o
 category, which starts off. The phone's **Network** tab shows it, kept 30 days by default.
 Android shows the kid its own notice that the phone "may monitor network traffic", and Belay
 explains what that means. A name looked up isn't a page visited: apps look names up by
-themselves.
+themselves. It's a record, not a guard: an app with its own way of looking names up isn't
+noted, and a restart loses up to 2 hours of lookups Android hadn't handed to Belay yet (the
+Network tab marks the day of the last restart).
 
 Below the switch, **Private websites** lists websites Belay never notes, with any name under
 them, like 988's: a helpline's or a counselor's site your kid might use privately. Type a name

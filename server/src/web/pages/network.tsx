@@ -11,6 +11,7 @@ import { type Enforcement, LIMITS } from "../../device/schemas.js";
 import type { DeviceView } from "../../family/devices.js";
 import type { NetworkDayView, NetworkSettings, PrivateWebsite } from "../../family/network/store.js";
 import type { Labels } from "../../family/screentime/words.js";
+import { dayKey } from "../../time.js";
 import { Csrf, Layout, Notice, PostButton, Time, type View } from "../ui.js";
 import { PhoneTabs, shortDay } from "./screentime.js";
 
@@ -151,8 +152,21 @@ export interface NetworkPageData extends NetworkCardData {
   labels: Labels;
 }
 
+/**
+ * When the phone last restarted while network logging was on, as it reported (its `last_boot_at`;
+ * the server keeps only the latest), or null. Android keeps lookups in memory until it hands them
+ * to Belay, 90 to 120 minutes after the last batch or at 1200 lookups, so a restart loses what it
+ * hadn't handed over yet (platform notes W1; the second bypass audit's B4): the day it restarted
+ * may be missing up to 2 hours of lookups, and that day's card says so.
+ */
+export function restartWhileLogging(device: DeviceView, settings: NetworkSettings | null): number | null {
+  const at = device.facts?.last_boot_at;
+  if (at === undefined || at === null || !settings) return null;
+  return settings.enabledAt !== null && settings.enabledAt <= at ? at : null;
+}
+
 /** One day: each app, most looked up first, with the names it looked up. */
-const Day: FC<{ day: NetworkDayView; labels: Labels; view: View }> = ({ day, labels, view }) => {
+const Day: FC<{ day: NetworkDayView; labels: Labels; view: View; restartedAt: number | null }> = ({ day, labels, view, restartedAt }) => {
   const apps = new Map<string, { lookups: number; domains: { domain: string; lookups: number }[] }>();
   for (const e of day.entries) {
     const app = apps.get(e.package) ?? { lookups: 0, domains: [] };
@@ -168,6 +182,12 @@ const Day: FC<{ day: NetworkDayView; labels: Labels; view: View }> = ({ day, lab
         Counted up to <Time ms={day.asOf} tz={view.tz} />
         {day.zone !== view.tz ? `, in the phone's days (${day.zone})` : ""}.
       </p>
+      {restartedAt !== null && dayKey(restartedAt, day.zone) === day.day && (
+        <p class="small">
+          The phone restarted at <Time ms={restartedAt} tz={view.tz} />. Android keeps lookups in memory until it hands them to Belay, about every
+          90 minutes, and a restart loses the ones it hadn't handed over: up to 2 hours of them from before the restart may be missing.
+        </p>
+      )}
       {sorted.length === 0 && <p class="muted">Nothing the phone keeps was looked up that day.</p>}
       {sorted.map(([pkg, app]) => (
         <details>
@@ -218,7 +238,11 @@ export const NetworkPage: FC<{ view: View; data: NetworkPageData; message?: stri
           on the phone's page, deletes it now.
         </p>
       </div>
-      {data.days.length === 0 ? <p class="muted">Nothing yet: the phone sends each day's names as Android hands them over, every hour or two.</p> : data.days.map((d) => <Day day={d} labels={data.labels} view={view} />)}
+      {data.days.length === 0 ? (
+        <p class="muted">Nothing yet: the phone sends each day's names as Android hands them over, every hour or two.</p>
+      ) : (
+        data.days.map((d) => <Day day={d} labels={data.labels} view={view} restartedAt={restartWhileLogging(device, data.settings)} />)
+      )}
     </Layout>
   );
 };

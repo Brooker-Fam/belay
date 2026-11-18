@@ -104,6 +104,25 @@ describe("network logging on the parent pages", () => {
     expect(html).toContain("Belay keeps this 30 days, on this server only");
   });
 
+  it("marks the day the phone last restarted while logging was on: Android's lookups in memory are lost then (the second bypass audit's B4)", async () => {
+    const { t, phone, ctx, parent, base, page, send } = await family();
+    setNetworkLog(ctx(), phone.deviceId, true, parent);
+    const day = (key: string) => ({ day: key, zone: "America/New_York", as_of: T0, entries: [{ package: "com.example.chat", domain: "example.com", lookups: 1 }], dropped: 0 });
+    await send([day("2026-11-16"), day("2026-11-15")]);
+    const restart = "Android keeps lookups in memory until it hands them to Belay, about every 90 minutes, and a restart loses the ones it hadn&#39;t handed over";
+    // The phone restarted at 11:00 AM in New York on the 16th, an hour after logging went on.
+    t.advance(2 * 3_600_000);
+    await deviceCall(t, phone.token, "checkin", { status: device({ last_boot_at: T0 + 3_600_000, device_time: t.now() }) });
+    let { html } = await page(`${base}/network`);
+    expect(html.split(restart).length - 1).toBe(1);
+    expect(html.indexOf(restart)).toBeLessThan(html.indexOf("Sun, Nov 15"));
+    expect(html).toContain("The phone restarted at <time");
+    // A restart from before logging went on lost nothing of it.
+    await deviceCall(t, phone.token, "checkin", { status: device({ last_boot_at: T0 - 26 * 3_600_000, device_time: t.now() }) });
+    ({ html } = await page(`${base}/network`));
+    expect(html).not.toContain(restart);
+  });
+
   it("says when Android paused it, and keeps showing kept days after it's off", async () => {
     const { t, phone, ctx, parent, base, page, send } = await family();
     setNetworkLog(ctx(), phone.deviceId, true, parent);

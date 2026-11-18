@@ -1002,6 +1002,17 @@ off, and an app's lookup in a batch; Android's notice is the Pixel's to show).
 - `DevicePolicyManagerService.setNetworkLoggingEnabled` returns at once when logging is already in
   that state; turning it on makes a new `NetworkLogger` (batch tokens and event ids from 0 again),
   turning it off discards everything not taken (`stopNetworkLogging` → `discardLogs`).
+- The log is kept only in memory: `NetworkLoggingHandler`'s open batch (`mNetworkEvents`, an
+  `ArrayList`) and its closed ones (`mBatches`, a `LongSparseArray`), and `NetworkLogger` writes no
+  file. At boot nothing comes back: DPMS starts logging again at `ACTION_USER_STARTED` for the
+  system user (its receiver calls `setNetworkLoggingActiveInternal(true)`, which makes a new
+  `NetworkLogger`). So a restart loses every lookup Android hadn't handed to Belay yet: the open
+  batch, which closes 90 to 120 minutes after the last one (`setWindow` with a 30-minute window)
+  or at 1200 events, and a closed batch Belay hadn't taken (it takes each at once, W9). Read for
+  the second bypass audit's B4, 2026-11-18. Belay's consequence: a restart can drop up to 2 hours of
+  lookups from the record; the phone reports the restart (`last_boot_at`, the newest only), and the
+  Network tab says, on the day of the last one while logging was on, that lookups from before it
+  may be missing. A record, not a guard: nothing on the phone can keep what Android threw away.
 - What the kid sees: DPMS posts "Device is managed" / "Your organization manages this device and
   may monitor network traffic. Tap for details." (`core/res/res/values/strings.xml`,
   `network_logging_notification_title` and `_text`; a device-management resource can replace
